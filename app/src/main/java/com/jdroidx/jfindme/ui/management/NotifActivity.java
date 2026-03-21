@@ -1,0 +1,136 @@
+package com.jdroidx.jfindme.ui.management;
+
+import android.graphics.Color;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.utils.SystemLogger;
+
+/**
+ * Main -> UI Engine -> ManagementCluster -> NotifActivity (L4)
+ * Rules: 100% Java Programmatic, Alert Status Stream.
+ */
+public class NotifActivity extends BaseActivityJava {
+
+    private final String TAG = "NotifActivity";
+
+    @Override
+    protected View createLayout() {
+        LinearLayout mainRoot = new LinearLayout(this);
+        mainRoot.setOrientation(LinearLayout.VERTICAL);
+        mainRoot.setBackgroundColor(getPrimaryColor());
+
+        // 🚀 Premium Linear Gradient Hero Banner
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(50, 80, 50, 60);
+        applyLinearGradient(header, 0f);
+
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+        
+        TextView title = new TextView(this);
+        title.setText("SYSTEM ALERTS");
+        title.setTextColor(getGradientOverlayText());
+        title.setTextSize(24);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        topRow.addView(title);
+        header.addView(topRow);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("Panic Events & Geofence Triggers");
+        subtitle.setTextColor(getGradientOverlayText());
+        subtitle.setAlpha(0.8f);
+        subtitle.setTextSize(12);
+        subtitle.setPadding(0, 10, 0, 0);
+        header.addView(subtitle);
+
+        mainRoot.addView(header);
+        
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(createNotifList());
+        mainRoot.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+
+        return mainRoot;
+    }
+
+    private View createNotifList() {
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(40, 40, 40, 100);
+        
+        list.addView(createNotifItem("Security Agent", "System Integrity Check Passed", "Just Now", Color.parseColor("#4CAF50")));
+        list.addView(createNotifItem("Geofence Trigger", "Target entered 'School Zone'", "15 mins ago", getGradientStart()));
+        list.addView(createNotifItem("Battery Alert", "Device 'Child_01' is critical (Below 20%)", "1 hour ago", Color.parseColor("#F44336")));
+        
+        return list;
+    }
+
+    private View createNotifItem(String title, String body, String time, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        applySolidCardGeometry(card, getCardColor(), 30f);
+        
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.setMargins(0, 0, 0, 30);
+        card.setLayoutParams(cardLp);
+        
+        // Matrix Render: Horizontal Colored Severity Stripe bridging seamlessly!
+        LinearLayout innerRow = new LinearLayout(this);
+        innerRow.setOrientation(LinearLayout.HORIZONTAL);
+        
+        // Severity Ribbon
+        View statusRibbon = new View(this);
+        statusRibbon.setBackgroundColor(accent);
+        innerRow.addView(statusRibbon, new LinearLayout.LayoutParams(15, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // Content Area
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setPadding(40, 40, 40, 40);
+        textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(accent);
+        tvTitle.setTextSize(14);
+        tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvTitle.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        titleRow.addView(tvTitle);
+
+        TextView tvTime = new TextView(this);
+        tvTime.setText(time);
+        tvTime.setTextColor(getSecondaryTextColor()); // Premium Context Fade
+        tvTime.setTextSize(10);
+        tvTime.setTypeface(null, android.graphics.Typeface.BOLD);
+        titleRow.addView(tvTime);
+        
+        textBlock.addView(titleRow);
+
+        TextView tvBody = new TextView(this);
+        tvBody.setText(body);
+        tvBody.setTextColor(getTextColor());
+        tvBody.setTextSize(12);
+        tvBody.setPadding(0, 15, 0, 0);
+        textBlock.addView(tvBody);
+        
+        innerRow.addView(textBlock);
+        card.addView(innerRow);
+
+        return card;
+    }
+
+    @Override
+    protected void setupLogic() {
+        SystemLogger.i(TAG, "Notification Stream Standby.");
+    }
+}

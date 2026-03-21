@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">jFindMe</string>
+    <string name="title_auth">jFindMe Enterprise Access</string>
+    <string name="hint_email">Enter Enterprise Email</string>
+    <string name="hint_password">Enter Secure Password</string>
+    <string name="btn_authorize">AUTHORIZE ACCESS</string>
+    <string name="btn_switch_theme">SWITCH THEME</string>
+    <string name="msg_auth_success">Access Granted. Redirecting...</string>
+    <string name="msg_empty_fields">Please enter credentials.</string>
+    
+    <!-- Google Maps API Key - Enterprise Restricted -->
+    <string name="google_maps_key" translatable="false">AIzaSyDbkAsYbNmxJxBVy2_XmCmKnIvjflJV0Vg</string>
+</resources>

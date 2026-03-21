@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. User Root Collection
+    match /users/{userId} {
+      // Users can only read/write their own identity and active device data
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Real-time GPS/Avatar live state subcollection
+      match /live_state/{stateId} {
+        // Anyone authenticated can read where an avatar is (for Map syncing)
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // 2. Avatar Registry Collection (The Models & Animations)
+    match /avatars/{avatarId} {
+      // Avatars are global assets. Anyone can download the dictionary specs.
+      allow read: if true;
+      // Only Master Admins or Backend Cloud Functions can write new Avatars
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // 3. User Session & Authentication Tracking
+    match /sessions/{sessionId} {
+      // Users can only manage their specific login sessions
+      allow read, write: if request.auth != null;
+    }
+
+    // 4. Geospatial S2 Cells (Used for Radar and Map chunk loading)
+    match /cells/{cellId} {
+      // Anyone authenticated can query which avatars are inside this map chunk
+      allow read: if request.auth != null;
+      // Users cannot directly write to cells. Handled by Firebase Cloud Functions.
+      allow write: if false; 
+    }
+  }
+}
