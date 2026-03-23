@@ -1,0 +1,72 @@
+{
+  "system": "jFindMe Live Telemetry HUD",
+  "schema": "help_and_support_offline_db",
+  "version": "1.0",
+  "navigation_drawer_index": [
+    {
+      "ui_title": "Dashboard (Live Map)",
+      "ui_subtitle": "Map Overview",
+      "detailed_explanation": "Operates as your central anchor. Clicking this instantly collapses the Navigation panel, kicking you straight back into the full-screen tracking HUD matrix. From the dashboard, you can monitor live coordinate feeds, track hardware conditions (battery limits), intercept Network sync metrics, and physically trace real-time active user pins directly over the Google Map engine without reloading the framework Activity."
+    },
+    {
+      "ui_title": "Devices Pairing",
+      "ui_subtitle": "Sync children",
+      "detailed_explanation": "Executes the core node pairing framework where physical Handshakes occur. When launched via the `[+]` button in the Roster, the system automatically checks the correct 'Role' box (Mother, Father, Friends) encoding it into the QR Token. Upon scanning this Unique Token, the target phone instantly decodes this role logic. If they scan a Mother/Father code, they are officially elevated to a Co-Administrator with complete geofencing and mapping control. If they scan a Child/Dependent code, their App is heavily sandboxed, removing all pairing tools and purely transmitting GPS telemetry."
+    },
+    {
+      "ui_title": "Location History",
+      "ui_subtitle": "Review paths",
+      "detailed_explanation": "Accesses your historical location log temporal database. Capable of constructing literal Polyline breadcrumb trails across Google Maps to visualize chronological GPS ping intervals. It compiles precise timestamps, coordinates, velocities, and hardware conditions spanning filtered days so you can forensically replay an entire tracking session."
+    },
+    {
+      "ui_title": "Safe Zones",
+      "ui_subtitle": "Geofence rules",
+      "detailed_explanation": "Provisions strict virtual security perimeters. Administrators can literally drop and draw circular GPS boundaries physically snapping to the Google Maps terrain layout (e.g. labeling a ring 'School' or 'Home Base').\n\nNEW DASHBOARD CONTROLS:\n• 🟩 Power Switch: Located next to the zone name. Toggle to Green to activate tracking. Toggle to Grey to completely disable the perimeter and save 100% background battery without deleting the rule!\n• 🔔 Bell Icon: Toggle Green to allow automatic background Push Notifications when your child enters/exits. Toggle Grey to mute alerts.\n• ✅/❌ Status Icons: Manually tap these to force an immediate silent GPS location check and calculate your child's exact distance from the Safe Zone in real-time.\n• 🕒 History: Generates a chronological log tracking exactly when you executed manual distance checks.\n• 🗑️ Delete: Physically destroys the Safe Zone perimeter (Protected by a confirmation barrier)."
+    },
+    {
+      "ui_title": "Family and Friends",
+      "ui_subtitle": "Manage members",
+      "detailed_explanation": "Acts as your Relational Network Roster. Features a Dual-Tab layout organizing network nodes mathematically into `Family` vs `Friends`. Administrators (e.g. Mother, Father) can permanently assign specific roles by tapping the `[+]` button next to an empty slot. This action intercepts the Device Pairing gateway, physically defining what privileges the new user receives. Additionally, clicking any active slot renders a Deep Profile Metrics overlay instantly detailing the target's real-time Battery, last Ping delta, and tracking resolution configuration."
+    },
+    {
+      "ui_title": "Notifications & Alerts",
+      "ui_subtitle": "System warnings",
+      "detailed_explanation": "A centralized, persistent inbox indexing all critical telemetry and warning triggers. It persistently categorizes incoming Panic/SOS pulses triggered by children, hardware failure warnings (low battery flags), or Safe-Zone perimeter breaches out-of-order so nothing goes unseen."
+    },
+    {
+      "ui_title": "Profile",
+      "ui_subtitle": "Name & Details",
+      "detailed_explanation": "Controls your internal network aesthetic identity. Alter your assigned operator Nickname or switch between over 22 dynamically integrated graphical Avatars natively loaded into Android's offline SharedPreferences caching. This dictates exactly how your badge icon propagates on other users' screens."
+    },
+    {
+      "ui_title": "Settings",
+      "ui_subtitle": "App Config",
+      "detailed_explanation": "The global override hub. Allows expansive OS-level modifications over jFindMe's primary engine logic. Alter map refresh intervals to preserve background battery logic, flip between highly optimized Neon AMOLED Dark Modes or FamiSafe bright palettes, and adjust cache retention sizes."
+    },
+    {
+      "ui_title": "Help & Support",
+      "ui_subtitle": "App FAQ",
+      "detailed_explanation": "Queries Android's native caching storage algorithms to extract this precise JSON Support Database matrix entirely offline. It forces a frictionless Dialog render, preserving network payloads while explaining everything you need to command the jFindMe network."
+    },
+    {
+      "ui_title": "Privacy & Permissions",
+      "ui_subtitle": "Security Rules",
+      "detailed_explanation": "The compliance validator engine. Actively audits OS-level execution prerequisites. Monitors Background Continuous Location APIs, Physical Storage Access constraints, and battery whitelisting requirements. Flags any missing permissions that would structurally corrupt jFindMe's capacity to maintain a tracking lock."
+    },
+    {
+      "ui_title": "Logout",
+      "ui_subtitle": "Sign Out",
+      "detailed_explanation": "The strict network severance routine. Pops a secure prompt mechanism to demand visual confirmation. Obliterates the current Firebase authentication handshake, safely wiping volatile tracking tokens from memory before purging the session back to the gateway login screen."
+    },
+    {
+      "ui_title": "Location Tracking Architecture",
+      "ui_subtitle": "GPS Engine Validation",
+      "detailed_explanation": "The GPS rendering hardware is completely decoupled from the UI MainLooper to prevent freezing. Polling runs exclusively on the isolated `JFindMeGpsHardwareThread`. Distance locks have been replaced by strict time-based heartbeat pings to sync devices locked indoors. Battery safeguards automatically trigger when capacity drops below 15%, reducing intervals significantly."
+    },
+    {
+      "ui_title": "Concurrency & Path Engine",
+      "ui_subtitle": "Sequential vs Parallel Execution",
+      "detailed_explanation": "Network generation, GPS Thread polling, Battery Broadcast monitoring, and Deep Archive Firebase fetching fire entirely in PARALLEL to ensure the app never crashes violently (ANR). Conversely, the 15-Meter Mechanical Drift logic, offline local SQLite Caching, UI Layout Generation, and Avatar Marker Animation operate strictly SEQUENTIALLY to preserve rigid geometry and mathematical timestamp chronologies natively."
+    }
+  ]
+}

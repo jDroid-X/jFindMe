@@ -22,5 +22,6 @@ data class UserLocation(
     val isSosActive: Boolean = false,
     val batteryLevel: Int = -1,
     val isPoked: Boolean = false,
-    val pokedBy: String = ""
+    val pokedBy: String = "",
+    val allowDependents: Boolean = true
 )

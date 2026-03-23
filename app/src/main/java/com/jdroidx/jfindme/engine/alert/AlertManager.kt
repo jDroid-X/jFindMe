@@ -60,4 +60,30 @@ object AlertManager {
         notificationManager.notify(NOTIFICATION_ID, notification)
         SystemLogger.w(TAG, "SOS_NOTIFICATION_POSTED for $userName")
     }
+
+    @JvmStatic
+    fun showGeofenceNotification(context: Context, payload: String) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val geoChannelId = "geofence_sentinel"
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(geoChannelId, "Geofence Sentinel", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Dependent perimeter transitions"
+                enableLights(true)
+                lightColor = android.graphics.Color.BLUE
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(context, geoChannelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Dependent Perimeter Alert")
+            .setContentText(payload)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify((System.currentTimeMillis() % 10000).toInt(), notification)
+        SystemLogger.i(TAG, "GEOFENCE_UI_ALERT_POSTED: $payload")
+    }
 }

@@ -22,10 +22,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val auth = FirebaseAuth.getInstance()
     
     private val _filteredLocations = MutableLiveData<List<UserLocation>>()
-    val userLocations: LiveData<List<UserLocation>> get() = _filteredLocations
+    val userLocations: LiveData<List<UserLocation>> = _filteredLocations
     
+    // 🚀 Geofence Sentinel Engine: Natively pushes dependent alerts back to the Guardian UI
+    private val _geofenceAlertTrigger = MutableLiveData<String>()
+    val geofenceAlertTrigger: LiveData<String> = _geofenceAlertTrigger
+
     // 🔒 Security Matrix: Restricts the visible universe to local verified family members only
     private val familyMeshIds = mutableSetOf<String>()
+    private var activeGroupAlertListener: com.google.firebase.database.ChildEventListener? = null
     
     private val _currentUserRole = MutableLiveData<String>("VIEWER")
     val currentUserRole: LiveData<String> get() = _currentUserRole
@@ -59,9 +64,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
                 
-                // 🚀 QA Architecture Fix: Bypass Un-indexed 'orderByChild' Query!
-                // We physically route direct to the Master Group Database node to retrieve exact Paired Hardware arrays!
-                rootDb.child("groups").child(myGroupId).child("members").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                // 🚀 QA Architecture Fix: Core Schema query restored! 
+                // We physically route direct to the Users table because 'groups/members' DOES NOT contain the Live array payload currently!
+                rootDb.child("users").orderByChild("active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
                         familyMeshIds.clear()
                         groupSnap.children.forEach { familyMeshIds.add(it.key ?: "") }
@@ -75,6 +80,30 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         SystemLogger.e(TAG, "Map HUD Sync Dropped", e.toException())
                     }
                 })
+
+                // 🛑 PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
+                if (activeGroupAlertListener != null) rootDb.child("groups").child(myGroupId).child("alerts").removeEventListener(activeGroupAlertListener!!)
+                activeGroupAlertListener = object : com.google.firebase.database.ChildEventListener {
+                    override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {
+                        val alertMessage = snapshot.getValue(String::class.java)
+                        if (alertMessage != null) {
+                            SystemLogger.w(TAG, "Intercepted Geofence Breach: $alertMessage")
+                            _geofenceAlertTrigger.postValue(alertMessage)
+                        }
+                    }
+                    override fun onChildChanged(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
+                    override fun onChildRemoved(snapshot: com.google.firebase.database.DataSnapshot) {}
+                    override fun onChildMoved(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                
+                // Only Administrators physically query and intercept the alerts generated!
+                if (_currentUserRole.value == "ADMIN" || isAdmin()) {
+                    rootDb.child("groups").child(myGroupId).child("alerts")
+                        .limitToLast(3) // Keep RAM light, intercept newest 3
+                        .addChildEventListener(activeGroupAlertListener!!)
+                }
+                
             }
             override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
         })
@@ -100,9 +129,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val customName = prefs.getString("user_nickname", null)
         val userName = customName ?: currentUser.displayName ?: currentUser.email ?: "User"
         
-        // Fix Firebase Broadcast Overwrite Bug: Must query the exact physical integers set by ProfileActivity!
+        // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
         val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
-        val dynamicIdx = if (rawBaseId % 22 == 0) 22 else rawBaseId % 22
+        val safeBaseId = if (rawBaseId == -1) 1 else rawBaseId // Push default graphic out to legacy network nodes!
+        val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
         val resolvedAvatarId = "avatar_custom_$dynamicIdx"
         
         val userLocation = UserLocation(

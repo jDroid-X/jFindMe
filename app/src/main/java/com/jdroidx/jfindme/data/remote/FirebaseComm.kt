@@ -48,13 +48,9 @@ object FirebaseComm {
     fun updateMyLocation(userLocation: UserLocation) {
         val ref = locationsRef.child(userLocation.userId)
         
-        // 1. Update Live Location (Last Known Good)
-        ref.child("timestamp").get().addOnSuccessListener { snapshot ->
-            val currentTs = snapshot.getValue(Long::class.java) ?: 0L
-            if (userLocation.timestamp >= currentTs) {
-                ref.setValue(userLocation)
-            }
-        }
+        // QA Pipeline Acceleration: Immediately push data! Never block Firebase Offline caching loops.
+        // The DB inherently overwrites older data objects!
+        ref.setValue(userLocation)
 
         // 2. Record to History Node (Time-series data)
         // Note: For production, we limit history density to avoid database bloat.

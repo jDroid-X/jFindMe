@@ -29,9 +29,9 @@ object FirebasePairingManager {
     var activePairingCode: String? = null
 
     /**
-     * Parent Device Phase 1: Establish Secure Pending Request Node.
+     * Parent Device Phase 1: Establish Secure Pending Request Node with Checkbox Logic Integration!
      */
-    fun startHostPairingSession(onCodeGenerated: (Bitmap?, String) -> Unit, onChildRequestReceived: (String) -> Unit) {
+    fun startHostPairingSession(assignedRoles: String, onCodeGenerated: (Bitmap?, String) -> Unit, onChildRequestReceived: (String) -> Unit) {
         val hostUid = getDeviceId()
         val inviteCode = generateSecureToken()
         activePairingCode = inviteCode
@@ -39,7 +39,8 @@ object FirebasePairingManager {
         val payload = mapOf(
             "parentDeviceId" to hostUid,
             "childDeviceId" to "",
-            "status" to "waiting"
+            "status" to "waiting",
+            "assignedRoles" to assignedRoles // 🚀 Burns the Checkboxes directly into the Math Payload!
         )
 
         pairingRequestsEndpoint.child(inviteCode).setValue(payload).addOnSuccessListener {
@@ -115,6 +116,16 @@ object FirebasePairingManager {
                 groupsEndpoint.child(existingGroupId).child("members").child(childId).setValue(true).addOnSuccessListener {
                     usersEndpoint.child(childId).child("active_group").setValue(existingGroupId)
                     
+                    // 🚀 Phase 3 Handshake: Extract Checkbox Array and force it onto the target device securely!
+                    pairingRequestsEndpoint.child(inviteCode).child("assignedRoles").get().addOnSuccessListener { roleSnap ->
+                        val roleStr = roleSnap.getValue(String::class.java) ?: ""
+                        val cRef = usersEndpoint.child(childId)
+                        cRef.child("role_mother").setValue(roleStr.contains("MOTHER", true))
+                        cRef.child("role_father").setValue(roleStr.contains("FATHER", true))
+                        cRef.child("role_spouse").setValue(roleStr.contains("SPOUSE", true))
+                        cRef.child("role_friends").setValue(roleStr.contains("FRIENDS", true))
+                    }
+                    
                     // Release the Child from 'waiting' state!
                     pairingRequestsEndpoint.child(inviteCode).child("status").setValue("approved")
                     SystemLogger.i(TAG, "Remote Handshake Approved: Child appended to existing Master Group ($existingGroupId).")
@@ -129,8 +140,16 @@ object FirebasePairingManager {
             forgeRemotePersistentGroup(hostUid, childId, inviteCode) // Fallback constraint
         }
     }
-
+    
     private fun forgeRemotePersistentGroup(hostUid: String, childId: String, inviteCode: String) {
+        pairingRequestsEndpoint.child(inviteCode).child("assignedRoles").get().addOnSuccessListener { roleSnap ->
+            val roleStr = roleSnap.getValue(String::class.java) ?: ""
+            val cRef = usersEndpoint.child(childId)
+            cRef.child("role_mother").setValue(roleStr.contains("MOTHER", true))
+            cRef.child("role_father").setValue(roleStr.contains("FATHER", true))
+            cRef.child("role_spouse").setValue(roleStr.contains("SPOUSE", true))
+            cRef.child("role_friends").setValue(roleStr.contains("FRIENDS", true))
+        }
         val groupId = "GRP_${System.currentTimeMillis()}"
 
         // Build the Final Unified Architecture schema block
@@ -187,13 +206,28 @@ object FirebasePairingManager {
             pairingRequestsEndpoint.child(code).removeEventListener(activeHostListener!!)
             activeHostListener = null
         }
-        // Sweep old code out
-        pairingRequestsEndpoint.child(code).removeValue()
+        // 🧠 QA Fix: A delay is strictly required here before wiping the node!
+        // Otherwise, the Firebase cache deletes the Handshake Node before the target Child's ValueEventListener 
+        // has enough time to read the 'status' = 'approved' feedback loop!
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            pairingRequestsEndpoint.child(code).removeValue()
+        }, 3500)
+        
         activePairingCode = null
     }
 
+    // QA In-Memory Cache: Locks the randomly generated test ID for the duration of the App process!
+    private var cachedMockUid: String? = null
+
+    // QA Bug Fix: Persistent Unique Identifiers required to stop "U_MOCK" Collisions on unauthenticated target devices.
     private fun getDeviceId(): String {
-        return FirebaseAuth.getInstance().currentUser?.uid ?: "U_MOCK"
+        val authUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (authUid != null) return authUid
+
+        if (cachedMockUid == null) {
+            cachedMockUid = "DEV_${java.util.UUID.randomUUID().toString().substring(0, 8)}"
+        }
+        return cachedMockUid!!
     }
 
     private fun generateSecureToken(): String {

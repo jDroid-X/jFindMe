@@ -35,14 +35,12 @@ object LocalPairingManager {
         val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
                 SystemLogger.i(TAG, "Incoming P2P Connection from: ${info.endpointName}")
-                // Auto-accept the handshake exclusively if they matched the exact Secure Token Hash!
                 Nearby.getConnectionsClient(context).acceptConnection(endpointId, payloadCallback)
             }
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 if (result.status.isSuccess) {
-                    SystemLogger.i(TAG, "P2P Handshake Fully Authorized! Target Node linked locally.")
-                    // Automatically trigger the Cloud Database Sync bridging Local <-> Remote
-                    finalizeLocalMerge(hostUid, endpointId) {}
+                    SystemLogger.i(TAG, "P2P Hardware Link Established. Awaiting Payload Identity from Child...")
+                    // We DO NOT sync database here anymore. We wait for the child to beam its actual Firebase UID payload!
                 } else {
                     SystemLogger.w(TAG, "P2P Handshake Rejected strictly natively.")
                 }
@@ -61,7 +59,7 @@ object LocalPairingManager {
                 onLocalTokenReady(localToken)
             }
             .addOnFailureListener {
-                SystemLogger.e(TAG, "P2P Hardware Binding Exception. Ensure Manifest Bluetooth Privileges.", it)
+                SystemLogger.e(TAG, "P2P Hardware Binding Exception. Ensure Manifest Privileges.", it)
                 onLocalTokenReady(localToken)
             }
     }
@@ -85,8 +83,13 @@ object LocalPairingManager {
                         }
                         override fun onConnectionResult(epId: String, result: ConnectionResolution) {
                             if (result.status.isSuccess) {
-                                SystemLogger.i(TAG, "Child Successfully Bound P2P. Notifying Parent Host Node.")
+                                SystemLogger.i(TAG, "Child Successfully Bound P2P. Blasting authentic UID Payload to Parent.")
                                 activeHostEndpointId = epId
+                                
+                                // QA Bug Fix: Blast our REAL Firebase UID across the Bluetooth/Wifi Direct channel to the Parent!
+                                val childPayload = Payload.fromBytes(childUid.toByteArray(Charsets.UTF_8))
+                                Nearby.getConnectionsClient(context).sendPayload(epId, childPayload)
+                                
                                 onHostFound(endpointId)
                             }
                         }
@@ -107,7 +110,16 @@ object LocalPairingManager {
     }
 
     private val payloadCallback = object : PayloadCallback() {
-        override fun onPayloadReceived(endpointId: String, payload: Payload) {}
+        override fun onPayloadReceived(endpointId: String, payload: Payload) {
+            val bytes = payload.asBytes()
+            if (bytes != null) {
+                // The Parent catches the REAL Firebase target UID from the child over Bluetooth here!
+                val authenticChildUid = String(bytes, Charsets.UTF_8)
+                val hostUid = getDeviceId()
+                SystemLogger.i(TAG, "Authentic Child UID intercepted over P2P Radio: $authenticChildUid. Finalizing Database Merge.")
+                finalizeLocalMerge(hostUid, authenticChildUid) {}
+            }
+        }
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {}
     }
 
@@ -155,7 +167,17 @@ object LocalPairingManager {
         }
     }
 
+    // QA In-Memory Cache: Prevents the Bluetooth tracker from seizing mid-scan.
+    private var cachedMockUid: String? = null
+
+    // QA Secure Fix: Fallback for Unauthenticated Google Nearby tests preventing Database Corruption
     private fun getDeviceId(): String {
-        return FirebaseAuth.getInstance().currentUser?.uid ?: "U_MOCK"
+        val authUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (authUid != null) return authUid
+
+        if (cachedMockUid == null) {
+            cachedMockUid = "DEV_${java.util.UUID.randomUUID().toString().substring(0, 8)}"
+        }
+        return cachedMockUid!!
     }
 }

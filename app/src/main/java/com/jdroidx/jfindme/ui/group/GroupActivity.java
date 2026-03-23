@@ -74,25 +74,45 @@ public class GroupActivity extends BaseActivityJava {
         mainRoot.setOrientation(LinearLayout.VERTICAL);
         mainRoot.setBackgroundColor(getPrimaryColor()); // Grey/Dark contrast background
 
-        // 🚀 Premium Linear Gradient Hero Banner
         LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(50, 80, 50, 60);
         applyLinearGradient(header, 0f); 
         
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
         TextView title = new TextView(this);
         title.setText("NETWORK GATEWAY");
         title.setTextColor(getGradientOverlayText());
         title.setTextSize(24);
         title.setTypeface(null, Typeface.BOLD);
-        header.addView(title);
+        textBlock.addView(title);
         
         TextView subtitle = new TextView(this);
         subtitle.setText("Device Pairing & Active Rosters");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
-        header.addView(subtitle);
+        textBlock.addView(subtitle);
+        
+        header.addView(textBlock);
+        
+        ImageView helpIcon = new ImageView(this);
+        helpIcon.setImageResource(android.R.drawable.ic_menu_help);
+        helpIcon.setColorFilter(getGradientOverlayText()); // Dynamically shifts polarity alongside the linear gradient array!
+        helpIcon.setPadding(20, 20, 20, 20);
+        header.addView(helpIcon, new LinearLayout.LayoutParams(120, 120));
+        
+        helpIcon.setOnClickListener(v -> {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Network Integrity Guide")
+                .setMessage("CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!")
+                .setPositiveButton("UNDERSTOOD", null)
+                .show();
+        });
         
         mainRoot.addView(header);
 
@@ -145,18 +165,12 @@ public class GroupActivity extends BaseActivityJava {
         row.setGravity(Gravity.CENTER_VERTICAL);
         
         ImageView myAvatar = new ImageView(this);
-        if (prefs != null) {
-            int baseId = prefs.getInt("equipped_avatar_id", 1);
-            int dynamicImgIndex = (baseId % 22 == 0) ? 22 : (baseId % 22);
-            int resId = getResources().getIdentifier("avatar_custom_" + dynamicImgIndex, "drawable", getPackageName());
-            if (resId != 0) myAvatar.setImageResource(resId);
-        } else {
-            myAvatar.setImageResource(android.R.drawable.ic_menu_myplaces);
-        }
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatar);
         
-        // Emulate Transparent Avatar Circle with Neon Ring
+        // Premium Transparent Avatar Squircle (Rounded Square) with Neon Ring
         android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
-        c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        c.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        c.setCornerRadius(60f); // High curve iOS-style borders
         c.setColor(Color.TRANSPARENT);
         c.setStroke(4, getGradientStart());
         myAvatar.setBackground(c);
@@ -248,13 +262,73 @@ public class GroupActivity extends BaseActivityJava {
                             long groupSize = snapshot.getChildrenCount();
                             header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + groupSize);
                             
+                            // QA Universal Sync Arrays
+                            java.util.List<LinearLayout> guardNodes = new java.util.ArrayList<>();
+                            java.util.List<LinearLayout> spouseNodes = new java.util.ArrayList<>();
+                            java.util.List<LinearLayout> childNodes = new java.util.ArrayList<>();
+                            java.util.List<LinearLayout> friendNodes = new java.util.ArrayList<>();
+                            
+                            com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(GroupActivity.this);
+                            
                             for (com.google.firebase.database.DataSnapshot groupMember : snapshot.getChildren()) {
                                 String memberId = groupMember.getKey();
                                 if (memberId == null || memberId.equals(safeUid)) continue; // Skip self in the branch
                                 
-                                // Insert the member as an expandable leaf node connected to YOU!
-                                LinearLayout childNode = buildTreeNode(memberId, "Syncing Profile...", false, false, null);
-                                branchList.addView(childNode);
+                                java.util.Map<String, String> dos = db.getLocalDossier(memberId);
+                                String matchedRole = "CHILD";
+                                if (dos != null) {
+                                    String rFam = dos.get("role_family");
+                                    String rFr = dos.get("role_friend");
+                                    if (rFr != null && rFr.toUpperCase().contains("FRIEND")) matchedRole = "FRIEND";
+                                    else if (rFam != null) {
+                                        String rFamUp = rFam.toUpperCase();
+                                        if (rFamUp.contains("FATHER") || rFamUp.contains("MOTHER") || rFamUp.contains("OWNER")) matchedRole = "OWNER";
+                                        else if (rFamUp.contains("SPOUSE")) matchedRole = "SPOUSE";
+                                    }
+                                } else {
+                                    Boolean isDad = groupMember.child("role_father").getValue(Boolean.class);
+                                    Boolean isMom = groupMember.child("role_mother").getValue(Boolean.class);
+                                    Boolean isSpo = groupMember.child("role_spouse").getValue(Boolean.class);
+                                    Boolean isFri = groupMember.child("role_friends").getValue(Boolean.class);
+                                    if (Boolean.TRUE.equals(isDad) || Boolean.TRUE.equals(isMom)) matchedRole = "OWNER";
+                                    else if (Boolean.TRUE.equals(isSpo)) matchedRole = "SPOUSE";
+                                    else if (Boolean.TRUE.equals(isFri)) matchedRole = "FRIEND";
+                                }
+                                
+                                LinearLayout childNodeLayout = buildTreeNode(memberId, "Syncing Profile...", false, false, null);
+                                switch (matchedRole) {
+                                    case "OWNER": guardNodes.add(childNodeLayout); break;
+                                    case "SPOUSE": spouseNodes.add(childNodeLayout); break;
+                                    case "FRIEND": friendNodes.add(childNodeLayout); break;
+                                    default: childNodes.add(childNodeLayout); break;
+                                }
+                            }
+                            
+                            // Native Array Builder Injection
+                            String[] titles = {"OWNER", "SPOUSE", "CHILD", "FRIEND"};
+                            java.util.List[] matrix = {guardNodes, spouseNodes, childNodes, friendNodes};
+                            
+                            for (int i = 0; i < titles.length; i++) {
+                                java.util.List<LinearLayout> targetList = matrix[i];
+                                if (!targetList.isEmpty()) {
+                                    // Render Checkbox identical to Profile and Citizen Activities
+                                    android.widget.CheckBox cb = new android.widget.CheckBox(GroupActivity.this);
+                                    cb.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint())); // 🚀 Theme Fix Matrix
+                                    cb.setText(titles[i] + " Network (" + targetList.size() + " Connected)");
+                                    cb.setTextColor(getTextColor());
+                                    cb.setChecked(true);
+                                    cb.setClickable(false); // Display only physically
+                                    cb.setPadding(20, 20, 20, 20);
+                                    
+                                    android.widget.LinearLayout.LayoutParams cbLp = new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+                                    cbLp.setMargins(60, 10, 0, 5);
+                                    branchList.addView(cb, cbLp);
+                                    
+                                    for (LinearLayout node : targetList) {
+                                        // Padding natively preserved from buildTreeNode!
+                                        branchList.addView(node);
+                                    }
+                                }
                             }
                         }
                         @Override
@@ -273,20 +347,37 @@ public class GroupActivity extends BaseActivityJava {
         LinearLayout node = new LinearLayout(this);
         node.setOrientation(LinearLayout.HORIZONTAL);
         node.setGravity(Gravity.CENTER_VERTICAL);
-        // Stripped dark background! Node inherently floats on the clean white Roster Card!
+        
+        // Render as a Professional Compact Tile Stringent!
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(getCardColor());
+        gd.setCornerRadius(25f);
+        node.setBackground(gd);
+        node.setElevation(8f);
         
         LinearLayout.LayoutParams nodeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        nodeLp.setMargins(isRoot ? 0 : 80, 0, 0, 0); // Indent the children!
+        // Sync vertical gap mathematically identical to Identity Card gap (40px) from above section!
+        nodeLp.setMargins(isRoot ? 0 : 40, 0, 0, 40); 
         node.setLayoutParams(nodeLp);
-        node.setPadding(30, 30, 30, 30);
+        node.setPadding(30, 20, 30, 20); // Restoring perfect native internal cushion!
         
         ImageView avatar = new ImageView(this);
         avatar.setImageResource(android.R.drawable.ic_menu_myplaces);
-        node.addView(avatar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        avatar.setPadding(10, 10, 10, 10);
+        
+        // Exact geometric mirror of the top Owner Tile's Squircle Frame!
+        android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
+        c.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        c.setCornerRadius(60f); 
+        c.setColor(Color.TRANSPARENT);
+        c.setStroke(4, getGradientStart());
+        avatar.setBackground(c);
+        
+        node.addView(avatar, new LinearLayout.LayoutParams(140, 140)); // Restored native hardware UI footprint
         
         LinearLayout textData = new LinearLayout(this);
         textData.setOrientation(LinearLayout.VERTICAL);
-        textData.setPadding(40, 0, 0, 0);
+        textData.setPadding(25, 0, 0, 0); // Tighter lateral alignment against Avatar
         
         TextView nameView = new TextView(this);
         nameView.setText(defaultName);
@@ -295,11 +386,25 @@ public class GroupActivity extends BaseActivityJava {
         textData.addView(nameView);
         
         TextView idView = new TextView(this);
-        idView.setText(isRoot ? "TAP TO EXPAND/COLLAPSE GROUP ▲▼" : ("Network Identifier: " + uid));
+        idView.setText(isRoot ? "TAP TO EXPAND/COLLAPSE GROUP ▲▼" : "Encrypted Network Node");
         idView.setTextColor(getSecondaryTextColor());
         idView.setTextSize(10);
         textData.addView(idView);
-        node.addView(textData);
+        
+        node.addView(textData, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        
+        if (!isRoot) {
+            ImageView playIcon = new ImageView(this);
+            playIcon.setImageResource(android.R.drawable.ic_media_play);
+            playIcon.setColorFilter(getGradientStart(), android.graphics.PorterDuff.Mode.SRC_IN); // Thematically maps the Play Icon!
+            playIcon.setPadding(10, 10, 10, 10); // Minimum interaction padding
+            
+            playIcon.setOnClickListener(v -> {
+                android.widget.Toast.makeText(this, "Hardware Edge ID: " + uid, android.widget.Toast.LENGTH_LONG).show();
+            });
+            
+            node.addView(playIcon, new LinearLayout.LayoutParams(70, 70)); // Slim fixed bounding box!
+        }
         
         // Accordion Interaction
         if (hasChildren && payloadToExpand != null) {
@@ -320,7 +425,22 @@ public class GroupActivity extends BaseActivityJava {
                 public void onDataChange(com.google.firebase.database.DataSnapshot locSnap) {
                         String realName = locSnap.child("userName").getValue(String.class);
                         String finalNameRaw = (realName != null && !realName.trim().isEmpty()) ? realName : defaultName;
-                        if (isRoot) finalNameRaw = "YOU (" + finalNameRaw + ")";
+                        if (isRoot) {
+                            finalNameRaw = "YOU (" + finalNameRaw + ")";
+                        } else {
+                            com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(GroupActivity.this);
+                            java.util.Map<String, String> localDos = db.getLocalDossier(uid);
+                            if (localDos != null) {
+                                String fRole = localDos.get("role_family");
+                                String frRole = localDos.get("role_friend");
+                                String tag = "Syncing";
+                                if (fRole != null && !fRole.equals("None")) tag = fRole.toUpperCase();
+                                if (frRole != null && frRole.contains("Friend")) tag = "FRIEND";
+                                finalNameRaw = finalNameRaw + " (" + tag + ")";
+                            } else {
+                                finalNameRaw = finalNameRaw + " (GUEST)";
+                            }
+                        }
                         nameView.setText(finalNameRaw);
                         
                         // 🚀 QA Fix: Delete legacy '.vrm' restrictions. Fully render the Graphic locally!
@@ -333,14 +453,12 @@ public class GroupActivity extends BaseActivityJava {
                             }
                         }
 
-                        // Burn the Map Pin configuration natively into the Device Tracking Item
-                        android.content.SharedPreferences prefs = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE);
-                        boolean hideMode = prefs.getBoolean("callout_hide_mode", false);
-                        long revealedAt = prefs.getLong("callout_revealed_at", 0);
-                        boolean showName = !hideMode || ((System.currentTimeMillis() - revealedAt) < 5000);
-                        
-                        android.graphics.Bitmap pinGraphic = com.jdroidx.jfindme.utils.AvatarCalloutGenerator.generateRawBitmap(GroupActivity.this, finalNameRaw, dynamicBmp, showName, isRoot);
-                        avatar.setImageBitmap(pinGraphic);
+                        if (dynamicBmp != null) {
+                            avatar.setImageBitmap(dynamicBmp);
+                        } else {
+                            avatar.setImageResource(android.R.drawable.ic_menu_myplaces);
+                            avatar.setColorFilter(getGradientStart()); // Applies dynamic hardware overlay
+                        }
                 }
                 @Override
                 public void onCancelled(com.google.firebase.database.DatabaseError error) {}
@@ -364,6 +482,12 @@ public class GroupActivity extends BaseActivityJava {
         container.addView(createBigTouchButton("📡 OPTION B [Nearby]", "Local Pairing (No Internet)\nWorks via Bluetooth & Wi-Fi Direct.", v -> {
             optionGatewayPanel.setVisibility(View.GONE);
             localPairingPanel.setVisibility(View.VISIBLE);
+        }));
+
+        // 🛠 QA Backdoor: Direct Array Binding Support
+        container.addView(createSectionDivider());
+        container.addView(createIconButton("🛠 RESTORE LOST ROSTER ASSETS", android.R.drawable.ic_menu_search, v -> {
+            showRestoreLostRosterAssetsDialog();
         }));
 
         return container;
@@ -406,7 +530,7 @@ public class GroupActivity extends BaseActivityJava {
         container.addView(tvSyncStatus);
 
         container.addView(createIconButton("GENERATE UNIQUE TOKEN", android.R.drawable.ic_menu_rotate, v -> {
-            executeHostSessionSpinup();
+            executeHostSessionSpinup("AWAITING_ROLE"); // 🚀 Matrix automatically maps physical roles via the intercept prompt now!
         }));
 
         container.addView(createSectionDivider());
@@ -571,13 +695,13 @@ public class GroupActivity extends BaseActivityJava {
 
     // 📡 --- ARCHITECTURE EVENT HANDLERS ---
 
-    private void executeHostSessionSpinup() {
+    private void executeHostSessionSpinup(String assignedRoles) {
         tvCode.setText("NEGOTIATING...");
         tvSyncStatus.setText("ALLOCATING CLOUD NODE...");
         tvSyncStatus.setTextColor(Color.YELLOW);
         ivQrCode.setVisibility(View.GONE);
 
-        FirebasePairingManager.INSTANCE.startHostPairingSession((qrBitmap, code) -> {
+        FirebasePairingManager.INSTANCE.startHostPairingSession(assignedRoles, (qrBitmap, code) -> {
             runOnUiThread(() -> {
                 if (code != null && !code.isEmpty()) {
                     tvCode.setText(code);
@@ -613,37 +737,52 @@ public class GroupActivity extends BaseActivityJava {
             runOnUiThread(() -> {
                 Toast.makeText(this, message, success ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
                 if (success) {
-                    getWindow().getDecorView().postDelayed(this::finish, 1500); // 🚀 Transition back to LIVE MAP automatically!
+                    getWindow().getDecorView().postDelayed(this::finish, 1500); 
                 }
             });
             return kotlin.Unit.INSTANCE;
         });
     }
-
     private void promptApprovalDialog(String childId, String labelName, boolean isLocalMerge) {
-        new AlertDialog.Builder(this)
+        ScrollView sv = new ScrollView(this);
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(40, 20, 40, 20);
+
+        TextView l1 = new TextView(this);
+        l1.setText("Assign Tracked Relationship:");
+        l1.setTypeface(null, Typeface.BOLD);
+        form.addView(l1);
+
+        android.widget.CheckBox cbSpouse = new android.widget.CheckBox(this);
+        cbSpouse.setText("Spouse");
+        cbSpouse.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint()));
+        
+        android.widget.CheckBox cbChild = new android.widget.CheckBox(this);
+        cbChild.setText("Child");
+        cbChild.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint()));
+        
+        android.widget.CheckBox cbFriend = new android.widget.CheckBox(this);
+        cbFriend.setText("Friend");
+        cbFriend.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint()));
+        
+        android.widget.CheckBox[] groupBoxes = {cbSpouse, cbChild, cbFriend};
+        
+        for (android.widget.CheckBox cb : groupBoxes) {
+            cb.setTextColor(getTextColor());
+            cb.setPadding(30, 20, 30, 20);
+            form.addView(cb);
+        }
+
+        sv.addView(form);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
             .setTitle(isLocalMerge ? "Local P2P Link Detected" : "Cloud Handshake Requested")
-            .setMessage("Device Identity {" + childId + "} (" + labelName + ") has intercepted your Ping and is requesting full Map Sync capabilities. \n\nAuthorize Link?")
+            .setMessage("Device Identity {" + childId + "} (" + labelName + ") has intercepted your Ping. \n\nSelect Relationship to Authorize:")
+            .setView(sv)
             .setCancelable(false)
-            .setPositiveButton("APPROVE 🟢", (dialog, which) -> {
-                Toast.makeText(this, "Merging Unified Cloud Arrays...", Toast.LENGTH_SHORT).show();
-                
-                if (isLocalMerge) {
-                    // QA Native Proximity Link: The Host Node handles the Firebase Sync natively!
-                    // Actively closing the Gateway confirms the local P2P route!
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "Local Identity Resolved! Locking Sync Array", Toast.LENGTH_SHORT).show();
-                        getWindow().getDecorView().postDelayed(this::finish, 800);
-                    });
-                } else {
-                    String activeCode = FirebasePairingManager.INSTANCE.getActivePairingCode();
-                    if(activeCode != null) {
-                        FirebasePairingManager.INSTANCE.approveHandshake(activeCode, childId);
-                        finish(); // Force close - return to Native Android Map render loop
-                    }
-                }
-            })
-            .setNegativeButton("REJECT ❌", (dialog, which) -> {
+            .setPositiveButton("APPROVE 🟢", null) // Disabled implicitly until checked
+            .setNegativeButton("REJECT ❌", (d, which) -> {
                 String activeCode = FirebasePairingManager.INSTANCE.getActivePairingCode();
                 if(activeCode != null && !isLocalMerge) {
                     FirebasePairingManager.INSTANCE.rejectHandshake(activeCode);
@@ -651,9 +790,171 @@ public class GroupActivity extends BaseActivityJava {
                 Toast.makeText(this, "Threat Terminated.", Toast.LENGTH_SHORT).show();
             })
             .show();
+            
+        android.widget.Button btnApprove = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+        btnApprove.setEnabled(false); // Hard-lock the accept matrix
+        
+        for (android.widget.CheckBox cb : groupBoxes) {
+            cb.setOnCheckedChangeListener((btnView, isChecked) -> {
+                if (isChecked) {
+                    for (android.widget.CheckBox other : groupBoxes) {
+                        if (other != cb) other.setChecked(false); // Force Mutual Exclusivity!
+                    }
+                    btnApprove.setEnabled(true);
+                } else {
+                    boolean anyChecked = false;
+                    for (android.widget.CheckBox other : groupBoxes) {
+                        if (other.isChecked()) anyChecked = true;
+                    }
+                    btnApprove.setEnabled(anyChecked);
+                }
+            });
+        }
+        
+        btnApprove.setOnClickListener(v -> {
+            String rawSelection = "Child";
+            for (android.widget.CheckBox cb : groupBoxes) {
+                if (cb.isChecked()) rawSelection = cb.getText().toString();
+            }
+            
+            // Parse Singular Button into Dual-Tier Offline Structure
+            String famRole = rawSelection.equals("Friend") ? "Child" : rawSelection; // Friend devices must map gracefully
+            String friendRole = rawSelection.equals("Friend") ? "Friend (Team)" : "None";
+            
+            // 🚀 PRIME DIRECTIVE COMPLIANT: Save to Local Database FIRST! (Data Preserved)
+            com.jdroidx.jfindme.data.local.CitizenDbHelper localDb = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+            localDb.updateCitizenRole(childId, famRole, friendRole);
+            
+            Toast.makeText(this, "Local Database Backup Secured. Merging Firebase Arrays...", Toast.LENGTH_SHORT).show();
+
+            String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+            if (myGrp != null) {
+                java.util.Map<String, Object> cloudPay = new java.util.HashMap<>();
+                cloudPay.put("role_family", famRole);
+                cloudPay.put("role_friend", friendRole);
+                com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(myGrp).child("citizen_dossiers").child(childId).updateChildren(cloudPay);
+            }
+
+            if (isLocalMerge) {
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Local Identity Resolved! Locking Sync Array", Toast.LENGTH_SHORT).show();
+                    getWindow().getDecorView().postDelayed(this::finish, 800);
+                });
+            } else {
+                String activeCode = FirebasePairingManager.INSTANCE.getActivePairingCode();
+                if (activeCode != null) {
+                    FirebasePairingManager.INSTANCE.approveHandshake(activeCode, childId);
+                    
+                    dialog.dismiss(); // Cleanly close the initial intercept dialog
+                    
+                    // Spawn the exact requested popup for the HOST to reconstruct their physical hub
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Connection Established")
+                        .setMessage("Handshake Approved! Syncing Pipeline...\n\nPlease check the old device pairing. If it is gone then restore.")
+                        .setCancelable(false)
+                        .setPositiveButton("RESTORE", (d2, which) -> {
+                            showRestoreLostRosterAssetsDialog();
+                        })
+                        .setNegativeButton("CLOSE", (d2, which) -> {
+                            finish();
+                        })
+                        .show();
+                    return; // Prevent standard dismiss execution since we hijacked it
+                }
+            }
+            dialog.dismiss(); // Cleanly close the dialog!
+        });
     }
 
     // 🎨 --- GUI UTILITIES ---
+
+    private void showRestoreLostRosterAssetsDialog() {
+        android.widget.Toast.makeText(this, "Scanning History Database for Legacy Connections...", android.widget.Toast.LENGTH_SHORT).show();
+        
+        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        String safeUid = (myUid != null) ? myUid : "U_MOCK";
+
+        // Fetch user's current group first to know who is ALREADY paired!
+        com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(safeUid).child("active_group").get().addOnSuccessListener(grpSnap -> {
+            String myGrp = grpSnap.getValue(String.class);
+            final String finalGrp = (myGrp == null) ? "" : myGrp;
+            
+            java.util.List<String> currentlyPairedUids = new java.util.ArrayList<>();
+
+            Runnable executeAssetScan = () -> {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.INSTANCE.getLocationsRef().get().addOnSuccessListener(snapshot -> {
+                    java.util.List<String> assetNames = new java.util.ArrayList<>();
+                    java.util.List<String> assetUids = new java.util.ArrayList<>();
+                    
+                    for (com.google.firebase.database.DataSnapshot child : snapshot.getChildren()) {
+                        com.jdroidx.jfindme.data.model.UserLocation loc = child.getValue(com.jdroidx.jfindme.data.model.UserLocation.class);
+                        if (loc != null && !loc.getUserId().equals(safeUid)) {
+                            // 🧠 QA Fix: Strict deduplication mapping
+                            if (!assetUids.contains(loc.getUserId())) {
+                                assetNames.add(loc.getUserName());
+                                assetUids.add(loc.getUserId());
+                            }
+                        }
+                    }
+                    
+                    if (assetNames.isEmpty()) {
+                        android.widget.Toast.makeText(this, "No legacy assets detected in History Database.", android.widget.Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    
+                    String[] items = assetNames.toArray(new String[0]);
+                    boolean[] checkedItems = new boolean[items.length];
+                    for (int i=0; i < items.length; i++) {
+                        if (currentlyPairedUids.contains(assetUids.get(i))) checkedItems[i] = true;
+                    }
+                    
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("Select Assets to Recover")
+                        .setMultiChoiceItems(items, checkedItems, (dialog, which, isChecked) -> {
+                            checkedItems[which] = isChecked;
+                        })
+                        .setPositiveButton("RESTORE", (dialog, which) -> {
+                            if (finalGrp.isEmpty()) {
+                                android.widget.Toast.makeText(this, "You must create/host a group first before absorbing legacy targets.", android.widget.Toast.LENGTH_LONG).show();
+                                return;
+                            }
+                            
+                            int restoredCount = 0;
+                            for (int i=0; i < checkedItems.length; i++) {
+                                if (checkedItems[i] && !currentlyPairedUids.contains(assetUids.get(i))) {
+                                    // Bind Missing Target
+                                    String targetNode = assetUids.get(i);
+                                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(finalGrp).child("members").child(targetNode).setValue(true);
+                                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(targetNode).child("active_group").setValue(finalGrp);
+                                    restoredCount++;
+                                } else if (!checkedItems[i] && currentlyPairedUids.contains(assetUids.get(i))) {
+                                    // 🧠 QA Fix: If they physically UNTICKED an active device, Unbind it!
+                                    String targetNode = assetUids.get(i);
+                                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(finalGrp).child("members").child(targetNode).removeValue();
+                                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(targetNode).child("active_group").removeValue();
+                                }
+                            }
+                            android.widget.Toast.makeText(this, "Successfully Synchronized Array with " + restoredCount + " new assets!", android.widget.Toast.LENGTH_LONG).show();
+                        })
+                        .setNegativeButton("CLOSE", null)
+                        .show();
+                });
+            };
+
+            if (!finalGrp.isEmpty()) {
+                com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(finalGrp).child("members").get().addOnSuccessListener(memSnap -> {
+                    if (memSnap.exists()) {
+                        for (com.google.firebase.database.DataSnapshot m : memSnap.getChildren()) {
+                            currentlyPairedUids.add(m.getKey());
+                        }
+                    }
+                    executeAssetScan.run();
+                });
+            } else {
+                executeAssetScan.run();
+            }
+        });
+    }
 
     private void resetGateway() {
         optionGatewayPanel.setVisibility(View.VISIBLE);

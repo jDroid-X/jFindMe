@@ -27,6 +27,13 @@ class OfflineSyncManager(private val context: Context) {
 
     init {
         loadPersistedQueue()
+        
+        // QA Bug Fix: Actively check true physical network state at Boot. Do NOT blindly assume 'Offline'!
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val activeNetwork = connectivityManager.activeNetwork
+        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
+        isNetworkAvailable = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        
         monitorNetwork()
     }
 

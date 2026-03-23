@@ -40,7 +40,10 @@ object MultiMarkerEngine {
     private val locationsEndpoint = FirebaseDatabase.getInstance().reference.child("locations")
     private val groupsEndpoint = FirebaseDatabase.getInstance().reference.child("groups")
 
+    private val userRoleCache = mutableMapOf<String, String>() // 🚀 Phase 1 Cache Map
+
     private var activeGroupListener: ValueEventListener? = null
+    private var isolatedSelfListener: ValueEventListener? = null // 🚀 Fix 2 Safe Fallback Variable
     private var activeGridMap: GoogleMap? = null
 
     /**
@@ -55,9 +58,33 @@ object MultiMarkerEngine {
                 val groupId = snapshot.getValue(String::class.java)
                 if (groupId != null) {
                     SystemLogger.i(TAG, "User belongs to Group: $groupId. Hooking Multi-Device listener...")
+                    // Destroy isolated fallback listener if they just joined a group!
+                    if (isolatedSelfListener != null) {
+                        locationsEndpoint.child(myUid).removeEventListener(isolatedSelfListener!!)
+                        isolatedSelfListener = null
+                    }
                     startGroupLocationListener(context, groupId)
                 } else {
-                    SystemLogger.w(TAG, "No Group paired! Cannot intercept friendly devices.")
+                    SystemLogger.w(TAG, "No Group paired! Firing Isolated Self-Roster Engine.")
+                    
+                    // 🛑 Fix 2: Prevent the App from gaslighting the New User. Force the Map to draw their own Identity!
+                    if (isolatedSelfListener == null) {
+                        isolatedSelfListener = object : ValueEventListener {
+                            override fun onDataChange(rawDump: DataSnapshot) {
+                                val lat = rawDump.child("latitude").getValue(Double::class.java)
+                                val lng = rawDump.child("longitude").getValue(Double::class.java)
+                                val name = rawDump.child("userName").getValue(String::class.java) ?: "Admin"
+                                val modelIcon = rawDump.child("avatar_id").getValue(String::class.java)
+                                
+                                if (lat != null && lng != null && lat != 0.0) {
+                                    val newLatLng = LatLng(lat, lng)
+                                    updateOrRenderMarker(context, myUid, newLatLng, name, modelIcon, 0)
+                                }
+                            }
+                            override fun onCancelled(error: DatabaseError) {}
+                        }
+                        locationsEndpoint.child(myUid).addValueEventListener(isolatedSelfListener!!)
+                    }
                 }
             }
             override fun onCancelled(error: DatabaseError) {}
@@ -66,7 +93,8 @@ object MultiMarkerEngine {
 
     private fun startGroupLocationListener(context: Context, groupId: String) {
         // First, fetch the allowed members roster to PREVENT reading stranger locations
-        groupsEndpoint.child(groupId).child("members").addValueEventListener(object : ValueEventListener {
+        // 🚀 QA Fix: Master Schema queries the Users table for active links, NOT the root Group endpoint!
+        usersEndpoint.orderByChild("active_group").equalTo(groupId).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val allowedUUIDs = snapshot.children.mapNotNull { it.key }
 
@@ -127,6 +155,8 @@ object MultiMarkerEngine {
         })
     }
 
+    private val bitmapCache = mutableMapOf<Int, android.graphics.Bitmap>() // QA: Hardware Memory Bridge
+
     private fun updateOrRenderMarker(context: Context, deviceId: String, newPosition: LatLng, rawName: String, avatarId: String?, stackCount: Int) {
         val map = activeGridMap ?: return
         val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
@@ -136,21 +166,59 @@ object MultiMarkerEngine {
         val revealedAt = prefs.getLong("callout_revealed_at", 0L)
         val showName = !hideMode || (System.currentTimeMillis() - revealedAt < 5000L)
 
-        // Native Resource Engine Decoding (Merged from redundant generator)
-        val resourceName = avatarId ?: "avatar_custom_1"
-        val isVrm = resourceName.contains(".vrm")
-        val resId = if (isVrm) {
-            val dynamicIdx = Math.abs(resourceName.hashCode()) % 22 + 1
-            context.resources.getIdentifier("avatar_custom_$dynamicIdx", "drawable", context.packageName)
+        // 🚀 QA ARCHITECTURE: UNIVERSAL LOADER DEPLOYMENT
+        // Natively bypass redundant processing and delegate directly to the Central Avatar Engine!
+        var originalBitmap = if (deviceId == myUid) {
+            com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(context, 150)
         } else {
-            context.resources.getIdentifier(resourceName, "drawable", context.packageName)
+            com.jdroidx.jfindme.utils.AvatarLoader.getRemoteAvatarBitmap(context, avatarId, 150)
         }
-        val finalRes = if (resId != 0) resId else android.R.drawable.ic_menu_gallery
-        val originalBitmap = android.graphics.BitmapFactory.decodeResource(context.resources, finalRes)
+
+        // 🚀 Roster Identity Integration (Async Cache Fill)
+        // 🚀 PILLAR 3 LIVE SYNC: Identity Integration
+        // QA INTEGRATION FIX: Always query SQLite Offline Matrix (Single Source of Truth) to support instant Re-Mapping!
+        val localDb = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+        val offlineMatrix = localDb.getOfflineRoster()
+        var matchedTitle: String? = null
+        
+        for (node in offlineMatrix) {
+            if (node["uid"] == deviceId) {
+                matchedTitle = node["role_title"] as? String
+                break
+            }
+        }
+        
+        var calculatedRole = "DEFAULT"
+        if (matchedTitle != null && matchedTitle.isNotBlank() && matchedTitle != "GUEST") {
+            val upTitle = matchedTitle.uppercase()
+            when {
+                upTitle.contains("FATHER") || upTitle.contains("MOTHER") || upTitle.contains("SPOUSE") || upTitle.contains("GUARDIAN") -> calculatedRole = "GUARDIAN"
+                upTitle.contains("FRIEND") -> calculatedRole = "FRIEND"
+                else -> calculatedRole = "CHILD"
+            }
+            userRoleCache[deviceId] = calculatedRole // Keep backup memory
+        } else {
+            // Memory Fallback OR Network Root query if completely unsynced
+            calculatedRole = userRoleCache[deviceId] ?: "DEFAULT"
+            if (calculatedRole == "DEFAULT") {
+                usersEndpoint.child(deviceId).get().addOnSuccessListener { snapshot ->
+                    val isDad = snapshot.child("role_father").getValue(Boolean::class.java) ?: false
+                    val isMom = snapshot.child("role_mother").getValue(Boolean::class.java) ?: false
+                    val isSpouse = snapshot.child("role_spouse").getValue(Boolean::class.java) ?: false
+                    val isFriend = snapshot.child("role_friends").getValue(Boolean::class.java) ?: false
+                    
+                    when {
+                        isDad || isMom || isSpouse -> userRoleCache[deviceId] = "GUARDIAN"
+                        isFriend -> userRoleCache[deviceId] = "FRIEND"
+                        else -> userRoleCache[deviceId] = "CHILD"
+                    }
+                }
+            }
+        }
 
         // Sub-setting QA Integration Phase: Direct AvatarCalloutGenerator Invocation (Single Truth)
         val customIconConfig = com.jdroidx.jfindme.utils.AvatarCalloutGenerator.generate(
-            context, rawName, originalBitmap, showName, isSelf = (deviceId == myUid), stackCount = stackCount
+            context, rawName, originalBitmap, showName, isSelf = (deviceId == myUid), stackCount = stackCount, roleStr = calculatedRole
         )
 
         if (activeDeviceMarkerMap.containsKey(deviceId)) {

@@ -24,12 +24,14 @@ public abstract class BaseActivityJava extends AppCompatActivity {
 
     protected SharedPreferences prefs;
     protected int currentThemeId;
+    protected long currentUiHash;
     protected boolean isLandscape;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         prefs = getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE);
         currentThemeId = prefs.getInt("theme_id", 0);
+        currentUiHash = prefs.getLong("ui_config_hash", 0);
         isLandscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
         
         super.onCreate(savedInstanceState);
@@ -54,8 +56,10 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         // Detects if the internal Theme Array was altered by a Settings Override while this screen was paused in RAM.
         if (prefs != null) {
             int latestInstalledTheme = prefs.getInt("theme_id", 0);
-            if (currentThemeId != latestInstalledTheme) {
+            long latestUiHash = prefs.getLong("ui_config_hash", 0);
+            if (currentThemeId != latestInstalledTheme || currentUiHash != latestUiHash) {
                 currentThemeId = latestInstalledTheme;
+                currentUiHash = latestUiHash;
                 recreate(); // Natively flushes Android's draw-cache and executes createLayout() instantly with New Colors!
             }
         }
@@ -86,16 +90,44 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     protected int getGradientStart() { return ThemeManager.getGradientStart(getResolvedThemeId()); }
     protected int getGradientEnd() { return ThemeManager.getGradientEnd(getResolvedThemeId()); }
     protected int getGradientOverlayText() { return ThemeManager.getGradientOverlayColor(getResolvedThemeId()); }
+    
+    // 🚀 Native Access to Configured Widget Tints for Checkboxes & Radios
+    protected int getWidgetTint() {
+        if (prefs == null) return getGradientStart();
+        String tintMode = prefs.getString("custom_widget_tint", "THEME");
+        switch (tintMode) {
+            case "WHITE": return android.graphics.Color.WHITE;
+            case "BLACK": return android.graphics.Color.BLACK;
+            case "GREEN": return android.graphics.Color.parseColor("#00E676");
+            case "RED": return android.graphics.Color.parseColor("#FF1744");
+            case "THEME":
+            default: return getGradientStart();
+        }
+    }
     /**
-     * 🚀 PILLAR 1: Eliminating Solid UX Blacks natively! Replaces sharp rectangles with rounded Card Views!
+     * 🚀 PILLAR 1: Global Theme & Geometry Subsystem Access
      */
     protected View createIconButton(String text, int iconRes, View.OnClickListener listener) {
         LinearLayout btn = new LinearLayout(this);
         btn.setOrientation(LinearLayout.HORIZONTAL);
-        btn.setPadding(40, 30, 40, 30);
+        
+        // 🚀 Global Interconnect: Inject Master UI Padding Density Matrix!
+        int activePad = prefs != null ? prefs.getInt("custom_ui_padding", 40) : 40;
+        int verticalPad = (int)(activePad * 0.75f); // Maintain structural integrity aspect ratio
+        btn.setPadding(activePad, verticalPad, activePad, verticalPad);
+        
         btn.setGravity(android.view.Gravity.CENTER_VERTICAL);
         btn.setClickable(true);
         btn.setFocusable(true);
+        btn.setContentDescription(text); // 🚀 QA Synchronization: Maps the TalkBack semantic array natively into the core layout pipeline!
+        
+        // 🚀 QA Enforced Accessibility Rule: Explicit Hardware ENTER keyboard execution wrapper!
+        btn.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+                btn.performClick(); return true;
+            } return false;
+        });
+        
         btn.setOnClickListener(listener);
 
         applySolidCardGeometry(btn, getCardColor(), 30f);
@@ -107,7 +139,11 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
         icon.setColorFilter(getGradientStart()); // 🚀 QA Fix: Dynamically paints the Theme Color (e.g., Violet)!
-        btn.addView(icon, new LinearLayout.LayoutParams(140, 140)); // Upscaled Vector Bounds!
+        
+        // 🚀 INTERCEPT: Execute Global Icon Density Overrides
+        int activeDensity = prefs != null ? prefs.getInt("custom_icon_density", 140) : 140;
+        int innerSize = (int)(activeDensity * 0.65); // Slightly larger relative matrix for List Items vs Grid Tiles
+        btn.addView(icon, new LinearLayout.LayoutParams(innerSize, innerSize));
 
         TextView tv = new TextView(this);
         tv.setText(text);
@@ -123,10 +159,14 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     /**
      * Engine Utility: Paints a pristine solid white card (or dark card) with premium drop shadow
      */
-    public void applySolidCardGeometry(View view, int solidColor, float cornerRadius) {
+    public void applySolidCardGeometry(View view, int solidColor, float defaultCornerRadius) {
         android.graphics.drawable.GradientDrawable nativeBg = new android.graphics.drawable.GradientDrawable();
         nativeBg.setColor(solidColor);
-        nativeBg.setCornerRadius(cornerRadius);
+        
+        // 🚀 SYSTEM ARCHITECTURE: Automatically intercept passed Geometry to execute User's Master Architectural Override!
+        float activeRadius = prefs != null ? prefs.getFloat("custom_geometry_radius", defaultCornerRadius) : defaultCornerRadius;
+        nativeBg.setCornerRadius(activeRadius);
+        
         view.setBackground(nativeBg);
         view.setElevation(8f); // 🚀 Essential for the $100M App "Floating Card" effect
     }
@@ -149,5 +189,15 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         grad.setCornerRadius(cornerRadius);
         view.setBackground(grad);
         view.setElevation(15f);
+    }
+
+    // 🚀 INTERCEPT: Dynamically applies Custom Header Geometries globally across the Application Matrix
+    protected void applyGlobalHeaderGeometry(LinearLayout header) {
+        int pTop = prefs != null ? prefs.getInt("custom_header_padding_top", 80) : 80;
+        int pBot = prefs != null ? prefs.getInt("custom_header_padding_bottom", 60) : 60;
+        int pLeftRight = prefs != null ? prefs.getInt("custom_header_padding_side", 50) : 50;
+        
+        header.setPadding(pLeftRight, pTop, pLeftRight, pBot);
+        applyLinearGradient(header, 0f);
     }
 }

@@ -34,8 +34,7 @@ public class HealthActivity extends BaseActivityJava {
         // 🚀 Premium Linear Gradient Hero Banner
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(50, 80, 50, 60);
-        applyLinearGradient(header, 0f);
+        applyGlobalHeaderGeometry(header);
 
         LinearLayout topRow = new LinearLayout(this);
         topRow.setOrientation(LinearLayout.HORIZONTAL);

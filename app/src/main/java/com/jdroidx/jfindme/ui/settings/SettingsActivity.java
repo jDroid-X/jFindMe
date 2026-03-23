@@ -28,11 +28,10 @@ public class SettingsActivity extends BaseActivityJava {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(getPrimaryColor()); // Grey/Dark contrast background
 
-        // 🚀 Premium Linear Gradient Hero Banner
+        // 🚀 Premium Linear Gradient        // Header
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(50, 80, 50, 60);
-        applyLinearGradient(header, 0f); // Top hero banner seamlessly bleeds into status bar
+        applyGlobalHeaderGeometry(header); // 🚀 Native QA Architecture Injection // Top hero banner seamlessly bleeds into status bar
         
         TextView title = new TextView(this);
         title.setText("CONTROL HUB");
@@ -55,11 +54,22 @@ public class SettingsActivity extends BaseActivityJava {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(40, 20, 40, 80);
 
-        // --- LAYER 1: THEME CUSTOMIZATION CARD ---
-        content.addView(createSectionHeader("AESTHETIC CUSTOMIZATION"));
+        // --- LAYER 1: THE CONFIGURATOR GATEWAY ---
+        content.addView(createSectionHeader("MASTER UI OVERRIDE"));
         LinearLayout themeCard = new LinearLayout(this);
         themeCard.setOrientation(LinearLayout.VERTICAL);
-        themeCard.addView(createThemeSelector());
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.setMargins(0, 15, 0, 15); // Explicit Tile Spacing!
+        
+        // 🚀 PHASE 1: The Configurator Gateway Portal
+        themeCard.addView(createIconButton("GLOBAL UI & ICON ARCHITECT", android.R.drawable.ic_menu_gallery, v -> {
+            try {
+                startActivity(new Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.UiConfigActivity")));
+            } catch (Exception e) {
+                android.widget.Toast.makeText(this, "Compiling Master UI Engine. Awaiting Phase 2...", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        }), btnLp);
+
         content.addView(themeCard, getCardParams());
 
         // --- LAYER 2: ADVANCED MAP ENGINE CARD ---
@@ -67,8 +77,7 @@ public class SettingsActivity extends BaseActivityJava {
         LinearLayout engineCard = new LinearLayout(this);
         engineCard.setOrientation(LinearLayout.VERTICAL);
 
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        btnLp.setMargins(0, 15, 0, 15); // Explicit Tile Spacing!
+        // Reuses the identical btnLp parameter object declared during Layer 1
 
         engineCard.addView(createIconButton("GHOST MODE (OFFLINE TRACKING)", android.R.drawable.ic_menu_view, v -> {
             boolean currentState = prefs.getBoolean("pref_ghost_mode_persistent", true);
@@ -90,6 +99,27 @@ public class SettingsActivity extends BaseActivityJava {
                 .show();
         }), btnLp);
         
+        // QA Battery Configuration Override
+        engineCard.addView(createIconButton("TRACKING RESOLUTION (INTERVAL)", android.R.drawable.ic_menu_recent_history, v -> {
+            long currentInterval = prefs.getLong("pref_tracking_interval", 60000L);
+            String currentStr = (currentInterval / 1000) + " Seconds";
+            
+            String[] options = {"Aggressive (10s) - High Battery Drain", "Recommend (60s) - Best Balance", "Passive (5m) - Maximum Battery Use"};
+            long[] values = {10000L, 60000L, 300000L};
+            
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("GPS Ping Interval")
+                .setMessage("Higher thresholds dramatically reduce daily battery drain. We strictly recommend the default 60s configuration.\n\nCurrent Target: " + currentStr)
+                .setSingleChoiceItems(options, -1, (dialog, which) -> {
+                    long selected = values[which];
+                    prefs.edit().putLong("pref_tracking_interval", selected).apply();
+                    android.widget.Toast.makeText(this, "Interval updated to " + (selected/1000) + "s. Service will adapt natively.", android.widget.Toast.LENGTH_LONG).show();
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        }), btnLp);
+        
         engineCard.addView(createIconButton("VECTOR MAP RENDERER", android.R.drawable.ic_menu_mapmode, v -> {
             android.widget.Toast.makeText(this, "Hardware Accelerated Vector Engine Active", android.widget.Toast.LENGTH_SHORT).show();
         }), btnLp);
@@ -107,7 +137,7 @@ public class SettingsActivity extends BaseActivityJava {
         secCard.addView(createIconButton("NOTIFICATION ROUTING", android.R.drawable.ic_popup_reminder, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class));
         }), btnLp);
-        secCard.addView(createIconButton("AES-256 PRIVACY PROTOCOLS", android.R.drawable.ic_lock_idle_lock, v -> {
+        secCard.addView(createIconButton("IDENTITY SECURITY PROTOCOL", android.R.drawable.ic_lock_idle_lock, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.PrivacyActivity.class));
         }), btnLp);
         secCard.addView(createIconButton("SUPPORT DOCUMENTS", android.R.drawable.ic_menu_help, v -> {
@@ -115,6 +145,9 @@ public class SettingsActivity extends BaseActivityJava {
                 .setTitle("jFindMe Documentation")
                 .setMessage("Enterprise Engine V8 running strictly native Java View hierarchies.")
                 .setPositiveButton("OK", null).show();
+        }), btnLp);
+        secCard.addView(createIconButton("SYSTEM LOGS & AUDIT TRAIL", android.R.drawable.ic_menu_info_details, v -> {
+            startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));
         }), btnLp);
         
         content.addView(secCard, getCardParams());
@@ -141,57 +174,6 @@ public class SettingsActivity extends BaseActivityJava {
         return header;
     }
 
-    private View createThemeSelector() {
-        LinearLayout grid = new LinearLayout(this);
-        grid.setOrientation(LinearLayout.VERTICAL);
-        
-        // 🚀 QA Fix: Critcal bug averted. Mapped the literal 9-Dimensional Multi-Shade themes precisely!
-        String[] themeNames = {
-            "FamiSafe Violet", "Twilight Midnight", "Oceanic Teal", 
-            "Sunrise Orange", "Bubblegum Pop", "Silver Chrome", 
-            "Electric Azure", "Golden Hour", "⚡ SYSTEM DEFAULT (AUTO)"
-        };
-
-        for (int i = 0; i < 9; i++) { // Loop natively extended to explicitly match indices [0] through [8]
-            final int themeId = i;
-            
-            // Execute premium button mapping
-            View btn = createIconButton(themeNames[i], android.R.drawable.ic_menu_gallery, v -> {
-                currentThemeId = themeId;
-                prefs.edit().putInt("theme_id", currentThemeId).apply();
-                
-                // 🚀 Execute Soft Loading Overlay to prevent UI freezing
-                android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
-                pb.setPadding(0, 40, 0, 40);
-                
-                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                    .setTitle("Synchronizing Theme Matrix")
-                    .setMessage("Injecting '" + themeNames[themeId] + "' globally...")
-                    .setCancelable(false)
-                    .setView(pb)
-                    .show();
-                    
-                new android.os.Handler().postDelayed(() -> {
-                    dialog.dismiss();
-                    // Bypass standard recreate() for a smoother intent refresh
-                    startActivity(new android.content.Intent(this, SettingsActivity.class));
-                    overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-                    finish();
-                }, 2000); 
-            });
-            
-            if (i == currentThemeId) {
-                // If selected, natively highlight the CardView (because applySolidCardGeometry removed the default background!)
-                applySolidCardGeometry(btn, getGradientStart(), 30f);
-            }
-
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, 15, 0, 15); // Explicit Tile Spacing logic fixes overlapping monolith 
-            
-            grid.addView(btn, lp);
-        }
-        return grid;
-    }
 
     @Override
     protected void setupLogic() {
