@@ -43,7 +43,7 @@ public class NotifActivity extends BaseActivityJava {
         header.addView(topRow);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Panic Events & Geofence Triggers");
+        subtitle.setText("Alert Configuration & Hardware Triggers");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
@@ -64,37 +64,21 @@ public class NotifActivity extends BaseActivityJava {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(40, 40, 40, 100);
 
-        com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
-        java.util.List<java.util.Map<String, Object>> alerts = db.getOfflineAlerts();
-
-        // 🚀 QA Fix: Sandbox fallback if physical DB is completely empty (Init Run)
-        if (alerts.isEmpty()) {
-            db.saveAlert("SYS_1", System.currentTimeMillis() - 3600000, "Security Agent", "System Integrity Check Passed (SQL Local)");
-            db.saveAlert("SYS_2", System.currentTimeMillis() - 900000, "Geofence Trigger", "Target entered 'School Zone'");
-            db.saveAlert("SYS_3", System.currentTimeMillis() - 60000, "Battery Alert", "Device 'Child_01' is critical (Below 20%)");
-            alerts = db.getOfflineAlerts(); // Re-Fetch to prove table functions natively!
-        }
-
-        for (java.util.Map<String, Object> a : alerts) {
-            String title = (String) a.get("title");
-            String msg = (String) a.get("message");
-            long ts = (Long) a.get("timestamp");
-            
-            // Native time differential calculation
-            long diffMins = (System.currentTimeMillis() - ts) / 60000;
-            String timeStr = diffMins < 60 ? diffMins + " mins ago" : (diffMins / 60) + " hours ago";
-            if (diffMins <= 1) timeStr = "Just Now";
-
-            int accent = title.contains("Battery") ? Color.parseColor("#F44336") :
-                         (title.contains("Geofence") ? getGradientStart() : Color.parseColor("#4CAF50"));
-
-            list.addView(createNotifItem(title, msg, timeStr, accent));
-        }
+        // 🚀 QA Fix: Enterprise 8-Point Configuration Matrix injected with explicit native SharedPreferences routing
+        list.addView(createNotifConfigItem("Panic SOS Override", "Highest Priority. Bypasses DND volume constraints natively.", "alert_sos", true, Color.parseColor("#F44336")));
+        list.addView(createNotifConfigItem("Geofence Perimeter Breach", "Triggers autonomously when a target exits or enters a Safe Zone.", "alert_geofence", true, getGradientStart()));
+        list.addView(createNotifConfigItem("Battery Critical Warning", "Warns Host prior to child device hardware shutdown (Under 15%).", "alert_battery", true, Color.parseColor("#FF9800")));
+        list.addView(createNotifConfigItem("Network Timeout / Dropped", "Absolute loss of signal for more than 10 consecutive minutes.", "alert_network", true, Color.parseColor("#9E9E9E")));
+        list.addView(createNotifConfigItem("Device Powered Off", "Notifies heavily when Target shuts down hardware physically.", "alert_power", true, Color.parseColor("#9E9E9E")));
+        // Expanded Security Architecture Configurations
+        list.addView(createNotifConfigItem("GPS Services Disabled", "Critical security failure if Location is manually turned off.", "alert_gps_off", true, Color.parseColor("#F44336")));
+        list.addView(createNotifConfigItem("App Permission Revoked", "Detects if tracking Background rights are removed in OS Settings.", "alert_perms", true, Color.parseColor("#F44336")));
+        list.addView(createNotifConfigItem("Root / Jailbreak Detected", "Severe Security Compromise alert. Blocks malicious Mock GPS systems.", "alert_root", false, Color.parseColor("#9E9E9E")));
 
         return list;
     }
 
-    private View createNotifItem(String title, String body, String time, int accent) {
+    private View createNotifConfigItem(String title, String body, String prefKey, boolean defVal, int accentColor) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         applySolidCardGeometry(card, getCardColor(), 30f);
@@ -106,62 +90,58 @@ public class NotifActivity extends BaseActivityJava {
         // Matrix Render: Horizontal Colored Severity Stripe bridging seamlessly!
         LinearLayout innerRow = new LinearLayout(this);
         innerRow.setOrientation(LinearLayout.HORIZONTAL);
+        innerRow.setGravity(Gravity.CENTER_VERTICAL);
         
         // Severity Ribbon
         View statusRibbon = new View(this);
-        statusRibbon.setBackgroundColor(accent);
+        statusRibbon.setBackgroundColor(accentColor);
         innerRow.addView(statusRibbon, new LinearLayout.LayoutParams(15, ViewGroup.LayoutParams.MATCH_PARENT));
 
         // Content Area
         LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);
-        textBlock.setPadding(40, 40, 40, 40);
+        textBlock.setPadding(40, 40, 20, 40);
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        
         TextView tvTitle = new TextView(this);
-        tvTitle.setText(title);
-        tvTitle.setTextColor(accent);
-        tvTitle.setTextSize(14);
+        tvTitle.setText(title.toUpperCase());
+        tvTitle.setTextColor(accentColor);
+        tvTitle.setTextSize(13);
         tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        tvTitle.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-        titleRow.addView(tvTitle);
-
-        TextView tvTime = new TextView(this);
-        tvTime.setText(time);
-        tvTime.setTextColor(getSecondaryTextColor()); // Premium Context Fade
-        tvTime.setTextSize(10);
-        tvTime.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleRow.addView(tvTime);
-        
-        textBlock.addView(titleRow);
+        textBlock.addView(tvTitle);
 
         TextView tvBody = new TextView(this);
         tvBody.setText(body);
         tvBody.setTextColor(getTextColor());
-        tvBody.setTextSize(12);
-        tvBody.setPadding(0, 15, 0, 0);
+        tvBody.setAlpha(0.85f);
+        tvBody.setTextSize(11);
+        tvBody.setPadding(0, 10, 0, 0);
         textBlock.addView(tvBody);
         
         innerRow.addView(textBlock);
+
+        // 🚀 QA Fix: Native Enterprise Interactive Switch Component
+        android.widget.Switch toggle = new android.widget.Switch(this);
+        android.content.SharedPreferences prefs = getSharedPreferences("com.jdroidx.jfindme.PREFS", android.content.Context.MODE_PRIVATE);
+        toggle.setChecked(prefs.getBoolean(prefKey, defVal));
+        toggle.setPadding(0, 0, 40, 0);
+        toggle.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean(prefKey, isChecked).apply();
+            com.jdroidx.jfindme.utils.SystemLogger.i(TAG, prefKey + " configured to: " + isChecked);
+        });
+        
+        innerRow.addView(toggle);
         card.addView(innerRow);
         
+        // Ensure the entire card bounds trigger the toggle natively securely!
         card.setFocusable(true);
         card.setClickable(true);
         card.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                card.performClick(); return true;
+                toggle.setChecked(!toggle.isChecked()); return true;
             } return false;
         });
-        card.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage(body + "\n\n⏰ " + time)
-                .setPositiveButton("Dismiss Alert", null)
-                .show();
-        });
+        card.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
 
         return card;
     }

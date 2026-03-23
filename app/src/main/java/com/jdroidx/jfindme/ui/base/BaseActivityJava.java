@@ -214,6 +214,9 @@ public abstract class BaseActivityJava extends AppCompatActivity {
      * Engine Utility: Paints a pristine solid white card (or dark card) with premium drop shadow
      */
     public void applySolidCardGeometry(View view, int solidColor, float defaultCornerRadius) {
+        // QA Fix: Save padding arrays natively! Android OS explicitly destroys paddings when injecting fresh Background Drawables!
+        int pL = view.getPaddingLeft(); int pT = view.getPaddingTop(); int pR = view.getPaddingRight(); int pB = view.getPaddingBottom();
+
         android.graphics.drawable.GradientDrawable nativeBg = new android.graphics.drawable.GradientDrawable();
         nativeBg.setColor(solidColor);
         
@@ -223,6 +226,7 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         view.setBackground(nativeBg);
         view.setElevation(8f); // 🚀 Essential for the $100M App "Floating Card" effect
+        view.setPadding(pL, pT, pR, pB); // Restore explicitly to prevent geometry collapse
     }
 
     /**
@@ -237,12 +241,16 @@ public abstract class BaseActivityJava extends AppCompatActivity {
      * Engine Utility: Executes the Multi-Shade Dual Gradient for Hero Headers!
      */
     public void applyLinearGradient(View view, float cornerRadius) {
+        int pL = view.getPaddingLeft(); int pT = view.getPaddingTop(); int pR = view.getPaddingRight(); int pB = view.getPaddingBottom();
+
         int[] colors = {getGradientStart(), getGradientEnd()};
         android.graphics.drawable.GradientDrawable grad = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR, colors);
         grad.setCornerRadius(cornerRadius);
         view.setBackground(grad);
         view.setElevation(15f);
+        
+        view.setPadding(pL, pT, pR, pB); // Restore explicitly to block native Android collapse
     }
 
     // 🚀 INTERCEPT: Dynamically applies Custom Header Geometries globally across the Application Matrix
@@ -251,7 +259,7 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         int pBot = prefs != null ? prefs.getInt("custom_header_padding_bottom", 60) : 60;
         int pLeftRight = prefs != null ? prefs.getInt("custom_header_padding_side", 50) : 50;
         
-        header.setPadding(pLeftRight, pTop, pLeftRight, pBot);
-        applyLinearGradient(header, 0f);
+        applyLinearGradient(header, 0f); // Engine executes background calculation explicitly first!
+        header.setPadding(pLeftRight, pTop, pLeftRight, pBot); // Padding deployed safely atop the new theme background!
     }
 }

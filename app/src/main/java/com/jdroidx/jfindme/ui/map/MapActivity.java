@@ -605,6 +605,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         if (!isActive && label.equals("Me")) {
             tab.setOnClickListener(v -> startActivity(new Intent(this, ProfileActivity.class)));
+        } else if (!isActive && label.equals("Notice")) {
+            // QA Fix: Native routing to the comprehensive Alert Config Matrix
+            tab.setOnClickListener(v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class)));
+        } else if (label.equals("Device")) {
+            // QA Fix: Re-centers the viewport heavily onto the core device coordinates!
+            tab.setOnClickListener(v -> {
+                if (googleMap != null && lastKnownLocation != null) {
+                    LatLng current = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
+                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(current, 16f));
+                }
+            });
         }
         return tab;
     }
@@ -655,7 +666,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private com.google.android.gms.maps.model.Polyline currentProximityLine;
     private String activeProximityTargetId = null; // 🚀 QA Fix: Master Tracking Lock
 
-    private View createProximityTile(String avatarName, String targetUserId, String distance, double hLat, double hLng, double cLat, double cLng) {
+    private View createProximityTile(String avatarName, String targetUserId, String distance, long timeChecked, double hLat, double hLng, double cLat, double cLng) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setGravity(Gravity.CENTER);
@@ -703,14 +714,30 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         t1.setGravity(Gravity.CENTER);
         row.addView(t1);
 
+        String timeString = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(timeChecked));
+        
+        LinearLayout timeRow = new LinearLayout(this);
+        timeRow.setOrientation(LinearLayout.HORIZONTAL);
+        timeRow.setGravity(Gravity.CENTER);
+
         TextView t2 = new TextView(this);
-        t2.setText("AWAY"); // Sent to second line explicitly as per UX instructions
+        t2.setText("AWAY  |  "); // Static layout string
         t2.setTextColor(Color.parseColor("#FF5252")); // Red warning contrast
         t2.setAlpha(0.9f);
         t2.setTextSize(7f); // Reduced footprint for trailing label
         t2.setTypeface(null, Typeface.BOLD);
         t2.setGravity(Gravity.CENTER);
-        row.addView(t2);
+        timeRow.addView(t2);
+
+        TextView tTime = new TextView(this);
+        tTime.setText(timeString.toUpperCase()); 
+        tTime.setTextColor(Color.WHITE); // High-contrast White for distinct readability natively
+        tTime.setTextSize(14f); // 🚀 QA Fix: Font Size mathematically doubled (7f -> 14f) explicitly for the Time String
+        tTime.setTypeface(null, Typeface.BOLD);
+        tTime.setGravity(Gravity.CENTER);
+        timeRow.addView(tTime);
+
+        row.addView(timeRow);
 
         return row;
     }
@@ -838,7 +865,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                                 float distMeters = hostPoint.distanceTo(targetPoint);
                                 if (distMeters >= 50f) {
                                     String distStr = distMeters >= 1000f ? String.format(java.util.Locale.US, "%.1f km", distMeters/1000f) : ((int)distMeters + " meters");
-                                    statusFlipper.addView(createProximityTile(ul.getUserName(), ul.getUserId(), distStr, hostLoc.getLatitude(), hostLoc.getLongitude(), ul.getLatitude(), ul.getLongitude()));
+                                    statusFlipper.addView(createProximityTile(ul.getUserName(), ul.getUserId(), distStr, ul.getTimestamp(), hostLoc.getLatitude(), hostLoc.getLongitude(), ul.getLatitude(), ul.getLongitude()));
                                 }
                             }
                         }
