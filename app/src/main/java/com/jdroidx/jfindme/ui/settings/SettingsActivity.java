@@ -141,10 +141,7 @@ public class SettingsActivity extends BaseActivityJava {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.PrivacyActivity.class));
         }), btnLp);
         secCard.addView(createIconButton("SUPPORT DOCUMENTS", android.R.drawable.ic_menu_help, v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("jFindMe Documentation")
-                .setMessage("Enterprise Engine V8 running strictly native Java View hierarchies.")
-                .setPositiveButton("OK", null).show();
+            startActivity(new Intent(this, HelpSupportActivity.class));
         }), btnLp);
         secCard.addView(createIconButton("SYSTEM LOGS & AUDIT TRAIL", android.R.drawable.ic_menu_info_details, v -> {
             startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));

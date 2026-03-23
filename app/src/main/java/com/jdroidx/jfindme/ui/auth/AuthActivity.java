@@ -57,31 +57,7 @@ public class AuthActivity extends BaseActivityJava {
         pbParams.gravity = Gravity.CENTER;
         root.addView(progressBar, pbParams);
 
-        root.addView(createHelpIcon());
-
         return root;
-    }
-
-    private View createHelpIcon() {
-        ImageView helpIcon = new ImageView(this);
-        helpIcon.setImageResource(android.R.drawable.ic_menu_help);
-        helpIcon.setColorFilter(getTextColor());
-        helpIcon.setPadding(40, 40, 40, 40);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(150, 150);
-        params.gravity = Gravity.TOP | Gravity.END;
-        helpIcon.setLayoutParams(params);
-        helpIcon.setOnClickListener(v -> showHelpDialog());
-        return helpIcon;
-    }
-
-    private void showHelpDialog() {
-        new AlertDialog.Builder(this)
-            .setTitle("Enterprise Access Guide")
-            .setMessage("1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n" +
-                       "2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n" +
-                       "3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.")
-            .setPositiveButton("UNDERSTOOD", null)
-            .show();
     }
 
     private View createImagePane() {

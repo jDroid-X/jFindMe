@@ -43,12 +43,66 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         // 🧱 UX Override: Clean Native Presentation. No 3D floating engines.
         if (originalRoot != null) {
-            setContentView(originalRoot);
+            android.widget.FrameLayout masterWrap = new android.widget.FrameLayout(this);
+            masterWrap.addView(originalRoot, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            
+            // 🚀 QA Fix: Global Floating Help Icon recursively injected across all inherited screens!
+            android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
+            globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
+            
+            // Matches dynamic Header Line gradient polarity!
+            globalHelpBtn.setColorFilter(getGradientOverlayText()); 
+            globalHelpBtn.setPadding(35, 35, 35, 35);
+            globalHelpBtn.setClickable(true);
+            globalHelpBtn.setFocusable(true);
+            
+            android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(150, 150);
+            helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
+            
+            int pTop = prefs != null ? prefs.getInt("custom_header_padding_top", 80) : 80;
+            int pSide = prefs != null ? prefs.getInt("custom_header_padding_side", 50) : 50;
+            helpLp.setMargins(0, (int)(pTop * 0.4f), (int)(pSide * 0.5f), 0);
+            globalHelpBtn.setLayoutParams(helpLp);
+            
+            globalHelpBtn.setOnClickListener(v -> {
+                String actName = getClass().getSimpleName().replace("Activity", "");
+                String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
+                if (actName.equals("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
+                if (actName.equals("Group")) helpText = "CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!";
+                if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
+                if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
+                if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database for 24 hours.";
+                if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
+                if (actName.equals("History")) helpText = "• Step 1: Open 'Location Logs' from the Dashboard Grid.\n• Step 2: Select a target user from the dropdown.\n• Step 3: Scroll through the timeline to review clustered tracking coordinates.";
+                if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
+                if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
+                if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Open 'Family and Friends' from the Navigation Drawer.\n• Step 2: Observe online statuses labeled securely.\n• Step 3: Tap a member to configure exact specific granular permissions individually.";
+                if (actName.equals("Settings") || actName.equals("UiConfig")) helpText = "• Step 1: Access 'Settings Hub' from the Map Dashboard.\n• Step 2: Override the 'Tracking Resolution' interval or toggle 'Ghost Mode'.\n• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App.";
+
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Screen Guide: " + actName)
+                    .setMessage(helpText)
+                    .setNeutralButton("OPEN HELP DESK", (d, i) -> {
+                        startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.HelpSupportActivity.class));
+                    })
+                    .setPositiveButton("Dismiss", null)
+                    .show();
+            });
+            
+            // Globally deploy into every physical Matrix except explicit Drawers or Splash
+            if (!(this instanceof com.jdroidx.jfindme.ui.settings.HelpSupportActivity) && 
+                !(this instanceof com.jdroidx.jfindme.ui.map.MapActivity) && 
+                !(this.getClass().getSimpleName().equals("SplashActivity"))) {
+                masterWrap.addView(globalHelpBtn);
+            }
+            
+            setContentView(masterWrap);
         }
         
         setupLogic();
         SystemLogger.i(getClass().getSimpleName(), "Native Utility Activity Resumed.");
     }
+    
     @Override
     protected void onResume() {
         super.onResume();

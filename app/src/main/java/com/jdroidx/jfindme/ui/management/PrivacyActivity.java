@@ -40,25 +40,7 @@ public class PrivacyActivity extends BaseActivityJava {
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         topRow.addView(title);
-        
-        android.widget.ImageView helpBtn = new android.widget.ImageView(this);
-        helpBtn.setImageResource(android.R.drawable.ic_menu_help);
-        helpBtn.setColorFilter(getGradientOverlayText());
-        helpBtn.setPadding(10, 10, 10, 10);
-        helpBtn.setLayoutParams(new LinearLayout.LayoutParams(80, 80));
-        helpBtn.setFocusable(true);
-        helpBtn.setClickable(true);
-        android.util.TypedValue outValueBorderless = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueBorderless, true);
-        helpBtn.setBackgroundResource(outValueBorderless.resourceId);
-        helpBtn.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Protocol Documentation")
-                .setMessage("• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database for 24 hours.")
-                .setPositiveButton("Dismiss", null)
-                .show();
-        });
-        topRow.addView(helpBtn);
+
 
         header.addView(topRow);
 

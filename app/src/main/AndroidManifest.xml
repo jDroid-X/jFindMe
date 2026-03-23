@@ -59,6 +59,8 @@
         <activity android:name=".ui.settings.SettingsActivity" />
         <!-- Master UI Settings Controller -->
         <activity android:name=".ui.settings.UiConfigActivity" />
+        <activity android:name=".ui.settings.AboutActivity" />
+        <activity android:name=".ui.settings.HelpSupportActivity" />
         <activity android:name=".ui.group.GroupActivity" />
         <activity android:name=".ui.group.FamilyFriendsActivity" />
         <activity android:name=".ui.group.PersonDetailsActivity" />

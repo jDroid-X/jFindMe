@@ -97,22 +97,7 @@ public class GroupActivity extends BaseActivityJava {
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
         textBlock.addView(subtitle);
-        
         header.addView(textBlock);
-        
-        ImageView helpIcon = new ImageView(this);
-        helpIcon.setImageResource(android.R.drawable.ic_menu_help);
-        helpIcon.setColorFilter(getGradientOverlayText()); // Dynamically shifts polarity alongside the linear gradient array!
-        helpIcon.setPadding(20, 20, 20, 20);
-        header.addView(helpIcon, new LinearLayout.LayoutParams(120, 120));
-        
-        helpIcon.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Network Integrity Guide")
-                .setMessage("CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!")
-                .setPositiveButton("UNDERSTOOD", null)
-                .show();
-        });
         
         mainRoot.addView(header);
 
