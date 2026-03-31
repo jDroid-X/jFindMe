@@ -25,10 +25,12 @@ object AvatarCalloutGenerator {
             textSize = 14f * density
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
+            isSubpixelText = true // 🚀 Razor Sharp Forensic Text
         }
         boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(180, 255, 255, 255) // Frost Glassmorphism (70% Opacity)
             setShadowLayer(5f, 0f, 3f, Color.argb(80, 0, 0, 0))
+            isFilterBitmap = true
         }
         neonPaintOrange = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FF6D00") // Deep Neon Orange (Child)
@@ -49,10 +51,10 @@ object AvatarCalloutGenerator {
             setShadowLayer(8f, 0f, 0f, Color.parseColor("#FF5252")) 
         }
         neonPaintGrey = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#B0BEC5") // Grey Neon (Friends)
+            color = Color.parseColor("#AA00FF") // Vivid Purple Neon (Friends) - QA Finalized
             style = Paint.Style.STROKE
             strokeWidth = 1.5f * density
-            setShadowLayer(8f, 0f, 0f, Color.parseColor("#CFD8DC")) 
+            setShadowLayer(8f, 0f, 0f, Color.parseColor("#D500F9")) 
         }
         neonPaintGold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FFD700") // Core Guardian Gold (Parent fallback)
@@ -81,8 +83,9 @@ object AvatarCalloutGenerator {
     fun generateRawBitmap(context: Context, name: String, avatarBmp: Bitmap? = null, showName: Boolean = true, isSelf: Boolean = false, stackCount: Int = 0, roleStr: String = "DEFAULT"): Bitmap {
         val density = context.resources.displayMetrics.density
         
-        // 🚀 QA Structural Override: The Orbital Tether Graphic Matrix
-        val frameSize = (140 * density).toInt() // Massive transparent border dynamically holding the offset
+        // 🚀 QA Structural Optimization: Reduced Frame Size to 240dp
+        // Prevents massive over-scaling which causes blurriness on modern GPUs (V16.8)
+        val frameSize = (240 * density).toInt() 
         val anchorPx = frameSize / 2f    // The exact physical GPS coordinate on the Google Map
         
         val avatarSize = (46 * density).toInt()  // The actual Squircle sizing
@@ -104,11 +107,13 @@ object AvatarCalloutGenerator {
             else -> neonPaintOrange
         }
 
-        // Orchestrate Orbital Displacement Mathematics
-        // If stackCount is 0, it pushes straight Up (-90 degrees). Each new player pushes out 72 degrees.
-        val tetherLength = 40f * density
-        val angleDeg = (stackCount * 72) - 90 
+        // Orchestrate Tactical Orbital Displacement Mathematics
+        // 🚀 QA Fix (Daisy-Chain): 30-degree spacing with dynamic depth (Anti-Overlap)
+        val angleDeg = (stackCount * 30) - 90 
         val angleRad = angleDeg * Math.PI / 180.0
+        
+        // We push the bubble out by 25dp for every additional person to prevent depth-overlap
+        val tetherLength = (60f + (stackCount * 25f)) * density
         
         val cx = anchorPx + (tetherLength * Math.cos(angleRad)).toFloat()
         val cy = anchorPx + (tetherLength * Math.sin(angleRad)).toFloat()
@@ -138,7 +143,10 @@ object AvatarCalloutGenerator {
         // 3. Render the Custom Graphic physically into the Balloon Head!
         if (avatarBmp != null) {
             val scaledAvatar = Bitmap.createScaledBitmap(avatarBmp, avatarSize, avatarSize, true)
-            val avatarFillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+            val avatarFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { 
+                isFilterBitmap = true
+                isDither = true 
+            }
             avatarFillPaint.shader = BitmapShader(scaledAvatar, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
             canvas.save()
             canvas.translate(cx - halfAv, cy - halfAv) // Translate Shader Matrix securely!
@@ -157,16 +165,17 @@ object AvatarCalloutGenerator {
         canvas.drawCircle(anchorPx, anchorPx, 3f * density, staticAnchorPaint)
 
         // 🚀 6. PERMANENTLY BURN <Avatar name> TOOLTIP DIRECTLY INTO THE MAP LAYER
-        // Text dynamically floats securely beneath the absolute GPS tracker dot!
+        // 🚀 QA Fix: Label now sits on top of the balloon bubble with role-specific Neon tinting
         if (showName) {
             val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
+                color = activeNeonPaint.color // Matched to boundary color natively
                 textSize = 14f * density
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 textAlign = Paint.Align.CENTER
                 setShadowLayer(5f, 0f, 3f, Color.BLACK)
+                isSubpixelText = true // 🚀 Sharpened UI Tooltip
             }
-            canvas.drawText(name, anchorPx, anchorPx + 20f * density, namePaint)
+            canvas.drawText(name, cx, cy - halfAv - 8f * density, namePaint) 
         }
 
         return resultBmp

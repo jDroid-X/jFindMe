@@ -8,7 +8,7 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.jdroidx.jfindme" />
+                  <option name="appId" value="com.jdroidx.jbutterfly" />
                   <option name="mobileSdkAppId" value="1:251276830691:android:45179684234699906ca2d6" />
                   <option name="projectId" value="jfindme-3b15c" />
                   <option name="projectNumber" value="251276830691" />

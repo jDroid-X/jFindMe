@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.jdroidx.jfindme.data.local.CitizenDbHelper
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.utils.SecureVault
 import com.jdroidx.jfindme.utils.SystemLogger
@@ -61,6 +62,13 @@ class OfflineSyncManager(private val context: Context) {
      * Strategic Update: Sync or Persist in AES-256 Vault.
      */
     fun syncLocation(location: UserLocation) {
+        // 🔒 ACL FIREWALL ENFORCEMENT: (V11.2)
+        // Before uploading, verify if the current user has granted 'Live Sync' permission in their Local Dossier.
+        if (!isTrackingAuthorized(location.userId)) {
+            SystemLogger.w(TAG, "Sync Blocked: ACL Live Tracking permission is currently DENIED for Node: ${location.userId}")
+            return
+        }
+
         if (isNetworkAvailable) {
             FirebaseComm.updateMyLocation(location)
         } else {
@@ -69,6 +77,15 @@ class OfflineSyncManager(private val context: Context) {
             persistQueue()
             SystemLogger.d(TAG, "Offline: Location persisted to Secure Vault. Total: ${syncQueue.size}")
         }
+    }
+
+    private fun isTrackingAuthorized(userId: String): Boolean {
+        val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return false
+        if (userId != myUid) return true // Only the owner can restrict their own data flow here
+        
+        val db = CitizenDbHelper(context)
+        val dossier = db.getLocalDossier(userId)
+        return dossier?.get("acl_live_tracking") != "DENIED"
     }
 
     private fun processQueue() {

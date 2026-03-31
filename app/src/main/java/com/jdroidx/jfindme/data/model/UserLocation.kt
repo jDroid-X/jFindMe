@@ -23,5 +23,8 @@ data class UserLocation(
     val batteryLevel: Int = -1,
     val isPoked: Boolean = false,
     val pokedBy: String = "",
-    val allowDependents: Boolean = true
+    val allowDependents: Boolean = true,
+    val active_group: String = "",
+    val role_family: String = "None",
+    val role_friend: String = "None"
 )

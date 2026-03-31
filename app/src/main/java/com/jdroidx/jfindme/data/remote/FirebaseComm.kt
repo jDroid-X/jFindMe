@@ -16,9 +16,7 @@ object FirebaseComm {
     private const val NODE_HISTORY = "history"
 
     val database: FirebaseDatabase by lazy {
-        FirebaseDatabase.getInstance().apply {
-            setPersistenceEnabled(true)
-        }
+        FirebaseDatabase.getInstance()
     }
 
     val locationsRef: DatabaseReference by lazy {

@@ -3,7 +3,7 @@ package com.jdroidx.jfindme.utils
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKeys
+import androidx.security.crypto.MasterKey
 
 /**
  * SecureVault: Provides AES-256 encrypted storage for sensitive data.
@@ -13,12 +13,14 @@ object SecureVault {
     private const val VAULT_NAME = "jFindMe_SecureVault"
 
     fun getEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        val masterKey = androidx.security.crypto.MasterKey.Builder(context)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
         
         return EncryptedSharedPreferences.create(
-            VAULT_NAME,
-            masterKeyAlias,
             context,
+            VAULT_NAME,
+            masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )

@@ -1,5 +1,8 @@
 package com.jdroidx.jfindme.ui.management;
 
+import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
@@ -36,8 +39,7 @@ public class PrivacyActivity extends BaseActivityJava {
         TextView title = new TextView(this);
         title.setText("IDENTITY SECURITY PROTOCOL");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         topRow.addView(title);
 
@@ -48,7 +50,7 @@ public class PrivacyActivity extends BaseActivityJava {
         subtitle.setText("Privacy Engines & System Telemetry");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
-        subtitle.setTextSize(12);
+        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
         subtitle.setPadding(0, 10, 0, 0);
         header.addView(subtitle);
 
@@ -57,7 +59,8 @@ public class PrivacyActivity extends BaseActivityJava {
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(40, 40, 40, 100);
+        int cPad = getResponsivePaddingQuota();
+        content.setPadding(cPad * 2, cPad * 2, cPad * 2, cPad * 5);
 
         // --- LAYER 1: PRIVACY SWITCHES ---
         content.addView(createSectionHeader("HARDWARE PERMISSIONS"));
@@ -65,7 +68,8 @@ public class PrivacyActivity extends BaseActivityJava {
         LinearLayout pPanel = new LinearLayout(this);
         pPanel.setOrientation(LinearLayout.VERTICAL);
         applySolidCardGeometry(pPanel, getCardColor(), 30f);
-        pPanel.setPadding(40,40,40,40);
+        int pPad = getResponsivePaddingQuota() * 2;
+        pPanel.setPadding(pPad, pPad, pPad, pPad);
         
         pPanel.addView(createHardwarePermission("Location Services", android.Manifest.permission.ACCESS_FINE_LOCATION, prefs.getInt("icon_priv_gps", android.R.drawable.ic_menu_mylocation)));
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -82,14 +86,17 @@ public class PrivacyActivity extends BaseActivityJava {
         LinearLayout idPanel = new LinearLayout(this);
         idPanel.setOrientation(LinearLayout.VERTICAL);
         applySolidCardGeometry(idPanel, getCardColor(), 30f); // Auto-intercepted natively in BaseActivityJava!
-        idPanel.setPadding(40,40,40,40);
+        int idPad = getResponsivePaddingQuota() * 2;
+        idPanel.setPadding(idPad, idPad, idPad, idPad);
         
         idPanel.addView(createActivePrefsToggle("Two-Factor Authentication", "2fa_enabled", false, prefs.getInt("icon_priv_2fa", android.R.drawable.ic_lock_idle_lock)));
         idPanel.addView(createActivePrefsToggle("Strict Tracking Constraints", "strict_track", true, prefs.getInt("icon_priv_strict", android.R.drawable.ic_menu_compass)));
         idPanel.addView(createActivePrefsToggle("Location History Tracking", "allow_dependents", true, prefs.getInt("icon_priv_history", android.R.drawable.ic_menu_recent_history)));
+        idPanel.addView(createActivePrefsToggle("Persistent Ghost Mode", "pref_ghost_mode_persistent", true, android.R.drawable.ic_menu_view));
         
         LinearLayout.LayoutParams layerLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        layerLp.setMargins(0, 0, 0, 40);
+        int lMargin = getResponsivePaddingQuota() * 2;
+        layerLp.setMargins(0, 0, 0, lMargin);
         content.addView(idPanel, layerLp);
 
         // --- LAYER 3: ROOT INTEGRITY CHECKS ---
@@ -100,9 +107,9 @@ public class PrivacyActivity extends BaseActivityJava {
         
         TextView diagnosticReport = new TextView(this);
         diagnosticReport.setTextColor(getTextColor());
-        diagnosticReport.setTextSize(12f);
-        diagnosticReport.setTypeface(null, android.graphics.Typeface.BOLD);
-        diagnosticReport.setPadding(40, 20, 40, 40);
+        UiArchitect.applyText(this, diagnosticReport, "TEXT_BODY");
+        int dPad = getResponsivePaddingQuota() * 2;
+        diagnosticReport.setPadding(dPad, dPad / 2, dPad, dPad);
         diagnosticReport.setVisibility(View.GONE);
         
         rootPanel.addView(createIconButton("RUN FULL DIAGNOSTIC", android.R.drawable.ic_menu_manage, v -> {
@@ -133,7 +140,8 @@ public class PrivacyActivity extends BaseActivityJava {
         rootPanel.addView(diagnosticReport);
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(0, 0, 0, 40);
+        int cardMargin = getResponsivePaddingQuota() * 2;
+        cardLp.setMargins(0, 0, 0, cardMargin);
         content.addView(rootPanel, cardLp);
 
         scroll.addView(content);
@@ -145,27 +153,49 @@ public class PrivacyActivity extends BaseActivityJava {
     private View createActivePrefsToggle(String label, String prefKey, boolean defaultON, int iconRes) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, 35, 0, 35);
+        int rPad = getResponsivePaddingQuota() + 10;
+        row.setPadding(0, rPad, 0, rPad);
         row.setGravity(Gravity.CENTER_VERTICAL);
         
         android.widget.ImageView icon = new android.widget.ImageView(this);
         icon.setImageResource(iconRes);
         icon.setColorFilter(getGradientStart());
-        icon.setLayoutParams(new LinearLayout.LayoutParams(60, 60));
+        int iconSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        icon.setLayoutParams(new LinearLayout.LayoutParams(iconSize, iconSize));
         row.addView(icon);
         
         TextView tvLabel = new TextView(this);
         tvLabel.setText(label);
         tvLabel.setTextColor(getTextColor()); 
-        tvLabel.setTextSize(13);
-        tvLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-        tvLabel.setPadding(30, 0, 0, 0); // Spacing right after the icon
+        UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
+        int lPad = getResponsivePaddingQuota() + 5;
+        tvLabel.setPadding(lPad, 0, 0, 0); // Spacing right after the icon
         tvLabel.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         row.addView(tvLabel);
 
         android.widget.Switch toggle = new android.widget.Switch(this);
         toggle.setChecked(prefs.getBoolean(prefKey, defaultON));
-        toggle.setOnCheckedChangeListener((btn, isChecked) -> prefs.edit().putBoolean(prefKey, isChecked).apply());
+        
+        // 🚀 QA Fix: Enterprise Identity Interception (PRIV-HIST-001 Lockdown)
+        toggle.setOnCheckedChangeListener((btn, isChecked) -> {
+            if (prefKey.equals("allow_dependents") && !isChecked) {
+                // Intercept the 'OFF' state for Location History Tracking
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("IDENTITY ISOLATION ALERT")
+                    .setMessage("SECURITY PROTOCOL PRIV-HIST-001:\n\nYou are about to disable 'Location History Tracking'.\n\nIf confirmed, all future movement logs will be discarded immediately. Your current session path history cannot be archived or recovered while this is inactive. Proceed?")
+                    .setPositiveButton("Confirm Deactivation", (dialog, which) -> {
+                        prefs.edit().putBoolean(prefKey, false).apply();
+                        SystemLogger.INSTANCE.w(TAG, "Location History Tracking DISCONNECTED by User.");
+                    })
+                    .setNegativeButton("Cancel Protocol", (dialog, which) -> {
+                        btn.setChecked(true); // Reset to Active state instantly
+                    })
+                    .setCancelable(false)
+                    .show();
+            } else {
+                prefs.edit().putBoolean(prefKey, isChecked).apply();
+            }
+        });
         row.addView(toggle);
 
         row.setFocusable(true);
@@ -181,21 +211,23 @@ public class PrivacyActivity extends BaseActivityJava {
     private View createHardwarePermission(String label, String androidPermissionManifestString, int iconRes) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, 35, 0, 35);
+        int hpPad = getResponsivePaddingQuota() + 10;
+        row.setPadding(0, hpPad, 0, hpPad);
         row.setGravity(Gravity.CENTER_VERTICAL);
         
         android.widget.ImageView icon = new android.widget.ImageView(this);
         icon.setImageResource(iconRes);
         icon.setColorFilter(getGradientStart());
-        icon.setLayoutParams(new LinearLayout.LayoutParams(60, 60));
+        int iconSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        icon.setLayoutParams(new LinearLayout.LayoutParams(iconSize, iconSize));
         row.addView(icon);
         
         TextView tvLabel = new TextView(this);
         tvLabel.setText(label);
         tvLabel.setTextColor(getTextColor()); 
-        tvLabel.setTextSize(13);
-        tvLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-        tvLabel.setPadding(30, 0, 0, 0);
+        UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
+        int labelPad = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 30);
+        tvLabel.setPadding(labelPad, 0, 0, 0);
         tvLabel.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         row.addView(tvLabel);
 
@@ -236,9 +268,9 @@ public class PrivacyActivity extends BaseActivityJava {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart()); // Native OS Theme Lock
-        header.setTextSize(11);
-        header.setTypeface(null, android.graphics.Typeface.BOLD);
-        header.setPadding(10, 40, 0, 20);
+        UiArchitect.applyText(this, header, "TEXT_LABEL");
+        int hPad = getResponsivePaddingQuota();
+        header.setPadding(hPad / 2, hPad * 2, 0, hPad);
         return header;
     }
 

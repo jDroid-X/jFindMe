@@ -15,9 +15,47 @@ import java.util.concurrent.TimeUnit
 object SystemLogger {
     private const val GLOBAL_TAG = "jFindMe_SysLog"
     private const val MAX_LOG_AGE_DAYS = 7L
+    private var appContext: Context? = null
+
+    @JvmStatic
+    fun init(context: Context) {
+        val wasNull = appContext == null
+        appContext = context.applicationContext
+        if (wasNull) {
+            writeDiagnosticLine("SystemLogger", "Logger natively initialized. File Appender Online.")
+        }
+    }
+
+    private fun writeDiagnosticLine(level: String, msg: String, throwable: Throwable? = null) {
+        val ctx = appContext ?: return
+        try {
+            val logDir = File(ctx.getExternalFilesDir(null), "PlayStoreLogs")
+            if (!logDir.exists()) logDir.mkdirs()
+            val dfDate = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+            val time = dfDate.format(Date())
+            val targetFile = File(logDir, "jfindme_playstore_debug.txt")
+            
+            // Auto trim if file becomes unmanageably massive (e.g., > 2 MB)
+            if (targetFile.exists() && targetFile.length() > 2 * 1024 * 1024) {
+                targetFile.delete()
+            }
+            
+            val writer = FileWriter(targetFile, true)
+            writer.append("[$time] [$level] $msg\n")
+            if (throwable != null) {
+                writer.append(android.util.Log.getStackTraceString(throwable))
+                writer.append("\n")
+            }
+            writer.flush()
+            writer.close()
+        } catch (e: Exception) {
+            // Failsafe empty catch so app logic doesn't crash if Storage is fully blocked natively!
+        }
+    }
 
     @JvmStatic
     fun d(tag: String, msg: String) {
+        writeDiagnosticLine("D/$GLOBAL_TAG:$tag", msg)
         if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
             Log.d("$GLOBAL_TAG:$tag", msg)
         }
@@ -25,6 +63,7 @@ object SystemLogger {
 
     @JvmStatic
     fun i(tag: String, msg: String) {
+        writeDiagnosticLine("I/$GLOBAL_TAG:$tag", msg)
         if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
             Log.i("$GLOBAL_TAG:$tag", msg)
         }
@@ -32,6 +71,7 @@ object SystemLogger {
 
     @JvmStatic
     fun w(tag: String, msg: String) {
+        writeDiagnosticLine("W/$GLOBAL_TAG:$tag", msg)
         if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
             Log.w("$GLOBAL_TAG:$tag", msg)
         }
@@ -40,6 +80,7 @@ object SystemLogger {
     @JvmStatic
     @JvmOverloads
     fun e(tag: String, msg: String, throwable: Throwable? = null) {
+        writeDiagnosticLine("E/$GLOBAL_TAG:$tag", msg, throwable)
         if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
             Log.e("$GLOBAL_TAG:$tag", msg, throwable)
         }
@@ -48,9 +89,11 @@ object SystemLogger {
     // --- 🚀 PHASE 5: ENTERPRISE PHYSICAL TEXT FILE PROTOCOL ---
     
     @JvmStatic
-    fun writeAuditDiagnostic(context: Context, header: String, content: String, isRedAlert: Boolean) {
+    @JvmOverloads
+    fun writeAuditDiagnostic(context: Context?, header: String, content: String, isRedAlert: Boolean = false) {
+        val ctx = context ?: appContext ?: return
         try {
-            val logDir = File(context.getExternalFilesDir(null), "AuditLogs_7DayMatrix")
+            val logDir = File(ctx.getExternalFilesDir(null), "AuditLogs_7DayMatrix")
             if (!logDir.exists()) logDir.mkdirs()
             purgeLegacyLogs(logDir)
 

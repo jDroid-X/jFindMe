@@ -72,7 +72,7 @@ class FamilyFriendsViewModel : ViewModel() {
 
         rosterListener = object : ValueEventListener {
             override fun onDataChange(membersSnap: DataSnapshot) {
-                val uidList = membersSnap.children.mapNotNull { it.key }
+                val uidList = membersSnap.children.mapNotNull { it.key }.distinct()
                 resolveNodeIdentities(uidList, context)
             }
 
@@ -93,36 +93,55 @@ class FamilyFriendsViewModel : ViewModel() {
         }
 
         for (uid in uids) {
-            // First Pull: Core Identity Flags
+            // First Pull: Core Identity Flags (Role-Based Access Control)
             db.child("users").child(uid).get().addOnSuccessListener { userSnap ->
-                val isMother = userSnap.child("role_mother").getValue(Boolean::class.java) ?: false
-                val isFather = userSnap.child("role_father").getValue(Boolean::class.java) ?: false
-                val isSpouse = userSnap.child("role_spouse").getValue(Boolean::class.java) ?: false
-                val isFriend = userSnap.child("role_friends").getValue(Boolean::class.java) ?: false
+                // 🚀 QA Fix: Dynamically resolving the Unified String-Based Role Matrix
+                // This replaces the legacy fragmented boolean flags (role_mother, role_father etc.)
+                val famRole = userSnap.child("role_family").getValue(String::class.java) ?: "None"
+                val friendRole = userSnap.child("role_friend").getValue(String::class.java) ?: "None"
 
-                // Second Pull: Physical Render Metrics (Locations Database)
+                // Second Pull: Physical Render Metrics (Locations Database) for Display Names
                 db.child("locations").child(uid).child("userName").get().addOnSuccessListener { nameSnap ->
                     val name = nameSnap.getValue(String::class.java) ?: "Target ($uid)"
 
-                    var roleTitle = "CHILD SLOT"
-                    var isAdmin = false
+                    // 🧬 ROSTER DECIPHER ENGINE: High-Fidelity Forensic Mapping (V36)
+                    var roleTitle = "P2P GUEST"
+                    var isAdmin = false 
+                    var isFriend = true 
 
-                    if (isMother) { roleTitle = "MOTHER SLOT"; isAdmin = true }
-                    else if (isFather) { roleTitle = "FATHER SLOT"; isAdmin = true }
-                    else if (isSpouse) { roleTitle = "SPOUSE SLOT"; isAdmin = true }
-                    else if (isFriend) { roleTitle = "FRIEND SLOT"; isAdmin = false }
+                    if (famRole != "None") {
+                        // 🚀 PRIORITY: Resolve Family Lineage First
+                        isFriend = false
+                        roleTitle = "P2P ${famRole.uppercase()} SLOT"
+                        val upper = famRole.uppercase()
+                        if (upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN")) {
+                            isAdmin = true
+                        }
+                    } else if (friendRole != "None") {
+                        // 🚀 SECONDARY: Resolve Extended Network
+                        isFriend = true
+                        roleTitle = "P2P ${friendRole.replace("(Team)", "").trim().uppercase()} SLOT"
+                    } else {
+                        // 🚀 FALLBACK: Unassigned Node
+                        roleTitle = "P2P GUEST SLOT"
+                        isFriend = true // Treated as guest/friend by default
+                    }
 
-                    resolvedNodes.add(RosterNode(
-                        uid = uid,
-                        displayName = name,
-                        roleTitle = roleTitle,
-                        statusText = "🟢 LIVE TARGET TRACKED",
-                        isAdministrator = isAdmin,
-                        isFriend = isFriend
-                    ))
+                    if (resolvedNodes.none { it.uid == uid }) {
+                        resolvedNodes.add(RosterNode(
+                            uid = uid,
+                            displayName = name,
+                            roleTitle = roleTitle,
+                            statusText = "🟢 LIVE TARGET TRACKED",
+                            isAdministrator = isAdmin,
+                            isFriend = isFriend
+                        ))
+                    }
                     
                     // 🚀 PRIME DIRECTIVE: Backup explicitly verified Firebase Target locally!
-                    com.jdroidx.jfindme.data.local.CitizenDbHelper(context).saveRosterNode(uid, name, roleTitle, "🟢 LIVE TARGET TRACKED", isAdmin, isFriend)
+                    val safeUid = FirebaseAuth.getInstance().uid ?: "U_001"
+                    com.jdroidx.jfindme.data.local.CitizenDbHelper(context).saveRosterNode(uid, name, roleTitle, "🟢 LIVE TARGET TRACKED", isAdmin, isFriend, 
+                        ownerName = "Cloud Mirror Scan", ownerDeviceId = safeUid, connectedDeviceId = uid, qrCode = "NETWORK_SYNC")
 
                     // Synchronization Loop Restraint
                     resolutionCount++

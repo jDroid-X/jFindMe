@@ -5,6 +5,7 @@
     <!-- L1: System Connectivity & Data Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     
     <!-- L2: Location Engine Permissions - MANDATORY -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -19,6 +20,13 @@
     <!-- L1: Storage Support -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- L1.5: Doze Mode Bypass (Unkillable Service Architect) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <!-- L1.6: Hardware Camera Pipeline Priority (Required for Action Image Capture Intents securely) -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- L4: Nearby Connections Hardware Matrix -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -30,7 +38,15 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
+    <!-- 🚀 QA Fix: Android 11+ Package Visibility (Queries) necessary for hardware intent mapping! -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application
+        android:name=".JFindMeApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -54,11 +70,13 @@
         </activity>
 
         <activity android:name=".ui.auth.AuthActivity" android:exported="false" />
+        <activity android:name=".ui.auth.AuthActivityJava" android:exported="false" />
 
         <activity android:name=".ui.map.MapActivity" />
         <activity android:name=".ui.settings.SettingsActivity" />
         <!-- Master UI Settings Controller -->
         <activity android:name=".ui.settings.UiConfigActivity" />
+        <activity android:name=".ui.settings.UiGalleryActivity" />
         <activity android:name=".ui.settings.AboutActivity" />
         <activity android:name=".ui.settings.HelpSupportActivity" />
         <activity android:name=".ui.group.GroupActivity" />
@@ -73,6 +91,10 @@
         <activity android:name=".ui.management.HealthActivity" />
         <activity android:name=".ui.management.NotifActivity" />
         <activity android:name=".ui.management.SystemLogActivity" />
+        <activity android:name=".ui.management.FactoryResetActivity" />
+        <activity android:name=".ui.management.DatabaseManagementActivity" />
+        
+        <!-- 🦋 JBUTTERFLY ENTERPRISE NODES (Level 7) -->
         
         <service
             android:name=".service.TrackingService"
@@ -106,6 +128,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- L7: QR Scanner Hardware Matrix (Vertical Lock) -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="portrait"
+            tools:replace="android:screenOrientation"
+            android:stateNotNeeded="true" />
 
     </application>
 

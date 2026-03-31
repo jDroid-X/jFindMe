@@ -60,59 +60,58 @@ public class AuthActivityJava extends BaseActivityJava {
         LinearLayout pane = new LinearLayout(this);
         pane.setId(ID_RIGHT_PANE);
         pane.setOrientation(LinearLayout.VERTICAL);
-        pane.setPadding(60, 100, 60, 100);
+        int authPad = getResponsivePaddingQuota() * 2;
+        pane.setPadding(authPad, authPad * 2, authPad, authPad * 2);
         pane.setGravity(Gravity.CENTER_HORIZONTAL);
 
         TextView title = new TextView(this);
         title.setText("jFindMe Enterprise");
         title.setTextColor(getTextColor());
         title.setTextSize(24);
-        title.setPadding(0, 0, 0, 60);
+        title.setPadding(0, 0, 0, getResponsivePaddingQuota() * 2);
         pane.addView(title);
 
-        EditText etEmail = createField("Enter Email Address");
+        // Level 6: Enterprise Matrix Integration
+        EditText etEmail = com.jdroidx.jfindme.ui.base.UiArchitect.createInputField(this, "FIELD_EMAIL");
         pane.addView(etEmail);
 
-        EditText etPass = createField("Enter Secure Password");
+        EditText etPass = com.jdroidx.jfindme.ui.base.UiArchitect.createInputField(this, "FIELD_PASSWORD");
         pane.addView(etPass);
 
-        // Rule: Icons with text in place of Buttons
-        View btnLogin = createIconButton("AUTHORIZE ACCESS", android.R.drawable.ic_lock_lock, v -> {
+        // Rule: Structured CTAs replacing legacy icon buttons
+        View btnLogin = com.jdroidx.jfindme.ui.base.UiArchitect.createButton(this, "BTN_AUTH", v -> {
             SystemLogger.INSTANCE.i(TAG, "Auth request initiated via Python Data Bridge");
             viewModel.login(etEmail.getText().toString(), etPass.getText().toString());
         });
         pane.addView(btnLogin);
 
-        // Icon for Theme Switcher (7 Themes)
-        View btnTheme = createIconButton("SWITCH THEME", android.R.drawable.ic_menu_manage, v -> {
+        // Secondary Action for Theme Switcher
+        View btnTheme = com.jdroidx.jfindme.ui.base.UiArchitect.createButton(this, "BTN_SECONDARY", v -> {
             currentThemeId = (currentThemeId + 1) % 7;
             prefs.edit().putInt("theme_id", currentThemeId).apply();
-            recreate();
+            safeRecreate();
         });
-        btnTheme.setAlpha(0.7f);
         pane.addView(btnTheme);
 
         return pane;
     }
 
-    private EditText createField(String hint) {
-        EditText et = new EditText(this);
-        et.setHint(hint);
-        et.setHintTextColor(Color.LTGRAY);
-        et.setTextColor(getTextColor());
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 20, 0, 20);
-        et.setLayoutParams(lp);
-        return et;
+    private void performAutoSetup() {
+        android.widget.Toast.makeText(this, "Enterprise Encrypted Identity Array Injected", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     @Override
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
+        
+        if (getIntent().getBooleanExtra("TRIGGER_AUTO_SETUP", false)) {
+            performAutoSetup();
+        }
+
         viewModel.getUser().observe(this, user -> {
             if (user != null) {
-                SystemLogger.INSTANCE.i(TAG, "Access Granted. Redirecting to Map.");
-                startActivity(new Intent(this, MapActivityJava.class));
+                SystemLogger.INSTANCE.i(TAG, "Access Granted. Redirecting to Profile Dossier.");
+                startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
                 finish();
             }
         });

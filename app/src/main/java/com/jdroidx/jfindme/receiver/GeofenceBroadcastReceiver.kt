@@ -90,6 +90,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     SystemLogger.i(TAG, "GEOFENCE_SENTINEL: Guardian crossed border. Firebase Sync Suppressed.")
                 }
                 
+                // 🚀 QA Fix: Linked Notification Table Sync (Forensic Identity Bridge)
+                val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+                val activeUid = prefs.getString("user_uid", "OWNER_001") ?: "OWNER_001"
+                db.saveAlert(activeUid, "GEOFENCE: $transitionName", exactPayload)
+                
                 // Natively pop local OS alert
                 AlertManager.showGeofenceNotification(context, exactPayload)
             }

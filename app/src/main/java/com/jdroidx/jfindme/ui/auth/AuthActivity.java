@@ -16,9 +16,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.lifecycle.ViewModelProvider;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.map.MapActivity;
 import com.jdroidx.jfindme.ui.group.GroupActivity;
 import com.jdroidx.jfindme.utils.SystemLogger;
+import android.view.KeyEvent;
 
 /**
  * Main -> UI Engine -> AuthScreen -> AuthActivity
@@ -30,7 +32,6 @@ public class AuthActivity extends BaseActivityJava {
     private AuthViewModel viewModel;
     private final String TAG = "AuthActivity";
     private EditText etEmail, etPass, etNickname;
-    private ProgressBar progressBar;
 
 
 
@@ -49,13 +50,6 @@ public class AuthActivity extends BaseActivityJava {
             content.addView(createLoginPane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
         root.addView(content);
-
-        // Progress Overlay
-        progressBar = new ProgressBar(this);
-        progressBar.setVisibility(View.GONE);
-        FrameLayout.LayoutParams pbParams = new FrameLayout.LayoutParams(100, 100);
-        pbParams.gravity = Gravity.CENTER;
-        root.addView(progressBar, pbParams);
 
         return root;
     }
@@ -93,13 +87,13 @@ public class AuthActivity extends BaseActivityJava {
         ScrollView scroll = new ScrollView(this);
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(40, 50, 40, 100);
+        wrapper.setPadding(getResponsivePaddingQuota(), 50, getResponsivePaddingQuota(), 100);
 
         // --- THE MASTER LOGIN CARD ---
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(50, 60, 50, 60);
-        applySolidCardGeometry(card, getCardColor(), 40f); 
+        card.setPadding(getResponsivePaddingQuota(), 60, getResponsivePaddingQuota(), 60);
+        applySolidCardGeometry(card, getCardColor(), -1f); 
 
         TextView title = new TextView(this);
         title.setText("System Authentication");
@@ -116,22 +110,13 @@ public class AuthActivity extends BaseActivityJava {
         subTitle.setPadding(10, 0, 0, 50);
         card.addView(subTitle);
 
-        etNickname = createField("Identity Alias", android.R.drawable.ic_menu_myplaces);
-        etNickname.setSingleLine(true);
-        etNickname.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
-        etNickname.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+        etNickname = UiArchitect.createInputField(this, "FIELD_IDENTITY");
         card.addView(etNickname);
 
-        etEmail = createField("Enterprise Email", android.R.drawable.ic_dialog_email);
-        etEmail.setSingleLine(true);
-        etEmail.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        etEmail.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+        etEmail = UiArchitect.createInputField(this, "FIELD_EMAIL");
         card.addView(etEmail);
 
-        etPass = createField("Secure Password", android.R.drawable.ic_lock_idle_lock);
-        etPass.setSingleLine(true);
-        etPass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        etPass.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        etPass = UiArchitect.createInputField(this, "FIELD_PASSWORD");
         
         // Eye Toggle Implementation
         etPass.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_lock_idle_lock, 0, android.R.drawable.ic_menu_view, 0);
@@ -157,7 +142,9 @@ public class AuthActivity extends BaseActivityJava {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                 String email = etEmail.getText().toString().trim();
                 String pass = etPass.getText().toString().trim();
-                if (!email.isEmpty() && !pass.isEmpty()) viewModel.login(email, pass);
+                if (!email.isEmpty() && !pass.isEmpty()) {
+                    viewModel.login(email, pass, etNickname.getText().toString().trim());
+                }
                 return true;
             }
             return false;
@@ -166,20 +153,28 @@ public class AuthActivity extends BaseActivityJava {
 
         // --- PRIMARY CTA ---
         View authBtn = createIconButton("AUTHENTICATE SYSTEM", android.R.drawable.ic_menu_send, v -> {
+            String nick = etNickname.getText().toString().trim();
             String email = etEmail.getText().toString().trim();
             String pass = etPass.getText().toString().trim();
-            String nick = etNickname.getText().toString().trim();
             
-            if (nick.isEmpty() || email.isEmpty() || pass.isEmpty()) {
-                Toast.makeText(this, "Use 'AUTO SETUP' for auto login details.", Toast.LENGTH_LONG).show();
-            } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                etEmail.setError("Invalid format");
-            } else if (pass.length() < 6) {
-                etPass.setError("6+ characters required");
-            } else {
-                prefs.edit().putBoolean("route_to_sync", false).apply(); // Clear implicit flag
-                viewModel.login(email, pass);
+            // Enterprise Sequential UI Rendering Check (Top-To-Bottom Priority)
+            if (nick.length() < 2) {
+                etNickname.setError("Valid Alias Required (Min 2 chars)");
+                Toast.makeText(this, "Auth Failed: Missing Identity Alias", Toast.LENGTH_SHORT).show();
+                return;
             }
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                etEmail.setError("Invalid Email Format");
+                Toast.makeText(this, "Auth Failed: Malformed Security Protocol", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (pass.length() < 6) {
+                etPass.setError("6+ characters required");
+                Toast.makeText(this, "Auth Failed: Weak Authentication Matrix", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            viewModel.login(email, pass, etNickname.getText().toString().trim()); // Basic Auth Bridge
         });
         
         android.graphics.drawable.GradientDrawable authBg = new android.graphics.drawable.GradientDrawable(
@@ -226,21 +221,13 @@ public class AuthActivity extends BaseActivityJava {
                 tv.setLayoutParams(lp);
                 
                 tv.setOnClickListener(listener);
+                applyAccessibility(tv, null);
                 return tv;
             }
         }
         ActionBuilder builder = new ActionBuilder();
 
-        footerArray.addView(builder.build("AUTO SETUP", v -> {
-            String hwId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-            if (hwId != null && hwId.length() >= 4) {
-                String shortHw = hwId.substring(0, 4).toLowerCase();
-                etNickname.setText("Agent_" + shortHw.toUpperCase());
-                etEmail.setText("node_" + shortHw + "@jfindme.net");
-                etPass.setText("PassNode" + shortHw + "!");
-                Toast.makeText(this, "Auto-Setup Array Injected.", Toast.LENGTH_SHORT).show();
-            }
-        }));
+        footerArray.addView(builder.build("AUTO SETUP", v -> performAutoSetup()));
 
         footerArray.addView(builder.build("SYNC DEVICE", v -> {
             if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() == null) {
@@ -253,16 +240,18 @@ public class AuthActivity extends BaseActivityJava {
                         .setMessage("You must explicitly Authorise your User ID via the Login Gateway first before linking to external hardware.")
                         .setPositiveButton("UNDERSTOOD", null)
                         .show();
-                } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() || pass.length() < 6) {
-                    Toast.makeText(this, "Fields filled but invalid format. Please check email and password.", Toast.LENGTH_LONG).show();
                 } else {
-                    // Fields are perfectly filled! Self-Authorize immediately.
-                    Toast.makeText(this, "Self-Authorizing Identity...", Toast.LENGTH_SHORT).show();
-                    prefs.edit().putBoolean("route_to_sync", true).apply();
-                    viewModel.login(email, pass);
+                    viewModel.login(email, pass, etNickname.getText().toString().trim());
                 }
             } else {
-                startActivity(new Intent(this, GroupActivity.class));
+                // 🚀 QA Fix: Implicit Guard! Even if logged in permanently via Cache, absolutely verify their physical Profile Array before granting Gateway Access!
+                boolean isReturningVeteran = prefs.getBoolean("profile_onboarded", false);
+                if (!isReturningVeteran) {
+                    Toast.makeText(this, "Profile Missing! Rerouting to Identity Setup...", Toast.LENGTH_SHORT).show();
+                    startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                } else {
+                    startActivity(new Intent(this, GroupActivity.class));
+                }
             }
         }));
 
@@ -279,6 +268,8 @@ public class AuthActivity extends BaseActivityJava {
         scroll.addView(wrapper);
         return scroll;
     }
+
+
 
     private EditText createField(String hint, int iconRes) {
         EditText et = new EditText(this);
@@ -303,34 +294,57 @@ public class AuthActivity extends BaseActivityJava {
         return et;
     }
 
+    private void performAutoSetup() {
+        String hwId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        if (hwId == null || hwId.length() < 4) hwId = "AGENT_NODE_L7";
+        
+        // 🚀 Legacy Re-Indexing: Extracting FIRST 4 digits as per original protocol
+        String shortHw = hwId.substring(0, 4).toLowerCase();
+        
+        // 🚀 Legacy Identity Restoration
+        etNickname.setText("Agent_" + shortHw.toUpperCase());
+        etEmail.setText("node_" + shortHw + "@jfindme.net");
+        etPass.setText("PassCode" + shortHw + "!");
+        
+        Toast.makeText(this, "Enterprise Encrypted Identity Array Injected", Toast.LENGTH_SHORT).show();
+    }
+
     @Override
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
         
+        // 🚀 QA Fix: Master Onboarding Interceptor (Selective Re-Integration)
+        // If the Identity cache is empty (Fresh Start/First Installation), guide the agent toward the Encrypted Matrix immediately!
+        if (prefs.getString("user_nickname", "").isEmpty() && etEmail.getText().toString().isEmpty()) {
+            new AlertDialog.Builder(this)
+                .setTitle("🚀 SECURE ONBOARDING")
+                .setMessage("No Identity Node detected for this hardware. Please use 'AUTO SETUP' for a quick, Encrypted login.")
+                .setPositiveButton("AUTO SETUP", (d, w) -> performAutoSetup())
+                .setNegativeButton("EXIT", (d, w) -> finish())
+                .setCancelable(false)
+                .show();
+        }
+        
+
+
         viewModel.getUser().observe(this, user -> {
             if (user != null) {
-                Toast.makeText(this, "Identity Verified! Granting Matrix Entry...", Toast.LENGTH_SHORT).show();
-                
-                // 🧠 QA Fix: Bypass Database connection hanging. Directly authorize the Node natively.
-                String hostHwId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-                try {
-                    com.google.firebase.database.FirebaseDatabase.getInstance()
-                        .getReference("users").child(user.getUid()).child("hw_lock_id")
-                        .setValue(hostHwId); // Fire and Forget implicitly
-                } catch(Exception e) {
-                    SystemLogger.INSTANCE.e(TAG, "Non-fatal background lock trace issue.", e);
-                }
-                
-                // Instantly Transition the UI without waiting for Cloud ACKs
+                // 🚀 QA Fix: Ported Ephemeral Toast to a Persistent Enterprise Handshake Alert!
                 finalizeLogin(user, user.getUid());
             }
         });
 
         viewModel.isLoading().observe(this, loading -> {
-            progressBar.setVisibility(loading ? View.VISIBLE : View.GONE);
+            if (isDestroyed() || isFinishing()) return;
+            if (loading) {
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            } else {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+            }
         });
 
         viewModel.getErrorMessage().observe(this, error -> {
+            if (isDestroyed() || isFinishing()) return;
             if (error != null) {
                 Toast.makeText(this, "AUTH FAILURE: " + error, Toast.LENGTH_LONG).show();
                 viewModel.clearError();
@@ -339,36 +353,46 @@ public class AuthActivity extends BaseActivityJava {
     }
 
     private void finalizeLogin(com.google.firebase.auth.FirebaseUser user, String uid) {
-        String name = etNickname.getText().toString().trim();
-        prefs.edit().putString("user_nickname", name.isEmpty() ? user.getEmail() : name).apply();
-        SystemLogger.INSTANCE.i(TAG, "User Authenticated. Hardware Locked to Session: " + uid);
+        if (isDestroyed() || isFinishing()) return;
         
-        // 🚀 QA Architecture Override: The Fresh Install "Slate Wipe" Directive
-        boolean isFreshInstance = prefs.getBoolean("is_fresh_install_p2p_wipe", true);
-        if (isFreshInstance) {
-            com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(uid).child("active_group").removeValue();
-            prefs.edit().putBoolean("is_fresh_install_p2p_wipe", false).apply();
-            SystemLogger.INSTANCE.w(TAG, "LEGACY CLOUD DETACHED: Second installation defaulting to pure fresh state.");
-        }
+        final String name = etNickname.getText().toString().trim();
+        SystemLogger.INSTANCE.i(TAG, "User Authenticated. Hardware Locked: " + uid);
         
-        // 🧠 QA Fix: Intelligent Routing Logic
-        // Checks if this physical device has previously assembled an Avatar Profile.
-        boolean isReturningVeteran = prefs.getBoolean("profile_onboarded", false);
-        boolean routeToSync = prefs.getBoolean("route_to_sync", false);
-        
-        // Always reset implicit route!
+        prefs.edit().putBoolean("is_fresh_install_p2p_wipe", false).apply();
         prefs.edit().putBoolean("route_to_sync", false).apply();
-        
-        if (routeToSync) {
-            startActivity(new Intent(this, com.jdroidx.jfindme.ui.group.GroupActivity.class));
-        } else if (isReturningVeteran) {
-            // Drop straight into the Live Map!
-            startActivity(new Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class));
-        } else {
-            // First time boot -> Route immediately to Profile Customization Workspace
-            startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
-        }
-        
-        finish();
+
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.google.firebase.database.FirebaseDatabase.getInstance()
+            .getReference("users").child(uid).get()
+            .addOnCompleteListener(task -> {
+                if (isDestroyed() || isFinishing()) return;
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                
+                // 🚀 Sync Protocol: Use the local nickname (Agent_XXXX) unless it's empty, in which case we fallback to Cloud!
+                String finalInjectedName = name.isEmpty() ? "Resident Node" : name;
+                String cloudGroup = null, linkedCsv = null;
+                
+                if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
+                    com.google.firebase.database.DataSnapshot snap = task.getResult();
+                    cloudGroup = snap.child("active_group").getValue(String.class);
+                    linkedCsv = snap.child("valid_linked_uids").getValue(String.class);
+                    
+                    // If we locally selected the generic 'Resident Node', check for a custom Cloud name!
+                    if (finalInjectedName.equals("Resident Node")) {
+                        String fetchedName = snap.child("userName").getValue(String.class);
+                        if (fetchedName != null && !fetchedName.isEmpty()) finalInjectedName = fetchedName;
+                    }
+                }
+                
+                prefs.edit().putString("user_nickname", finalInjectedName).apply();
+                if (cloudGroup != null) prefs.edit().putString("active_group", cloudGroup).apply();
+                if (linkedCsv != null) prefs.edit().putString("linked_devices_csv", linkedCsv).apply();
+                
+                SystemLogger.INSTANCE.i(TAG, "Authorization Success. Redirecting to Profile Screen.");
+                Toast.makeText(this, "Session Verified. Finalizing Dossier...", Toast.LENGTH_SHORT).show();
+                
+                startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                finish();
+            });
     }
 }

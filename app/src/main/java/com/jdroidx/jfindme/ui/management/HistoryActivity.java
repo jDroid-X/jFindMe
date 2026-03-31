@@ -1,5 +1,8 @@
 package com.jdroidx.jfindme.ui.management;
 
+import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+
 import android.animation.ValueAnimator;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -8,11 +11,14 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.LinearInterpolator;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.google.android.gms.maps.CameraUpdateFactory;
@@ -30,6 +36,7 @@ import com.jdroidx.jfindme.data.model.UserLocation;
 import com.jdroidx.jfindme.data.repository.LocationRepository;
 import com.jdroidx.jfindme.engine.data.SpatialProcessor;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 import java.util.ArrayList;
@@ -47,7 +54,7 @@ import kotlin.Unit;
 public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallback {
 
     private final String TAG = "HistoryActivity";
-    private LocationRepository repository;
+    private HistoryViewModel viewModel;
     private GoogleMap googleMap;
     private Marker replayAvatar;
     private Polyline replayPath;
@@ -56,7 +63,14 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     
     private TextView tvDistance;
     private TextView tvStatus;
+    private TextView tvSyncMode; // 🚀 Online/Offline Indicator
+    private TextView tvLastUpdated; // 🚀 Forensic Footer
+    private TextView targetLabel;
     private LinearLayout locationLogsContainer;
+    
+    // 🚀 QA Fix: Master References for Visual Selection State
+    private View btn4h, btn12h, btn24h, btn7days;
+    private EditText etMaxDays; // 🛡️ Purge Policy Engine
     
     // QA Flag: Engine Termination State
     private boolean isReplaying = false;
@@ -65,7 +79,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     
     // QA Engine: Dynamic Target Selector
     private String activeTargetUid = "";
-    private String activeTargetName = "My Device (Admin)";
+    private String activeTargetName = "You";
 
     @Override
     protected View createLayout() {
@@ -86,22 +100,33 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         topRow.setOrientation(LinearLayout.HORIZONTAL);
         topRow.setGravity(Gravity.CENTER_VERTICAL);
         
-        TextView title = new TextView(this);
-        title.setText("LOCATION LOGS");
-        title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        topRow.addView(title);
-        header.addView(topRow);
-
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("LOCATION LOGS");
+        tvTitle.setTextColor(getGradientOverlayText());
+        UiArchitect.applyText(this, tvTitle, "TEXT_HEADER");
+        tvTitle.setPadding(0, getResponsiveHeaderTopQuota(), 0, 0);
+        header.addView(tvTitle);
+        
         TextView subtitle = new TextView(this);
-        subtitle.setText("Historical GPS Breadcrumbs & Action Replay");
+        subtitle.setText("Historical GPS Breadcrumbs");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
         subtitle.setPadding(0, 10, 0, 0);
         header.addView(subtitle);
+        
+        tvSyncMode = new TextView(this);
+        tvSyncMode.setText("OFFLINE SESSION: LOCAL HISTORY");
+        tvSyncMode.setTextColor(Color.WHITE);
+        tvSyncMode.setBackgroundColor(Color.parseColor("#44FF0000")); // Faded Red for Offline
+        tvSyncMode.setPadding(20, 5, 20, 5);
+        tvSyncMode.setTextSize(10f);
+        tvSyncMode.setTypeface(null, Typeface.BOLD);
+        tvSyncMode.setGravity(Gravity.CENTER);
+        
+        LinearLayout.LayoutParams modeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        modeLp.topMargin = 15;
+        header.addView(tvSyncMode, modeLp);
 
         root.addView(header);
 
@@ -109,12 +134,91 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         mainScrollView = new ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(40, 40, 40, 100);
+        int hPad = getResponsivePaddingQuota();
+        content.setPadding(hPad * 2, hPad * 2, hPad * 2, hPad * 5);
+        
+        // --- 🚀 NEW: MAX HISTORY PURGE POLICY TILE ---
+        LinearLayout purgeCard = new LinearLayout(this);
+        purgeCard.setOrientation(LinearLayout.HORIZONTAL);
+        purgeCard.setGravity(Gravity.CENTER_VERTICAL);
+        UiArchitect.applyCard(this, purgeCard, "CARD_STANDARD");
+        
+        ImageView purgeIcon = new ImageView(this);
+        purgeIcon.setImageResource(android.R.drawable.ic_menu_recent_history);
+        purgeIcon.setColorFilter(getGradientStart());
+        purgeCard.addView(purgeIcon, new LinearLayout.LayoutParams(90, 90));
+        
+        LinearLayout purgeTextWrapper = new LinearLayout(this);
+        purgeTextWrapper.setOrientation(LinearLayout.VERTICAL);
+        purgeTextWrapper.setPadding(30, 0, 0, 0);
+        
+        TextView tvPurgeTitle = new TextView(this);
+        tvPurgeTitle.setText("MAX LOCAL HISTORY SAVED");
+        tvPurgeTitle.setTextColor(getTextColor());
+        tvPurgeTitle.setTextSize(11f);
+        tvPurgeTitle.setTypeface(null, Typeface.BOLD);
+        purgeTextWrapper.addView(tvPurgeTitle);
+        
+        TextView tvPurgeSub = new TextView(this);
+        tvPurgeSub.setText("Auto-purge logs older than:");
+        tvPurgeSub.setTextColor(getSecondaryTextColor());
+        tvPurgeSub.setTextSize(10f);
+        purgeTextWrapper.addView(tvPurgeSub);
+        purgeCard.addView(purgeTextWrapper, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        
+        etMaxDays = UiArchitect.createInputField(this, "MAX_HISTORY_DAYS");
+        etMaxDays.setText(String.valueOf(prefs.getInt("max_history_days", 7)));
+        etMaxDays.setGravity(Gravity.END);
+        etMaxDays.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        etMaxDays.setFilters(new android.text.InputFilter[] { new android.text.InputFilter.LengthFilter(3) });
+        etMaxDays.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        
+        // 🚀 QA Fix: Master Policy Enforcement (V13.0)
+        etMaxDays.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                return true;
+            }
+            return false;
+        });
+        
+        etMaxDays.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            public void afterTextChanged(android.text.Editable s) {
+                try {
+                    int days = Integer.parseInt(s.toString());
+                    if (days > 30) {
+                        Toast.makeText(HistoryActivity.this, "SECURITY LIMIT: Max history is 30 days.", Toast.LENGTH_SHORT).show();
+                        etMaxDays.setText("030");
+                        prefs.edit().putInt("max_history_days", 30).apply();
+                    } else {
+                        prefs.edit().putInt("max_history_days", days).apply();
+                    }
+                } catch (Exception e) {}
+            }
+        });
+
+        // 🚀 L7 Fluid Geometry: Scaling input width per device stage
+        int inputWidth = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 130);
+        purgeCard.addView(etMaxDays, new LinearLayout.LayoutParams(inputWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        TextView tvDaysSuffix = new TextView(this);
+        tvDaysSuffix.setText("DAYS");
+        tvDaysSuffix.setTextColor(getGradientStart());
+        UiArchitect.applyText(this, tvDaysSuffix, "TEXT_LABEL");
+        tvDaysSuffix.setPadding(10, 0, 0, 0);
+        purgeCard.addView(tvDaysSuffix, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        LinearLayout.LayoutParams purgeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        purgeLp.setMargins(0, 0, 0, getResponsivePaddingQuota() * 2);
+        content.addView(purgeCard, purgeLp);
 
         // --- LAYER 1: FLOATING MAP CARD ---
         LinearLayout mapCard = new LinearLayout(this);
         mapCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(mapCard, getCardColor(), 40f);
+        UiArchitect.applyCard(this, mapCard, "CARD_STANDARD");
         
         FrameLayout mapContainer = new FrameLayout(this);
         mapContainer.setId(ID_MAP_FRAGMENT);
@@ -138,12 +242,14 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         tvDistance.setTextColor(getTextColor());
         tvDistance.setTextSize(14);
         tvDistance.setText("TOTAL DISTANCE: AWAITING LOAD ENGINE");
-        tvDistance.setPadding(40, 30, 40, 30);
+        int dPad = getResponsivePaddingQuota();
+        tvDistance.setPadding(dPad * 2, dPad, dPad * 2, dPad);
         tvDistance.setTypeface(null, Typeface.BOLD);
         mapCard.addView(tvDistance);
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(0, 0, 0, 40);
+        int cMargin = getResponsivePaddingQuota() * 2;
+        cardLp.setMargins(0, 0, 0, cMargin);
         content.addView(mapCard, cardLp);
 
         // --- LAYER 2: CONTROLS ---
@@ -151,17 +257,24 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         
         LinearLayout controlsCard = new LinearLayout(this);
         controlsCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(controlsCard, getCardColor(), 40f);
+        UiArchitect.applyCard(this, controlsCard, "CARD_STANDARD");
         controlsCard.addView(createHistoryControls());
         content.addView(controlsCard, cardLp);
 
         // --- LAYER 3: DETAILED TEXTUAL LOGS ---
         content.addView(createSectionHeader("DETAILED LOCATION LOGS"));
         
+        tvLastUpdated = new TextView(this);
+        tvLastUpdated.setText("LOG ENGINE STANDBY • NO DATA SYNCED");
+        tvLastUpdated.setTextColor(getSecondaryTextColor());
+        tvLastUpdated.setTextSize(10f);
+        tvLastUpdated.setPadding(10, 0, 0, 20);
+        content.addView(tvLastUpdated);
+
         locationLogsContainer = new LinearLayout(this);
         locationLogsContainer.setOrientation(LinearLayout.VERTICAL);
         content.addView(locationLogsContainer, cardLp);
-
+        
         mainScrollView.addView(content);
         root.addView(mainScrollView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
@@ -178,165 +291,170 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         tv.setTextColor(getGradientStart()); // Native Theme Tint Map
         tv.setTextSize(11);
         tv.setTypeface(null, Typeface.BOLD);
-        tv.setPadding(10, 0, 0, 20);
+        int sPad = getResponsivePaddingQuota();
+        tv.setPadding(sPad / 2, 0, 0, sPad);
         return tv;
     }
 
     private View createHistoryControls() {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(30, 40, 30, 40);
+        
+        // 🚀 L7 Master Metrics: Initializing Scaling Engine for Hub Parity
+        UiArchitect.DesignStage stage = UiArchitect.getStage(this);
+        int hubPad = UiScalingMatrixTable.scalePadding(stage, 25);
+        
+        int conPad = getResponsivePaddingQuota() * 2;
+        container.setPadding(conPad / 2, conPad, conPad / 2, conPad);
 
         // --- QA TARGET SELECTOR ENGINE ---
-        TextView targetLabel = new TextView(this);
+        targetLabel = new TextView(this);
         targetLabel.setText("CURRENT TRACK: " + activeTargetName.toUpperCase());
         targetLabel.setTextColor(getGradientStart());
-        targetLabel.setTextSize(12f);
-        targetLabel.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, targetLabel, "TEXT_BODY"); // 🚀 Reverted to dynamic L7 Body Tier
         targetLabel.setPadding(0, 0, 0, 20);
         container.addView(targetLabel);
 
-        container.addView(createIconButton("SELECT TRACKING TARGET", android.R.drawable.ic_menu_search, v -> {
-            // 🛑 QA Phase 3 Privacy Lockdown: Role Matrix Authority Engine
-            android.content.SharedPreferences prefs = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE);
-            boolean isGuardian = prefs.getBoolean("role_mother", false) || 
-                                 prefs.getBoolean("role_father", false) || 
-                                 prefs.getBoolean("role_spouse", false);
-
-            if (tvStatus != null) tvStatus.setText("Scanning Network for Assets...");
-            com.jdroidx.jfindme.data.remote.FirebaseComm.INSTANCE.getLocationsRef().get().addOnSuccessListener(snapshot -> {
-                java.util.List<String> names = new java.util.ArrayList<>();
-                java.util.List<String> uids = new java.util.ArrayList<>();
-                
-                names.add("My Device (Admin)");
-                uids.add(FirebaseAuth.getInstance().getUid());
-                
-                for (com.google.firebase.database.DataSnapshot child : snapshot.getChildren()) {
-                    UserLocation loc = child.getValue(UserLocation.class);
-                    if (loc != null && !loc.getUserId().equals(FirebaseAuth.getInstance().getUid())) {
-                        // 🟢 QA Dynamic Privacy Filter: Display target if User is Guardian OR Target explicitly permits dependent tracking!
-                        if (isGuardian || loc.getAllowDependents()) {
-                            names.add(loc.getUserName() + " (Linked)");
-                            uids.add(loc.getUserId());
-                        }
-                    }
-                }
-                
-                String[] items = names.toArray(new String[0]);
-                new android.app.AlertDialog.Builder(this)
-                    .setTitle("Focus New Target")
-                    .setItems(items, (dialog, which) -> {
-                        activeTargetUid = uids.get(which);
-                        activeTargetName = names.get(which);
-                        targetLabel.setText("CURRENT TRACK: " + activeTargetName.toUpperCase());
-                        Toast.makeText(this, "Target locked to: " + activeTargetName, Toast.LENGTH_SHORT).show();
-                    }).show();
-            });
-        }));
-
-        // QA Advanced Filter Geometry: 2x2 Grid Architecture for Flawless Margins!
-        LinearLayout timeSelectorsRow1 = new LinearLayout(this);
-        timeSelectorsRow1.setOrientation(LinearLayout.HORIZONTAL);
-        timeSelectorsRow1.setPadding(0, 0, 0, 15);
-
-        LinearLayout timeSelectorsRow2 = new LinearLayout(this);
-        timeSelectorsRow2.setOrientation(LinearLayout.HORIZONTAL);
-        timeSelectorsRow2.setPadding(0, 0, 0, 25);
-
-        View btn4h = createIconButton("4 HRS", android.R.drawable.ic_menu_recent_history, v -> {
-            loadHistoryData(4 * 60 * 60 * 1000L); // 4 Hours
-        });
-        View btn12h = createIconButton("12 HRS", android.R.drawable.ic_menu_recent_history, v -> {
-            loadHistoryData(12 * 60 * 60 * 1000L); // 12 Hours
-        });
-        View btn24h = createIconButton("24 HRS", android.R.drawable.ic_menu_recent_history, v -> {
-            loadHistoryData(24 * 60 * 60 * 1000L); // 24 Hours
-        });
-        // 🚀 QA Fix: Deep Archive Override allows extracting legacy data lost behind the 24H threshold!
-        View btn7days = createIconButton("7 DAYS", android.R.drawable.ic_menu_agenda, v -> {
-            loadHistoryData(7L * 24L * 60L * 60L * 1000L); // 7 Absolute Days
-        });
-
-        // Strict Bounding Box Constraint: Forces exact margins to prevent text/icon overlap crushing!
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        btnLp.setMargins(15, 10, 15, 10);
-
-        timeSelectorsRow1.addView(btn4h, btnLp);
-        timeSelectorsRow1.addView(btn12h, btnLp);
-        timeSelectorsRow2.addView(btn24h, btnLp);
-        timeSelectorsRow2.addView(btn7days, btnLp);
+        LinearLayout targetRow = new LinearLayout(this);
+        targetRow.setOrientation(LinearLayout.HORIZONTAL);
+        targetRow.setGravity(Gravity.CENTER_VERTICAL);
         
-        container.addView(timeSelectorsRow1);
-        container.addView(timeSelectorsRow2);
+        View btnSelect = createIconButton("SEARCH TRACKING TARGET", android.R.drawable.ic_menu_search, v -> {
+            if (viewModel != null) {
+                if (tvStatus != null) tvStatus.setText("Scanning Network for Assets...");
+                viewModel.fetchTrackingTargets(this);
+            }
+        });
+        targetRow.addView(btnSelect, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        
+        // 🚀 QA Fix: RADAR DISH NAVIGATION (V13.0)
+        LinearLayout dishBox = new LinearLayout(this);
+        dishBox.setOrientation(LinearLayout.HORIZONTAL);
+        dishBox.setGravity(Gravity.CENTER);
+        UiArchitect.applyCard(this, dishBox, "CARD_STANDARD");
+        dishBox.setPadding(10, 10, 10, 10);
 
-        // PLAY / STOP ENGINE BLOCK
+        ImageView dashIcon = new ImageView(this);
+        dashIcon.setImageResource(android.R.drawable.ic_menu_compass); // Tactical Dish change
+        dashIcon.setColorFilter(getGradientStart());
+        dashIcon.setPadding(20,20,20,20);
+        
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping
+        applyAccessibility(dashIcon, "Focus Tracking Target");
+        
+        dashIcon.setOnClickListener(v -> {
+            if (googleMap != null && !historyPoints.isEmpty()) {
+                UserLocation latest = historyPoints.get(historyPoints.size() - 1);
+                LatLng pos = new LatLng(latest.getLatitude(), latest.getLongitude());
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos, 18f));
+                
+                String time = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date(latest.getTimestamp()));
+                android.widget.Toast.makeText(this, "FOCUSING TARGET: " + activeTargetName + " • " + time, android.widget.Toast.LENGTH_SHORT).show();
+            } else {
+                android.widget.Toast.makeText(this, "NO ACTIVE TRACKING TARGET", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        // 🚀 L7 Optimization: Upscaled to 140px Baseline for Absolute Parity with the Search Lens
+        int dishSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        dishBox.addView(dashIcon, new LinearLayout.LayoutParams(dishSize, dishSize));
+        
+        LinearLayout.LayoutParams dishLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dishLp.setMargins(getResponsivePaddingQuota(), 0, 0, 0);
+        targetRow.addView(dishBox, dishLp);
+        
+        // 🚀 L7 Architecture Sync: Forced Vertical Rhythm for Absolute Parity
+        LinearLayout.LayoutParams standardRowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        standardRowParams.setMargins(0, hubPad, 0, hubPad); // Equal Vertical Distribution Hub
+
+        int hGap = getResponsivePaddingQuota();
+        LinearLayout.LayoutParams horizontalBtnParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        // We apply half the gap to each side to ensure perfect 50/50 horizontal distribution
+        horizontalBtnParams.setMargins(hGap / 2, 0, hGap / 2, 0);
+
+        container.addView(targetRow);
+
+        btn4h = createIconButton("4 HRS", android.R.drawable.ic_menu_recent_history, v -> selectTimeWindow(btn4h, 4 * 60 * 60 * 1000L));
+        btn12h = createIconButton("12 HRS", android.R.drawable.ic_menu_recent_history, v -> selectTimeWindow(btn12h, 12 * 60 * 60 * 1000L));
+        btn24h = createIconButton("24 HRS", android.R.drawable.ic_menu_recent_history, v -> selectTimeWindow(btn24h, 24 * 60 * 60 * 1000L));
+        btn7days = createIconButton("7 DAYS", android.R.drawable.ic_menu_agenda, v -> selectTimeWindow(btn7days, 7L * 24L * 60L * 60L * 1000L));
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setWeightSum(2.0f);
+        row1.addView(btn4h, horizontalBtnParams);
+        row1.addView(btn12h, horizontalBtnParams);
+        container.addView(row1, standardRowParams);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setWeightSum(2.0f);
+        row2.setPadding(0, 0, 0, hubPad); // Extra breath for the base grid
+        row2.addView(btn24h, horizontalBtnParams);
+        row2.addView(btn7days, horizontalBtnParams);
+        container.addView(row2, standardRowParams);
+
+        // 🚀 L7 Optimization: REPLAY ENGINE COMMAND HUB (Absolute Symmetry)
         LinearLayout dualControls = new LinearLayout(this);
         dualControls.setOrientation(LinearLayout.HORIZONTAL);
-        dualControls.setPadding(0, 15, 0, 0);
+        dualControls.setGravity(Gravity.CENTER_VERTICAL);
+        dualControls.setWeightSum(2.0f);
 
         View playBtn = createIconButton("START REPLAY", android.R.drawable.ic_media_play, v -> {
             isReplaying = true;
             startPathReplay();
         });
-        dualControls.addView(playBtn, btnLp); // Shared Margin Physics!
+        dualControls.addView(playBtn, horizontalBtnParams); 
 
         View stopBtn = createIconButton("STOP REPLAY", android.R.drawable.ic_media_pause, v -> {
-            isReplaying = false; // Kill Recursive Animators
+            isReplaying = false; 
             if (currentAnimator != null) currentAnimator.cancel();
             if (tvStatus != null) tvStatus.setText("REPLAY TERMINATED");
         });
-        dualControls.addView(stopBtn, btnLp); // Shared Margin Physics!
+        dualControls.addView(stopBtn, horizontalBtnParams); 
 
-        container.addView(dualControls);
+        container.addView(dualControls, standardRowParams);
 
         tvStatus = new TextView(this);
         tvStatus.setText("READY FOR SYNC");
-        tvStatus.setTextColor(getSecondaryTextColor()); // Exact Map Target Line
+        tvStatus.setTextColor(getSecondaryTextColor()); 
         tvStatus.setGravity(Gravity.CENTER);
         tvStatus.setTypeface(null, Typeface.BOLD);
-        tvStatus.setTextSize(11f);
-        tvStatus.setPadding(0, 40, 0, 0);
+        tvStatus.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        tvStatus.setPadding(0, hubPad, 0, 0);
         container.addView(tvStatus);
 
         return container;
     }
 
+    private long syncStartTime = 0;
+
+    private void selectTimeWindow(View selectedBtn, long timeWindow) {
+        if (btn4h == null || btn12h == null || btn24h == null || btn7days == null) return;
+        
+        // 🚀 QA Fix: Global Selection Matrix Integration (L7)
+        UiArchitect.applySelection(this, btn4h, selectedBtn == btn4h);
+        UiArchitect.applySelection(this, btn12h, selectedBtn == btn12h);
+        UiArchitect.applySelection(this, btn24h, selectedBtn == btn24h);
+        UiArchitect.applySelection(this, btn7days, selectedBtn == btn7days);
+        
+        // Trigger Data Engine
+        loadHistoryData(timeWindow);
+    }
+
+
+
     private void loadHistoryData(long timeWindow) {
         if (activeTargetUid == null || activeTargetUid.isEmpty()) {
-            activeTargetUid = FirebaseAuth.getInstance().getUid();
+            activeTargetUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         }
-        String uid = activeTargetUid;
-        if (uid == null) return;
+        if (activeTargetUid == null || viewModel == null) return;
 
-        long now = System.currentTimeMillis();
-        long targetPast = now - timeWindow;
-        if (tvStatus != null) tvStatus.setText("FETCHING CLOUD METRICS...");
+        if (locationLogsContainer != null) locationLogsContainer.removeAllViews();
+        syncStartTime = System.currentTimeMillis();
         
-        // 🚀 QA Fix: Instantly render native OS indeterminate spinning wheel into the DOM
-        if (locationLogsContainer != null) {
-            locationLogsContainer.removeAllViews();
-            android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
-            pb.setIndeterminate(true);
-            pb.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            pb.setPadding(0, 100, 0, 100);
-            locationLogsContainer.addView(pb);
-        }
-
-        repository.fetchHistory(uid, targetPast, now, points -> {
-            if (points.isEmpty()) {
-                if (locationLogsContainer != null) locationLogsContainer.removeAllViews(); // Kill Spinner
-                if (tvStatus != null) tvStatus.setText("0 METRICS FOUND");
-                Toast.makeText(this, "No history found for this period", Toast.LENGTH_SHORT).show();
-            } else {
-                historyPoints = points;
-                drawStaticPath(points);
-                calculateAnalytics(points);
-                renderTextualLogs(points); // Generate physical text database
-                if (tvStatus != null) tvStatus.setText(points.size() + " WAYPOINTS LOADED SECURELY");
-                Toast.makeText(this, "Loaded " + points.size() + " waypoints", Toast.LENGTH_SHORT).show();
-            }
-            return Unit.INSTANCE;
-        });
+        if (tvStatus != null) tvStatus.setText("EXTRACTING LATEST " + (timeWindow / 3600000) + "H METRICS...");
+        viewModel.loadHistoryData(activeTargetUid, timeWindow);
     }
 
     private void calculateAnalytics(List<UserLocation> points) {
@@ -360,6 +478,16 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                 String.format("TOTAL DISTANCE: %.2f km", totalDist / 1000) : 
                 String.format("TOTAL DISTANCE: %.0f m", totalDist);
             tvDistance.setText(text);
+        }
+        
+        String now = new java.text.SimpleDateFormat("MMM dd, HH:mm:ss").format(new java.util.Date());
+        if (tvLastUpdated != null) {
+            tvLastUpdated.setText("LOG LAST UPDATED: " + now.toUpperCase());
+        }
+        
+        if (tvSyncMode != null) {
+            tvSyncMode.setText("ONLINE SYNC: CLOUD METRICS ACTIVE");
+            tvSyncMode.setBackgroundColor(Color.parseColor("#4400FF00")); // Faded Green for Online
         }
     }
 
@@ -406,10 +534,12 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             UserLocation oldestPingInBlock = block.get(0);
             
             LinearLayout logCard = new LinearLayout(this);
-            logCard.setOrientation(LinearLayout.HORIZONTAL);
-            logCard.setPadding(40, 40, 40, 40);
+            // 🚀 L7 Adaptive Content: Switching to Vertical in LIBERAL to prevent asset collision!
+            logCard.setOrientation(UiArchitect.getStage(this) == UiArchitect.DesignStage.LIBERAL ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+            int cp = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 40);
+            logCard.setPadding(cp, cp, cp, cp);
             logCard.setGravity(Gravity.CENTER_VERTICAL);
-            applySolidCardGeometry(logCard, getCardColor(), 40f);
+            UiArchitect.applyCard(this, logCard, "CARD_STANDARD");
 
             LinearLayout textBlock = new LinearLayout(this);
             textBlock.setOrientation(LinearLayout.VERTICAL);
@@ -438,17 +568,32 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
             // 🛑 QA FIX: Geocoder Thread Explosion Mitigation
             // Spawning 250 raw threads simultaneously instantly crashes the RAM and CPU!
-            // We route requests strictly through the natively queued OS Thread Pool.
-            android.os.AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
-                try {
-                    android.location.Geocoder geocoder = new android.location.Geocoder(HistoryActivity.this, java.util.Locale.getDefault());
-                    java.util.List<android.location.Address> addresses = geocoder.getFromLocation(newestPingInBlock.getLatitude(), newestPingInBlock.getLongitude(), 1);
-                    if (addresses != null && !addresses.isEmpty()) {
-                        final String humanStreet = addresses.get(0).getAddressLine(0);
-                        runOnUiThread(() -> tvCoords.setText("📍 " + humanStreet));
+            // We route requests strictly through the natively queued OS Thread Pool or Async API.
+            android.location.Geocoder geocoder = new android.location.Geocoder(HistoryActivity.this, java.util.Locale.getDefault());
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                geocoder.getFromLocation(newestPingInBlock.getLatitude(), newestPingInBlock.getLongitude(), 1, new android.location.Geocoder.GeocodeListener() {
+                    @Override
+                    public void onGeocode(@androidx.annotation.NonNull java.util.List<android.location.Address> addresses) {
+                        if (addresses != null && !addresses.isEmpty()) {
+                            final String humanStreet = addresses.get(0).getAddressLine(0);
+                            runOnUiThread(() -> tvCoords.setText("📍 " + humanStreet));
+                        }
                     }
-                } catch (Exception e) {}
-            });
+                    @Override
+                    public void onError(@androidx.annotation.Nullable String errorMessage) {}
+                });
+            } else {
+                android.os.AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
+                    try {
+                        @SuppressWarnings("deprecation")
+                        java.util.List<android.location.Address> addresses = geocoder.getFromLocation(newestPingInBlock.getLatitude(), newestPingInBlock.getLongitude(), 1);
+                        if (addresses != null && !addresses.isEmpty()) {
+                            final String humanStreet = addresses.get(0).getAddressLine(0);
+                            runOnUiThread(() -> tvCoords.setText("📍 " + humanStreet));
+                        }
+                    } catch (Exception e) {}
+                });
+            }
 
             LinearLayout telemetryBlock = new LinearLayout(this);
             telemetryBlock.setOrientation(LinearLayout.HORIZONTAL);
@@ -496,16 +641,13 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
             logCard.addView(textBlock);
 
-            android.widget.ImageView focusLens = new android.widget.ImageView(this);
+            ImageView focusLens = new ImageView(this);
             focusLens.setImageResource(android.R.drawable.ic_menu_mylocation);
             focusLens.setPadding(30, 30, 10, 30);
             focusLens.setColorFilter(getGradientStart()); 
             
-            // 🚀 QA Fix: Foolproof & Lightweight Native Hardware Integration
-            // Android OS natively maps 'Enter' & D-Pad to any view that is focusable + clickable.
-            // No custom KeyListeners, no object overhead. 100% stable.
-            focusLens.setFocusable(true);
-            focusLens.setClickable(true);
+            // 🚀 QA Fix: Standardized Accessibility Mapping (V15.2)
+            applyAccessibility(focusLens, "Focus on Waypoint");
 
             // Natively resolve OS-level visual focus feedback (Ripple / Highlight ring)
             android.util.TypedValue outValue = new android.util.TypedValue();
@@ -563,7 +705,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
         // Attempt to extract local profile HD image if the parent is tracking themselves.
         if (activeTargetUid.equals(safeUid) || activeTargetUid.startsWith("DEV_")) {
-            profileBmp = com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(this, 150);
+            profileBmp = com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(this, 256);
         }
 
         com.google.android.gms.maps.model.BitmapDescriptor trueAvatarPin = 
@@ -571,6 +713,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
         replayAvatar = googleMap.addMarker(new MarkerOptions()
                 .position(new LatLng(first.getLatitude(), first.getLongitude()))
+                .title("You")
                 .anchor(0.5f, 0.5f)
                 .icon(trueAvatarPin));
         
@@ -619,7 +762,68 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
     @Override
     protected void setupLogic() {
-        repository = new LocationRepository(this);
+        viewModel = new androidx.lifecycle.ViewModelProvider(this).get(HistoryViewModel.class);
+        viewModel.init(this);
+
+        // 🚀 MVVM Waterfall Observers
+        viewModel.isLoading().observe(this, loading -> {
+            if (loading != null && loading) {
+                if (tvStatus != null) tvStatus.setText("FETCHING CLOUD METRICS...");
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            } else {
+                // Guardian Angel Delay Architecture
+                long timePassed = System.currentTimeMillis() - syncStartTime;
+                long forcedDelay = timePassed < 2000 ? 2000L - timePassed : 0L;
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                }, forcedDelay);
+            }
+        });
+
+        viewModel.getHistoryPoints().observe(this, points -> {
+            if (points == null || points.isEmpty()) {
+                if (tvStatus != null) tvStatus.setText("0 METRICS FOUND");
+                Toast.makeText(this, "No history found for this period", Toast.LENGTH_SHORT).show();
+            } else {
+                historyPoints = points;
+                drawStaticPath(points);
+                calculateAnalytics(points);
+                renderTextualLogs(points);
+                if (tvStatus != null) tvStatus.setText(points.size() + " WAYPOINTS LOADED SECURELY");
+            }
+        });
+
+        viewModel.getTrackingTargets().observe(this, targets -> {
+            if (targets == null || targets.isEmpty()) return;
+            
+            String[] names = new String[targets.size()];
+            for (int i = 0; i < targets.size(); i++) names[i] = targets.get(i).getName();
+
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Focus Tracking Asset")
+                .setItems(names, (d, which) -> {
+                    HistoryViewModel.TrackingTarget selected = targets.get(which);
+                    activeTargetUid = selected.getUid();
+                    String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                    activeTargetName = (activeTargetUid != null && activeTargetUid.equals(myUid)) ? "You" : selected.getName();
+                    // 🚀 Refresh UI Header 
+                    runOnUiThread(() -> {
+                        if (targetLabel != null) targetLabel.setText("CURRENT TRACK: " + activeTargetName.toUpperCase());
+                        // 🚀 QA Fix: Force 4H Default on Target Selection (L4 Enterprise Rule)
+                        selectTimeWindow(btn4h, 4 * 60 * 60 * 1000L); 
+                    });
+                }).show();
+            
+            applyDialogTheme(dialog);
+        });
+
+        viewModel.getErrorMessage().observe(this, error -> {
+            if (error != null) {
+                Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+                viewModel.clearError();
+            }
+        });
+
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
         if (mapFragment == null) {
             mapFragment = SupportMapFragment.newInstance();

@@ -24,6 +24,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _filteredLocations = MutableLiveData<List<UserLocation>>()
     val userLocations: LiveData<List<UserLocation>> = _filteredLocations
     
+    // 🏷️ Filter State Matrix
+    private var currentFilterMode = "ALL" // Default
+    private val rawLocationCache = mutableListOf<UserLocation>()
+
     // 🚀 Geofence Sentinel Engine: Natively pushes dependent alerts back to the Guardian UI
     private val _geofenceAlertTrigger = MutableLiveData<String>()
     val geofenceAlertTrigger: LiveData<String> = _geofenceAlertTrigger
@@ -42,34 +46,86 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         bindSecureFamilyMesh()
         
         repository.userLocations.observeForever { rawLocations ->
-            val safeUid = auth.uid ?: return@observeForever
-            // Force strict group isolation! Only draw remote users physically recorded in your exact Firebase ring!
-            val authorized = rawLocations.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
-            _filteredLocations.postValue(authorized)
+            rawLocationCache.clear()
+            rawLocationCache.addAll(rawLocations)
+            applyTacticalFilter()
         }
+    }
+
+    fun setFilterMode(mode: String) {
+        this.currentFilterMode = mode
+        applyTacticalFilter()
+    }
+
+    private fun applyTacticalFilter() {
+        val safeUid = auth.uid ?: return
+        
+        // Step 1: Baseline Group Mesh Isolation
+        val authorized = rawLocationCache.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+        
+        // Step 2: User-Driven Tactical Filter Application
+        val filtered = when (currentFilterMode) {
+            "FAMILY" -> authorized.filter { 
+                it.userId == safeUid || (!it.role_family.equals("None", true) && it.role_family.isNotBlank())
+            }
+            "FRIENDS" -> authorized.filter { 
+                it.userId == safeUid || (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank())
+            }
+            else -> authorized // ALL
+        }
+        
+        _filteredLocations.postValue(filtered)
     }
     
     private fun bindSecureFamilyMesh() {
         val safeUid = auth.uid ?: return
         val rootDb = com.google.firebase.database.FirebaseDatabase.getInstance().reference
         
-        rootDb.child("users").child(safeUid).child("active_group").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+        rootDb.child("users").child(safeUid).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
             override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                val myGroupId = snapshot.getValue(String::class.java)
+                val myGroupId = snapshot.child("active_group").getValue(String::class.java)
+                val linkCsvRaw = snapshot.child("valid_linked_uids").getValue(String::class.java) ?: ""
+                
+                // Construct Explicit One-Scan-One-Device Allowed List
+                val approvedUids = linkCsvRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                
+                val friendMatrix = snapshot.child("friend_matrix")
+                val explicitFriendUids = mutableSetOf<String>()
+                friendMatrix.children.forEach { explicitFriendUids.add(it.key ?: "") }
+                
                 if (myGroupId == null || myGroupId.isEmpty()) {
-                    familyMeshIds.clear() // Standalone Sandbox
+                    familyMeshIds.clear()
+                    familyMeshIds.addAll(explicitFriendUids) // 🚀 QA Fix: P2P Friendship Stability (V9.8)
                     val currentRaw = repository.userLocations.value ?: return
-                    val authorized = currentRaw.filter { it.userId == safeUid }
+                    val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
                     _filteredLocations.postValue(authorized)
                     return
                 }
                 
-                // 🚀 QA Architecture Fix: Core Schema query restored! 
-                // We physically route direct to the Users table because 'groups/members' DOES NOT contain the Live array payload currently!
+                // 🚀 QA Fix: Standalone Mesh Resilience (V9.4)
                 rootDb.child("users").orderByChild("active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
+                        val newMesh = mutableSetOf<String>()
+                        newMesh.addAll(explicitFriendUids) // Preserving 1-to-1 pairings in the hybrid mesh!
+
+                        groupSnap.children.forEach { 
+                            val possibleNodeId = it.key ?: ""
+                            val thisNodeRole = it.child("role_family").getValue(String::class.java) ?: "None"
+                            
+                            // 🛰️ MASTER TRUST HEURISTICS: 
+                            // 1. Explicitly scanned devices (approvedUids) / Friend Matrix
+                            // 2. Administrators/Parents (Father/Mother)
+                            // 3. Members of the SAME Group (Stability Fallback)
+                            if (approvedUids.contains(possibleNodeId) || possibleNodeId == safeUid || thisNodeRole == "Father" || thisNodeRole == "Mother") {
+                                newMesh.add(possibleNodeId)
+                            } else {
+                                // Default Stability: If you share a group, you should be visible to prevent blinking!
+                                newMesh.add(possibleNodeId)
+                            }
+                        }
+                        
                         familyMeshIds.clear()
-                        groupSnap.children.forEach { familyMeshIds.add(it.key ?: "") }
+                        familyMeshIds.addAll(newMesh)
                         
                         // Retrigger the visual layer organically
                         val currentRaw = repository.userLocations.value ?: return
@@ -107,6 +163,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
             override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
         })
+        
+        // 🚀 QA Fix: P2P Strict Tracking Array Matrix! Ensure offline strictly paired 1-to-1 users ALSO load!
+        rootDb.child("users").child(safeUid).child("friend_matrix").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                snapshot.children.forEach { familyMeshIds.add(it.key ?: "") }
+                val currentRaw = repository.userLocations.value ?: return
+                val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+                _filteredLocations.postValue(authorized)
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
     }
 
     private fun fetchCurrentUserRole() {
@@ -125,13 +192,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val userId = currentUser.uid
         
         // 🧠 QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val customName = prefs.getString("user_nickname", null)
         val userName = customName ?: currentUser.displayName ?: currentUser.email ?: "User"
         
         // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
         val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
-        val safeBaseId = if (rawBaseId == -1) 1 else rawBaseId // Push default graphic out to legacy network nodes!
+        val genderStr = prefs.getString("user_gender", "Male") ?: "Male"
+        
+        // 🚀 QA Fix: Dynamic Gender-Based Proxy for Cloud Sync (V8 Fallback)
+        val safeBaseId = if (rawBaseId == -1) {
+             if (genderStr.contains("Female", true)) 4 else 1 // Fallback to 'Student' (F) or 'Walker' (M)
+        } else {
+             rawBaseId 
+        }
+        
         val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
         val resolvedAvatarId = "avatar_custom_$dynamicIdx"
         
@@ -144,7 +219,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             geohash = GeohashHelper.encode(location.latitude, location.longitude),
             bearing = location.bearing,
             speed = location.speed,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            active_group = prefs.getString("active_group", "") ?: "",
+            role_family = prefs.getString("role_family", "None") ?: "None",
+            role_friend = prefs.getString("role_friend", "None") ?: "None"
         )
         
         repository.updateMyLocation(userLocation)
@@ -201,5 +279,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopListening()
+    }
+
+    // 🚀 Refresh trigger for Callouts (Can be observed by Activity)
+    private val _refreshTrigger = MutableLiveData<Long>()
+    val refreshTrigger: LiveData<Long> = _refreshTrigger
+
+    fun triggerRefresh(time: Long = System.currentTimeMillis()) {
+        _refreshTrigger.value = time
+    }
+    
+    // 🚀 QA Fix: Global Ghost Mode Sync!
+    fun toggleGhostMode(prefs: android.content.SharedPreferences) {
+        val h = prefs.getBoolean("callout_hide_mode", false)
+        prefs.edit().putBoolean("callout_hide_mode", !h).apply()
+        SystemLogger.i(TAG, "Ghost Mode Toggled: ${!h}")
+        triggerRefresh()
     }
 }

@@ -12,6 +12,8 @@ import android.widget.TextView;
 import com.jdroidx.jfindme.ui.auth.AuthActivity;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.ThemeManager;
+import com.jdroidx.jfindme.ui.base.ListItemTable;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 /**
@@ -26,25 +28,41 @@ public class SettingsActivity extends BaseActivityJava {
     protected View createLayout() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(getPrimaryColor()); // Grey/Dark contrast background
+        root.setBackgroundColor(getPrimaryColor());
 
-        // 🚀 Premium Linear Gradient        // Header
+        // 🚀 Header Matrix: Restored as per Control Hub Screenshot
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        applyGlobalHeaderGeometry(header); // 🚀 Native QA Architecture Injection // Top hero banner seamlessly bleeds into status bar
+        applyGlobalHeaderGeometry(header); 
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
         
         TextView title = new TextView(this);
         title.setText("CONTROL HUB");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
+        title.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_HEADER"));
         title.setTypeface(null, Typeface.BOLD);
-        header.addView(title);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        titleRow.addView(title);
+        
+        TextView helpBtn = new TextView(this);
+        helpBtn.setText("?");
+        helpBtn.setTextColor(getGradientOverlayText());
+        helpBtn.setTextSize(32);
+        helpBtn.setTypeface(null, Typeface.BOLD);
+        helpBtn.setPadding(20, 0, 20, 0);
+        helpBtn.setOnClickListener(v -> startActivity(new Intent(this, HelpSupportActivity.class)));
+        titleRow.addView(helpBtn);
+        
+        header.addView(titleRow);
         
         TextView subtitle = new TextView(this);
         subtitle.setText("Device Telemetry & Engine Architecture");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
-        subtitle.setTextSize(12);
+        subtitle.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
         header.addView(subtitle);
         
         root.addView(header);
@@ -52,71 +70,121 @@ public class SettingsActivity extends BaseActivityJava {
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(40, 20, 40, 80);
+        int setPad = getResponsivePaddingQuota();
+        content.setPadding(setPad * 2, setPad, setPad * 2, setPad * 4);
 
-        // --- LAYER 1: THE CONFIGURATOR GATEWAY ---
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.setMargins(0, 15, 0, 15);
+
+        // --- LAYER 1: MASTER UI OVERRIDE ---
         content.addView(createSectionHeader("MASTER UI OVERRIDE"));
         LinearLayout themeCard = new LinearLayout(this);
         themeCard.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        btnLp.setMargins(0, 15, 0, 15); // Explicit Tile Spacing!
         
-        // 🚀 PHASE 1: The Configurator Gateway Portal
         themeCard.addView(createIconButton("GLOBAL UI & ICON ARCHITECT", android.R.drawable.ic_menu_gallery, v -> {
             try {
                 startActivity(new Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.UiConfigActivity")));
             } catch (Exception e) {
-                android.widget.Toast.makeText(this, "Compiling Master UI Engine. Awaiting Phase 2...", android.widget.Toast.LENGTH_SHORT).show();
+                android.widget.Toast.makeText(this, "Compiling Master UI Engine...", android.widget.Toast.LENGTH_SHORT).show();
             }
         }), btnLp);
-
         content.addView(themeCard, getCardParams());
+        
+        // --- LAYER 1.5: 🔋 BATTERY OPTIMIZATION COMMAND HUB ---
+        content.addView(createSectionHeader("BATTERY OPTIMIZATION & PING INTELLIGENCE"));
 
-        // --- LAYER 2: ADVANCED MAP ENGINE CARD ---
+        final long currentPulseValue = prefs.getLong("pref_tracking_interval", 60000L);
+        final java.util.List<android.widget.Switch> batterySwitches = new java.util.ArrayList<>();
+
+        String[] pingNames = {"60s PING (ECO)", "30s PING (BALANCED)", "15s PING (ACTIVE)", "7s PING (HIGH FREQ)", "1s PING (MAX INTENSITY)"};
+        String[] consumptionStats = {"-2%/day", "-4%/day", "-8%/day", "-15%/day", "-25%/day"};
+        final long[] pingValues = {60000L, 30000L, 15000L, 7000L, 1000L};
+
+        LinearLayout batteryList = new LinearLayout(this);
+        batteryList.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, batteryList, "CARD_STANDARD");
+
+        for (int i = 0; i < pingValues.length; i++) {
+            final int pos = i;
+            final long val = pingValues[i];
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(30, 40, 30, 40);
+
+            // Icon: Battery Matrix
+            android.widget.ImageView bIcon = new android.widget.ImageView(this);
+            bIcon.setImageResource(android.R.drawable.ic_lock_idle_low_battery);
+            bIcon.setColorFilter(getGradientStart());
+            int iconSz = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+            row.addView(bIcon, new LinearLayout.LayoutParams(iconSz, iconSz));
+
+            // Text Detail Group
+            LinearLayout textGrp = new LinearLayout(this);
+            textGrp.setOrientation(LinearLayout.VERTICAL);
+            textGrp.setPadding(30, 0, 0, 0);
+            textGrp.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+            TextView nameTv = new TextView(this);
+            nameTv.setText(pingNames[i]);
+            nameTv.setTextColor(getTextColor());
+            nameTv.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TITLE"));
+            nameTv.setTypeface(null, Typeface.BOLD);
+            textGrp.addView(nameTv);
+
+            TextView statsTv = new TextView(this);
+            statsTv.setText("Consumption: " + consumptionStats[i] + " | Status: DISCONNECTED");
+            statsTv.setTextColor(getSecondaryTextColor());
+            statsTv.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
+            textGrp.addView(statsTv);
+            row.addView(textGrp);
+
+            // Toggle Switch
+            android.widget.Switch bSwitch = new android.widget.Switch(this);
+            bSwitch.setChecked(currentPulseValue == val);
+            if (currentPulseValue == val) statsTv.setText("Consumption: " + consumptionStats[i] + " | Status: ACTIVE");
+            
+            batterySwitches.add(bSwitch);
+            bSwitch.setOnCheckedChangeListener((v, isChecked) -> {
+                if (isChecked) {
+                    prefs.edit().putLong("pref_tracking_interval", val).apply();
+                    for (android.widget.Switch s : batterySwitches) {
+                        if (s != bSwitch) s.setChecked(false);
+                    }
+                    statsTv.setText("Consumption: " + consumptionStats[pos] + " | Status: ACTIVE");
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                    android.widget.Toast.makeText(this, "Telemetry Node Adjusted: " + val + "ms Pulse Active.", android.widget.Toast.LENGTH_SHORT).show();
+                } else {
+                    statsTv.setText("Consumption: " + consumptionStats[pos] + " | Status: DISCONNECTED");
+                }
+            });
+            row.addView(bSwitch);
+
+            batteryList.addView(row);
+            
+            if (i < pingValues.length - 1) {
+                View div = new View(this);
+                div.setBackgroundColor(Color.argb(20, 150, 150, 150));
+                batteryList.addView(div, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 2));
+            }
+        }
+
+
+        content.addView(batteryList, getCardParams());
+
+        // --- LAYER 2: ADVANCED APP TELEMETRY ---
         content.addView(createSectionHeader("ADVANCED APP TELEMETRY"));
         LinearLayout engineCard = new LinearLayout(this);
         engineCard.setOrientation(LinearLayout.VERTICAL);
-
-        // Reuses the identical btnLp parameter object declared during Layer 1
-
-        engineCard.addView(createIconButton("GHOST MODE (OFFLINE TRACKING)", android.R.drawable.ic_menu_view, v -> {
-            boolean currentState = prefs.getBoolean("pref_ghost_mode_persistent", true);
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Configure Ghost Mode")
-                .setMessage("PROS:\n- Sleeping devices remain on the map as 50% transparent ghosts.\n\nCONS:\n- Visually clutters the map if users are left offline for several days.\n\nCurrent State: " + (currentState ? "ENABLED" : "DISABLED"))
-                .setPositiveButton("Enable", (dialog, which) -> prefs.edit().putBoolean("pref_ghost_mode_persistent", true).apply())
-                .setNegativeButton("Disable", (dialog, which) -> prefs.edit().putBoolean("pref_ghost_mode_persistent", false).apply())
-                .show();
-        }), btnLp);
 
         engineCard.addView(createIconButton("SMART AVATAR CLUSTERING", android.R.drawable.ic_menu_sort_by_size, v -> {
             boolean currentCluster = prefs.getBoolean("pref_smart_avatar_clustering", true);
             new android.app.AlertDialog.Builder(this)
                 .setTitle("Configure Smart Clustering")
-                .setMessage("PROS:\n- Stacks users within 10-meters into a clean '+X' Red Badge.\n\nCONS:\n- You cannot physically see overlapping avatars until fully zoomed in.\n\nCurrent State: " + (currentCluster ? "ENABLED" : "DISABLED"))
+                .setMessage("PROS:\n- Stacks users within 10-meters into a clean badge.\n\nCONS:\n- Overlapping avatars hidden until zoomed in.\n\nCurrent State: " + (currentCluster ? "ENABLED" : "DISABLED"))
                 .setPositiveButton("Enable", (dialog, which) -> prefs.edit().putBoolean("pref_smart_avatar_clustering", true).apply())
                 .setNegativeButton("Disable", (dialog, which) -> prefs.edit().putBoolean("pref_smart_avatar_clustering", false).apply())
-                .show();
-        }), btnLp);
-        
-        // QA Battery Configuration Override
-        engineCard.addView(createIconButton("TRACKING RESOLUTION (INTERVAL)", android.R.drawable.ic_menu_recent_history, v -> {
-            long currentInterval = prefs.getLong("pref_tracking_interval", 60000L);
-            String currentStr = (currentInterval / 1000) + " Seconds";
-            
-            String[] options = {"Aggressive (10s) - High Battery Drain", "Recommend (60s) - Best Balance", "Passive (5m) - Maximum Battery Use"};
-            long[] values = {10000L, 60000L, 300000L};
-            
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("GPS Ping Interval")
-                .setMessage("Higher thresholds dramatically reduce daily battery drain. We strictly recommend the default 60s configuration.\n\nCurrent Target: " + currentStr)
-                .setSingleChoiceItems(options, -1, (dialog, which) -> {
-                    long selected = values[which];
-                    prefs.edit().putLong("pref_tracking_interval", selected).apply();
-                    android.widget.Toast.makeText(this, "Interval updated to " + (selected/1000) + "s. Service will adapt natively.", android.widget.Toast.LENGTH_LONG).show();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("Cancel", null)
                 .show();
         }), btnLp);
         
@@ -126,7 +194,7 @@ public class SettingsActivity extends BaseActivityJava {
         
         content.addView(engineCard, getCardParams());
 
-        // --- LAYER 3: SECURITY & PROFILES CARD ---
+        // --- LAYER 3: SECURITY & ACCESS CONTROLS ---
         content.addView(createSectionHeader("SECURITY & ACCESS CONTROLS"));
         LinearLayout secCard = new LinearLayout(this);
         secCard.setOrientation(LinearLayout.VERTICAL);
@@ -144,7 +212,10 @@ public class SettingsActivity extends BaseActivityJava {
             startActivity(new Intent(this, HelpSupportActivity.class));
         }), btnLp);
         secCard.addView(createIconButton("SYSTEM LOGS & AUDIT TRAIL", android.R.drawable.ic_menu_info_details, v -> {
-            startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));
+            startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));
+        }), btnLp);
+        secCard.addView(createIconButton("FACTORY RESET CONSOLE", android.R.drawable.ic_menu_revert, v -> {
+            startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.FactoryResetActivity.class));
         }), btnLp);
         
         content.addView(secCard, getCardParams());
@@ -157,7 +228,8 @@ public class SettingsActivity extends BaseActivityJava {
 
     private LinearLayout.LayoutParams getCardParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, 0, 30);
+        int cMargin = getResponsivePaddingQuota() + 10;
+        lp.setMargins(0, 0, 0, cMargin);
         return lp;
     }
 
@@ -165,15 +237,16 @@ public class SettingsActivity extends BaseActivityJava {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart()); // Seamless UI integration
-        header.setTextSize(11);
+        header.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_HEADER"));
         header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(10, 50, 0, 20);
+        int hPad = getResponsivePaddingQuota();
+        header.setPadding(hPad / 2, hPad * 2, 0, hPad);
         return header;
     }
 
 
     @Override
     protected void setupLogic() {
-        SystemLogger.INSTANCE.d(TAG, "Settings Hub Synchronized.");
+        SystemLogger.d(TAG, "Settings Hub Synchronized.");
     }
 }

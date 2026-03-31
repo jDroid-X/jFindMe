@@ -8,6 +8,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 /**
@@ -51,18 +52,30 @@ public class NotifActivity extends BaseActivityJava {
         header.addView(subtitle);
 
         mainRoot.addView(header);
+        mainRoot.setClipChildren(false); // Global shadow enablement
+        mainRoot.setClipToPadding(false);
         
         ScrollView scroll = new ScrollView(this);
+        scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
+
         scroll.addView(createNotifList());
         mainRoot.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
+        // 🚀 QA Fix: Global Navigation Integrity
+        String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
+        mainRoot.addView(UiArchitect.createBottomNav(this, keys, "NAV_NOTICE"));
+
         return mainRoot;
     }
-
     private View createNotifList() {
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(40, 40, 40, 100);
+        list.setClipChildren(false); // No shadow clipping
+        list.setClipToPadding(false);
+
+        int lPad = getResponsivePaddingQuota();
+        list.setPadding(lPad * 2, lPad * 2, lPad * 2, lPad * 5);
 
         // 🚀 QA Fix: Enterprise 8-Point Configuration Matrix injected with explicit native SharedPreferences routing
         list.addView(createNotifConfigItem("Panic SOS Override", "Highest Priority. Bypasses DND volume constraints natively.", "alert_sos", true, Color.parseColor("#F44336")));
@@ -81,10 +94,11 @@ public class NotifActivity extends BaseActivityJava {
     private View createNotifConfigItem(String title, String body, String prefKey, boolean defVal, int accentColor) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(card, getCardColor(), 30f);
+        UiArchitect.applyCard(this, card, "CARD_STANDARD");
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(0, 0, 0, 30);
+        int cMargin = getResponsivePaddingQuota();
+        cardLp.setMargins(0, 0, 0, cMargin + 10);
         card.setLayoutParams(cardLp);
         
         // Matrix Render: Horizontal Colored Severity Stripe bridging seamlessly!
@@ -100,7 +114,8 @@ public class NotifActivity extends BaseActivityJava {
         // Content Area
         LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);
-        textBlock.setPadding(40, 40, 20, 40);
+        int tPad = getResponsivePaddingQuota() * 2;
+        textBlock.setPadding(tPad, tPad, tPad / 2, tPad);
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         
         TextView tvTitle = new TextView(this);
@@ -124,7 +139,8 @@ public class NotifActivity extends BaseActivityJava {
         android.widget.Switch toggle = new android.widget.Switch(this);
         android.content.SharedPreferences prefs = getSharedPreferences("com.jdroidx.jfindme.PREFS", android.content.Context.MODE_PRIVATE);
         toggle.setChecked(prefs.getBoolean(prefKey, defVal));
-        toggle.setPadding(0, 0, 40, 0);
+        int togglePad = getResponsivePaddingQuota() * 2;
+        toggle.setPadding(0, 0, togglePad, 0);
         toggle.setOnCheckedChangeListener((btn, isChecked) -> {
             prefs.edit().putBoolean(prefKey, isChecked).apply();
             com.jdroidx.jfindme.utils.SystemLogger.i(TAG, prefKey + " configured to: " + isChecked);

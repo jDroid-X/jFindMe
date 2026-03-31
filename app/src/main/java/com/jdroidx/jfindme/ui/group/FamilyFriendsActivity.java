@@ -14,6 +14,11 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.group.FamilyFriendsViewModel;
+import com.jdroidx.jfindme.ui.group.PersonDetailsActivity;
+import com.jdroidx.jfindme.ui.group.GroupActivity;
+import com.jdroidx.jfindme.ui.group.RosterNode;
 
 public class FamilyFriendsActivity extends BaseActivityJava {
 
@@ -41,20 +46,19 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         // 1. HERO BANNER
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        applyGlobalHeaderGeometry(header); 
+            applyGlobalHeaderGeometry(header); 
         
         TextView title = new TextView(this);
         title.setText("FAMILY AND FRIENDS");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         header.addView(title);
         
         TextView subtitle = new TextView(this);
         subtitle.setText("Relational Organization & Management");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
-        subtitle.setTextSize(12);
+        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
         header.addView(subtitle);
         
         mainRoot.addView(header);
@@ -68,7 +72,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tabFamily = new LinearLayout(this);
         tabFamily.setOrientation(LinearLayout.VERTICAL);
         tabFamily.setGravity(Gravity.CENTER);
-        tabFamily.setPadding(0, 40, 0, 40);
+        int tabPad = getResponsivePaddingQuota() + 15;
+        tabFamily.setPadding(0, tabPad, 0, tabPad);
         tabFamily.setFocusable(true);
         tabFamily.setClickable(true);
         android.util.TypedValue outValueTabs = new android.util.TypedValue();
@@ -86,7 +91,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tabFriends = new LinearLayout(this);
         tabFriends.setOrientation(LinearLayout.VERTICAL);
         tabFriends.setGravity(Gravity.CENTER);
-        tabFriends.setPadding(0, 40, 0, 40);
+        tabPad = getResponsivePaddingQuota() + 15;
+        tabFriends.setPadding(0, tabPad, 0, tabPad);
         tabFriends.setFocusable(true);
         tabFriends.setClickable(true);
         tabFriends.setBackgroundResource(outValueTabs.resourceId);
@@ -105,10 +111,11 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         mainRoot.addView(tabController);
 
         // 3. DYNAMIC RENDERING SURFACE
+        int masterPadding = getResponsivePaddingQuota();
         mainScrollView = new ScrollView(this);
         rosterContainer = new LinearLayout(this);
         rosterContainer.setOrientation(LinearLayout.VERTICAL);
-        rosterContainer.setPadding(40, 40, 40, 100);
+        rosterContainer.setPadding(masterPadding, masterPadding, masterPadding, masterPadding * 4);
         
         mainScrollView.addView(rosterContainer);
         mainRoot.addView(mainScrollView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
@@ -129,25 +136,40 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tvFriends.setTextColor(Color.GRAY); tvFriends.setAlpha(0.5f);
         rosterContainer.removeAllViews();
         
-        // 🚀 QA Fix: Render the actual physical array, not the Mock Placeholders!
-        rosterContainer.addView(createSectionHeader("CORE GUARDIANS (ADMINISTRATORS)"));
+        // --- 🚀 PILLAR 1: CORE GUARDIANS (NETWORK ADMINS) ---
+        rosterContainer.addView(createSectionHeader("CORE GUARDIANS (NETWORK ADMINS)"));
+        java.util.List<RosterNode> admins = new java.util.ArrayList<>();
+        java.util.List<RosterNode> spouses = new java.util.ArrayList<>();
+        java.util.List<RosterNode> children = new java.util.ArrayList<>();
+        java.util.List<RosterNode> others = new java.util.ArrayList<>();
         
         for (RosterNode n : currentRoster) {
-            String upTitle = n.getRoleTitle().toUpperCase();
-            if (upTitle.contains("OWNER") || upTitle.contains("FATHER") || upTitle.contains("MOTHER")) {
-                rosterContainer.addView(createRoleCard(n.getDisplayName().toUpperCase() + " (OWNER)", "🟢 LIVE TARGET TRACKED", true, n.getUid())); 
-            }
-            if (upTitle.contains("SPOUSE")) {
-                rosterContainer.addView(createRoleCard(n.getDisplayName().toUpperCase() + " (SPOUSE)", "🟢 LIVE TARGET TRACKED", true, n.getUid())); 
+            if (!n.isFriend()) {
+                String role = n.getRoleTitle().toUpperCase();
+                if (n.isAdministrator()) admins.add(n);
+                else if (role.contains("SPOUSE")) spouses.add(n);
+                else if (role.contains("CHILD")) children.add(n);
+                else others.add(n);
             }
         }
+        renderTreeBranch(admins, "GUARDIAN");
+
+        // --- 🚀 PILLAR 2: SPOUSE ENTITIES ---
+        if (!spouses.isEmpty()) {
+            rosterContainer.addView(createSectionHeader("SPOUSE ENTITIES"));
+            renderTreeBranch(spouses, "SPOUSE");
+        }
+
+        // --- 🚀 PILLAR 3: DEPENDENT TARGETS (CHILDREN) ---
+        if (!children.isEmpty()) {
+            rosterContainer.addView(createSectionHeader("DEPENDENT TARGETS (CHILDREN)"));
+            renderTreeBranch(children, "CHILD");
+        }
         
-        rosterContainer.addView(createSectionHeader("DEPENDENT TARGETS (TRACKED)"));
-        for (RosterNode n : currentRoster) {
-            if (n.getRoleTitle().toUpperCase().contains("CHILD")) {
-                String childTag = n.getRoleTitle().toUpperCase().contains("CHILD 1") ? "(CHILD 1)" : n.getRoleTitle().toUpperCase().contains("CHILD 2") ? "(CHILD 2)" : "(CHILD)";
-                rosterContainer.addView(createRoleCard(n.getDisplayName().toUpperCase() + " " + childTag, "🟢 LIVE TARGET TRACKED", false, n.getUid()));
-            }
+        // --- 🚀 PILLAR 4: OTHER FAMILY RELATIONS ---
+        if (!others.isEmpty()) {
+            rosterContainer.addView(createSectionHeader("UNCLASSIFIED FAMILY NODES"));
+            renderTreeBranch(others, "RELATION");
         }
     }
 
@@ -157,14 +179,26 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tvFamily.setTextColor(Color.GRAY); tvFamily.setAlpha(0.5f);
         rosterContainer.removeAllViews();
         
-        rosterContainer.addView(createSectionHeader("EXTENDED NETWORK (LIMITED ACCESS)"));
-        
-        // 🚀 QA Fix: Dynamically hook the LiveData into the Friends Tab too!
+        rosterContainer.addView(createSectionHeader("EXTENDED NETWORK (TRUSTED NODES)"));
+        java.util.List<RosterNode> friends = new java.util.ArrayList<>();
         for (RosterNode n : currentRoster) {
-            if (n.getRoleTitle().toUpperCase().contains("FRIEND") || n.getRoleTitle().toUpperCase().contains("NEIGHBOR") || n.getRoleTitle().toUpperCase().contains("TRUSTED")) {
-                String cleanRole = n.getRoleTitle().toUpperCase();
-                rosterContainer.addView(createRoleCard(n.getDisplayName().toUpperCase() + " (" + cleanRole + ")", "🟢 LIVE TARGET TRACKED", false, n.getUid()));
-            }
+            if (n.isFriend()) friends.add(n);
+        }
+        renderTreeBranch(friends, "FRIEND");
+    }
+
+    private void renderTreeBranch(java.util.List<RosterNode> nodes, String branchType) {
+        if (nodes.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("   └── [NO NODES MAPPED]");
+            empty.setTextColor(Color.DKGRAY);
+            empty.setPadding(60, 10, 0, 10);
+            rosterContainer.addView(empty);
+            return;
+        }
+        for (RosterNode n : nodes) {
+            String label = n.getDisplayName().toUpperCase();
+            rosterContainer.addView(createRoleCard(label, "🟢 LIVE TARGET TRACKED", branchType.equals("GUARDIAN"), n.getUid()));
         }
     }
 
@@ -174,7 +208,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tv.setTextColor(getGradientStart());
         tv.setTextSize(11);
         tv.setTypeface(null, Typeface.BOLD);
-        tv.setPadding(10, 30, 0, 20);
+        tv.setPadding(10, getResponsivePaddingQuota(), 0, getResponsivePaddingQuota() / 2);
         return tv;
     }
 
@@ -187,17 +221,14 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         logCard.setOrientation(LinearLayout.HORIZONTAL);
         logCard.setGravity(Gravity.CENTER_VERTICAL);
         
-        // Exact Compact Tile structure matching Device Pairing Network!
-        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
-        gd.setColor(getCardColor());
-        gd.setCornerRadius(25f);
-        logCard.setBackground(gd);
-        logCard.setElevation(8f);
+        UiArchitect.applyCard(this, logCard, "CARD_STANDARD");
 
+        int sideMargin = getResponsivePaddingQuota();
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(20, 5, 20, 5); // Ultra-tight Vertical & Lateral Gap
+        cardLp.setMargins(sideMargin, 5, sideMargin, 5); 
         logCard.setLayoutParams(cardLp);
-        logCard.setPadding(30, 15, 30, 15); // Ultra-compact internal spacing!
+        int logPad = getResponsivePaddingQuota() + 5;
+        logCard.setPadding(logPad, logPad / 2, logPad, logPad / 2); 
         
         // Avatar Emulation
         ImageView avatar = new ImageView(this);
@@ -218,18 +249,17 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             c.setStroke(4, Color.DKGRAY); // Offline State
         }
         
-        avatar.setBackground(c);
-        avatar.setPadding(10, 10, 10, 10); // True minimum padding
+        // --- INTERACTIVE FOREGROUND RE-MAPPING ---
+        android.util.TypedValue outValueBorderless = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueBorderless, true);
         
         // 🚀 Expand Touch Matrix: Clicking the Avatar/Profile Image opens the specific Citizen Dossier natively!
         avatar.setFocusable(true);
         avatar.setClickable(true);
-        android.util.TypedValue outValueBorderless = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueBorderless, true);
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             avatar.setForeground(getDrawable(outValueBorderless.resourceId));
         }
-        
+
         if (targetUid != null) {
             avatar.setOnClickListener(v -> {
                 Intent intent = new Intent(FamilyFriendsActivity.this, PersonDetailsActivity.class);
@@ -237,11 +267,10 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 intent.putExtra("TARGET_ROLE", roleTitle);
                 startActivity(intent);
             });
-        } else {
-            avatar.setOnClickListener(v -> android.widget.Toast.makeText(FamilyFriendsActivity.this, "Empty Avatar Slot. Cannot load profile.", android.widget.Toast.LENGTH_SHORT).show());
         }
         
-        logCard.addView(avatar, new LinearLayout.LayoutParams(110, 110)); // Restored scale to prevent missing vector crash!
+        int iSize = getResponsiveIconQuota();
+        logCard.addView(avatar, new LinearLayout.LayoutParams(iSize, iSize)); 
 
         // Text Matrix
         LinearLayout textBlock = new LinearLayout(this);
@@ -252,8 +281,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         TextView tvTitle = new TextView(this);
         tvTitle.setText(roleTitle);
         tvTitle.setTextColor(getTextColor());
-        tvTitle.setTextSize(14f);
-        tvTitle.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvTitle, "TEXT_LABEL");
         textBlock.addView(tvTitle);
 
         TextView tvDetail = new TextView(this);
@@ -310,30 +338,73 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             logCard.setForeground(getDrawable(outValueBorderless.resourceId));
         }
         logCard.setOnClickListener(v -> {
-            if (statusText.contains("Missing")) {
-                new android.app.AlertDialog.Builder(FamilyFriendsActivity.this)
-                    .setTitle(roleTitle + " (UNPAIRED)")
-                    .setMessage("This specific relational slot is currently empty. Tap the Green [+] Button to generate a unique pairing code and invite this person to the Network Roster.")
-                    .setPositiveButton("Dismiss", null)
-                    .show();
-            } else {
-                new android.app.AlertDialog.Builder(FamilyFriendsActivity.this)
-                    .setTitle(roleTitle + " Profile Details")
-                    .setMessage("Tracking Target: Secure Node Active\n\n" +
-                                "📡 Last Ping: 2 seconds ago\n" +
-                                "🔋 Battery Status: 85% (Optimal)\n" +
-                                "🛡️ Tracking Resolution: Strict (Ultra-Wideband)\n" +
-                                "🌐 Assigned Domain: Global Tracking permitted.\n\n" +
-                                "Live Map integration is fully stable.")
-                    .setPositiveButton("Close Details", null)
-                    .setNegativeButton("Ping Device", (dialog, which) -> {
-                        android.widget.Toast.makeText(FamilyFriendsActivity.this, "Forcing physical refresh on " + roleTitle, android.widget.Toast.LENGTH_SHORT).show();
-                    })
-                    .show();
+            if (targetUid == null) return;
+            
+            // 🚀 NEW NETWORK RELATIONSHIP CLUSTER (MIGRATED FROM DOSSIER)
+            LinearLayout dialRoot = new LinearLayout(this);
+            dialRoot.setOrientation(LinearLayout.VERTICAL);
+            dialRoot.setPadding(50, 40, 50, 40);
+            
+            TextView dialTitle = new TextView(this);
+            dialTitle.setText("REASSIGN " + (activeTab == 0 ? "FAMILY" : "FRIEND") + " ROLE");
+            dialTitle.setTextColor(getGradientStart());
+            dialTitle.setTypeface(null, Typeface.BOLD);
+            dialRoot.addView(dialTitle);
+            
+            android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
+            rg.setOrientation(LinearLayout.VERTICAL);
+            rg.setPadding(0, 30, 0, 30);
+            
+            String[] options = activeTab == 0 ? new String[]{"Mother", "Father", "Child", "Spouse"} : new String[]{"Friend (Header)", "Friend (Team)"};
+            for (int i = 0; i < options.length; i++) {
+                android.widget.RadioButton rb = new android.widget.RadioButton(this);
+                rb.setText(options[i]);
+                rb.setTextColor(getTextColor());
+                rb.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint()));
+                rb.setId(500 + i);
+                if (roleTitle.contains(options[i])) rb.setChecked(true);
+                rg.addView(rb);
             }
+            dialRoot.addView(rg);
+
+            android.app.AlertDialog dial = new android.app.AlertDialog.Builder(this)
+                .setView(dialRoot)
+                .setPositiveButton("VERIFY & MAP", (dialog, which) -> {
+                    int id = rg.getCheckedRadioButtonId();
+                    if (id != -1) {
+                        String selected = ((android.widget.RadioButton)rg.findViewById(id)).getText().toString();
+                        updateTargetRole(targetUid, selected, activeTab == 0);
+                    }
+                })
+                .setNeutralButton("VIEW DOSSIER", (dialog, which) -> {
+                    Intent intent = new Intent(FamilyFriendsActivity.this, PersonDetailsActivity.class);
+                    intent.putExtra("TARGET_UID", targetUid);
+                    intent.putExtra("TARGET_ROLE", roleTitle);
+                    startActivity(intent);
+                })
+                .setNegativeButton("EXIT", null)
+                .show();
         });
 
         return logCard;
+    }
+
+    private void updateTargetRole(String uid, String role, boolean isFamily) {
+        String famRole = isFamily ? role : "None";
+        String frRole = isFamily ? "None" : role;
+        
+        com.jdroidx.jfindme.data.local.CitizenDbHelper localDb = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+        localDb.updateCitizenRole(uid, famRole, frRole, frRole.contains("Friend"));
+        
+        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+        if (myGrp != null) {
+            java.util.Map<String, Object> cp = new java.util.HashMap<>();
+            cp.put("role_family", famRole);
+            cp.put("role_friend", frRole);
+            com.google.firebase.database.FirebaseDatabase.getInstance().getReference()
+                .child("groups").child(myGrp).child("citizen_dossiers").child(uid).updateChildren(cp);
+        }
+        android.widget.Toast.makeText(this, "Network Array Re-Mapped! Role Verified.", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.jdroidx.jfindme.ui.management;
 
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -29,6 +31,7 @@ import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.jdroidx.jfindme.engine.location.GeofenceHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 import java.util.ArrayList;
@@ -55,6 +58,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private String pendingAssignedName;
     private Double pendingLat;
     private Double pendingLng;
+    private Double pendingRadius;
     
     // UI State Architectures
     private LinearLayout listStateContainer;
@@ -76,14 +80,12 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(40, 60, 40, 40);
-        applyLinearGradient(header, 0f);
+        applyGlobalHeaderGeometry(header);
 
         TextView title = new TextView(this);
         title.setText("SAFE ZONES");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(22);
-        title.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         header.addView(title);
         listStateContainer.addView(header);
@@ -91,18 +93,19 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(40, 40, 40, 100);
+        content.setPadding(getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota(), 100);
 
         // ADD NEW ZONE BUTTON
         LinearLayout addCard = new LinearLayout(this);
         addCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(addCard, getCardColor(), 30f);
+        UiArchitect.applyCard(this, addCard, "CARD_STANDARD");
         
         View btnAdd = createIconButton("+ ESTABLISH NEW DOMAIN (HOME / SCHOOL)", android.R.drawable.ic_menu_add, v -> openMapEditorState());
         addCard.addView(btnAdd);
         
         LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        addLp.setMargins(0, 0, 0, 60);
+        int addMargin = getResponsivePaddingQuota() * 3;
+        addLp.setMargins(0, 0, 0, addMargin);
         content.addView(addCard, addLp);
 
         content.addView(createSectionHeader("ACTIVE RADAR BOUNDARIES"));
@@ -135,7 +138,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         gSearch.setCornerRadius(30f);
         searchBar.setBackground(gSearch);
         searchBar.setElevation(25f);
-        searchBar.setPadding(25, 10, 25, 10);
+        int sPad = getResponsivePaddingQuota() / 2;
+        searchBar.setPadding(sPad * 2, sPad, sPad * 2, sPad);
         
         EditText edtSearch = new EditText(this);
         edtSearch.setHint("Search Address (e.g. Oakhill)");
@@ -143,27 +147,33 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         edtSearch.setTextColor(getTextColor());
         edtSearch.setBackgroundColor(Color.TRANSPARENT);
         edtSearch.setSingleLine(true);
-        edtSearch.setTextSize(13f);
+        edtSearch.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        UiArchitect.applyText(this, edtSearch, "TEXT_BODY");
+        
+        // 🚀 QA Fix: Handle Keyboard 'Enter/Search' button for frictionless address lookups!
+        edtSearch.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                viewModel.executeOSGeocodingQuery(edtSearch.getText().toString());
+                return true;
+            }
+            return false;
+        });
         
         ImageView btnSearch = new ImageView(this);
         btnSearch.setImageResource(android.R.drawable.ic_menu_search);
         btnSearch.setColorFilter(getGradientStart());
         btnSearch.setPadding(20, 20, 20, 20);
-        btnSearch.setFocusable(true);
-        btnSearch.setClickable(true);
-        btnSearch.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                btnSearch.performClick(); return true;
-            } return false;
-        });
-        // 🚀 QA Enterprise Standard: Zero Magic Strings! Using Native Android Localized OS strings!
-        btnSearch.setContentDescription(getString(android.R.string.search_go));
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping
+        applyAccessibility(btnSearch, getString(android.R.string.search_go));
         
         searchBar.addView(edtSearch, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-        searchBar.addView(btnSearch, new LinearLayout.LayoutParams(90, 90));
+        int searchIconSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        searchBar.addView(btnSearch, new LinearLayout.LayoutParams(searchIconSize, searchIconSize));
         
         FrameLayout.LayoutParams searchLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        searchLp.setMargins(40, 60, 40, 0);
+        int sMargin = getResponsivePaddingQuota() * 2;
+        // 🚀 QA Fix: Increased Top Margin and Right Margin to prevent overlap with the Global Help Icon injected by the Base Class!
+        searchLp.setMargins(sMargin, sMargin * 10, sMargin * 10, 0); 
         searchLp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         mapStateContainer.addView(searchBar, searchLp);
 
@@ -174,7 +184,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         LinearLayout bottomConfirmArea = new LinearLayout(this);
         bottomConfirmArea.setOrientation(LinearLayout.VERTICAL);
         bottomConfirmArea.setElevation(30f);
-        applySolidCardGeometry(bottomConfirmArea, getCardColor(), 40f);
+        UiArchitect.applyCard(this, bottomConfirmArea, "CARD_DASHBOARD");
         
         btnConfirmLocation = createIconButton("CONFIRM SELECTED COORDINATES", android.R.drawable.ic_menu_mylocation, v -> showZoneNamingDialog());
         btnConfirmLocation.setVisibility(View.GONE); 
@@ -185,7 +195,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         FrameLayout.LayoutParams confirmLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         confirmLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        confirmLp.setMargins(40, 0, 40, 80);
+        int confMargin = getResponsivePaddingQuota() * 2;
+        confirmLp.setMargins(confMargin, 0, confMargin, confMargin * 3);
         mapStateContainer.addView(bottomConfirmArea, confirmLp);
         
         rootLayer.addView(mapStateContainer);
@@ -224,11 +235,25 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(60, 40, 60, 40);
+        int dialPad = getResponsivePaddingQuota() * 2;
+        layout.setPadding(dialPad, dialPad / 2, dialPad, dialPad / 2);
 
         final EditText input = new EditText(this);
         input.setHint("Zone Name (e.g. School, Home)");
         layout.addView(input);
+
+        // 🚀 Identity Bridge: Sync from Profile Address
+        View btnSyncProfile = createIconButton("PULL FROM PROFILE ADDRESS", android.R.drawable.ic_menu_mapmode, v -> {
+            String profileAddr = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this).getActiveProfileAddress();
+            if (!profileAddr.equals("Unknown Location")) {
+                viewModel.executeOSGeocodingQuery(profileAddr);
+                input.setText("HOME");
+                Toast.makeText(this, "Profile Address Synced: " + profileAddr, Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Profile Address Missing or Unregistered.", Toast.LENGTH_SHORT).show();
+            }
+        });
+        layout.addView(btnSyncProfile);
 
         TextView lblTarget = new TextView(this);
         lblTarget.setText("\nAssign To Mobile Device:");
@@ -243,6 +268,18 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         spinner.setAdapter(adapter);
         layout.addView(spinner);
 
+        // 🚀 QA Fix: Manual Perimeter Scaler (Default 100m)
+        TextView lblRadius = new TextView(this);
+        lblRadius.setText("\nSafety Perimeter (Meters):");
+        lblRadius.setTypeface(null, Typeface.BOLD);
+        lblRadius.setPadding(0, 30, 0, 10);
+        layout.addView(lblRadius);
+
+        final EditText radiusInput = new EditText(this);
+        radiusInput.setText("100"); // 🚀 Enterprise Standard
+        radiusInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        layout.addView(radiusInput);
+
         builder.setView(layout);
 
         // Fetch Array intelligently via Viewmodel instead of jamming Activity loop
@@ -256,10 +293,12 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         builder.setPositiveButton("DEPLOY TETHER", (dialog, which) -> {
             String targetName = input.getText().toString().trim();
             String assignedName = spinner.getSelectedItem().toString();
+            String rVal = radiusInput.getText().toString().trim();
+            double radius = rVal.isEmpty() ? 100.0 : Double.parseDouble(rVal);
             LatLng draft = viewModel.getDraftCoordinateLocation().getValue();
             
             if(!targetName.isEmpty() && draft != null) {
-                checkPermissionsAndAdd(targetName, assignedName, draft.latitude, draft.longitude);
+                checkPermissionsAndAdd(targetName, assignedName, draft.latitude, draft.longitude, radius);
             } else {
                 Toast.makeText(this, "Target Designation Missing or Map Empty!", Toast.LENGTH_SHORT).show();
             }
@@ -303,7 +342,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         }
     }
 
-    private void checkPermissionsAndAdd(String name, String assignedName, double lat, double lng) {
+    private void checkPermissionsAndAdd(String name, String assignedName, double lat, double lng, double radius) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
             (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
              ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED)) {
@@ -312,6 +351,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             pendingAssignedName = assignedName;
             pendingLat = lat;
             pendingLng = lng;
+            pendingRadius = radius;
+            // Radius cached in pending logic if necessary
             
             String[] permissions = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q ?
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION} :
@@ -319,27 +360,35 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             
             ActivityCompat.requestPermissions(this, permissions, GEOFENCE_PERMISSION_CODE);
         } else {
-            viewModel.submitCloudCoordinateSync(name, assignedName, lat, lng);
+            // 🦋 Guardian Angel Check: 3000ms Minimum Wait Blockade
+            com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            viewModel.submitCloudCoordinateSync(name, assignedName, lat, lng, radius);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+            }, 3000);
         }
     }
 
-    private void addLocalGeofenceTile(String name, String address, String assignedName, double lat, double lng, boolean alertsEnabled, boolean isZoneActive) {
+    private void addLocalGeofenceTile(String name, String address, String assignedName, double lat, double lng, double radius, boolean alertsEnabled, boolean isZoneActive) {
         LinearLayout item = new LinearLayout(this);
-        item.setOrientation(LinearLayout.HORIZONTAL);
+        // 🚀 L7 Adaptive Content: Switching to Vertical in LIBERAL to prevent asset collision!
+        item.setOrientation(UiArchitect.getStage(this) == UiArchitect.DesignStage.LIBERAL ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
-        applySolidCardGeometry(item, getCardColor(), 30f);
+        UiArchitect.applyCard(this, item, "CARD_STANDARD");
         
         LinearLayout.LayoutParams itemLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        itemLp.setMargins(0, 0, 0, 25);
+        int iMargin = getResponsivePaddingQuota() + 5;
+        itemLp.setMargins(0, 0, 0, iMargin);
         item.setLayoutParams(itemLp);
         
         View indicator = new View(this);
         indicator.setBackgroundColor(Color.parseColor("#4CAF50")); 
-        item.addView(indicator, new LinearLayout.LayoutParams(15, ViewGroup.LayoutParams.MATCH_PARENT));
+        int indicatorWidth = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 15);
+        item.addView(indicator, new LinearLayout.LayoutParams(indicatorWidth, ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
-        text.setPadding(40, 40, 40, 40);
+        text.setPadding(getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota());
         text.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         LinearLayout nameRow = new LinearLayout(this);
@@ -349,32 +398,28 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         ImageView powerIcon = new ImageView(this);
         powerIcon.setImageResource(android.R.drawable.ic_lock_power_off);
         powerIcon.setColorFilter(isZoneActive ? Color.parseColor("#4CAF50") : Color.GRAY);
-        powerIcon.setPadding(0, 0, 25, 0);
-        powerIcon.setFocusable(true);
-        powerIcon.setClickable(true);
-        powerIcon.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                powerIcon.performClick(); return true;
-            } return false;
-        });
+        int pPad = getResponsivePaddingQuota();
+        powerIcon.setPadding(0, 0, pPad, 0);
+        applyAccessibility(powerIcon, "Toggle Zone Active State");
         powerIcon.setOnClickListener(v -> viewModel.toggleZoneActiveState(name, isZoneActive));
-        nameRow.addView(powerIcon, new LinearLayout.LayoutParams(120, 120));
+        int powerIconSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+        nameRow.addView(powerIcon, new LinearLayout.LayoutParams(powerIconSize, powerIconSize));
 
         TextView tvName = new TextView(this);
         tvName.setText(name.toUpperCase());
         tvName.setTextColor(getTextColor());
-        tvName.setTextSize(14f);
-        tvName.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvName, "TEXT_BODY");
         nameRow.addView(tvName);
         
         text.addView(nameRow);
 
         TextView tvDetail = new TextView(this);
-        tvDetail.setText("📍 " + address + "\n🎯 Target: " + assignedName + "\n⭕ Radius: 200m Perimeter");
+        tvDetail.setText("📍 " + address + "\n🎯 Target: " + assignedName + "\n⭕ Radius: " + Math.round(radius) + "m Perimeter");
         tvDetail.setTextColor(getSecondaryTextColor());
-        tvDetail.setTextSize(12);
+        UiArchitect.applyText(this, tvDetail, "TEXT_SUB");
         tvDetail.setLineSpacing(0, 1.2f);
-        tvDetail.setPadding(10, 15, 0, 15);
+        int detailPad = getResponsivePaddingQuota() / 2;
+        tvDetail.setPadding(detailPad, detailPad * 2, 0, detailPad * 2);
         tvDetail.setTypeface(null, Typeface.BOLD);
         text.addView(tvDetail);
 
@@ -399,13 +444,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         bellIcon.setImageResource(android.R.drawable.ic_popup_reminder);
         bellIcon.setColorFilter(alertsEnabled ? Color.parseColor("#4CAF50") : Color.GRAY);
         bellIcon.setPadding(35, 15, 35, 15);
-        bellIcon.setFocusable(true);
-        bellIcon.setClickable(true);
-        bellIcon.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                bellIcon.performClick(); return true;
-            } return false;
-        });
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping (V15.2)
+        applyAccessibility(bellIcon, "Toggle Alert State");
         if (isZoneActive) {
             bellIcon.setOnClickListener(v -> viewModel.toggleBellAlertState(name, alertsEnabled));
         }
@@ -418,29 +458,19 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         TextView tickIcon = new TextView(this);
         tickIcon.setText("✅"); 
-        tickIcon.setTextSize(16);
+        UiArchitect.applyText(this, tickIcon, "TEXT_HEADER");
         tickIcon.setAlpha(0.3f); // Default greyed out
         tickIcon.setPadding(0, 10, 15, 10);
-        tickIcon.setFocusable(true);
-        tickIcon.setClickable(true);
-        tickIcon.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                tickIcon.performClick(); return true;
-            } return false;
-        });
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping (V15.2)
+        applyAccessibility(tickIcon, "Status: Safe");
 
         TextView crossIcon = new TextView(this);
         crossIcon.setText("❌"); 
         crossIcon.setTextSize(16);
         crossIcon.setAlpha(0.3f); // Default greyed out
         crossIcon.setPadding(15, 10, 0, 10);
-        crossIcon.setFocusable(true);
-        crossIcon.setClickable(true);
-        crossIcon.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                crossIcon.performClick(); return true;
-            } return false;
-        });
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping (V15.2)
+        applyAccessibility(crossIcon, "Status: Outside");
         
         statusLayout.addView(tickIcon);
         statusLayout.addView(crossIcon);
@@ -460,7 +490,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                                  if (cLat != null && cLng != null) {
                                      float[] res = new float[1];
                                      android.location.Location.distanceBetween(lat, lng, cLat, cLng, res);
-                                     if (res[0] <= 200f) { tickIcon.setAlpha(1.0f); crossIcon.setAlpha(0.3f); }
+                                     if (res[0] <= (float)radius) { tickIcon.setAlpha(1.0f); crossIcon.setAlpha(0.3f); }
                                      else { tickIcon.setAlpha(0.3f); crossIcon.setAlpha(1.0f); }
                                  }
                                  break;
@@ -493,7 +523,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                                         String distStr = dist > 1000f ? String.format(java.util.Locale.US, "%.2f km", dist / 1000f) : Math.round(dist) + " m";
                                         
                                         String eventMsg;
-                                        if (dist <= 200f) {
+                                        if (dist <= (float)radius) {
                                             tickIcon.setAlpha(1.0f);
                                             crossIcon.setAlpha(0.3f);
                                             eventMsg = "INSIDE " + name;
@@ -536,13 +566,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         historyIcon.setColorFilter(Color.parseColor("#FF9800")); // Orange
         historyIcon.setPadding(35, 15, 35, 15);
         historyIcon.setContentDescription("View Zone History Log");
-        historyIcon.setFocusable(true);
-        historyIcon.setClickable(true);
-        historyIcon.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                historyIcon.performClick(); return true;
-            } return false;
-        });
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping (V15.2)
+        applyAccessibility(historyIcon, "View Zone History Log");
         if (isZoneActive) {
             historyIcon.setOnClickListener(v -> viewModel.fetchGeofenceHistory(name));
         } else {
@@ -555,13 +580,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         delete.setColorFilter(Color.parseColor("#F44336")); // Red
         delete.setPadding(35, 15, 35, 15);
         delete.setContentDescription(getString(android.R.string.cancel));
-        delete.setFocusable(true);
-        delete.setClickable(true);
-        delete.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == android.view.KeyEvent.ACTION_UP && keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                delete.performClick(); return true;
-            } return false;
-        });
+        // 🛡️ QA Hardening: Standardized Accessibility Mapping (V15.2)
+        applyAccessibility(delete, getString(android.R.string.cancel));
         delete.setOnClickListener(v -> {
             new android.app.AlertDialog.Builder(GeofenceActivity.this)
                 .setTitle("⚠️ DELETE SAFE ZONE")
@@ -576,8 +596,9 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         rightPanel.addView(historyIcon);
         rightPanel.addView(delete);
-
-        item.addView(rightPanel, new LinearLayout.LayoutParams(150, ViewGroup.LayoutParams.MATCH_PARENT));
+        
+        int rightPanelWidth = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 150);
+        item.addView(rightPanel, new LinearLayout.LayoutParams(rightPanelWidth, ViewGroup.LayoutParams.MATCH_PARENT));
 
         activeBoundariesContainer.addView(item);
     }
@@ -586,9 +607,9 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart());
-        header.setTextSize(11);
-        header.setTypeface(null, Typeface.BOLD);
-        header.setPadding(10, 20, 0, 20);
+        UiArchitect.applyText(this, header, "TEXT_LABEL");
+        int hPad = getResponsivePaddingQuota();
+        header.setPadding(hPad / 2, hPad, 0, hPad);
         return header;
     }
 
@@ -603,11 +624,11 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             if (activeBoundariesContainer != null) activeBoundariesContainer.removeAllViews();
             for (RenderedGeofence zone : renderedGeofences) {
                 if (zone.isZoneActive()) {
-                    geofenceHelper.addGeofence(zone.getName() + "___" + zone.getAssignedName(), zone.getLat(), zone.getLng(), 200f); 
+                    geofenceHelper.addGeofence(zone.getName() + "___" + zone.getAssignedName(), zone.getLat(), zone.getLng(), (float)zone.getRadius()); 
                 } else {
                     geofenceHelper.removeGeofence(zone.getName() + "___" + zone.getAssignedName());
                 }
-                addLocalGeofenceTile(zone.getName(), zone.getAddress(), zone.getAssignedName(), zone.getLat(), zone.getLng(), zone.getAlertsEnabled(), zone.isZoneActive());
+                addLocalGeofenceTile(zone.getName(), zone.getAddress(), zone.getAssignedName(), zone.getLat(), zone.getLng(), zone.getRadius(), zone.getAlertsEnabled(), zone.isZoneActive());
             }
         });
 
@@ -640,7 +661,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                 ScrollView sv = new ScrollView(this);
                 LinearLayout container = new LinearLayout(this);
                 container.setOrientation(LinearLayout.VERTICAL);
-                container.setPadding(40, 40, 40, 40);
+                container.setPadding(getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota());
                 
                 for (int i = 0; i < logs.length; i++) {
                     String raw = logs[i];
@@ -655,26 +676,26 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
                     LinearLayout logCard = new LinearLayout(this);
                     logCard.setOrientation(LinearLayout.VERTICAL);
-                    logCard.setPadding(40, 40, 40, 40);
-                    applySolidCardGeometry(logCard, getCardColor(), 40f);
+                    logCard.setPadding(getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota(), getResponsivePaddingQuota());
+                    UiArchitect.applyCard(this, logCard, "CARD_STANDARD");
                     
                     LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    cardLp.setMargins(0, 0, 0, 30);
+                    int logMargin = getResponsivePaddingQuota() + 10;
+                    cardLp.setMargins(0, 0, 0, logMargin);
                     logCard.setLayoutParams(cardLp);
 
                     TextView tvHeader = new TextView(this);
                     tvHeader.setText("⏱️ ACTION #" + (logs.length - i) + "  •  " + time.toUpperCase());
                     tvHeader.setTextColor(getGradientStart());
-                    tvHeader.setTextSize(11f);
-                    tvHeader.setTypeface(null, Typeface.BOLD);
-                    tvHeader.setPadding(0, 0, 0, 15);
+                    UiArchitect.applyText(this, tvHeader, "TEXT_LABEL");
+                    int tPad = getResponsivePaddingQuota();
+                    tvHeader.setPadding(0, 0, 0, tPad / 2);
                     logCard.addView(tvHeader);
 
                     TextView tvDetail = new TextView(this);
                     tvDetail.setText(msg.contains("INSIDE") ? "✅ " + msg : (msg.contains("OUTSIDE") ? "❌ " + msg : "⚠️ " + msg));
                     tvDetail.setTextColor(getTextColor());
-                    tvDetail.setTextSize(13f);
-                    tvDetail.setTypeface(null, Typeface.BOLD);
+                    UiArchitect.applyText(this, tvDetail, "TEXT_BODY");
                     logCard.addView(tvDetail);
 
                     container.addView(logCard);
@@ -701,8 +722,13 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             }
             if (fullyGranted && pendingLat != null) {
                 // Dependency recovered: Automatically proceed to deploying the coordinate to Cloud!
-                viewModel.submitCloudCoordinateSync(pendingZoneName, pendingAssignedName, pendingLat, pendingLng);
-                Toast.makeText(this, "Security Perimeter Authorized & Synced!", Toast.LENGTH_LONG).show();
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                viewModel.submitCloudCoordinateSync(pendingZoneName, pendingAssignedName, pendingLat, pendingLng, pendingRadius != null ? pendingRadius : 100.0);
+                
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    Toast.makeText(this, "Security Perimeter Authorized & Synced!", Toast.LENGTH_LONG).show();
+                }, 3000);
             } else {
                 Toast.makeText(this, "Permission Denied. Boundaries cannot trigger alerts without OS capabilities.", Toast.LENGTH_LONG).show();
             }

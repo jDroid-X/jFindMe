@@ -55,6 +55,20 @@ public class AvatarCropActivity extends BaseActivityJava {
         saveBtn.setLayoutParams(btnLp);
         
         saveBtn.setOnClickListener(v -> cv.performCropAndSave());
+        Button rotateBtn = new Button(this);
+        rotateBtn.setText("ROTATE IMAGE 90° ⟳");
+        rotateBtn.setBackgroundColor(Color.parseColor("#424242")); // iOS Dark Mode Hue
+        rotateBtn.setTextColor(Color.WHITE);
+        rotateBtn.setTypeface(null, Typeface.BOLD);
+        
+        FrameLayout.LayoutParams rotLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
+        rotLp.gravity = Gravity.BOTTOM;
+        rotLp.setMargins(50, 0, 50, 220); // Exactly stacked 20px above the primary 'Crop' executor
+        rotateBtn.setLayoutParams(rotLp);
+        
+        rotateBtn.setOnClickListener(v -> cv.performRotate());
+        root.addView(rotateBtn);
+
         root.addView(saveBtn);
         return root;
     }
@@ -160,6 +174,15 @@ public class AvatarCropActivity extends BaseActivityJava {
             float x = event.getX(0) + event.getX(1);
             float y = event.getY(0) + event.getY(1);
             point.set(x / 2, y / 2);
+        }
+        
+        // 🚀 QA Fix: Global EXIF Header Rotator Bypass
+        public void performRotate() {
+            if (rawPhoto != null) {
+                // Rotates flawlessly around the exact Cartesian center of the 80% screen Mask!
+                matrix.postRotate(90f, circleCX, circleCY);
+                invalidate();
+            }
         }
         
         public void performCropAndSave() {

@@ -67,10 +67,12 @@ object AlertManager {
         val geoChannelId = "geofence_sentinel"
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(geoChannelId, "Geofence Sentinel", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            // 🚀 QA Fix: Elevated to IMPORTANCE_HIGH to mathematically guarantee Heads-Up physical drop-down UI!
+            val channel = NotificationChannel(geoChannelId, "Geofence Sentinel", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Dependent perimeter transitions"
                 enableLights(true)
                 lightColor = android.graphics.Color.BLUE
+                enableVibration(true) // Required for Heads-Up trigger!
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -79,7 +81,8 @@ object AlertManager {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Dependent Perimeter Alert")
             .setContentText(payload)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // 🚀 QA Fix: Forces Legacy OS to execute Heads-Up drop-down!
+            .setDefaults(NotificationCompat.DEFAULT_ALL)   // 🚀 QA Fix: Force Sound and Vibrate synchronously!
             .setAutoCancel(true)
             .build()
 

@@ -111,4 +111,69 @@ class PairingRepository {
                 SystemLogger.i(TAG, "Device linked to group: $groupId")
             }
     }
+    
+    // 🚀 NEW SECURE MVVM ARCHITECTURE - SCENARIO HANDSHAKES
+    
+    companion object {
+        private val db = FirebaseDatabase.getInstance().reference
+
+        @JvmStatic
+        fun executeGenesisNode(uid: String, onSuccess: (String) -> Unit) {
+            val newGroupId = db.child("groups").push().key ?: return
+            
+            val updates = hashMapOf<String, Any>(
+                "users/$uid/active_group" to newGroupId,
+                "groups/$newGroupId/members/$uid" to true
+            )
+            
+            db.updateChildren(updates).addOnSuccessListener {
+                SystemLogger.i("PairingRepo", "Genesis Node mathematically constructed: $newGroupId")
+                onSuccess(newGroupId)
+            }
+        }
+
+        @JvmStatic
+        fun executeFamilyHandshake(hostUid: String, hostGroupId: String, targetUid: String, roleFam: String, onSuccess: () -> Unit) {
+            // 🚀 QA Fix: Master "One Scan One Device" enforcement!
+            // First, physically extract the Host's existing authorized hardware CSV map.
+            db.child("users").child(hostUid).child("valid_linked_uids").get().addOnSuccessListener { snapshot ->
+                val currentCsv = snapshot.getValue(String::class.java) ?: ""
+                val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                
+                // Add the newly scanned hardware node explicitly to the Host's UI whitelist!
+                if (!approvedIds.contains(targetUid)) {
+                    approvedIds.add(targetUid)
+                }
+                val newSecureCsv = approvedIds.joinToString(",")
+
+                val updates = hashMapOf<String, Any>(
+                    "users/$targetUid/active_group" to hostGroupId,
+                    "users/$hostUid/valid_linked_uids" to newSecureCsv, // 🔒 Injects scanner whitelist natively into the payload
+                    "groups/$hostGroupId/members/$targetUid" to true,
+                    "groups/$hostGroupId/citizen_dossiers/$targetUid/role_family" to roleFam,
+                    "groups/$hostGroupId/citizen_dossiers/$targetUid/role_friend" to "None"
+                )
+                
+                db.updateChildren(updates).addOnSuccessListener {
+                    SystemLogger.w("PairingRepo", "Target Absorbed into Core Family Array. Scanner Whitelist Updated: $targetUid -> $roleFam")
+                    onSuccess()
+                }
+            }
+        }
+
+        @JvmStatic
+        fun executeFriendHandshake(hostUid: String, targetUid: String, onSuccess: () -> Unit) {
+            // Peer-to-peer insulation. Friends do NOT share the explicit active_group.
+            // Instead, they are pushed into a dedicated "friend_matrix" node.
+            val updates = hashMapOf<String, Any>(
+                "users/$hostUid/friend_matrix/$targetUid" to true,
+                "users/$targetUid/friend_matrix/$hostUid" to true
+            )
+            
+            db.updateChildren(updates).addOnSuccessListener {
+                SystemLogger.w("PairingRepo", "Peer-to-Peer Insulated Link Completed.")
+                onSuccess()
+            }
+        }
+    }
 }

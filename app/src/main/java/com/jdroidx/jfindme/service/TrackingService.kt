@@ -22,7 +22,8 @@ class TrackingService : Service() {
     private lateinit var locationEngine: LocationEngine
     private lateinit var repository: LocationRepository
     private var batteryReceiver: BroadcastReceiver? = null
-    private val TAG = "TrackingService"
+    private var cpuWakeLock: android.os.PowerManager.WakeLock? = null
+    private val TAG = "TrackingService_DozeBypass"
 
     override fun onCreate() {
         super.onCreate()
@@ -37,7 +38,12 @@ class TrackingService : Service() {
             startForeground(SERVICE_NOTIFICATION_ID, getNotification("Initializing tracking..."))
         }
         
-        val prefs = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE)
+        // 🚀 QA Fix: Force Doze Mode Bypass via Hardware CPU Wakelock
+        val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        cpuWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::TelemetryWakeLock")
+        cpuWakeLock?.acquire() // Forces CPU to physically stay awake executing Coroutines safely even when Screen is Locked!
+
+        val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
         val userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
 
         locationEngine = LocationEngine(this) { location ->
@@ -49,7 +55,17 @@ class TrackingService : Service() {
 
             SystemLogger.d(TAG, "Location updated: ${location.latitude}, ${location.longitude}")
             
-            // QA Crash Fix: Permitted unauthenticated Offline Testers to still upload GPS logic!
+            // 🚀 QA Fix: Force Background Avatar Sync (V8.7)
+            val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
+            val genderStr = prefs.getString("user_gender", "Male") ?: "Male"
+            val safeBaseId = if (rawBaseId == -1) {
+                 if (genderStr.contains("Female", true)) 4 else 1 // Fallback to 'Student' (F) or 'Walker' (M)
+            } else {
+                 rawBaseId 
+            }
+            val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(safeBaseId)
+            val resolvedAvatarId = if (dynamicIdx == -1) "custom_photo.png" else "avatar_custom_$dynamicIdx"
+
             val userId = getQACompliantDeviceId()
             val userLocation = UserLocation(
                 userId = userId,
@@ -60,7 +76,11 @@ class TrackingService : Service() {
                 bearing = location.bearing,
                 speed = location.speed,
                 timestamp = System.currentTimeMillis(),
-                allowDependents = prefs.getBoolean("allow_dependents", true)
+                avatar_id = resolvedAvatarId, 
+                allowDependents = prefs.getBoolean("allow_dependents", true),
+                active_group = prefs.getString("active_group", "") ?: "",
+                role_family = prefs.getString("role_family", "None") ?: "None",
+                role_friend = prefs.getString("role_friend", "None") ?: "None"
             )
             repository.updateMyLocation(userLocation)
         }
@@ -120,8 +140,14 @@ class TrackingService : Service() {
         locationEngine.stopTracking()
         
         // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
+        // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
         batteryReceiver?.let {
             try { unregisterReceiver(it) } catch (e: Exception) { SystemLogger.e(TAG, "Receiver Cleanup Error", e) }
+        }
+        
+        // 🚀 QA Architecture: De-allocate Hardware Wakelock cleanly preventing Phantom battery draining
+        if (cpuWakeLock != null && cpuWakeLock!!.isHeld) {
+            cpuWakeLock?.release()
         }
     }
 
@@ -136,7 +162,7 @@ class TrackingService : Service() {
         if (authUid != null) return authUid
         
         // Native Context Access works flawlessly inside Service!
-        val prefs = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
         var mockId = prefs.getString("mock_device_uuid", null)
         if (mockId == null) {
             mockId = "DEV_${java.util.UUID.randomUUID().toString().substring(0, 8)}"

@@ -12,6 +12,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 
 import org.json.JSONObject;
 
@@ -26,7 +28,7 @@ public class SystemLogActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
-        prefs = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE);
+        prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
 
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
@@ -40,15 +42,14 @@ public class SystemLogActivity extends BaseActivityJava {
         TextView title = new TextView(this);
         title.setText("SYSTEM AUDIT LOG");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         header.addView(title);
 
         TextView subtitle = new TextView(this);
         subtitle.setText("Device Configuration & Cache Diagnostics");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
-        subtitle.setTextSize(12);
+        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
         header.addView(subtitle);
         
         mainRoot.addView(header);
@@ -57,7 +58,9 @@ public class SystemLogActivity extends BaseActivityJava {
         ScrollView scrollView = new ScrollView(this);
         LinearLayout listContainer = new LinearLayout(this);
         listContainer.setOrientation(LinearLayout.VERTICAL);
-        listContainer.setPadding(40, 40, 40, 100);
+        
+        int masterPad = getResponsivePaddingQuota();
+        listContainer.setPadding(masterPad, masterPad, masterPad, masterPad * 3);
 
         // Inject the Diagnostic Categories
         listContainer.addView(createDiagnosticItem("Device UUID Identity", "Core Authentication & Firebase Node Matrix", this::generateDeviceIdentityReport));
@@ -132,14 +135,13 @@ public class SystemLogActivity extends BaseActivityJava {
         TextView tvTitle = new TextView(this);
         tvTitle.setText(catTitle);
         tvTitle.setTextColor(getGradientStart()); // Themes Dynamically!
-        tvTitle.setTextSize(16);
-        tvTitle.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvTitle, "TEXT_TITLE");
         row.addView(tvTitle);
 
         TextView tvDesc = new TextView(this);
         tvDesc.setText(desc);
         tvDesc.setTextColor(getSecondaryTextColor());
-        tvDesc.setTextSize(12);
+        UiArchitect.applyText(this, tvDesc, "TEXT_BODY");
         tvDesc.setPadding(0, 10, 0, 0);
         row.addView(tvDesc);
 
@@ -182,8 +184,11 @@ public class SystemLogActivity extends BaseActivityJava {
         LinearLayout.LayoutParams reportLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         wrapper.addView(diagnosticReport, reportLp);
 
+        UiArchitect.DesignStage stage = UiArchitect.getStage(this);
+        int itemGap = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.scalePadding(stage, 25);
+        
         LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        wrapLp.setMargins(0, 0, 0, 30);
+        wrapLp.setMargins(0, 0, 0, itemGap);
         wrapper.setLayoutParams(wrapLp);
 
         return wrapper;

@@ -127,44 +127,27 @@ object LocalPairingManager {
      * Final architectural bridge. Takes physical offline nodes and mounts them into the Unified Cloud Tracker.
      */
     fun finalizeLocalMerge(hostDeviceId: String, childDeviceId: String, onMergeComplete: (Boolean) -> Unit) {
-        // 🚀 QA ARCHITECTURE FIX: "Local P2P Multi-User Disconnect Flaw"
-        // Prevent destruction of existing Family Groups via Nearby Android devices
-        usersEndpoint.child(hostDeviceId).child("active_group").get().addOnSuccessListener { snapshot ->
-            val existingGroupId = snapshot.getValue(String::class.java)
-            if (!existingGroupId.isNullOrEmpty()) {
-                // Parent physically owns a group already! Inject the P2P Child natively.
-                groupsEndpoint.child(existingGroupId).child("members").child(childDeviceId).setValue(true).addOnSuccessListener {
-                    usersEndpoint.child(childDeviceId).child("active_group").setValue(existingGroupId)
-                    SystemLogger.i(TAG, "Local P2P Handshake Fully Authorized: Child securely appended to existing Master Group ($existingGroupId).")
-                    onMergeComplete(true)
-                }
-            } else {
-                // Total fresh Local Connection
-                forgeLocalPersistentGroup(hostDeviceId, childDeviceId, onMergeComplete)
-            }
+        // 🚀 QA STRICK RULE: "no download of device pairing with other mobile... scan one device one device pair"
+        // Force offline Nearby connections to adhere to the strict 1-to-1 P2P friend_matrix architecture!
+        usersEndpoint.child(hostDeviceId).child("friend_matrix").child(childDeviceId).setValue(true).addOnSuccessListener {
+            usersEndpoint.child(childDeviceId).child("friend_matrix").child(hostDeviceId).setValue("HOST_LOCAL")
+            SystemLogger.i("LocalPairingManager", "Strict Local P2P Matrix Binding Complete. Logging Audit Ledger...")
+            
+            // 🚀 AUDIT LEDGER: Log Local P2P Node Status
+            val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(com.jdroidx.jfindme.JFindMeApplication.getContext())
+            db.logDevicePairing(hostDeviceId, "LOCAL_HOST_NODE", childDeviceId, "LOCAL_CHILD_NODE", "PEER_P2P", "LOCAL_ONLY", "P2P_SOCKET_ESTABLISHED")
+            
+            onMergeComplete(true)
         }.addOnFailureListener {
-            SystemLogger.e(TAG, "Legacy P2P Group Verification Crash.", it)
-            forgeLocalPersistentGroup(hostDeviceId, childDeviceId, onMergeComplete)
+            SystemLogger.e(TAG, "Legacy P2P Matrix Binding Crash.", it)
+            onMergeComplete(false)
         }
     }
 
     private fun forgeLocalPersistentGroup(hostDeviceId: String, childDeviceId: String, onMergeComplete: (Boolean) -> Unit) {
-        val groupId = "GRP_LOCAL_" + System.currentTimeMillis()
-
-        val groupData = mapOf(
-            "host" to hostDeviceId,
-            "members/$hostDeviceId" to true,
-            "members/$childDeviceId" to true
-        )
-
-        groupsEndpoint.child(groupId).updateChildren(groupData).addOnSuccessListener {
-            usersEndpoint.child(hostDeviceId).child("active_group").setValue(groupId)
-            usersEndpoint.child(childDeviceId).child("active_group").setValue(groupId)
-            SystemLogger.i(TAG, "Local P2P Handshake Approved: Fresh Master Group Built ($groupId).")
-            onMergeComplete(true)
-        }.addOnFailureListener {
-            onMergeComplete(false)
-        }
+        // Obsolete Engine: P2P friend_matrix completely handles offline arrays now!
+        SystemLogger.i(TAG, "Legacy forgeLocalPersistentGroup bypassed. Array already written to friend_matrix natively.")
+        onMergeComplete(true)
     }
 
     // QA In-Memory Cache: Prevents the Bluetooth tracker from seizing mid-scan.

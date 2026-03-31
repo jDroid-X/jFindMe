@@ -148,6 +148,27 @@ public class HelpSupportActivity extends BaseActivityJava {
     }
 
     private void buildHelpCards() {
+        // 🚀 QA PRIORITY 1: FRESH PAIRING GUIDELINES
+        faqViews.add(createFaqCard("PROTOCOL: Fresh Device Pairing (Handshake)", 
+            "Functionality: Establishes a secure 1-to-1 link between a Host (Parent/Admin) and a Target device.\n\n" +
+            "• Step 1: Open 'Network Gateway' via Dashboard or Drawer on both devices.\n" +
+            "• Step 2: The Host selects 'OPTION A [Remote]' or 'OPTION B [Nearby]'.\n" +
+            "• Step 3: Tap 'GENERATE UNIQUE TOKEN' on the Host device to reveal the QR Matrix & Alphanumeric code.\n" +
+            "• Step 4: The Target device taps 'SCAN QR MATRIX' or enters the code manually into the 'Handshake Identity' field.\n" +
+            "• Step 5: Host receives a 'Cloud Handshake Requested' pop-up. Select the Relationship (Owner, Spouse, Child, Friend) and tap 'APPROVE' to lock the sync."
+        ));
+
+        // 🚀 QA PRIORITY 2: CRITICAL RECOVERY PROTOCOL
+        faqViews.add(createFaqCard("PROTOCOL: Critical Identity Recovery (Roster Restore)", 
+            "Functionality: Synchronizes and reclaims legacy device links after a factory reset, app uninstall, or hardware migration.\n\n" +
+            "• Scenario: If your Map Dashboard is empty after re-installation, you must trigger a Roster Restoration.\n" +
+            "• Step 1: Navigate to the 'Network Gateway' screen.\n" +
+            "• Step 2: Scroll to the bottom and tap the 'RESTORE LOST ROSTER ASSETS' button.\n" +
+            "• Step 3: The system scans the Priority Database for historical connections bound to your Global UID.\n" +
+            "• Step 4: Tick the legacy devices you wish to reactivate from the list.\n" +
+            "• Step 5: Tap 'RESTORE'. The system will rebuild the matrix and re-display your family on the live map."
+        ));
+
         faqViews.add(createFaqCard("Screen: App Setup & Profile Login", 
             "Functionality: Secures your raw native identity and syncs Firebase Node parameters.\n\n" +
             "• Step 1: Open App. Provide Phone & Nickname securely.\n" +
@@ -219,14 +240,36 @@ public class HelpSupportActivity extends BaseActivityJava {
             "Functionality: Displays a categorized list of all actively linked devices.\n\n" +
             "• Step 1: Open 'Family and Friends' from the Navigation Drawer.\n" +
             "• Step 2: Observe online statuses labeled securely (e.g. 'Father', 'Mother').\n" +
-            "• Step 3: Tap a member to configure exact specific granular permissions individually."
+            "• Step 3: Tap a member to configure granular permissions individually.\n\n" +
+            "PRIVACY PERMISSIONS (PROS vs CONS):\n\n" +
+            "| State | Pros | Cons |\n" +
+            "| :--- | :--- | :--- |\n" +
+            "| ✅ GRANTED | Full recovery sync, real-time safety, remote admin. | Higher data usage, cloud-stored records. |\n" +
+            "| ❌ DENIED | Absolute local-only privacy, GDPR minimization. | No remote recovery, limited emergency alerts. |"
         ));
 
-        faqViews.add(createFaqCard("Screen: Global Settings & Theme Engine", 
+        faqViews.add(createFaqCard("Global Settings & Theme Engine", 
             "Functionality: Architecture hub for Application colors, Battery tuning, and Overrides.\n\n" +
             "• Step 1: Access 'Settings Hub' from the Map Dashboard.\n" +
             "• Step 2: Override the 'Tracking Resolution' interval or toggle 'Ghost Mode'.\n" +
             "• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App."
+        ));
+
+        // 🚀 QA Fix: Master Database Table Architectural Mapping
+        faqViews.add(createFaqCard("Database Architecture & Storage Sync Pipeline", 
+            "Functionality: Maps the entire footprint of active databases generated from Login to Logout natively.\n\n" +
+            "☁️ FIREBASE CLOUD TABLES\n" +
+            "• users (MASTER): Primary Identity truth, physical node avatars, and strict 1-to-1 friend_matrix.\n" +
+            "• citizen_dossiers / isolated_dossiers (MASTER): Stores medical data & hardware access constraint ACLs.\n" +
+            "• groups (MASTER): Secure network sandbox natively tracking isolated 1-to-1 Geofences offline.\n" +
+            "• locations (TRANSACTIONAL): Continually records high-velocity physical GPS telemetry coordinates via TrackingService.\n" +
+            "• citizen_dossier_logs (TRANSACTIONAL): Persistent Audit Trail timeline plotting exactly who edited which toggles.\n" +
+            "• pairing_requests (TRANSACTIONAL): Volatile QR code handshake hashes cleanly eradicated after 3.5 seconds automatically.\n\n" +
+            "💽 LOCAL SQLITE NATIVE TABLES (JFindMe_CitizenData.db)\n" +
+            "• personal_table (MASTER): Local physical mirror of Cloud Dossier ensuring zero-network read availability.\n" +
+            "• roster_table (MASTER): Native hardware cache of friend_matrix connections mapped directly to silicon memory.\n" +
+            "• safezone_table (MASTER): Structural memory of boundary radius constraints powering the Android background OS Geofencing API.\n" +
+            "• alerts_table (TRANSACTIONAL): High-speed logging ledger of boundary/siren Push Notifications fired directly to the display."
         ));
     }
 

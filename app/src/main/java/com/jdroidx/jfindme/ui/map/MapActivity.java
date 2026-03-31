@@ -48,6 +48,7 @@ import com.jdroidx.jfindme.engine.map.MarkerClusterer;
 import com.jdroidx.jfindme.engine.security.SecurityEngine;
 import com.jdroidx.jfindme.engine.alert.AlertManager;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.group.GroupActivity;
 import com.jdroidx.jfindme.ui.management.GeofenceActivity;
 import com.jdroidx.jfindme.ui.management.HealthActivity;
@@ -100,6 +101,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SystemLogger.i(TAG, "MapActivity [onCreate] executed. Starting UI Engine...");
         // Step 1: Force modern renderer to prevent blank map feel
         MapsInitializer.initialize(this, MapsInitializer.Renderer.LATEST, renderer -> 
             SystemLogger.i(TAG, "Map SDK Renderer Synchronized: " + renderer.name()));
@@ -110,8 +112,15 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             isDualPaneActive = savedInstanceState.getBoolean("isDualPaneActive", true);
         }
 
+        if (getIntent().hasExtra("target_uid")) {
+            selectedUserId = getIntent().getStringExtra("target_uid");
+            SystemLogger.i(TAG, "Tactical Lock Engaged for UID: " + selectedUserId);
+        }
+
         super.onCreate(savedInstanceState);
     }
+    
+    private boolean hasZoomedToTarget = false;
 
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
@@ -135,7 +144,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         // Navigation Drawer - Rule 7: Zero Dead-Ends
         View drawerMenu = createDrawerContent();
-        DrawerLayout.LayoutParams drawerParams = new DrawerLayout.LayoutParams(650, ViewGroup.LayoutParams.MATCH_PARENT);
+        int dWidth = (int)(getResources().getDisplayMetrics().widthPixels * 0.75f);
+        DrawerLayout.LayoutParams drawerParams = new DrawerLayout.LayoutParams(dWidth, ViewGroup.LayoutParams.MATCH_PARENT);
         drawerParams.gravity = Gravity.START;
         drawerMenu.setLayoutParams(drawerParams);
         drawerLayout.addView(drawerMenu);
@@ -159,11 +169,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // --- THE LIVE TRACKER CARD (FULL SCREEN CAMERA ENGINE) ---
         mapCardContainer = new LinearLayout(this);
         mapCardContainer.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(mapCardContainer, getCardColor(), 40f);
+        UiArchitect.applyCard(this, mapCardContainer, "CARD_STANDARD");
         
         // Map natively consumes remaining absolute space above the tiles!
+        int quota = getResponsivePaddingQuota();
         LinearLayout.LayoutParams mcLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
-        mcLp.setMargins(30, 20, 30, 30);
+        mcLp.setMargins(quota, getResponsiveHeaderTopQuota(), quota, quota + 10);
         mapCardContainer.setLayoutParams(mcLp);
 
         FrameLayout mapContainer = new FrameLayout(this);
@@ -185,9 +196,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         sideActionPanel.addView(createSmallIcon("ACTION_MINUS", view -> { if(googleMap!=null) googleMap.animateCamera(com.google.android.gms.maps.CameraUpdateFactory.zoomOut()); })); // QA Fix: Zoom Out Map
         sideActionPanel.addView(createSmallIcon("ACTION_LAYERS", view -> { if(googleMap!=null) googleMap.setMapType(googleMap.getMapType() == com.google.android.gms.maps.GoogleMap.MAP_TYPE_NORMAL ? com.google.android.gms.maps.GoogleMap.MAP_TYPE_SATELLITE : com.google.android.gms.maps.GoogleMap.MAP_TYPE_NORMAL); }));
         sideActionPanel.addView(createSmallIcon("ACTION_ZONES", view -> startActivity(new Intent(MapActivity.this, ProfileActivity.class)))); // QA Fix: Open True Profile Tracker
-        sideActionPanel.addView(createSmallIcon("ACTION_GHOST", view -> { boolean h = prefs.getBoolean("callout_hide_mode", false); prefs.edit().putBoolean("callout_hide_mode", !h).apply(); triggerCalloutRefresh(); }));
+        sideActionPanel.addView(createSmallIcon("ACTION_GHOST", view -> viewModel.toggleGhostMode(prefs)));
         sideActionPanel.addView(createSmallIcon("ACTION_SEARCH", view -> openLocateDrawer())); // QA Fix: Sweep & Target External Users
         
+        applyAccessibility(expandIcon, "Toggle Full Screen Map");
         expandIcon.setOnClickListener(v -> {
             isMapExpanded = !isMapExpanded;
             // 🚀 QA OS Transition Engine: Auto-morphs all XML layouts frictionlessly!
@@ -216,6 +228,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 }
                 r2.setVisibility(View.GONE);
                 
+                // 🚀 QA Fix: Prevent Icon Overlap (V9.2)
+                FrameLayout.LayoutParams sLp = (FrameLayout.LayoutParams) sideActionPanel.getLayoutParams();
+                sLp.topMargin = 200; // Pushes icons down to clear the Top-Right 'X' Control
+                sideActionPanel.setLayoutParams(sLp);
+                
                 // Micro-Shrink and Remove Text completely yielding absolute space!
                 for(int i=0; i<r1.getChildCount(); i++) {
                     View cell = r1.getChildAt(i);
@@ -232,7 +249,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
                 label.setVisibility(View.VISIBLE);
                 r2.setVisibility(View.VISIBLE);
-                lp.setMargins(30, 20, 30, 30); // Map snaps back into a standardized CardView
+                int rQuota = getResponsivePaddingQuota();
+                lp.setMargins(rQuota, getResponsiveHeaderTopQuota(), rQuota, rQuota + 10); // Map snaps back into a standardized CardView
                 
                 // Return bottom 3 items to R2 Stack
                 if(r1.getChildCount() > 3) {
@@ -256,14 +274,21 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                         tv.setPadding(0, 20, 0, 0);
                     }
                 }
+                
+                // Reset standard centered geometry (V9.3)
+                FrameLayout.LayoutParams sLp = (FrameLayout.LayoutParams) sideActionPanel.getLayoutParams();
+                sLp.topMargin = 0;
+                sideActionPanel.setLayoutParams(sLp);
             }
             mapCardContainer.setLayoutParams(lp);
         });
 
         // Insert Expand Graphic
-        FrameLayout.LayoutParams expLp = new FrameLayout.LayoutParams(110, 110);
+        int eS = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+        FrameLayout.LayoutParams expLp = new FrameLayout.LayoutParams(eS, eS);
         expLp.gravity = Gravity.TOP | Gravity.END;
-        expLp.setMargins(30, 30, 30, 30);
+        int gPad = getResponsivePaddingQuota();
+        expLp.setMargins(gPad, gPad, gPad, gPad);
         
         FrameLayout.LayoutParams sideLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         sideLp.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
@@ -272,6 +297,34 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // 🧱 QA Overlay Matrix Z-Index Fix! Ensure Native Fragment doesn't swallow our UI elements
         FrameLayout mapOverlayWrapper = new FrameLayout(this);
         mapOverlayWrapper.addView(mapContainer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        
+        // 🚀 QA Fix: Tactical Filter Cluster (FAMILY / FRIENDS)
+        LinearLayout filterCluster = new LinearLayout(this);
+        filterCluster.setOrientation(LinearLayout.HORIZONTAL);
+        filterCluster.setPadding(20, 20, 20, 20);
+        
+        View btnAll = createFilterTile("ALL", getGradientMid(), v -> { 
+            viewModel.setFilterMode("ALL"); 
+            Toast.makeText(this, "SHOWING ENTIRE MESH", Toast.LENGTH_SHORT).show(); 
+        });
+        View btnFamily = createFilterTile("FAMILY", Color.parseColor("#FF6D00"), v -> { 
+            viewModel.setFilterMode("FAMILY"); 
+            Toast.makeText(this, "TACTICAL LOCK: FAMILY ONLY", Toast.LENGTH_SHORT).show(); 
+        });
+        View btnFriends = createFilterTile("FRIENDS", Color.parseColor("#AA00FF"), v -> { 
+            viewModel.setFilterMode("FRIENDS"); 
+            Toast.makeText(this, "TACTICAL LOCK: FRIENDS ONLY", Toast.LENGTH_SHORT).show(); 
+        });
+        
+        filterCluster.addView(btnAll);
+        filterCluster.addView(btnFamily);
+        filterCluster.addView(btnFriends);
+        
+        FrameLayout.LayoutParams fLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        fLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        fLp.setMargins(0, 0, 0, quota * 2); // Floating securely above the Marquee
+        mapOverlayWrapper.addView(filterCluster, fLp);
+
         mapCardContainer.addView(mapOverlayWrapper, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
         // Address Marquee securely locked inside the Map Card
@@ -282,15 +335,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         tvAddressMarquee.setSelected(true);
         tvAddressMarquee.setText("SATELLITE TRIANGULATION STANDBY. AWAITING TARGET...");
         tvAddressMarquee.setTextColor(getTextColor());
-        tvAddressMarquee.setPadding(40, 30, 40, 30);
+        int mPad = getResponsivePaddingQuota();
+        tvAddressMarquee.setPadding(mPad * 2, mPad, mPad * 2, mPad);
         tvAddressMarquee.setTypeface(null, Typeface.BOLD);
         
         // 🚀 QA Fix: Link the Address Marquee back to the 10% Dynamic Gradient Theme natively!
+        String masterAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
         android.graphics.drawable.GradientDrawable marqueeBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
             new int[]{
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientStart()))),
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientEnd())))
+                Color.parseColor("#" + masterAlpha + String.format("%06X", (0xFFFFFF & getGradientStart()))),
+                Color.parseColor("#" + masterAlpha + String.format("%06X", (0xFFFFFF & getGradientEnd())))
             }
         );
         tvAddressMarquee.setBackground(marqueeBg);
@@ -302,9 +357,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         // --- THE FLOATING TELEMATICS HUD TILE ---
         dashboardGridZone = buildGridMatrix();
-        applySolidCardGeometry(dashboardGridZone, getCardColor(), 40f); // Secure native Tile rendering
+        UiArchitect.applyCard(this, dashboardGridZone, "CARD_DASHBOARD"); // Secure native Tile rendering
+        int gQuota = getResponsivePaddingQuota();
         LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        gridLp.setMargins(30, 0, 30, 40);
+        gridLp.setMargins(gQuota, 0, gQuota, gQuota * 2);
         dashboardGridZone.setLayoutParams(gridLp);
         
         root.addView(dashboardGridZone); // Stacks solidly below map, right above Navbar
@@ -324,17 +380,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         
-        // 🚀 QA Fix: Dynamically bind the Map HUD to the Global Architect Header Bounds!
-        int pTop = prefs != null ? prefs.getInt("custom_header_padding_top", 80) : 80;
-        int pBot = prefs != null ? prefs.getInt("custom_header_padding_bottom", 60) : 60;
-        header.setPadding(20, pTop, 20, pBot / 2); // Map natively requires half the bottom spacer to bleed into the glass effect!
+        // 🚀 QA Fix: Synchronize Map HUD with the Global Architect Header and Enforce Vertical Symmetry
+        int pTop = getResponsiveHeaderTopQuota();
+        header.setPadding(10, pTop, 10, pTop); 
         
         // 🚀 QA Fix: Master Theme 10% Opacity Overlay matching the Native Header specifications!
+        String masterAlpha_H = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
         android.graphics.drawable.GradientDrawable headBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
             new int[]{
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientStart()))),
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientEnd())))
+                Color.parseColor("#" + masterAlpha_H + String.format("%06X", (0xFFFFFF & getGradientStart()))),
+                Color.parseColor("#" + masterAlpha_H + String.format("%06X", (0xFFFFFF & getGradientEnd())))
             }
         );
         header.setBackground(headBg);
@@ -344,22 +400,25 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         badgeCard.setOrientation(LinearLayout.HORIZONTAL);
         badgeCard.setGravity(Gravity.CENTER_VERTICAL);
         badgeCard.setPadding(10, 10, 20, 10);
-        applySolidCardGeometry(badgeCard, getCardColor(), 40f); 
+        UiArchitect.applyCard(this, badgeCard, "CARD_STANDARD");
 
         ImageView menuIcon = new ImageView(this);
         menuIcon.setImageResource(android.R.drawable.ic_menu_sort_by_size);
-        menuIcon.setColorFilter(getGradientStart()); // Binds directly to the active Theme Array
+        menuIcon.setColorFilter(getGradientMid()); // 🚀 QA Chrominance Sync (Drawer Trigger)
         menuIcon.setPadding(5, 10, 5, 10); // Severely restricted X-Axis padding to reduce gap between Icon and Avatar natively!
+        applyAccessibility(menuIcon, "Open Navigation Drawer");
         menuIcon.setOnClickListener(v -> { if (drawerLayout != null) drawerLayout.openDrawer(Gravity.START); });
         
-        LinearLayout.LayoutParams menuLp = new LinearLayout.LayoutParams(120, 120);
+        int iQuota = getResponsiveIconQuota();
+        LinearLayout.LayoutParams menuLp = new LinearLayout.LayoutParams(iQuota, iQuota);
         menuLp.setMargins(0, 0, 5, 0); // Compress Native Margin bounds specifically
         badgeCard.addView(menuIcon, menuLp); 
 
         ImageView avatar = new ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, avatar);
         
-        LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(110, 110);
+        int avSize = (int)(iQuota * 0.9f);
+        LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(avSize, avSize);
         avLp.setMargins(0, 0, 0, 0);
         badgeCard.addView(avatar, avLp); 
 
@@ -379,8 +438,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // 2. Middle Active Counter Tile (Restricted bounds to fit Portrait naturally)
         LinearLayout activeCard = new LinearLayout(this);
         activeCard.setOrientation(LinearLayout.VERTICAL);
-        activeCard.setPadding(20, 8, 20, 8); 
-        activeCard.setMinimumHeight(125); // 🚀 QA Fix: Mathematically clamps Native Height matching Avatar bounds
+        int aPad = getResponsivePaddingQuota();
+        activeCard.setPadding(aPad, aPad / 2, aPad, aPad / 2); 
+        activeCard.setMinimumHeight(iQuota); // 🚀 QA Fix: Dynamically synchronized to the icon quota for absolute alignment
         activeCard.setGravity(Gravity.CENTER);
         android.graphics.drawable.GradientDrawable gA = new android.graphics.drawable.GradientDrawable();
         gA.setCornerRadius(30f);
@@ -431,7 +491,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setPadding(20, 10, 20, 10); 
-        statusCard.setMinimumHeight(125); 
+        statusCard.setMinimumHeight(iQuota); 
         statusCard.setGravity(Gravity.CENTER);
         nativeStatusCard = statusCard; // 🚀 QA Fix: Master reference established for explicit Queue jumping later
         
@@ -471,7 +531,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private View buildGridMatrix() {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(20, 30, 20, 30); // Compact Grid Inner Bounds
+        int wrapPad = getResponsivePaddingQuota();
+        wrapper.setPadding(wrapPad, wrapPad + 10, wrapPad, wrapPad + 10); // Compact Grid Inner Bounds
 
         TextView label = new TextView(this);
         label.setText("MONITORING TILE");
@@ -484,92 +545,70 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // Row 1
         LinearLayout r1 = new LinearLayout(this);
         r1.setOrientation(LinearLayout.HORIZONTAL);
-        r1.addView(createGridItem("Network\nLocator", prefs.getInt("icon_map_radar", com.jdroidx.jfindme.R.drawable.ic_radar), v -> openLocateDrawer())); // QA Fix: Custom Native Radar Symbol Configurable
-        r1.addView(createGridItem("Sync\nDevices", prefs.getInt("icon_map_network", android.R.drawable.ic_menu_share), v -> startActivity(new Intent(this, GroupActivity.class))));
-        r1.addView(createGridItem("Location\nLogs", prefs.getInt("icon_map_history", android.R.drawable.ic_menu_recent_history), v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class))));
+        r1.addView(UiArchitect.createTile(this, "NETWORK_LOCATOR", v -> openLocateDrawer()));
+        r1.addView(UiArchitect.createTile(this, "SYNC_DEVICES",   v -> startActivity(new Intent(this, GroupActivity.class))));
+        r1.addView(UiArchitect.createTile(this, "LOCATION_LOGS",  v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class))));
         
         wrapper.addView(r1);
 
         // Row 2
         LinearLayout r2 = new LinearLayout(this);
         r2.setOrientation(LinearLayout.HORIZONTAL);
-        r2.setWeightSum(3f);
         r2.setPadding(0, 0, 0, 40);
-        r2.addView(createGridItem("Panic\nAlerts", prefs.getInt("icon_map_logs", android.R.drawable.ic_popup_reminder), v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class))));
-        r2.addView(createGridItem("Safe\nZones", prefs.getInt("icon_map_zones", android.R.drawable.ic_dialog_map), v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class))));
-        r2.addView(createGridItem("Settings\nHub", prefs.getInt("icon_map_settings", android.R.drawable.ic_menu_manage), v -> startActivity(new Intent(this, SettingsActivity.class))));
+        r2.addView(UiArchitect.createTile(this, "PANIC_ALERTS",   v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class))));
+        r2.addView(UiArchitect.createTile(this, "SAFE_ZONES",     v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class))));
+        r2.addView(UiArchitect.createTile(this, "SETTINGS_HUB",   v -> startActivity(new Intent(this, SettingsActivity.class))));
         wrapper.addView(r2);
 
         return wrapper;
     }
 
-    private View createGridItem(String title, int iconRes, View.OnClickListener listener) {
-        LinearLayout cell = new LinearLayout(this);
-        cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setGravity(Gravity.CENTER);
-        cell.setClickable(true);
-        cell.setFocusable(true);
-        cell.setOnClickListener(listener);
-        cell.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-
-        FrameLayout iconBg = new FrameLayout(this);
-        // Emulate the soft Purple Background Circle behind the vector icon!
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        bg.setColor(Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientStart())))); // 10% opacity primary color
-        iconBg.setBackground(bg);
+    private View createFilterTile(String label, int neonColor, View.OnClickListener clickListener) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.HORIZONTAL);
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding(55, 25, 55, 25); // Scaling padding to accommodate doubled font geometry
+        tile.setElevation(15f);
+        tile.setClickable(true);
+        tile.setFocusable(true);
         
-        // 🚀 INTERCEPT: Execute Global Icon Density Overrides
-        int activeDensity = prefs.getInt("custom_icon_density", 140);
-        int pad = (int)(activeDensity * 0.28);
-        iconBg.setPadding(pad, pad, pad, pad);
-
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(iconRes);
-        icon.setColorFilter(getGradientStart()); // Solid Primary Tint Overlay
-        int innerSize = (int)(activeDensity * 0.42);
-        iconBg.addView(icon, new FrameLayout.LayoutParams(innerSize, innerSize));
-
-        cell.addView(iconBg, new LinearLayout.LayoutParams(activeDensity, activeDensity));
-
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        
+        // 🚀 QA Fix: Restored original 15.6% (#28) Alpha-Transparency for Frosted Glass HUD Effect
+        gd.setColor(getCardColor());
+        
+        gd.setCornerRadius(100f); // Pure Capsule Design
+        gd.setStroke(3, neonColor);
+        tile.setBackground(gd);
+        
         TextView tv = new TextView(this);
-        tv.setText(title);
-        tv.setTextColor(getTextColor());
-        tv.setTextSize(11f);
-        tv.setGravity(Gravity.CENTER);
+        tv.setText(label);
+        tv.setTextColor(neonColor);
+        tv.setTextSize(20f); // 🚀 QA Request: Doubled from 10f for forensic readability
         tv.setTypeface(null, Typeface.BOLD);
-        tv.setPadding(0, 20, 0, 0);
-        cell.addView(tv);
-
-        return cell;
+        tile.addView(tv);
+        
+        tile.setOnClickListener(clickListener);
+        
+        // 🚀 D-Pad Support
+        tile.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                v.performClick(); return true;
+            } return false;
+        });
+        
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(10, 0, 10, 0);
+        tile.setLayoutParams(lp);
+        
+        return tile;
     }
 
     private View createBottomZone() {
-        LinearLayout bottom = new LinearLayout(this);
-        bottom.setOrientation(LinearLayout.HORIZONTAL);
-        bottom.setGravity(Gravity.CENTER_VERTICAL);
-        
-        // 🚀 QA Fix: Dynamically bind NAV bar height to the Global Architect Settings!
-        int pBot = prefs != null ? prefs.getInt("custom_header_padding_bottom", 60) : 60;
-        int navHeight = Math.max(120, pBot * 3); // Base math: 60px padding = 180px Nav Height. Safely limits bounds.
-        bottom.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, navHeight)); 
-        
-        // 🚀 QA Fix: Global Theme 10% Opacity Overlay instead of solid Card Color!
-        android.graphics.drawable.GradientDrawable navBg = new android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
-            new int[]{
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientStart()))),
-                Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientEnd())))
-            }
-        );
-        bottom.setBackground(navBg);
-        bottom.setElevation(25f);
-        
-        bottom.addView(createBottomTab("Notice", android.R.drawable.ic_popup_reminder, false));
-        bottom.addView(createBottomTab("Device", android.R.drawable.ic_menu_mapmode, true));
-        bottom.addView(createBottomTab("Me", android.R.drawable.ic_menu_edit, false));
-        return bottom;
+        String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
+        return UiArchitect.createBottomNav(this, keys, "NAV_DEVICE");
     }
+
 
     private View createBottomTab(String label, int iconRes, boolean isActive) {
         LinearLayout tab = new LinearLayout(this);
@@ -603,6 +642,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         tvLp.gravity = Gravity.CENTER_HORIZONTAL;
         tab.addView(tv, tvLp);
         
+        applyAccessibility(tab, "Navigate to " + label);
         if (!isActive && label.equals("Me")) {
             tab.setOnClickListener(v -> startActivity(new Intent(this, ProfileActivity.class)));
         } else if (!isActive && label.equals("Notice")) {
@@ -613,7 +653,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             tab.setOnClickListener(v -> {
                 if (googleMap != null && lastKnownLocation != null) {
                     LatLng current = new LatLng(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
-                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(current, 16f));
+                    com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+                        .target(current).zoom(16.5f).tilt(45f).build();
+                    googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(pos));
                 }
             });
         }
@@ -644,9 +686,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             names[i] = safeName;
         }
 
-        new android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
             .setTitle("ACTIVE TARGET SELECTOR")
-            .setItems(names, (dialog, which) -> {
+            .setItems(names, (d, which) -> {
                 UserLocation target = locs.get(which);
                 LatLng finalPos = new LatLng(target.getLatitude(), target.getLongitude());
                 
@@ -659,6 +701,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             })
             .setNegativeButton("Cancel Selection", null)
             .show();
+        
+        applyDialogTheme(dialog);
     }
     
     private android.widget.ViewFlipper statusFlipper;
@@ -671,8 +715,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         row.setOrientation(LinearLayout.VERTICAL);
         row.setGravity(Gravity.CENTER);
         
-        row.setClickable(true);
-        row.setFocusable(true);
+        applyAccessibility(row, "Focus on " + avatarName);
         row.setOnClickListener(v -> {
             if (googleMap != null) {
                 activeProximityTargetId = targetUserId; // QA Lock: Binds autonomous rendering pipeline to this exact Avatar!
@@ -695,7 +738,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
         
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.parseColor("#1A" + String.format("%06X", (0xFFFFFF & getGradientStart()))));
+        String mAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
+        bg.setColor(Color.parseColor("#" + mAlpha + String.format("%06X", (0xFFFFFF & getGradientStart()))));
         bg.setStroke(3, Color.RED); 
         bg.setCornerRadius(30f);
         row.setBackground(bg);
@@ -745,40 +789,69 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private void updateAddressMarquee(double lat, double lng, String targetName, String timeStr) {
         tvAddressMarquee.setText("Scanning Satellite Coordinates tracking " + targetName + "...");
         
-        // Asynchronous Geocoder Thread to prevent freezing the UI Main Loop!
-        new Thread(() -> {
-            try {
-                android.location.Geocoder geocoder = new android.location.Geocoder(this, java.util.Locale.getDefault());
-                List<android.location.Address> addresses = geocoder.getFromLocation(lat, lng, 1);
-                String resultStr;
-                
-                if (addresses != null && !addresses.isEmpty()) {
-                    android.location.Address obj = addresses.get(0);
-                    resultStr = obj.getAddressLine(0);
-                } else {
-                    resultStr = "LAT: " + lat + " | LNG: " + lng;
+        android.location.Geocoder geocoder = new android.location.Geocoder(this, java.util.Locale.getDefault());
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            geocoder.getFromLocation(lat, lng, 1, new android.location.Geocoder.GeocodeListener() {
+                @Override
+                public void onGeocode(@androidx.annotation.NonNull java.util.List<android.location.Address> addresses) {
+                    processMarqueeAddress(addresses, lat, lng, targetName, timeStr);
                 }
-                
-                String finalPayload = "📡 TARGET LOCKED: [" + targetName + "] • Last Known Sync: " + timeStr + " • Exact Physical Location: " + resultStr + "        ";
-                runOnUiThread(() -> tvAddressMarquee.setText(finalPayload));
-            } catch (Exception e) {
-                runOnUiThread(() -> tvAddressMarquee.setText("📡 TARGET LOCKED: [" + targetName + "] • Last Known Sync: " + timeStr + " • GPS Offset: " + lat + ", " + lng));
-            }
-        }).start();
+                @Override
+                public void onError(@androidx.annotation.Nullable String errorMessage) {
+                    processMarqueeAddress(null, lat, lng, targetName, timeStr);
+                }
+            });
+        } else {
+            new Thread(() -> {
+                try {
+                    @SuppressWarnings("deprecation")
+                    java.util.List<android.location.Address> addresses = geocoder.getFromLocation(lat, lng, 1);
+                    runOnUiThread(() -> processMarqueeAddress(addresses, lat, lng, targetName, timeStr));
+                } catch (Exception e) {
+                    runOnUiThread(() -> processMarqueeAddress(null, lat, lng, targetName, timeStr));
+                }
+            }).start();
+        }
+    }
+
+    private void processMarqueeAddress(java.util.List<android.location.Address> addresses, double lat, double lng, String targetName, String timeStr) {
+        String resultStr;
+        if (addresses != null && !addresses.isEmpty()) {
+            resultStr = addresses.get(0).getAddressLine(0);
+        } else {
+            resultStr = "LAT: " + lat + " | LNG: " + lng;
+        }
+        
+        String finalPayload = "📡 TARGET LOCKED: [" + targetName + "] • Last Known Sync: " + timeStr + " • Exact Physical Location: " + resultStr + "        ";
+        tvAddressMarquee.setText(finalPayload);
     }
 
     private View createSmallIcon(String tableKey, View.OnClickListener listener) {
-        ImageView iv = new ImageView(this);
-        com.jdroidx.jfindme.ui.base.IconTable.applyTheme(this, iv, tableKey); // QA Integration: Dynamic Centralized Engine Call
-        iv.setPadding(25, 25, 25, 25);
+        // 🚀 QA Fix: Global Sync! Use the Architect's 5-Stage scaling engine instead of ad-hoc density prefs.
+        int activeSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+        int dpPadding = (int)(activeSize * 0.20f); // 20% internal padding for side icons
         
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(110, 110);
+        ImageView iv = new ImageView(this);
+        com.jdroidx.jfindme.ui.base.IconTable.applyTheme(this, iv, tableKey); 
+        iv.setPadding(dpPadding, dpPadding, dpPadding, dpPadding); 
+        
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(activeSize, activeSize);
         params.setMargins(0, 8, 0, 8); 
         iv.setLayoutParams(params);
         
         iv.setClickable(true);
         iv.setFocusable(true);
         iv.setOnClickListener(listener);
+
+        // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+        iv.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                v.performClick();
+                return true;
+            }
+            return false;
+        });
         return iv;
     }
 
@@ -822,9 +895,30 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             return Unit.INSTANCE;
         });
 
+        viewModel.getRefreshTrigger().observe(this, trigger -> {
+            if (trigger != null) triggerCalloutRefresh();
+        });
+
         viewModel.getUserLocations().observe(this, locations -> {
-            if (mapEngine != null) mapEngine.updateMarkers(locations);
-            if (markerClusterer != null) markerClusterer.updateMarkers(locations);
+            // 🚀 QA Fix: Strict MVVM Execution bypassing rogue Firebase Listeners
+            if (googleMap != null) {
+                com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(this, googleMap, locations);
+            }
+            
+            // 🚀 QA Fix: Tactical Zoom Lock (V8.9)
+            if (selectedUserId != null && !hasZoomedToTarget && googleMap != null) {
+                for (com.jdroidx.jfindme.data.model.UserLocation ul : locations) {
+                    if (ul.getUserId().equals(selectedUserId)) {
+                        com.google.android.gms.maps.model.LatLng target = new com.google.android.gms.maps.model.LatLng(ul.getLatitude(), ul.getLongitude());
+                        com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+                            .target(target).zoom(16.5f).tilt(45f).build();
+                        googleMap.animateCamera(com.google.android.gms.maps.CameraUpdateFactory.newCameraPosition(pos));
+                        hasZoomedToTarget = true;
+                        break;
+                    }
+                }
+            }
+
             updateRadarScanner(locations);
             
             // 🧠 Fulfill QA Request: Live user aggregation rendering
@@ -927,18 +1021,19 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
+        SystemLogger.i(TAG, "MapActivity [onMapReady] callback received. GoogleMap instance physically bound natively.");
         this.googleMap = googleMap;
         this.googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+        this.googleMap.setBuildingsEnabled(true); // 🚀 3D Perspective Fix (V12.0)
+        this.googleMap.setIndoorEnabled(true);
         this.googleMap.getUiSettings().setCompassEnabled(true);
         this.googleMap.getUiSettings().setMyLocationButtonEnabled(false);
+        this.googleMap.getUiSettings().setTiltGesturesEnabled(true);
         this.googleMap.getUiSettings().setAllGesturesEnabled(true);
         
-        // 🚀 PILLARS 3 & 4 EXECUTION: Initialize Real-Time Multiperson Tracker Sandbox
-        com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.initializeRealtimeGroupTracker(this, this.googleMap);
-        
-        // Shutting down legacy rendering to avoid GPU artifact collision
-        // mapEngine = new MapEngine(this, googleMap);
-        // markerClusterer = new MarkerClusterer(this, googleMap);
+        // 🚀 QA MVVM Strict Enforcement: 
+        // Rendering layers no longer boot their own tracking loops! 
+        // MultiMarkerEngine now officially strictly slaves itself to the MapViewModel natively!
         
         googleMap.setOnMarkerClickListener(marker -> {
             if (marker.getTitle() == null) return false;
@@ -948,7 +1043,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             List<UserLocation> locs = viewModel.getUserLocations().getValue();
             String rawTitle = marker.getTitle();
             
-            if (locs != null && !rawTitle.equals("YOU")) {
+            if (locs != null && !rawTitle.equalsIgnoreCase("YOU")) {
                 for (UserLocation l : locs) {
                     if (rawTitle.equals(l.getUserName())) {
                         selectedUserId = l.getUserId();
@@ -977,10 +1072,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         // Initial Zoom Fix
         LatLng defaultLocation = new LatLng(18.5204, 73.8567);
-        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15f));
+        com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+            .target(defaultLocation).zoom(15f).tilt(45f).build();
+        googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(pos));
     }
 
     private void checkLocationPermission() {
+        SystemLogger.i(TAG, "Executing [checkLocationPermission] hardware audit logic.");
         if (SecurityEngine.INSTANCE.isRooted()) {
             Toast.makeText(this, "SECURITY ALERT: Rooted Device Detected.", Toast.LENGTH_LONG).show();
             SystemLogger.w(TAG, "DEVICE_INTEGRITY_COMPROMISED");
@@ -989,6 +1087,18 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         java.util.List<String> perms = new java.util.ArrayList<>();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            
+            // 🚀 QA Fix: Android 12+ Explicit Hardware Crash Preventer natively requires Coarse Location bundled in!
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+            }
+        }
+        
+        // 🚀 QA Fix: Background Tracking Enforcement for Android 10+ (Stage 5 Hardening)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+            }
         }
         
         // 🚀 QA Fix: Force OS UI Dialog for Background Tracing Notifications (Android 13+)
@@ -999,18 +1109,24 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         }
         
         if (perms.isEmpty()) {
+            SystemLogger.i(TAG, "All explicit Location requirements met. Booting feature set.");
             enableLocationFeatures();
         } else {
+            SystemLogger.w(TAG, "Core permissions missing: requesting system authority UI: " + perms.toString());
             ActivityCompat.requestPermissions(this, perms.toArray(new String[0]), LOCATION_PERMISSION_CODE);
         }
     }
 
     private void enableLocationFeatures() {
+        SystemLogger.i(TAG, "Executing [enableLocationFeatures]. Validating explicit OS constraints.");
         try {
             if (googleMap != null && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                SystemLogger.i(TAG, "OS constraints cleared. Instructing Map overlay & fetching true device position.");
                 // QA Graphic Fix: Disable native Blue Dot overlay to prevent graphic clipping under the custom Avatar PIN.
                 googleMap.setMyLocationEnabled(false);
                 getCurrentLocation();
+            } else {
+                 SystemLogger.e(TAG, "Failed [enableLocationFeatures]: Map instance null or Permission secretly revoked!");
             }
         } catch (SecurityException e) { SystemLogger.e(TAG, "Permission error", e); }
     }
@@ -1018,14 +1134,24 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private void getCurrentLocation() {
         try {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
-            fusedLocationClient.getLastLocation().addOnSuccessListener(location -> {
+            
+            // 🚀 QA Fix: Force active polling. getLastLocation() usually returns null on fresh installs causing blank maps!
+            fusedLocationClient.getCurrentLocation(100, null).addOnSuccessListener(location -> {
                 if (location != null) {
                     LatLng current = new LatLng(location.getLatitude(), location.getLongitude());
-                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(current, 16f));
+                    com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+                        .target(current).zoom(16.5f).tilt(45f).build();
+                    googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(pos));
                     updateUserPositionOnMap(location);
+                } else {
+                    // Fallback to absolute system memory
+                    fusedLocationClient.getLastLocation().addOnSuccessListener(loc2 -> {
+                        if (loc2 != null) updateUserPositionOnMap(loc2);
+                    });
                 }
             });
-            locationEngine.startTracking();
+            
+            if (locationEngine != null) locationEngine.startTracking();
             
             // QA Fix: Structural Boot Integration. Force Foreground Service to engage natively!
             Intent serviceIntent = new Intent(this, com.jdroidx.jfindme.service.TrackingService.class);
@@ -1035,14 +1161,38 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 startService(serviceIntent);
             }
             
-        } catch (SecurityException e) { SystemLogger.e(TAG, "GPS Error", e); }
+            // 🚀 QA Fix: Force the User to explicitly whitelist this Architecture from OEM "Doze" battery killers!
+            verifyDozeModeExclusion();
+            
+        } catch (Exception e) { SystemLogger.e(TAG, "GPS Boot OS Protection Handled: ", e); }
+    }
+
+    private void verifyDozeModeExclusion() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            String packageName = getPackageName();
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(android.content.Context.POWER_SERVICE);
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                // Warning logic prevents Background tracking limits on Huawei, Xiaomi, and Pixel
+                SystemLogger.w(TAG, "OS SDK is restricting background telemetry! Requesting Whitelist.");
+                android.content.Intent intent = new android.content.Intent();
+                intent.setAction(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(android.net.Uri.parse("package:" + packageName));
+                startActivity(intent);
+            } else {
+                SystemLogger.i(TAG, "jFindMe explicitly whitelisted from Doze constraints. Background Tracking Secured.");
+            }
+        }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        SystemLogger.i(TAG, "onRequestPermissionsResult callback hit natively. Code: " + requestCode + " Arrays: " + java.util.Arrays.toString(grantResults));
         if (requestCode == LOCATION_PERMISSION_CODE && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            SystemLogger.i(TAG, "Hardware granted explicitly by user. Booting features.");
             enableLocationFeatures();
+        } else {
+            SystemLogger.w(TAG, "HARDWARE DENIED BY USER. Native tracking explicitly crippled.");
         }
     }
 
@@ -1054,14 +1204,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         if (pathPoints.size() > 50) pathPoints.remove(0);
 
         // Core Pipeline Integration: Spawns the explicitly configured 2D avatar graphic directly onto the Live Map GPS grid!
-        String myName = prefs != null ? prefs.getString("user_nickname", "YOU") : "YOU";
+        String myName = "You";
         if (userAvatar == null) {
             userAvatar = googleMap.addMarker(new MarkerOptions()
                 .position(myPos)
+                .title("You")
                 .anchor(0.5f, 0.5f) // Calibrated implicitly to center of drawn callout box
+                .flat(false) // Billboard fix: Pops perpendicular to the camera!
                 .icon(getCustomAvatarPin(myName)));
         } else { 
             userAvatar.setPosition(myPos); // Update position directly
+            userAvatar.setTitle("You"); 
             userAvatar.setIcon(getCustomAvatarPin(myName)); // Sync instantly if changed in Profile settings
             animateMarkerGlide(userAvatar, myPos, location.getBearing()); 
         }
@@ -1118,7 +1271,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         if (prefs == null) return com.jdroidx.jfindme.utils.AvatarCalloutGenerator.generate(this, displayName, null, showName, true);
         
         // 1. Recover the precise state defined by the User in ProfileActivity
-        android.graphics.Bitmap bmp = com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(this, 150);
+        android.graphics.Bitmap bmp = com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(this, 256);
         return com.jdroidx.jfindme.utils.AvatarCalloutGenerator.generate(this, displayName, bmp, showName, true);
     }
     
@@ -1143,6 +1296,33 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     protected void onResume() {
         super.onResume();
         triggerCalloutRefresh(); // Automatically reveals callouts for 5 seconds organically upon screen navigation!
+        
+        // 🚀 QA Fix: Master Hardware Enforcement (V14.1)
+        // Automatically detects if the user manually severed the GPS link while the app was backgrounded.
+        validateLocationHardwareStatus();
+    }
+
+    private void validateLocationHardwareStatus() {
+        android.location.LocationManager lm = (android.location.LocationManager) getSystemService(android.content.Context.LOCATION_SERVICE);
+        boolean gpsEnabled = false;
+        try { gpsEnabled = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER); } catch (Exception e) {}
+        
+        if (!gpsEnabled) {
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Hardware Link Severed")
+                .setMessage("The High-Fidelity GPS array is currently OFFLINE.\n\nTo maintain real-time safety tracking and history archives, the system requires an active hardware link.\n\nWould you like to re-activate Location Services now?")
+                .setPositiveButton("Activate GPS", (d, which) -> {
+                    startActivity(new android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                })
+                .setNeutralButton("Settings", (d, i) -> {
+                    startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.management.PrivacyActivity.class));
+                })
+                .setNegativeButton("Ignore", null)
+                .setCancelable(true)
+                .show();
+            
+            applyDialogTheme(dialog);
+        }
     }
 
     private void updateRadarScanner(List<UserLocation> locations) {
@@ -1184,12 +1364,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // Header Section (Profile Photo, Name, Email)
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(60, 100, 60, 60);
-        applyLinearGradient(header, 0f); // QA Fix: Neon Gradient Aesthetic Sync
+        applyGlobalHeaderGeometry(header); // 🚀 Premium QA Fix: Scales Menu Height dynamically for Tablets!
         
         ImageView drawerAvatar = new ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, drawerAvatar);
-        header.addView(drawerAvatar, new LinearLayout.LayoutParams(150, 150));
+        header.addView(drawerAvatar, new LinearLayout.LayoutParams(getResponsiveIconQuota(), getResponsiveIconQuota()));
         
         TextView appTitle = new TextView(this);
         appTitle.setText(prefs.getString("user_nickname", "Guardian Name"));
@@ -1200,7 +1379,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         header.addView(appTitle);
         
         TextView appEmail = new TextView(this);
-        appEmail.setText("Parent / Administrator Account");
+        appEmail.setText(""); // 🚀 Minimalist Label Removal (Name-Only Logic)
         appEmail.setTextColor(getGradientOverlayText());
         appEmail.setAlpha(0.85f);
         appEmail.setTextSize(12);
@@ -1267,10 +1446,22 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         item.setFocusable(true);
         item.setOnClickListener(listener);
 
+        // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+        item.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                v.performClick();
+                return true;
+            }
+            return false;
+        });
+
         ImageView iv = new ImageView(this);
         iv.setImageResource(iconRes);
-        iv.setColorFilter(getAccentColor());
-        item.addView(iv, new LinearLayout.LayoutParams(60, 60));
+        iv.setColorFilter(getGradientMid()); // 🚀 QA Chrominance Sync (Drawer Items)
+        
+        int dSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        item.addView(iv, new LinearLayout.LayoutParams(dSize, dSize));
 
         LinearLayout textLayout = new LinearLayout(this);
         textLayout.setOrientation(LinearLayout.VERTICAL);
