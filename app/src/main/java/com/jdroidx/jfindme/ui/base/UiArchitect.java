@@ -31,17 +31,13 @@ public class UiArchitect {
 
     public static DesignStage getStage(Context context) {
         // --- ARCHITECTURAL INTERCEPTOR: MANUAL OVERRIDE ---
-        int override = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getInt("stage_override", DesignStage.COMPACT.ordinal());
+        int override = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getInt("stage_override", -1);
         if (override != -1 && override < DesignStage.values().length) {
             return DesignStage.values()[override];
         }
 
-        float dpWidth = context.getResources().getDisplayMetrics().widthPixels / context.getResources().getDisplayMetrics().density;
-        if (dpWidth > 800) return DesignStage.LIBERAL;
-        if (dpWidth > 600) return DesignStage.STANDARD;
-        if (dpWidth > 400) return DesignStage.COMPACT;
-        if (dpWidth > 320) return DesignStage.SLIM;
-        return DesignStage.ULTRA_SLIM;
+        // 🚀 L7 Global Default Hub: Hard-Syncing to COMPACT stage as per user requirement!
+        return DesignStage.COMPACT;
     }
 
     // ============================================================================================
@@ -51,28 +47,32 @@ public class UiArchitect {
     public static float getResponsiveTextSize(Context context, String tier) {
         DesignStage stage = getStage(context);
         float base = 16f; // Standard L7 Baseline
+        boolean isHeader = false;
         switch (tier) {
-            case "TEXT_HEADER": base = 22f; break;
-            case "TEXT_TITLE":  base = 18f; break;
+            case "TEXT_HEADER": base = 22f; isHeader = true; break;
+            case "TEXT_TITLE":  base = 18f; isHeader = true; break;
             case "TEXT_SUB":    base = 13f; break;
             case "TEXT_BODY":   base = 16f; break;
             case "TEXT_MINI":   base = 11.5f;break;
-            case "TEXT_LABEL":  base = 18.0f;break;
-            case "BUTTON_TEXT": base = 12.0f;break;
+            case "TEXT_LABEL":  base = 18.0f; isHeader = true; break;
+            case "BUTTON_TEXT": base = 12.0f; isHeader = true; break;
         }
-        boolean isHeader = tier.contains("HEADER") || tier.contains("TITLE") || tier.equals("TEXT_LABEL");
         return UiScalingMatrixTable.scaleText(stage, base, isHeader);
+    }
+
+    public static float scaleText(Context context, float baseSize) {
+        return UiScalingMatrixTable.scaleText(getStage(context), baseSize, false);
     }
 
     public static int getResponsiveIconSize(Context context, String tier) {
         DesignStage stage = getStage(context);
-        int base = 140;
+        int base = 120; // 🚀 L7 RECALIBRATED: 120px Universal Baseline
         switch (tier) {
-            case "ICON_TINY":     base = 90;  break;
-            case "ICON_SMALL":    base = 110; break;
-            case "ICON_STANDARD": base = 140; break;
-            case "ICON_LARGE":    base = 180; break;
-            case "ICON_HERO":     base = 500; break;
+            case "ICON_TINY":     base = 80;  break;
+            case "ICON_SMALL":    base = 100; break;
+            case "ICON_STANDARD": base = 120; break;
+            case "ICON_LARGE":    base = 140; break;
+            case "ICON_HERO":     base = 400; break;
         }
         return UiScalingMatrixTable.scaleIcon(stage, base);
     }
@@ -115,6 +115,27 @@ public class UiArchitect {
 
     public static void applyCard(BaseActivityJava activity, View view, String tableKey) {
         EnterpriseCardTable.applyCard(activity, view, tableKey);
+    }
+
+    public static void applyCardWithOverride(BaseActivityJava activity, View view, String tableKey) {
+        applyCardWithOverride(activity, view, tableKey, 1.0f);
+    }
+
+    public static void applyCardWithOverride(BaseActivityJava activity, View view, String tableKey, float elevationFactor) {
+        applyCard(activity, view, tableKey);
+        
+        // 🚀 L7 Depth Hub: Dynamic elevation factor application
+        float currentElev = view.getElevation();
+        if (currentElev > 0) {
+            view.setElevation(UiScalingMatrixTable.scaleElevation(getStage(activity), currentElev * elevationFactor));
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                view.setOutlineAmbientShadowColor(activity.getGradientStart());
+                view.setOutlineSpotShadowColor(activity.getGradientStart());
+            }
+        }
+
+        view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        view.setClipToOutline(true);
     }
 
     public static void applySelection(BaseActivityJava activity, View view, boolean isSelected) {

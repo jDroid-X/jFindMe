@@ -32,6 +32,8 @@ public class AuthActivity extends BaseActivityJava {
     private AuthViewModel viewModel;
     private final String TAG = "AuthActivity";
     private EditText etEmail, etPass, etNickname;
+    private String cachedNick = "", cachedEmail = "", cachedPass = ""; 
+    private android.app.AlertDialog onboardingDialog;
 
 
 
@@ -47,7 +49,9 @@ public class AuthActivity extends BaseActivityJava {
             content.addView(createImagePane(), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.4f));
             content.addView(createLoginPane(), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.6f));
         } else {
-            content.addView(createLoginPane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            // 🚀 L7 Architecture Sync: Branding on Top for Portrait!
+            content.addView(createImagePane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            content.addView(createLoginPane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
         }
         root.addView(content);
 
@@ -58,26 +62,37 @@ public class AuthActivity extends BaseActivityJava {
         LinearLayout pane = new LinearLayout(this);
         pane.setGravity(Gravity.CENTER);
         pane.setOrientation(LinearLayout.VERTICAL);
-        pane.setPadding(0, 100, 0, 100);
+        int vPad = isLandscape ? scale(40) : scale(100); 
+        pane.setPadding(0, vPad, 0, vPad);
         applyLinearGradient(pane, 0f); // Securely renders the Active Hero Gradient across the Launch Header!
 
         ImageView logo = new ImageView(this);
-        int m2gId = getResources().getIdentifier("logo_m2g", "drawable", getPackageName());
-        if (m2gId != 0) {
-            logo.setImageResource(m2gId);
+        int butterflyId = getResources().getIdentifier("butterfly", "drawable", getPackageName());
+        if (butterflyId != 0) {
+            logo.setImageResource(butterflyId);
         } else {
             logo.setImageResource(android.R.drawable.ic_dialog_map);
             logo.setColorFilter(getGradientOverlayText());
         }
         
-        pane.addView(logo, new LinearLayout.LayoutParams(250, 250));
+        int heroSize = isLandscape ? scale(180) : scale(250); 
+        pane.addView(logo, new LinearLayout.LayoutParams(heroSize, heroSize));
+        
+        // 🚀 L7 Animation: Waving Wings Protocol (ScaleX Oscillation)
+        android.animation.ObjectAnimator wings = android.animation.ObjectAnimator.ofFloat(logo, "scaleX", 1f, 0.7f);
+        wings.setDuration(1200); // Rhythmic enterprise tempo
+        wings.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+        wings.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        wings.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        wings.start();
         
         TextView welcome = new TextView(this);
-        welcome.setText("JFINDME SECURE GATEWAY");
+        welcome.setText("ButterFly\nSecure\nGateWay"); // 3 Words | 3 Rows
+        welcome.setGravity(Gravity.CENTER);
         welcome.setTextColor(getGradientOverlayText());
-        welcome.setTextSize(24f); 
+        welcome.setTextSize(isLandscape ? scaleText(18) : scaleText(24)); 
         welcome.setTypeface(null, android.graphics.Typeface.BOLD);
-        welcome.setPadding(0, 50, 0, 0);
+        welcome.setPadding(0, isLandscape ? scale(20) : scale(40), 0, 0);
         pane.addView(welcome);
         
         return pane;
@@ -85,29 +100,49 @@ public class AuthActivity extends BaseActivityJava {
 
     private View createLoginPane() {
         ScrollView scroll = new ScrollView(this);
+        scroll.setClipChildren(false); 
+        scroll.setClipToPadding(false);
+        
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(getResponsivePaddingQuota(), 50, getResponsivePaddingQuota(), 100);
-
+        wrapper.setClipChildren(false);
+        wrapper.setClipToPadding(false);
+        
+        int topPad = isLandscape ? scale(20) : scale(30);
+        wrapper.setPadding(getResponsivePaddingQuota(), topPad, getResponsivePaddingQuota(), scale(100));
+ 
         // --- THE MASTER LOGIN CARD ---
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(getResponsivePaddingQuota(), 60, getResponsivePaddingQuota(), 60);
-        applySolidCardGeometry(card, getCardColor(), -1f); 
+        card.setClipChildren(false);
+        card.setClipToPadding(false);
+        
+        int cardPadv = scale(60);
+        card.setPadding(getResponsivePaddingQuota(), cardPadv, getResponsivePaddingQuota(), cardPadv);
+        
+        // 🚀 L7 Architecture Sync: Borderless Corporate Card Hub
+        android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
+        cardBg.setColor(getCardColor());
+        cardBg.setCornerRadius(scaleRadius(24)); 
+        card.setBackground(cardBg);
+        card.setElevation(15f); 
+        card.setTranslationZ(20f); 
+        card.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        card.setClipToOutline(true); // 🚀 QA Fix: Master Shadow Activation!
 
         TextView title = new TextView(this);
-        title.setText("System Authentication");
+        title.setText("jButterFly Authentication");
         title.setTextColor(getTextColor());
-        title.setTextSize(22);
+        title.setTextSize(scaleText(22));
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setPadding(10, 0, 0, 10);
+        title.setPadding(scale(10), 0, 0, scale(10));
         card.addView(title);
         
         TextView subTitle = new TextView(this);
         subTitle.setText("Secure gateway access for active agents.");
         subTitle.setTextColor(getSecondaryTextColor());
-        subTitle.setTextSize(12);
-        subTitle.setPadding(10, 0, 0, 50);
+        subTitle.setTextSize(scaleText(12));
+        subTitle.setPadding(scale(10), 0, 0, scale(50));
         card.addView(subTitle);
 
         etNickname = UiArchitect.createInputField(this, "FIELD_IDENTITY");
@@ -152,12 +187,12 @@ public class AuthActivity extends BaseActivityJava {
         card.addView(etPass);
 
         // --- PRIMARY CTA ---
+        // 🧪 UI Calibrator: Downscale text for 100% visibility in L7 Matrix
         View authBtn = createIconButton("AUTHENTICATE SYSTEM", android.R.drawable.ic_menu_send, v -> {
             String nick = etNickname.getText().toString().trim();
             String email = etEmail.getText().toString().trim();
             String pass = etPass.getText().toString().trim();
             
-            // Enterprise Sequential UI Rendering Check (Top-To-Bottom Priority)
             if (nick.length() < 2) {
                 etNickname.setError("Valid Alias Required (Min 2 chars)");
                 Toast.makeText(this, "Auth Failed: Missing Identity Alias", Toast.LENGTH_SHORT).show();
@@ -174,19 +209,33 @@ public class AuthActivity extends BaseActivityJava {
                 return;
             }
             
-            viewModel.login(email, pass, etNickname.getText().toString().trim()); // Basic Auth Bridge
+            // 🚀 Finalizing Secure Handshake...
+            com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            viewModel.login(email, pass, nick);
         });
+
+        // 🧱 Force Tactical Scaling Hub
+        if (authBtn instanceof android.view.ViewGroup) {
+             android.view.ViewGroup vg = (android.view.ViewGroup) authBtn;
+             for (int i = 0; i < vg.getChildCount(); i++) {
+                 android.view.View child = vg.getChildAt(i);
+                 if (child instanceof android.widget.TextView) {
+                     ((android.widget.TextView) child).setTextSize(scaleText(12)); 
+                     child.setPadding(0, 0, 0, 0); // Purge excessive padding
+                 }
+             }
+        }
         
         android.graphics.drawable.GradientDrawable authBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
             new int[]{getGradientStart(), getGradientEnd()} 
         );
-        authBg.setCornerRadius(16f); // Sharper enterprise geometry
+        authBg.setCornerRadius(scaleRadius(16)); // Standard L7 Geometry
         authBtn.setBackground(authBg);
         authBtn.setElevation(8f); 
         
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 140);
-        btnParams.setMargins(0, 50, 0, 40);
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(120));
+        btnParams.setMargins(0, scale(30), 0, scale(20));
         authBtn.setLayoutParams(btnParams);
         card.addView(authBtn);
 
@@ -289,7 +338,8 @@ public class AuthActivity extends BaseActivityJava {
         et.setBackground(fieldBg);
         
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 15, 0, 15);
+        int margin = scale(15);
+        lp.setMargins(0, margin, 0, margin);
         et.setLayoutParams(lp);
         return et;
     }
@@ -315,12 +365,25 @@ public class AuthActivity extends BaseActivityJava {
         
         // 🚀 QA Fix: Master Onboarding Interceptor (Selective Re-Integration)
         // If the Identity cache is empty (Fresh Start/First Installation), guide the agent toward the Encrypted Matrix immediately!
-        if (prefs.getString("user_nickname", "").isEmpty() && etEmail.getText().toString().isEmpty()) {
-            new AlertDialog.Builder(this)
+        // 🚀 QA Fix: Global Identity Check
+        // If the fields are already populated (Portrait -> Landscape sync), do NOT overlap the dialog!
+        if (etNickname.getText().toString().isEmpty() && etEmail.getText().toString().isEmpty() && 
+            prefs.getString("user_nickname", "").isEmpty()) {
+            
+            if (onboardingDialog != null && onboardingDialog.isShowing()) {
+                onboardingDialog.dismiss();
+            }
+            
+            onboardingDialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("🚀 SECURE ONBOARDING")
                 .setMessage("No Identity Node detected for this hardware. Please use 'AUTO SETUP' for a quick, Encrypted login.")
-                .setPositiveButton("AUTO SETUP", (d, w) -> performAutoSetup())
-                .setNegativeButton("EXIT", (d, w) -> finish())
+                .setPositiveButton("AUTO SETUP", (d, w) -> {
+                    performAutoSetup();
+                    onboardingDialog = null;
+                })
+                .setNegativeButton("EXIT", (d, w) -> {
+                    finish();
+                })
                 .setCancelable(false)
                 .show();
         }
@@ -391,8 +454,50 @@ public class AuthActivity extends BaseActivityJava {
                 SystemLogger.INSTANCE.i(TAG, "Authorization Success. Redirecting to Profile Screen.");
                 Toast.makeText(this, "Session Verified. Finalizing Dossier...", Toast.LENGTH_SHORT).show();
                 
-                startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
-                finish();
+                // 🧱 QA Fix: Post-Transition Buffer (150ms)
+                // Prevents 'No registered input channel' errors during rapid screen hopping!
+                getWindow().getDecorView().postDelayed(() -> {
+                    if (!isDestroyed() && !isFinishing()) {
+                        startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                        finish();
+                    }
+                }, 150);
             });
+    }
+
+    @Override
+    protected void onSaveCurrentState() {
+        if (etNickname != null) cachedNick = etNickname.getText().toString();
+        if (etEmail != null) cachedEmail = etEmail.getText().toString();
+        if (etPass != null) cachedPass = etPass.getText().toString();
+    }
+
+    @Override
+    protected void onUiRebuilt() {
+        if (etNickname != null) etNickname.setText(cachedNick);
+        if (etEmail != null) etEmail.setText(cachedEmail);
+        if (etPass != null) etPass.setText(cachedPass);
+        
+        // 🚀 L7 Optimization: Re-Calibrate Keyboard focus if needed
+        if (!cachedNick.isEmpty() && etPass != null) {
+            etPass.requestFocus();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (onboardingDialog != null && onboardingDialog.isShowing()) {
+            onboardingDialog.dismiss();
+        }
+        super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (onboardingDialog != null && onboardingDialog.isShowing()) {
+            onboardingDialog.dismiss();
+        }
+        com.jdroidx.jfindme.utils.AngelLoader.hide(this); // Force hide global loader
+        super.onDestroy();
     }
 }

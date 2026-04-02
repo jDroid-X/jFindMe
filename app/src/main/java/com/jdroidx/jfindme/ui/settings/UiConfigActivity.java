@@ -100,8 +100,9 @@ public class UiConfigActivity extends BaseActivityJava {
         // --- LAYER 0.3: SHADOW ELEVATION MATRIX (DEPTH STATS) ---
         renderShadowMatrixMonitor();
         
-        // --- LAYER 0.3.5: SHADOW VISIBILITY LAB (QA PREVIEW) ---
-        renderShadowLabMonitor();
+        // --- LAYER 0.3.5: SHADOW VISIBILITY LAB & SHADOW DECK MATTRESS (QA DEPTH) ---
+        renderShadowVisibilityLab();
+        renderShadowDeckMattress();
 
         // --- LAYER 0.4: ARCHITECTURAL SCALING AWARENESS (RULES) ---
         renderScalingAwarenessMonitor();
@@ -451,7 +452,7 @@ public class UiConfigActivity extends BaseActivityJava {
         content.addView(grid, getSectionParams());
     }
 
-    private void renderShadowLabMonitor() {
+    private void renderShadowVisibilityLab() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, 20, 0, 20);
@@ -507,6 +508,49 @@ public class UiConfigActivity extends BaseActivityJava {
 
         content.addView(createSectionHeader("SHADOW VISIBILITY LAB (DEPTH PREVIEW)"));
         content.addView(row, getSectionParams());
+    }
+
+    private void renderShadowDeckMattress() {
+        // --- THE SHADOW DECK MATTRESS: Forensic Stack Depth Visualizer ---
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 40, 40, 40);
+        UiArchitect.applyCard(this, container, "CARD_STANDARD");
+        container.setClipToPadding(false);
+        container.setClipChildren(false);
+
+        String[] levels = {"LAYER_BASE (4f)", "LAYER_ELEVATED (12f)", "LAYER_FLOATING (25f)", "LAYER_MODAL (40f)"};
+        float[] elevations = {4f, 12f, 25f, 40f};
+
+        for (int i = 0; i < levels.length; i++) {
+            LinearLayout layer = new LinearLayout(this);
+            layer.setOrientation(LinearLayout.HORIZONTAL);
+            layer.setGravity(Gravity.CENTER_VERTICAL);
+            layer.setPadding(30, 25, 30, 25);
+            
+            // Apply Dynamic Elevation Factor from Shadow Deck Mattress Logic
+            float fact = UiScalingMatrixTable.scaleElevation(UiArchitect.getStage(this), elevations[i]);
+            layer.setElevation(fact);
+            
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setColor(getCardColor());
+            gd.setCornerRadius(getResponsiveRadiusQuota());
+            layer.setBackground(gd);
+
+            TextView lName = new TextView(this);
+            lName.setText(levels[i] + " -> EFFECTIVE: " + (int)fact + "px");
+            lName.setTextColor(getTextColor());
+            lName.setTextSize(12f);
+            lName.setTypeface(null, Typeface.BOLD);
+            layer.addView(lName);
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 0, 40); // Vertical overlap simulation
+            container.addView(layer, lp);
+        }
+
+        content.addView(createSectionHeader("SHADOW DECK MATTRESS (FORENSIC DEPTH STACK)"));
+        content.addView(container, getSectionParams());
     }
 
     private void renderScalingAwarenessMonitor() {

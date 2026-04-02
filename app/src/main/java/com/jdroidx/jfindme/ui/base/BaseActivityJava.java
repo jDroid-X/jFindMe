@@ -42,17 +42,16 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         super.onCreate(savedInstanceState);
         
-        // Initialize Python Analytics Engine (Async to prevent extraction lock-ups)
+        // Initialize Python Analytics Engine
         new Thread(() -> {
             try { SpatialProcessor.init(getApplicationContext()); } catch (Exception ignored) {}
         }).start();
         
         View originalRoot = createLayout();
         
-        // 🧱 UX Override: Clean Native Presentation. No 3D floating engines.
         if (originalRoot != null) {
             android.widget.FrameLayout masterWrap = new android.widget.FrameLayout(this);
-            masterWrap.setClipChildren(false); // No shadow clipping
+            masterWrap.setClipChildren(false); 
             masterWrap.setClipToPadding(false);
             
             if (originalRoot instanceof android.view.ViewGroup) {
@@ -63,57 +62,25 @@ public abstract class BaseActivityJava extends AppCompatActivity {
 
             masterWrap.addView(originalRoot, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             
-            // 🚀 QA Fix: Global Floating Help Icon recursively injected across all inherited screens!
+            // 🚀 QA Fix: Global Floating Help Icon Rebuilt!
             android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
             globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
-            
-            // Matches dynamic Header Line gradient polarity!
             globalHelpBtn.setColorFilter(getGradientOverlayText()); 
-            globalHelpBtn.setPadding(35, 35, 35, 35);
+            int hPad = scale(20);
+            globalHelpBtn.setPadding(hPad, hPad, hPad, hPad);
             globalHelpBtn.setClickable(true);
             globalHelpBtn.setFocusable(true);
             
-            android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(150, 150);
+            int helpSize = scale(120);
+            android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(helpSize, helpSize);
             helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
-            
-            // 🚀 QA Fix: Global Symmetry Interceptor
-            // Synchronizes the Help Icon vertical rhythm with the HeaderTable stages.
-            UiArchitect.DesignStage stage = UiArchitect.getStage(this);
-            int topM = 80;
-            switch (stage) {
-                case LIBERAL:   topM = 120; break;
-                case STANDARD:  topM = 90;  break;
-                case COMPACT:   topM = 75;  break;
-                case SLIM:      topM = 60;  break;
-                case ULTRA_SLIM:topM = 40;  break;
-            }
-            helpLp.setMargins(0, topM, (int)(70 * 0.5f), 0);
+            int m = scale(25);
+            helpLp.setMargins(0, m, m, 0);
             globalHelpBtn.setLayoutParams(helpLp);
-                   globalHelpBtn.setOnClickListener(v -> {
-                String actName = getClass().getSimpleName().replace("Activity", "");
-                String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
-                if (actName.equals("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
-                if (actName.equals("Group")) helpText = "CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!";
-                if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
-                if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
-                if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database for 24 hours.";
-                if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
-                if (actName.equals("History")) helpText = "• Step 1: Open 'Location Logs' from the Dashboard Grid.\n• Step 2: Select a target user from the dropdown.\n• Step 3: Scroll through the timeline to review clustered tracking coordinates.";
-                if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
-                if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
-                if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Access individual member dossiers from the roster.\n• Step 2: Configure the Privacy & ACL Matrix (Live Sync, Biometrics).\n\n" +
-                                                                                    "PRIVACY PERMISSIONS (PROS vs CONS):\n\n" +
-                                                                                    "| State | Pros | Cons |\n" +
-                                                                                    "| :--- | :--- | :--- |\n" +
-                                                                                    "| ✅ GRANTED | Full recovery sync, real-time safety, remote admin. | Higher data usage, cloud-stored records. |\n" +
-                                                                                    "| ❌ DENIED | Absolute local-only privacy, GDPR minimization. | No remote recovery, limited emergency alerts. |\n\n" +
-                                                                                    "• Step 3: Enable 'Global Cloud Sync' ONLY if you require multi-device dossier recovery.";
-                if (actName.equals("Settings") || actName.equals("UiConfig")) helpText = "• Step 1: Access 'Settings Hub' from the Map Dashboard.\n• Step 2: Override the 'Tracking Resolution' interval or toggle 'Ghost Mode'.\n• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App.";
- 
-                showForensicDialog("Screen Guide: " + actName, helpText);
-            });
             
-            // Globally deploy into every physical Matrix except explicit Drawers or Splash
+            UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD");
+            globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
+            
             if (!(this instanceof com.jdroidx.jfindme.ui.settings.HelpSupportActivity) && 
                 !(this instanceof com.jdroidx.jfindme.ui.map.MapActivity) && 
                 !(this.getClass().getSimpleName().equals("SplashActivity"))) {
@@ -153,6 +120,80 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         }
     }
     
+    @Override
+    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        isLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE;
+        
+        // 🚀 L7 Architecture Sync: Manual UI Re-Injection
+        // Rebuilds the geometry hub without destroying the Activity state or memory registry.
+        onSaveCurrentState(); 
+        View originalRoot = createLayout();
+        if (originalRoot != null) {
+            android.widget.FrameLayout masterWrap = new android.widget.FrameLayout(this);
+            masterWrap.setClipChildren(false);
+            masterWrap.addView(originalRoot, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            
+            // Re-inject Help Icon Hub
+            reInjectHelpIcon(masterWrap);
+            
+            setContentView(masterWrap);
+            onUiRebuilt(); 
+        }
+    }
+
+    private void reInjectHelpIcon(android.widget.FrameLayout masterWrap) {
+        android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
+        globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
+        globalHelpBtn.setColorFilter(getGradientOverlayText()); 
+        int hPad = scale(20);
+        globalHelpBtn.setPadding(hPad, hPad, hPad, hPad);
+        globalHelpBtn.setClickable(true);
+        globalHelpBtn.setFocusable(true);
+        
+        int helpSize = scale(120);
+        android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(helpSize, helpSize);
+        helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
+        int m = scale(25);
+        helpLp.setMargins(0, m, m, 0);
+        globalHelpBtn.setLayoutParams(helpLp);
+        UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD");
+        
+        globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
+        
+        if (!(this instanceof com.jdroidx.jfindme.ui.settings.HelpSupportActivity) && 
+            !(this instanceof com.jdroidx.jfindme.ui.map.MapActivity) && 
+            !(this.getClass().getSimpleName().equals("SplashActivity"))) {
+            masterWrap.addView(globalHelpBtn);
+        }
+    }
+
+    protected void onUiRebuilt() {} 
+    protected void onSaveCurrentState() {} 
+    protected void triggerHelpDialog() {
+        String actName = getClass().getSimpleName().replace("Activity", "");
+        String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
+        if (actName.contains("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
+        if (actName.equals("Group")) helpText = "CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!";
+        if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
+        if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
+        if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database for 24 hours.";
+        if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
+        if (actName.equals("History")) helpText = "• Step 1: Open 'Location Logs' from the Dashboard Grid.\n• Step 2: Select a target user from the dropdown.\n• Step 3: Scroll through the timeline to review clustered tracking coordinates.";
+        if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
+        if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
+        if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Access individual member dossiers from the roster.\n• Step 2: Configure the Privacy & ACL Matrix (Live Sync, Biometrics).\n\n" +
+                                                                             "PRIVACY PERMISSIONS (PROS vs CONS):\n\n" +
+                                                                             "| State | Pros | Cons |\n" +
+                                                                             "| :--- | :--- | :--- |\n" +
+                                                                             "| ✅ GRANTED | Full recovery sync, real-time safety, remote admin. | Higher data usage, cloud-stored records. |\n" +
+                                                                             "| ❌ DENIED | Absolute local-only privacy, GDPR minimization. | No remote recovery, limited emergency alerts. |\n\n" +
+                                                                             "• Step 3: Enable 'Global Cloud Sync' ONLY if you require multi-device dossier recovery.";
+        if (actName.equals("Settings") || actName.equals("UiConfig")) helpText = "• Step 1: Access 'Settings Hub' from the Map Dashboard.\n• Step 2: Override the 'Tracking Resolution' interval or toggle 'Ghost Mode'.\n• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App.";
+
+        showForensicDialog("Screen Guide: " + actName, helpText);
+    }
+
     // 🦋 Master QA Enterprise Fix: Completely Bypasses Chinese OEM 'BinderProxy' crashes natively!
     protected void safeRecreate() {
         android.content.Intent hardwareMirror = getIntent();
@@ -173,10 +214,11 @@ public abstract class BaseActivityJava extends AppCompatActivity {
             v.setContentDescription(desc);
         }
         
-        // 🚀 QA Fix: Prevent focus conflicts on Oppo/Vivo/OnePlus devices!
-        // We only allow ENTER key overrides for non-input interactive elements.
+        // 🚀 QA Fix: Global Interaction Balancing (L7 Standard)
+        // We allow FOCUS (Tab key/Enter support) but DISABLE FocusInTouchMode to prevent the 'Double-Tap' bug.
         if (!(v instanceof android.widget.EditText)) {
-            v.setFocusableInTouchMode(true);
+            v.setFocusable(true);
+            v.setFocusableInTouchMode(false); // Enable one-touch execution
             v.setOnKeyListener((view, keyCode, event) -> {
                 if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                    (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -265,7 +307,7 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         tile.setOnClickListener(listener);
 
         // 🚀 L7 Architecture Sync: Primary Actions use Gradients, Secondary use Glass/Solid
-        UiArchitect.applyCard(this, tile, isPrimary ? "CARD_CAPSULE_BUTTON" : "CARD_STANDARD");
+        UiArchitect.applyCardWithOverride(this, tile, isPrimary ? "CARD_CAPSULE_BUTTON" : "CARD_STANDARD");
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
@@ -289,6 +331,10 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         tv.setPadding(sidePad/2, 0, 0, 0);
         tile.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        // 🧱 QA Fix: Force One-Touch Deployment!
+        applyAccessibility(tile, text); 
+        tile.setFocusableInTouchMode(false); // Immediate tactile response override
 
         return tile;
     }
@@ -323,9 +369,29 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     // 🚀 PILLAR 5: ENTERPRISE RESPONSIVE AUTO-SCALING ENGINE (MULTI-DEVICE QUOTAS)
     // =========================================================================================
     
+    public int scale(int base) {
+        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), base);
+    }
+
+    public float scaleText(float base) {
+        return UiScalingMatrixTable.scaleText(UiArchitect.getStage(this), base, false);
+    }
+
+    public float scaleText(float base, boolean isHeader) {
+        return UiScalingMatrixTable.scaleText(UiArchitect.getStage(this), base, isHeader);
+    }
+
+    public float scaleRadius(float base) {
+        return UiScalingMatrixTable.scaleRadius(UiArchitect.getStage(this), base);
+    }
+
+    public int scaleIcon(int base) {
+        return UiScalingMatrixTable.scaleIcon(UiArchitect.getStage(this), base);
+    }
+
     protected int getResponsivePaddingQuota() {
-        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (Baseline: 25px)
-        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 25);
+        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (Baseline: 30px)
+        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 30);
     }
 
     protected int getResponsiveHeaderTopQuota() {

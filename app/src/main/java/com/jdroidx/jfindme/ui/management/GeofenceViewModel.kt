@@ -12,6 +12,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.jdroidx.jfindme.data.local.DatabaseHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,11 +42,13 @@ data class RenderedGeofence(
 )
 
 /**
- * Hardened MVVM Geofence ViewModel (V27)
- * Synchronized with V24 Relational Database Engine.
+ * Hardened MVVM Geofence ViewModel (V36 MASTER)
+ * Synchronized with V36 Relational Database Engine (DatabaseHelper).
  */
 class GeofenceViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val dbDelegate = DatabaseHelper(application)
+    
     private val _activeZones = MutableLiveData<List<RenderedGeofence>>()
     val activeZones: LiveData<List<RenderedGeofence>> = _activeZones
 
@@ -115,7 +118,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         geofenceListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<RenderedGeofence>()
-                val localDb = com.jdroidx.jfindme.data.local.CitizenDbHelper(getApplication())
                 for (snap in snapshot.children) {
                     val name = snap.key ?: continue
                     val lat = snap.child("lat").value?.toString()?.toDoubleOrNull() ?: continue
@@ -128,12 +130,13 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     
                     list.add(RenderedGeofence(name, lat, lng, radius, assignedName, address, alertsEnabled, isZoneActive))
                     
-                    // 🚀 V27 Hardened Commit: Use ContentValues to satisfy CitizenDbHelper signature
+                    // 🚀 V36 Forensic Commit: Sync to Master Schema
                     val v = ContentValues().apply {
                         put("zone_id", name); put("name", name); put("target", assignedName)
                         put("lat", lat); put("lng", lng); put("radius", radius)
+                        put("sync_status", "CLOUD_SYNCED")
                     }
-                    localDb.saveSafeZone(v)
+                    dbDelegate.saveSafeZone(v)
                 }
                 _activeZones.postValue(list)
             }
@@ -144,7 +147,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     
     private fun loadLocalBackupVault(isEmergency: Boolean) {
         try {
-            val localZones = com.jdroidx.jfindme.data.local.CitizenDbHelper(getApplication()).getOfflineSafeZones()
+            val localZones = dbDelegate.getOfflineSafeZones()
             if (localZones.isNotEmpty()) {
                 val list = localZones.map { map ->
                     RenderedGeofence(
@@ -153,13 +156,13 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         map["lng"] as Double,
                         map["radius"] as Double,
                         map["target"] as String,
-                        "Local SQL Memory",
+                        "Local SQL Memory (V36)",
                         true,
                         true
                     )
                 }
                 _activeZones.postValue(list)
-                if (isEmergency) _uiToastEvent.postValue(SingleEvent("Cloud Offline: Native Vault Engaged!"))
+                if (isEmergency) _uiToastEvent.postValue(SingleEvent("Cloud Offline: Forensic Vault Engaged!"))
             }
         } catch (e: Exception) {}
     }
@@ -177,7 +180,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun submitCloudCoordinateSync(rawName: String, assignedName: String, lat: Double, lng: Double, radius: Double) {
-        val activeId = currentGroupId ?: return
         val name = if (assignedName == "ALL CONNECTED DEVICES") rawName else "$rawName ($assignedName)"
         _uiToastEvent.postValue(SingleEvent("Acquiring Hardware Sync..."))
         
@@ -210,7 +212,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         val activeId = currentGroupId ?: return
         val data = mapOf("lat" to lat, "lng" to lng, "radius" to radius, "assignedName" to assignedName, "address" to addr, "isZoneActive" to true, "alertsEnabled" to true)
         FirebaseDatabase.getInstance().getReference("groups").child(activeId).child("geofences").child(name).setValue(data)
-        _uiToastEvent.postValue(SingleEvent("Geofence Authorization Linked"))
+        _uiToastEvent.postValue(SingleEvent("Forensic Vault Synchronized"))
         _closeMapEvent.postValue(SingleEvent(true)) 
         setDraftPin(null)
     }

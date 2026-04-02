@@ -312,9 +312,10 @@ public class UiGalleryActivity extends BaseActivityJava {
         renderSectionHeader(content, "SYSTEM GEOMETRY AUDIT (RADIUS & ELEVATION)");
         LinearLayout geomGrid = new LinearLayout(this);
         geomGrid.setOrientation(LinearLayout.HORIZONTAL);
-        geomGrid.setWeightSum(3f);
-        
-        String[] rTiers = {"RADIUS_TIER_1", "RADIUS_TIER_2", "RADIUS_TIER_3"};
+        geomGrid.setWeightSum(4f);
+        geomGrid.setClipChildren(false);
+
+        String[] rTiers = {"RADIUS_TIER_1", "RADIUS_TIER_2", "RADIUS_TIER_3", "RADIUS_TIER_ZERO"};
         for (String rt : rTiers) {
             LinearLayout box = new LinearLayout(this);
             box.setOrientation(LinearLayout.VERTICAL);
@@ -330,14 +331,15 @@ public class UiGalleryActivity extends BaseActivityJava {
             com.jdroidx.jfindme.ui.base.SystemGeometryTable.applyShadow(this, box, "SHADOW_MEDIUM");
             
             TextView label = new TextView(this);
-            label.setText(rt + "\n" + (int)rad + "dp");
-            UiArchitect.applyText(this, label, "TEXT_MINI"); // 🚀 Stage-Aware Sync
-            label.setTextColor(getGradientEnd()); // 🚀 Theme Dynamic Contrast
+            label.setText(rt + "\n" + (int)rad + "px");
+            UiArchitect.applyText(this, label, "TEXT_LABEL");
+            label.setTextSize(8f);
+            label.setTextColor(getTextColor());
             label.setGravity(Gravity.CENTER);
             box.addView(label);
             
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, 200, 1f);
-            lp.setMargins(15, 15, 15, 15);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, scale(180), 1f);
+            lp.setMargins(scale(10), scale(10), scale(10), scale(10));
             geomGrid.addView(box, lp);
         }
         content.addView(geomGrid, getCardParams());

@@ -2,8 +2,6 @@ package com.jdroidx.jfindme.ui.management;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Environment;
@@ -20,19 +18,29 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
-import com.jdroidx.jfindme.data.local.CitizenDbHelper;
+import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.List;
+import java.util.Map;
 
+/**
+ * Hard Reset Hub (V37 FINAL RECONSTRUCTION)
+ * Objective: Violently purge all local forensic assets and reconstruct SSOT.
+ * Hardening: L7 Architectural Registry Parity & V36 Database Migration.
+ */
 public class FactoryResetActivity extends BaseActivityJava {
 
     private LinearLayout rootContainer;
     private StringBuilder exportDataBuilder = new StringBuilder();
+    private DatabaseHelper db;
 
     @Override
     protected View createLayout() {
+        db = new DatabaseHelper(this);
         LinearLayout mainLayout = new LinearLayout(this);
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setBackgroundColor(getPrimaryColor());
@@ -45,15 +53,13 @@ public class FactoryResetActivity extends BaseActivityJava {
         TextView title = new TextView(this);
         title.setText("FACTORY RESET CONSOLE");
         title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         header.addView(title);
         
         TextView subtitle = new TextView(this);
         subtitle.setText("Review Offline Cache Matrix before System Purge.");
         subtitle.setTextColor(getGradientOverlayText());
-        subtitle.setTextSize(12);
-        subtitle.setAlpha(0.8f);
+        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
         header.addView(subtitle);
         
         mainLayout.addView(header);
@@ -62,7 +68,8 @@ public class FactoryResetActivity extends BaseActivityJava {
         ScrollView scroll = new ScrollView(this);
         rootContainer = new LinearLayout(this);
         rootContainer.setOrientation(LinearLayout.VERTICAL);
-        rootContainer.setPadding(40, 20, 40, 100);
+        int q = getResponsivePaddingQuota();
+        rootContainer.setPadding(q * 2, q, q * 2, q * 5);
 
         // Prepare File/DB sizes
         File dbFile = getDatabasePath("JFindMe_CitizenData.db");
@@ -75,32 +82,28 @@ public class FactoryResetActivity extends BaseActivityJava {
         LinearLayout dbHeader = new LinearLayout(this);
         dbHeader.setOrientation(LinearLayout.HORIZONTAL);
         dbHeader.setGravity(Gravity.CENTER_VERTICAL);
-        dbHeader.setPadding(0, 0, 0, 20);
+        dbHeader.setPadding(0, 0, 0, scale(20));
 
         TextView tvDbSummary = new TextView(this);
         tvDbSummary.setText("DATABASE METRICS (Size: " + sizeFormatted + ")");
         tvDbSummary.setTextColor(getGradientStart());
-        tvDbSummary.setTextSize(14);
-        tvDbSummary.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvDbSummary, "TEXT_LABEL");
         dbHeader.addView(tvDbSummary, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         ImageView refreshIcon = new ImageView(this);
-        // 🚀 QA Fix: Force Theme-Aware Sync Icon from Master Registry
         refreshIcon.setImageResource(android.R.drawable.ic_popup_sync);
         refreshIcon.setColorFilter(getGradientStart());
         
-        // 🚀 L7 Architecture Sync: Dynamically scale icon per device stage
-        int dishSize = com.jdroidx.jfindme.ui.base.UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        int dishSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dishSize, dishSize);
-        iconLp.setMargins(20, 20, 20, 20);
+        int m = scale(15);
+        iconLp.setMargins(m, m, m, m);
         
         applyAccessibility(refreshIcon, "Refresh Database Matrix");
         refreshIcon.setOnClickListener(v -> refreshDatabaseMatrix());
         
         dbHeader.addView(refreshIcon, iconLp);
         rootContainer.addView(dbHeader);
-
-        refreshDatabaseMatrix();
 
         refreshDatabaseMatrix();
 
@@ -129,43 +132,29 @@ public class FactoryResetActivity extends BaseActivityJava {
             .setTitle("WARNING: PERMANENT PURGE")
             .setMessage("This will irrevocably delete the internal offline database, wipe all authentication keys, clear your local SharedPreferences cache, and force close the application.\n\nOn the next launch, the application will behave exactly like a fresh binary install.\n\nAre you absolutely sure you want to Wipe All Data?")
             .setPositiveButton("DELETE ALL & CLOSE APP", (dialog, which) -> {
-                // 1. Wipe SharedPreferences (SYNC FORCE COMMIT)
                 getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).edit().clear().commit(); 
-                
-                // 2. Erase the Entire SQLite Database structure
                 deleteDatabase("JFindMe_CitizenData.db");
-                
-                // 🚀 QA Fix: Stop the OS Background Daemon so it stops writing Location telemetry!
                 stopService(new android.content.Intent(this, com.jdroidx.jfindme.service.TrackingService.class));
                 
-                // 🚀 QA Fix: Obliterate completely Android OS internal/external App Cache + Secure Files Director!
                 try {
                     deleteRecursively(getCacheDir());
                     if (getExternalCacheDir() != null) {
                         deleteRecursively(getExternalCacheDir());
                     }
-                    // Wipes all cropped User Avatars and Custom internal app files dynamically
                     java.io.File[] physicalFiles = getFilesDir().listFiles();
                     if (physicalFiles != null) {
                         for (java.io.File f : physicalFiles) deleteRecursively(f);
                     }
                 } catch (Exception ignored) {}
                 
-                // 🚀 QA Fix: Flush the Android Display Notification tray in case Sirens are actively ringing!
                 android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 if (nm != null) nm.cancelAll();
                 
-                // 3. Sever Firebase Keys (This triggers an async background thread internally!)
                 FirebaseAuth.getInstance().signOut();
-                
                 com.jdroidx.jfindme.utils.AngelLoader.show(this);
                 
-                // 4. Wrap the process destruct sequence in an intelligent Handler.
-                // This grants Firebase absolute asynchronous freedom to shred backend matrices 
-                // while treating the user to a gorgeous, calming 3.0-second UI fading transition.
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     Toast.makeText(this, "Master Database Purged. Rebooting Terminal...", Toast.LENGTH_SHORT).show();
-                    
                     android.content.Intent restart = new android.content.Intent(this, com.jdroidx.jfindme.ui.base.SplashActivity.class);
                     restart.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     startActivity(restart);
@@ -177,12 +166,9 @@ public class FactoryResetActivity extends BaseActivityJava {
     }
 
     @Override
-    protected void setupLogic() {
-        // Render triggers implicitly above via createLayout pipeline.
-    }
+    protected void setupLogic() {}
 
     private void refreshDatabaseMatrix() {
-        // Clear previous render but keep the header
         if (rootContainer.getChildCount() > 1) {
             rootContainer.removeViews(1, rootContainer.getChildCount() - 1);
         }
@@ -190,160 +176,108 @@ public class FactoryResetActivity extends BaseActivityJava {
         exportDataBuilder = new StringBuilder();
         exportDataBuilder.append("=== JFINDME OFFLINE DATABASE DUMP ===\n");
         
-        try {
-            CitizenDbHelper helper = new CitizenDbHelper(this);
-            SQLiteDatabase db = helper.getReadableDatabase();
+        String[] tables = {"personal_table", "roster_table", "org_table", "SafeZone_Table", "GeoFence_Alert_table", "history_table", "pairing_log", "sim_inventory"};
+        
+        for (String tableName : tables) {
+            long rowCount = db.getRecordCount(tableName);
             
-            // 🚀 QA Fix: Force re-indexing of all silicon-mapped tables including roster_table
-            android.database.Cursor cTables = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata'", null);
+            exportDataBuilder.append("--------------------------------------------------\n");
+            exportDataBuilder.append("TABLE: ").append(tableName).append(" | ROWS: ").append(rowCount).append("\n");
+            exportDataBuilder.append("--------------------------------------------------\n");
             
-            while (cTables.moveToNext()) {
-                String tableName = cTables.getString(0);
-                
-                android.database.Cursor cRows = db.rawQuery("SELECT * FROM " + tableName, null);
-                int rowCount = cRows.getCount();
-                
-                exportDataBuilder.append("--------------------------------------------------\n");
-                exportDataBuilder.append("TABLE: ").append(tableName).append(" | ROWS: ").append(rowCount).append("\n");
-                exportDataBuilder.append("--------------------------------------------------\n");
-                
-                TextView tvTableHeader = new TextView(this);
-                tvTableHeader.setText("▶ TABLE: " + tableName.toUpperCase() + " (" + rowCount + " RECORDS)");
-                tvTableHeader.setTextColor(getTextColor());
-                tvTableHeader.setTextSize(14f);
-                tvTableHeader.setTypeface(null, Typeface.BOLD);
-                tvTableHeader.setPadding(0, 40, 0, 10);
-                rootContainer.addView(tvTableHeader);
-                
-                if (rowCount == 0) {
-                    TextView tvEmpty = new TextView(this);
-                    tvEmpty.setText("NO OFFLINE DATA DETECTED IN " + tableName.toUpperCase());
-                    tvEmpty.setTextColor(getSecondaryTextColor());
-                    tvEmpty.setAlpha(0.6f);
-                    tvEmpty.setPadding(20, 10, 20, 10);
-                    rootContainer.addView(tvEmpty);
-                    exportDataBuilder.append("No Data.\n\n");
-                    cRows.close();
-                    continue;
-                }
-                
-                HorizontalScrollView hScroll = new HorizontalScrollView(this);
-                TableLayout tableLayout = new TableLayout(this);
-                // Apply a deep frosted glass card effect for the matrix tiles
-                applySolidCardGeometry(tableLayout, getCardColor(), 10f);
-                tableLayout.setPadding(5, 5, 5, 5);
-                
-                // 🚀 L7 Optimization: Vertical Scroll Container (MAX 10 ROWS)
-                LinearLayout scrollContainer = new LinearLayout(this);
-                scrollContainer.setOrientation(LinearLayout.VERTICAL);
-                if (rowCount > 10) {
-                    ScrollView vScroll = new ScrollView(this);
-                    // Standardize height quota to prevent screen explosion
-                    vScroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 800));
-                    vScroll.addView(tableLayout);
-                    scrollContainer.addView(vScroll);
-                } else {
-                    scrollContainer.addView(tableLayout);
-                }
-                
-                TableRow headerRow = new TableRow(this);
-                String[] columns = cRows.getColumnNames();
+            TextView tvTableHeader = new TextView(this);
+            tvTableHeader.setText("▶ TABLE: " + tableName.toUpperCase() + " (" + rowCount + " RECORDS)");
+            tvTableHeader.setTextColor(getTextColor());
+            UiArchitect.applyText(this, tvTableHeader, "TEXT_TITLE");
+            tvTableHeader.setPadding(0, scale(40), 0, scale(15));
+            rootContainer.addView(tvTableHeader);
+            
+            if (rowCount == 0) {
+                TextView tvEmpty = new TextView(this);
+                tvEmpty.setText("NO OFFLINE DATA DETECTED IN " + tableName.toUpperCase());
+                tvEmpty.setTextColor(getSecondaryTextColor());
+                tvEmpty.setAlpha(0.6f);
+                tvEmpty.setPadding(scale(20), scale(10), scale(20), scale(10));
+                rootContainer.addView(tvEmpty);
+                exportDataBuilder.append("No Data.\n\n");
+                continue;
+            }
+            
+            HorizontalScrollView hScroll = new HorizontalScrollView(this);
+            TableLayout tableLayout = new TableLayout(this);
+            UiArchitect.applyCardWithOverride(this, tableLayout, "CARD_STANDARD", 1.0f);
+            int tp = scale(10);
+            tableLayout.setPadding(tp, tp, tp, tp);
+            
+            LinearLayout scrollContainer = new LinearLayout(this);
+            scrollContainer.setOrientation(LinearLayout.VERTICAL);
+            if (rowCount > 10) {
+                ScrollView vScroll = new ScrollView(this);
+                vScroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(600)));
+                vScroll.addView(tableLayout);
+                scrollContainer.addView(vScroll);
+            } else {
+                scrollContainer.addView(tableLayout);
+            }
+            
+            TableRow headerRow = new TableRow(this);
+            List<String> columns = db.getTableColumns(tableName);
+            for (String col : columns) {
+                exportDataBuilder.append(col).append(" | ");
+                TextView tvCol = new TextView(this);
+                tvCol.setText(col.toUpperCase());
+                tvCol.setTextColor(getPrimaryColor());
+                tvCol.setBackgroundColor(getGradientStart());
+                tvCol.setPadding(scale(30), scale(20), scale(30), scale(20));
+                UiArchitect.applyText(this, tvCol, "TEXT_LABEL");
+                headerRow.addView(tvCol);
+            }
+            exportDataBuilder.append("\n");
+            tableLayout.addView(headerRow);
+            
+            List<Map<String, String>> rows = db.getPagedData(tableName, 10, 0, null);
+            for (Map<String, String> rowMap : rows) {
+                TableRow dataRow = new TableRow(this);
                 for (String col : columns) {
-                    exportDataBuilder.append(col).append(" | ");
-                    
-                    TextView tvCol = new TextView(this);
-                    tvCol.setText(col.toUpperCase());
-                    tvCol.setTextColor(getPrimaryColor());
-                    tvCol.setBackgroundColor(getGradientStart());
-                    tvCol.setPadding(30, 20, 30, 20);
-                    tvCol.setTextSize(11f);
-                    tvCol.setTypeface(null, Typeface.BOLD);
-                    
-                    TableRow.LayoutParams tlp = new TableRow.LayoutParams();
-                    tlp.setMargins(2, 2, 2, 2);
-                    headerRow.addView(tvCol, tlp);
+                    String val = rowMap.containsKey(col) ? rowMap.get(col) : "---";
+                    exportDataBuilder.append(val).append(" | ");
+                    TextView tvVal = new TextView(this);
+                    tvVal.setText(val);
+                    tvVal.setTextColor(getSecondaryTextColor());
+                    UiArchitect.applyText(this, tvVal, "TEXT_MINI");
+                    tvVal.setPadding(scale(35), scale(20), scale(35), scale(20));
+                    dataRow.addView(tvVal);
                 }
                 exportDataBuilder.append("\n");
-                tableLayout.addView(headerRow);
-                
-                // 🚀 V37 FINAL RECONSTRUCTION: Simplified Explorer (Redirects to DatabaseManagementActivity for clusters)
-                while (cRows.moveToNext()) {
-                    TableRow dataRow = new TableRow(this);
-                    for (int i = 0; i < columns.length; i++) {
-                        String val = "---";
-                        try { val = cRows.getString(i); } catch (Exception ignore) {}
-                        if (val == null) val = "NULL";
-                        exportDataBuilder.append(val).append(" | ");
-                        
-                        TextView tvVal = new TextView(this);
-                        tvVal.setText(val);
-                        tvVal.setTextColor(getSecondaryTextColor());
-                        tvVal.setTextSize(11f);
-                        tvVal.setPadding(35, 20, 35, 20);
-                        
-                        if (cRows.getPosition() % 2 == 0) tvVal.setBackgroundColor(Color.argb(15, 255, 255, 255));
-                        else tvVal.setBackgroundColor(Color.TRANSPARENT);
-                        
-                        TableRow.LayoutParams tlp = new TableRow.LayoutParams();
-                        tlp.setMargins(2, 2, 2, 2);
-                        dataRow.addView(tvVal, tlp);
-                    }
-                    exportDataBuilder.append("\n");
-                    tableLayout.addView(dataRow);
-                }
-                cRows.close();
-                exportDataBuilder.append("\n\n");
-                
-                hScroll.addView(scrollContainer);
-                rootContainer.addView(hScroll);
+                tableLayout.addView(dataRow);
             }
-            cTables.close();
-            db.close();
-            
-            // Re-add Action Buttons at the bottom
-            LinearLayout btnBox = new LinearLayout(this);
-            btnBox.setOrientation(LinearLayout.VERTICAL);
-            btnBox.setPadding(0, 60, 0, 80);
-
-            btnBox.addView(createIconButton("SAVE TO LOCAL TXT", android.R.drawable.ic_menu_save, v -> saveToLocalText()));
-            btnBox.addView(createIconButton("DATABASE EXPLORER (V37)", android.R.drawable.ic_menu_edit, v -> {
-                startActivity(new android.content.Intent(this, DatabaseManagementActivity.class));
-            }));
-            btnBox.addView(createIconButton("DELETE ALL & PURGE DB", android.R.drawable.ic_menu_delete, v -> executePurge()));
-
-            rootContainer.addView(btnBox);
-            
-            Toast.makeText(this, "Database Matrix Synchronized.", Toast.LENGTH_SHORT).show();
-            
-        } catch (Exception e) {
-            TextView error = new TextView(this);
-            error.setText("Database Sync Error: " + e.getMessage());
-            error.setTextColor(Color.RED);
-            rootContainer.addView(error);
+            exportDataBuilder.append("\n\n");
+            hScroll.addView(scrollContainer);
+            rootContainer.addView(hScroll);
         }
+        
+        // Re-add Action Buttons
+        LinearLayout btnBox = new LinearLayout(this);
+        btnBox.setOrientation(LinearLayout.VERTICAL);
+        btnBox.setPadding(0, scale(60), 0, scale(80));
+
+        btnBox.addView(UiArchitect.createButton(this, "SAVE_TO_LOCAL_TXT", v -> saveToLocalText()));
+        btnBox.addView(UiArchitect.createButton(this, "DATABASE_EXPLORER_V37", v -> {
+            startActivity(new android.content.Intent(this, DatabaseManagementActivity.class));
+        }));
+        btnBox.addView(UiArchitect.createButton(this, "DELETE_ALL_PURGE_DB", v -> executePurge()));
+
+        rootContainer.addView(btnBox);
+        Toast.makeText(this, "Database Matrix Synchronized.", Toast.LENGTH_SHORT).show();
     }
 
-    private void addValToRow(TableRow row, String val) {
-        TextView tv = new TextView(this);
-        tv.setText(val != null ? val : "N/A");
-        tv.setTextColor(getSecondaryTextColor());
-        tv.setTextSize(11f);
-        tv.setPadding(35, 20, 35, 20);
-        row.addView(tv);
-    }
-
-    // 🚀 QA Tool: Extremely Violent Native File Recursion (Destroys Cache directories structurally)
     private void deleteRecursively(File fileOrDirectory) {
         if (fileOrDirectory != null && fileOrDirectory.isDirectory()) {
             File[] children = fileOrDirectory.listFiles();
             if (children != null) {
-                for (File child : children) {
-                    deleteRecursively(child);
-                }
+                for (File child : children) deleteRecursively(child);
             }
         }
-        if (fileOrDirectory != null) {
-            fileOrDirectory.delete(); // OS-Level Direct Instruction
-        }
+        if (fileOrDirectory != null) fileOrDirectory.delete();
     }
 }

@@ -12,6 +12,8 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 import java.io.File;
@@ -62,15 +64,18 @@ public class HealthActivity extends BaseActivityJava {
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(40, 40, 40, 100);
+        int cp = scale(40);
+        content.setPadding(cp, cp, cp, scale(100));
 
         // --- LAYER 1: SYSTEM HARDWARE METRICS ---
         content.addView(createSectionHeader("SYSTEM STATUS"));
         
         LinearLayout sysCard = new LinearLayout(this);
         sysCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(sysCard, getCardColor(), 30f);
-        sysCard.setPadding(20, 10, 20, 10);
+        UiArchitect.applyCard(this, sysCard, "CARD_STANDARD");
+        int sp = scale(20);
+        int vp = scale(10);
+        sysCard.setPadding(sp, vp, sp, vp);
         
         // Dynamic Matrix Mapping for OS Contrast Integrity
         sysCard.addView(createMetricRow("Battery Level", Color.parseColor("#4CAF50"), v -> tvBattery = v)); 
@@ -85,14 +90,15 @@ public class HealthActivity extends BaseActivityJava {
         
         LinearLayout opCard = new LinearLayout(this);
         opCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(opCard, getCardColor(), 30f);
-        opCard.setPadding(20, 10, 20, 10);
+        UiArchitect.applyCard(this, opCard, "CARD_STANDARD");
+        int opPad = scale(20);
+        opCard.setPadding(opPad, scale(10), opPad, scale(10));
         
         opCard.addView(createMetricRow("Tracking Service", Color.parseColor("#4CAF50"), v -> v.setText("RUNNING")));
         opCard.addView(createMetricRow("Service Hub", Color.parseColor("#4CAF50"), v -> v.setText("ACTIVE")));
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(0, 0, 0, 40);
+        cardLp.setMargins(0, 0, 0, scale(40));
         content.addView(opCard, cardLp);
 
         updateMetrics(); // Fire Native Hardware Check
@@ -110,7 +116,8 @@ public class HealthActivity extends BaseActivityJava {
     private View createMetricRow(String label, int valueColor, ValueTextViewConsumer consumer) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(20, 25, 20, 25);
+        int rowPad = scale(25);
+        row.setPadding(scale(20), rowPad, scale(20), rowPad);
         
         TextView tvLabel = new TextView(this);
         tvLabel.setText(label);
@@ -167,7 +174,7 @@ public class HealthActivity extends BaseActivityJava {
         header.setTextColor(getGradientStart()); // Native OS Match Protocol
         header.setTextSize(11);
         header.setTypeface(null, android.graphics.Typeface.BOLD);
-        header.setPadding(10, 40, 0, 20);
+        header.setPadding(scale(10), scale(40), 0, scale(20));
         return header;
     }
 

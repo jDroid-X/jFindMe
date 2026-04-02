@@ -65,7 +65,7 @@ public class AuthActivityJava extends BaseActivityJava {
         pane.setGravity(Gravity.CENTER_HORIZONTAL);
 
         TextView title = new TextView(this);
-        title.setText("jFindMe Enterprise");
+        title.setText("jButterFly Enterprise");
         title.setTextColor(getTextColor());
         title.setTextSize(24);
         title.setPadding(0, 0, 0, getResponsivePaddingQuota() * 2);

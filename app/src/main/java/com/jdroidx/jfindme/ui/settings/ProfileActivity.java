@@ -113,7 +113,7 @@ public class ProfileActivity extends BaseActivityJava {
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, subtitle, "TEXT_SUB");
-        subtitle.setPadding(0, 10, 0, 0);
+        subtitle.setPadding(0, scale(10), 0, 0);
         header.addView(subtitle);
         
         mainRoot.addView(header);
@@ -150,7 +150,7 @@ public class ProfileActivity extends BaseActivityJava {
         photoBorder.setColor(Color.TRANSPARENT);
         photoBorder.setStroke(8, getGradientStart()); 
         nativeProfilePhoto.setBackground(photoBorder);
-        nativeProfilePhoto.setPadding(30, 30, 30, 30); 
+        nativeProfilePhoto.setPadding(quota, quota, quota, quota); 
         nativeProfilePhoto.setClipToOutline(true);
 
         activeProfileImgView = new android.webkit.WebView(this);
@@ -173,7 +173,8 @@ public class ProfileActivity extends BaseActivityJava {
         cameraBtn.setImageResource(android.R.drawable.ic_menu_camera);
         cameraBtn.setColorFilter(getGradientStart());
         cameraBtn.setBackground(iconBg);
-        cameraBtn.setPadding(20, 20, 20, 20);
+        int cPad = scale(20);
+        cameraBtn.setPadding(cPad, cPad, cPad, cPad);
         android.widget.FrameLayout.LayoutParams tlP = new android.widget.FrameLayout.LayoutParams(cornerIconSize, cornerIconSize, Gravity.TOP | Gravity.LEFT);
         renderStack.addView(cameraBtn, tlP);
         cameraBtn.setOnClickListener(v -> handleCameraLaunch());
@@ -238,7 +239,7 @@ public class ProfileActivity extends BaseActivityJava {
         
         android.graphics.drawable.GradientDrawable secBg = new android.graphics.drawable.GradientDrawable();
         secBg.setColor(rooted ? Color.parseColor("#D32F2F") : Color.parseColor("#2E7D32"));
-        secBg.setCornerRadius(30f);
+        secBg.setCornerRadius(scaleRadius(30f));
         securityStatus.setBackground(secBg);
         
         View pairingStatus = createIconButton("Device Pairing", 
@@ -248,15 +249,16 @@ public class ProfileActivity extends BaseActivityJava {
                 
         android.graphics.drawable.GradientDrawable pairBg = new android.graphics.drawable.GradientDrawable();
         pairBg.setColor(Color.parseColor("#1565C0")); // Deep Blue Link Network!
-        pairBg.setCornerRadius(30f);
+        pairBg.setCornerRadius(scaleRadius(30f));
         pairingStatus.setBackground(pairBg);
 
         LinearLayout.LayoutParams squircleLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        squircleLp.setMargins(0, 0, 15, 0); // Right margin for first box
+        int itemGap = quota / 2;
+        squircleLp.setMargins(0, 0, itemGap, 0); // Right margin for first box
         securityStatus.setLayoutParams(squircleLp);
         
         LinearLayout.LayoutParams squircleLp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        squircleLp2.setMargins(15, 0, 0, 0); // Left margin for second box
+        squircleLp2.setMargins(itemGap, 0, 0, 0); // Left margin for second box
         pairingStatus.setLayoutParams(squircleLp2);
 
         integrityRow.addView(securityStatus);
@@ -801,9 +803,11 @@ public class ProfileActivity extends BaseActivityJava {
         String labelText = text + (mandatory ? " <font color='#D32F2F'>(*)</font>" : "");
         tv.setText(android.text.Html.fromHtml(labelText));
         tv.setTextColor(getGradientStart()); // Match Enterprise Palette
-        tv.setTextSize(13);
+        tv.setTextSize(scaleText(13));
         tv.setTypeface(null, android.graphics.Typeface.BOLD);
-        tv.setPadding(10, 30, 0, 5); // Add spacing for clarity
+        int pT = scale(30);
+        int pB = scale(5);
+        tv.setPadding(scale(10), pT, 0, pB); // Add spacing for clarity
         return tv;
     }
 

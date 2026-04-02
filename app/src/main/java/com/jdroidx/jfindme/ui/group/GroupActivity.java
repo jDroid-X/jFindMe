@@ -264,7 +264,8 @@ public class GroupActivity extends BaseActivityJava {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER);
-        bar.setPadding(20, 15, 20, 15);
+        int bp = scale(15);
+        bar.setPadding(scale(20), bp, scale(20), bp);
         bar.setBackgroundColor(Color.argb(80, Color.red(getPrimaryColor()), Color.green(getPrimaryColor()), Color.blue(getPrimaryColor()))); 
         
         // Feature 1: Silent Startup (🔇)
@@ -285,7 +286,8 @@ public class GroupActivity extends BaseActivityJava {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(25, 5, 25, 5);
+        int verticalPad = scale(5);
+        box.setPadding(scale(25), verticalPad, scale(25), verticalPad);
         box.setFocusable(true);
         box.setClickable(true);
         box.setOnClickListener(v -> Toast.makeText(this, toastMsg, Toast.LENGTH_SHORT).show());
@@ -925,7 +927,7 @@ public class GroupActivity extends BaseActivityJava {
         container.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, 0, 30);
+        lp.setMargins(0, 0, 0, scale(30));
 
         // OPTION A [Remote]
         container.addView(buildGatewayCard("☁️ OPTION A [Remote]", 
@@ -946,7 +948,7 @@ public class GroupActivity extends BaseActivityJava {
         // Section Divider as requested in Image 1
         View divider = new View(this);
         divider.setBackgroundColor(Color.argb(80, Color.red(getSecondaryTextColor()), Color.green(getSecondaryTextColor()), Color.blue(getSecondaryTextColor())));
-        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 2);
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(2));
         divLp.setMargins(0, scale(20), 0, scale(40));
         container.addView(divider, divLp);
 
@@ -1001,7 +1003,7 @@ public class GroupActivity extends BaseActivityJava {
         hostTitle.setTextSize(12);
         hostTitle.setTypeface(null, Typeface.BOLD);
         hostTitle.setGravity(Gravity.CENTER);
-        hostTitle.setPadding(0, 20, 0, 40);
+        hostTitle.setPadding(0, scale(20), 0, scale(40));
         container.addView(hostTitle);
 
         tvCode = new TextView(this);
@@ -1021,12 +1023,13 @@ public class GroupActivity extends BaseActivityJava {
         container.addView(tvSyncStatus);
 
         ivQrCode = new ImageView(this);
-        ivQrCode.setPadding(20, 20, 20, 20);
+        ivQrCode.setPadding(scale(20), scale(20), scale(20), scale(20));
         ivQrCode.setBackgroundColor(Color.WHITE);
         ivQrCode.setVisibility(View.GONE);
-        LinearLayout.LayoutParams qrLp = new LinearLayout.LayoutParams(400, 400);
+        int qrSize = scale(400);
+        LinearLayout.LayoutParams qrLp = new LinearLayout.LayoutParams(qrSize, qrSize);
         qrLp.gravity = Gravity.CENTER;
-        qrLp.setMargins(0, 0, 0, 30);
+        qrLp.setMargins(0, 0, 0, scale(30));
         container.addView(ivQrCode, qrLp);
         
         // Action Button: Generate Token
@@ -1142,7 +1145,7 @@ public class GroupActivity extends BaseActivityJava {
         hostTitle.setTextSize(12);
         hostTitle.setTypeface(null, Typeface.BOLD);
         hostTitle.setGravity(Gravity.CENTER);
-        hostTitle.setPadding(0, 20, 0, 40);
+        hostTitle.setPadding(0, scale(20), 0, scale(40));
         container.addView(hostTitle);
 
         tvLocalCode = new TextView(this);
@@ -1158,16 +1161,17 @@ public class GroupActivity extends BaseActivityJava {
         tvLocalSyncStatus.setTextColor(Color.parseColor("#00E676"));
         tvLocalSyncStatus.setGravity(Gravity.CENTER);
         tvLocalSyncStatus.setTextSize(12);
-        tvLocalSyncStatus.setPadding(0, 20, 0, 30);
+        tvLocalSyncStatus.setPadding(0, scale(20), 0, scale(30));
         container.addView(tvLocalSyncStatus);
 
         ivLocalQrCode = new ImageView(this);
-        ivLocalQrCode.setPadding(20, 20, 20, 20);
+        ivLocalQrCode.setPadding(scale(20), scale(20), scale(20), scale(20));
         ivLocalQrCode.setBackgroundColor(Color.WHITE);
         ivLocalQrCode.setVisibility(View.GONE);
-        LinearLayout.LayoutParams qrLp = new LinearLayout.LayoutParams(400, 400);
+        int qrSize = scale(400);
+        LinearLayout.LayoutParams qrLp = new LinearLayout.LayoutParams(qrSize, qrSize);
         qrLp.gravity = Gravity.CENTER;
-        qrLp.setMargins(0, 0, 0, 30);
+        qrLp.setMargins(0, 0, 0, scale(30));
         container.addView(ivLocalQrCode, qrLp);
 
         View btnGenerate = createActionTile("GENERATE UNIQUE TOKEN", android.R.drawable.ic_popup_sync, v -> {
@@ -1559,7 +1563,8 @@ public class GroupActivity extends BaseActivityJava {
         
         int pT = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.scalePadding(stage, 40);
         int pB = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.scalePadding(stage, 20);
-        header.setPadding(40, pT, 40, pB); // Aligns precisely with card geometries natively!
+        int sp = scale(40);
+        header.setPadding(sp, pT, sp, pB); // Aligns precisely with card geometries natively!
         header.setTypeface(null, Typeface.BOLD);
         return header;
     }
@@ -1656,11 +1661,4 @@ public class GroupActivity extends BaseActivityJava {
         });
     }
 
-    private float scaleText(float sp) {
-        return com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.scaleText(com.jdroidx.jfindme.ui.base.UiArchitect.getStage(this), sp);
-    }
-
-    private int scale(int dp) {
-        return com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.scalePadding(com.jdroidx.jfindme.ui.base.UiArchitect.getStage(this), dp);
-    }
 }

@@ -55,11 +55,11 @@ Group secondary settings into a Horizontal Tile Grid and place the Primary Maste
 - **Unified Screen Padding Matrix (UI Parameters):**
     | Design Stage | Screen Padding (dp) | Header Top Gap (dp) | Tile Gap (dp) | Text Scale Factor |
     | :--- | :--- | :--- | :--- | :--- |
-    | **LIBERAL** | 25dp | 30dp | 25dp | 1.6x |
-    | **STANDARD** | 20dp | 20dp | 20dp | 1.3x |
+    | **LIBERAL** | 25dp | 30dp | 25dp | 1.4x |
+    | **STANDARD** | 20dp | 20dp | 20dp | 1.2x |
     | **COMPACT** | 15dp | 15dp | 15dp | 1.0x |
-    | **SLIM** | 10dp | 10dp | 10dp | 0.8x |
-    | **ULTRA_SLIM** | 5dp | 5dp | 5dp | 0.65x |
+    | **SLIM** | 10dp | 10dp | 10dp | 0.9x |
+    | **ULTRA_SLIM** | 5dp | 5dp | 5dp | 0.8x |
 
 ## 3. Thematic Visual Rules
 - **Gradient Palette**: Avoid flat colors. Use a two-point linear gradient (Start -> End) for all CTAs and active headers.
@@ -86,11 +86,11 @@ Group secondary settings into a Horizontal Tile Grid and place the Primary Maste
 - **Iconography Scaling Matrix (Vitals):**
     | Icon Tier | Base Size (Compact) | Liberal (1.6x) | Slim (0.8x) | Ultra (0.65x) |
     | :--- | :--- | :--- | :--- | :--- |
-    | **ICON_TINY** | 90px | 144px | 72px | 58px |
-    | **ICON_SMALL** | 110px | 176px | 88px | 71px |
-    | **ICON_STANDARD** | 140px | 224px | 112px | 91px |
-    | **ICON_LARGE** | 180px | 288px | 144px | 117px |
-    | **ICON_HERO** | 250px | 400px | 200px | 162px |
+    | **ICON_TINY** | 80px | 112px | 72px | 64px |
+    | **ICON_SMALL** | 100px | 140px | 90px | 80px |
+    | **ICON_STANDARD** | 120px | 168px | 108px | 96px |
+    | **ICON_LARGE** | 140px | 196px | 126px | 112px |
+    | **ICON_HERO** | 400px | 560px | 360px | 320px |
 
 - **Shadow Elevation Matrix (Depth):**
     | Depth Tier | Base (Ultra 1.0x) | Compact (1.4x) | Standard (1.6x) | Liberal (2.0x) |

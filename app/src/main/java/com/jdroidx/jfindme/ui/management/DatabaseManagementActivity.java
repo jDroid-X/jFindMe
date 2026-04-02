@@ -8,7 +8,7 @@ import android.view.ViewGroup;
 import android.graphics.drawable.GradientDrawable;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
-import com.jdroidx.jfindme.data.local.CitizenDbHelper;
+import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.utils.AngelLoader;
 import java.util.*;
@@ -16,10 +16,11 @@ import java.util.*;
 /**
  * Universal Analytical Hub (V37 FINAL RECONSTRUCTION)
  * Objective: High-impact Gradient Menu transitioning to Dynamic Forensic Explorer.
+ * Hardening: L7 Architectural Registry Parity & V36 Database Migration.
  */
 public class DatabaseManagementActivity extends BaseActivityJava {
 
-    private CitizenDbHelper db;
+    private DatabaseHelper db;
     private FrameLayout rootLayer;
     private LinearLayout menuState, explorerState;
     private TableLayout tableHeader, tableData;
@@ -32,7 +33,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
-        db = new CitizenDbHelper(this);
+        db = new DatabaseHelper(this);
         rootLayer = new FrameLayout(this);
         rootLayer.setBackgroundColor(getPrimaryColor());
 
@@ -64,15 +65,16 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         int q = getResponsivePaddingQuota();
         menuContent.setPadding(q, q, q, q * 2);
 
-        String[] tables = {"personal_table|Identity Dossier", "roster_table|P2P Network", "history_table|Tracking Archive", "alerts_table|Siren Logs", "safezone_table|Boundary Matrix"};
+        String[] tables = {"personal_table|Identity Dossier", "roster_table|P2P Network", "history_table|Tracking Archive", "alerts_table|Siren Logs", "SafeZone_Table|Boundary Matrix"};
         for (String tEntry : tables) {
             String[] parts = tEntry.split("\\|");
             String tName = parts[0];
             String tLabel = parts[1];
 
             View btn = createTableMenuButton(tName, tLabel);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 220);
-            lp.setMargins(0, 0, 0, 40);
+            int btnHeight = scale(180); // 🚀 Purged hardcoded 220
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, btnHeight);
+            lp.setMargins(0, 0, 0, scale(30));
             menuContent.addView(btn, lp);
         }
         
@@ -110,7 +112,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
 
         tvStats = new TextView(this);
         tvStats.setTextColor(getGradientStart());
-        tvStats.setPadding(0, 20, 0, 20);
+        tvStats.setPadding(0, scale(15), 0, scale(15));
         UiArchitect.applyText(this, tvStats, "TEXT_LABEL");
         explorerState.addView(tvStats);
 
@@ -140,25 +142,26 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.CENTER);
         
-        Button btnPrev = new Button(this); btnPrev.setText("PREV");
-        btnPrev.setOnClickListener(v -> { if(pOffset >= pSize) { pOffset -= pSize; renderExplorerUI(); } });
-        
-        Button btnNext = new Button(this); btnNext.setText("NEXT");
-        btnNext.setOnClickListener(v -> { pOffset += pSize; renderExplorerUI(); });
+        View btnPrev = UiArchitect.createButton(this, "PREV", v -> { if(pOffset >= pSize) { pOffset -= pSize; renderExplorerUI(); } });
+        View btnNext = UiArchitect.createButton(this, "NEXT", v -> { pOffset += pSize; renderExplorerUI(); });
 
-        Button btnWipe = new Button(this); btnWipe.setText("WIPE TABLE");
-        btnWipe.setTextColor(Color.RED);
-        btnWipe.setOnClickListener(v -> {
+        View btnWipe = UiArchitect.createButton(this, "WIPE_TABLE", v -> {
             new android.app.AlertDialog.Builder(this).setTitle("Purge Table?")
                 .setMessage("Delete all records in " + activeTable + "?")
                 .setPositiveButton("DELETE", (d, w) -> { db.truncateTable(activeTable); renderExplorerUI(); })
                 .setNegativeButton("Abort", null).show();
         });
 
-        Button btnBack = new Button(this); btnBack.setText("BACK");
-        btnBack.setOnClickListener(v -> { explorerState.setVisibility(View.GONE); menuState.setVisibility(View.VISIBLE); });
+        View btnBack = UiArchitect.createButton(this, "BACK", v -> { explorerState.setVisibility(View.GONE); menuState.setVisibility(View.VISIBLE); });
 
-        nav.addView(btnPrev); nav.addView(btnNext); nav.addView(btnWipe); nav.addView(btnBack);
+        int navMargin = scale(10);
+        LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        navLp.setMargins(navMargin, navMargin, navMargin, navMargin);
+        
+        nav.addView(btnPrev, navLp); 
+        nav.addView(btnNext, navLp); 
+        nav.addView(btnWipe, navLp); 
+        nav.addView(btnBack, navLp);
         explorerState.addView(nav);
 
         rootLayer.addView(explorerState);
@@ -170,23 +173,27 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(60, 0, 60, 0);
+        int rp = scale(50);
+        row.setPadding(rp, 0, rp, 0);
 
         // 🚀 L7 Enterprise Gradient Button (Aligned with UiArchitect Radius and Physics)
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{getGradientStart(), getGradientEnd()});
         gd.setCornerRadius(getResponsiveRadiusQuota());
-        gd.setStroke(3, Color.WHITE);
+        gd.setStroke(scale(3), Color.WHITE);
         row.setBackground(gd);
-        row.setElevation(15f);
+        
+        // 🚀 Depth & Shadow Optimization: Unified Z-axis elevation via applyCardWithOverride
+        UiArchitect.applyCardWithOverride(this, row, "CARD_STANDARD", 1.2f);
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(android.R.drawable.ic_menu_agenda);
         icon.setColorFilter(getGradientOverlayText());
-        row.addView(icon, new LinearLayout.LayoutParams(100, 100));
+        int iconSize = scale(80);
+        row.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
 
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
-        text.setPadding(40, 0, 0, 0);
+        text.setPadding(scale(30), 0, 0, 0);
 
         TextView tvName = new TextView(this);
         tvName.setText(tName.replace("_table", "").toUpperCase());
@@ -199,7 +206,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         tvSub.setText(tLabel);
         tvSub.setTextColor(getGradientOverlayText());
         tvSub.setAlpha(0.85f);
-        tvSub.setTextSize(12);
+        UiArchitect.applyText(this, tvSub, "TEXT_LABEL"); // 🚀 Purged hardcoded 12
         text.addView(tvSub);
 
         row.addView(text);
@@ -228,10 +235,11 @@ public class DatabaseManagementActivity extends BaseActivityJava {
 
             // 🚀 DYNAMIC FORENSIC HEADER
             TableRow hRow = new TableRow(this);
+            int hp = scale(45);
             for (String c : cols) {
                 TextView tv = new TextView(this);
                 tv.setText(c.toUpperCase());
-                tv.setPadding(55, 40, 55, 40);
+                tv.setPadding(hp, scale(30), hp, scale(30));
                 tv.setTextColor(getGradientOverlayText());
                 tv.setBackgroundColor(getGradientStart());
                 tv.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -242,6 +250,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
 
             // 🚀 DYNAMIC DATA ROWS (With Alternating Contrast)
             int count = 0;
+            int bp = scale(45);
             for (Map<String, String> r : rows) {
                 TableRow bRow = new TableRow(this);
                 bRow.setBackgroundColor(count % 2 == 0 ? Color.argb(15, 255, 255, 255) : Color.TRANSPARENT);
@@ -249,7 +258,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
                     TextView tv = new TextView(this);
                     tv.setText(r.containsKey(c) ? r.get(c) : "---");
                     tv.setTextColor(getTextColor());
-                    tv.setPadding(55, 35, 55, 35);
+                    tv.setPadding(bp, scale(25), bp, scale(25));
                     UiArchitect.applyText(this, tv, "TEXT_BODY");
                     bRow.addView(tv);
                 }

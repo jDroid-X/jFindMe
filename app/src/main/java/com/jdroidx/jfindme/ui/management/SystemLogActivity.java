@@ -60,7 +60,7 @@ public class SystemLogActivity extends BaseActivityJava {
         listContainer.setOrientation(LinearLayout.VERTICAL);
         
         int masterPad = getResponsivePaddingQuota();
-        listContainer.setPadding(masterPad, masterPad, masterPad, masterPad * 3);
+        listContainer.setPadding(masterPad, masterPad, masterPad, scale(masterPad * 3));
 
         // Inject the Diagnostic Categories
         listContainer.addView(createDiagnosticItem("Device UUID Identity", "Core Authentication & Firebase Node Matrix", this::generateDeviceIdentityReport));
@@ -97,7 +97,8 @@ public class SystemLogActivity extends BaseActivityJava {
 
     private void showConsolidatedArchiveMatrix() {
         android.widget.ScrollView masterScroll = new android.widget.ScrollView(this);
-        masterScroll.setPadding(30, 30, 30, 30);
+        int mPad = scale(30);
+        masterScroll.setPadding(mPad, mPad, mPad, mPad);
         masterScroll.setBackgroundColor(getPrimaryColor()); // Base Activity Java
         
         TextView dumpText = new TextView(this);
@@ -129,8 +130,9 @@ public class SystemLogActivity extends BaseActivityJava {
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(40, 40, 40, 40);
-        applySolidCardGeometry(row, getCardColor(), 20f);
+        int rowPad = scale(40);
+        row.setPadding(rowPad, rowPad, rowPad, rowPad);
+        UiArchitect.applyCard(this, row, "CARD_STANDARD");
         
         TextView tvTitle = new TextView(this);
         tvTitle.setText(catTitle);
@@ -142,14 +144,14 @@ public class SystemLogActivity extends BaseActivityJava {
         tvDesc.setText(desc);
         tvDesc.setTextColor(getSecondaryTextColor());
         UiArchitect.applyText(this, tvDesc, "TEXT_BODY");
-        tvDesc.setPadding(0, 10, 0, 0);
+        tvDesc.setPadding(0, scale(10), 0, 0);
         row.addView(tvDesc);
 
         TextView diagnosticReport = new TextView(this);
         diagnosticReport.setTextSize(13f);
         diagnosticReport.setTypeface(null, android.graphics.Typeface.BOLD);
         // Add left margin to simulate tree-indentation organically
-        diagnosticReport.setPadding(60, 20, 60, 40);
+        diagnosticReport.setPadding(scale(60), scale(20), scale(60), scale(40));
         diagnosticReport.setVisibility(View.GONE);
 
         row.setFocusable(true);
@@ -163,7 +165,7 @@ public class SystemLogActivity extends BaseActivityJava {
             if (diagnosticReport.getVisibility() == View.VISIBLE) {
                 diagnosticReport.setVisibility(View.GONE);
                 row.setBackgroundColor(Color.TRANSPARENT);
-                applySolidCardGeometry(row, getCardColor(), 20f);
+                UiArchitect.applyCard(this, row, "CARD_STANDARD");
             } else {
                 try {
                     String report = generator.call();

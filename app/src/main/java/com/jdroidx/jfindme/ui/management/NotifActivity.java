@@ -9,6 +9,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 /**
@@ -39,7 +40,7 @@ public class NotifActivity extends BaseActivityJava {
         title.setTextColor(getGradientOverlayText());
         title.setTextSize(24);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         topRow.addView(title);
         header.addView(topRow);
 
@@ -48,7 +49,7 @@ public class NotifActivity extends BaseActivityJava {
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
-        subtitle.setPadding(0, 10, 0, 0);
+        subtitle.setPadding(0, scale(10), 0, 0);
         header.addView(subtitle);
 
         mainRoot.addView(header);
@@ -98,7 +99,7 @@ public class NotifActivity extends BaseActivityJava {
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         int cMargin = getResponsivePaddingQuota();
-        cardLp.setMargins(0, 0, 0, cMargin + 10);
+        cardLp.setMargins(0, 0, 0, cMargin + scale(10));
         card.setLayoutParams(cardLp);
         
         // Matrix Render: Horizontal Colored Severity Stripe bridging seamlessly!
@@ -109,7 +110,7 @@ public class NotifActivity extends BaseActivityJava {
         // Severity Ribbon
         View statusRibbon = new View(this);
         statusRibbon.setBackgroundColor(accentColor);
-        innerRow.addView(statusRibbon, new LinearLayout.LayoutParams(15, ViewGroup.LayoutParams.MATCH_PARENT));
+        innerRow.addView(statusRibbon, new LinearLayout.LayoutParams(scale(15), ViewGroup.LayoutParams.MATCH_PARENT));
 
         // Content Area
         LinearLayout textBlock = new LinearLayout(this);
@@ -130,7 +131,7 @@ public class NotifActivity extends BaseActivityJava {
         tvBody.setTextColor(getTextColor());
         tvBody.setAlpha(0.85f);
         tvBody.setTextSize(11);
-        tvBody.setPadding(0, 10, 0, 0);
+        tvBody.setPadding(0, scale(10), 0, 0);
         textBlock.addView(tvBody);
         
         innerRow.addView(textBlock);

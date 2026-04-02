@@ -47,6 +47,12 @@ class TrackingService : Service() {
         val userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
 
         locationEngine = LocationEngine(this) { location ->
+            val p = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+            if (p.getBoolean("pref_service_halted", false)) {
+                SystemLogger.w(TAG, "Forensic Isolation Active: Background Telemetry Blocked.")
+                return@LocationEngine
+            }
+
             // Rule 5: Security Agent - Background Mock Check
             if (com.jdroidx.jfindme.engine.security.SecurityEngine.isMockLocation(location)) {
                 SystemLogger.e(TAG, "MOCK_LOCATION_BLOCKED_IN_BACKGROUND")

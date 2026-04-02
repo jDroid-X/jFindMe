@@ -27,8 +27,8 @@ class LocationEngine(private val context: Context, private val onLocationChanged
     private fun buildLocationRequest(): LocationRequest {
         return LocationRequest.Builder(trackingPriority, updateInterval).apply {
             setMinUpdateIntervalMillis(updateInterval / 2)
-            // QA Revert: Removed geographical distance lock. Forces a strict time-based heartbeat ping to guarantee Group Tracking synchronization even if stationary indoors!
-            setMinUpdateDistanceMeters(0f) 
+            // 🚀 QA Fix: Global Adaptive Geometry. Setting to 60 meters to prevent stationary jitter while maintaining tactical breadcrumbs!
+            setMinUpdateDistanceMeters(60f) 
         }.build()
     }
 

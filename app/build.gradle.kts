@@ -10,7 +10,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.jdroidx.jbutterfly"
+        applicationId = "com.jdroidx.jfindme"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
