@@ -127,7 +127,7 @@ object MultiMarkerEngine {
         
         if (calculatedRole == null) {
             // 1st Priority: Offline Core Memory Sandbox
-            val localDb = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
             val offlineMatrix = localDb.getOfflineRoster()
             var matchedTitle: String? = null
             
@@ -269,3 +269,4 @@ object MultiMarkerEngine {
         com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
     }
 }
+

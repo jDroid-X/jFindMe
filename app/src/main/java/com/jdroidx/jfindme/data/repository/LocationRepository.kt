@@ -110,7 +110,7 @@ class LocationRepository(private val context: Context) {
     fun updateMyLocation(userLocation: UserLocation) {
         // 🚀 QA Fix: Resolve Physical Address before Forensic Commit
         val geocoder = Geocoder(context, Locale.getDefault())
-        val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
         
         // 🧱 QA Hardening: Use a Background Thread or Async Listener to prevent ANR
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -147,7 +147,7 @@ class LocationRepository(private val context: Context) {
     }
 
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
-        val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
         val rel = if (userLocation.role_family != "None") "FAMILY (${userLocation.role_family})"
                   else if (userLocation.role_friend != "None") "FRIEND (${userLocation.role_friend})"
                   else "UNLINKED"
@@ -180,7 +180,7 @@ class LocationRepository(private val context: Context) {
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val points = mutableListOf<UserLocation>()
-                    val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+                    val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
                     
                     snapshot.children.forEach { child ->
                         child.getValue(UserLocation::class.java)?.let { point ->
@@ -210,3 +210,4 @@ class LocationRepository(private val context: Context) {
             })
     }
 }
+

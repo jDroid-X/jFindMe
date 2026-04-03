@@ -145,44 +145,38 @@ class ProfileViewModel : BaseViewModel() {
         countryIdentifying: Boolean, pincodeVal: String,
         cVal: String, sVal: String, cityVal: String, famStr: String, friendStr: String,
         addressVal: String, emergencyNoteVal: String,
+        orgName: String, deptName: String, // 🚀 QA Fix: Corporate Sync Keys
         prefs: android.content.SharedPreferences
     ) {
         // 1. Enterprise Validation Rules (Top to Bottom Chronological Screen Physics)
-        if (nameVal.length < 2 || nameVal.length > 50) {
-            _validationErrorField.value = "name"
-            _errorMessage.value = "Profile Check Failed: Name must be 2-50 characters"
-            return
-        }
+        // 1. Enterprise Validation Rules (Aggregate Diagnostic Matrix)
+        val errorChecklist = mutableListOf<String>()
         
-        // 🚀 Enterprise Prime Directive: Handshake Pattern Filter
+        if (nameVal.length < 2 || nameVal.length > 50) {
+            errorChecklist.add("Name: Must be 2-50 characters")
+        }
         if (nameVal.contains("@") && nameVal.contains(".")) {
-            _validationErrorField.value = "name"
-            _errorMessage.value = "Profile Identity Check Failure: Name node cannot contain restricted handles (@*.*)"
-            return
+            errorChecklist.add("Name: Handles (@*.*) are restricted")
         }
         if (!android.util.Patterns.PHONE.matcher(phoneVal).matches() || phoneVal.length < 7 || phoneVal.length > 15) {
-            _validationErrorField.value = "phone"
-            _errorMessage.value = "Profile Check Failed: Phone invalid length or format"
-            return
+            errorChecklist.add("Phone: Invalid length or format")
         }
         if (countryIdentifying) {
-            _validationErrorField.value = "location"
-            _errorMessage.value = "Profile Check Failed: Please Select your Country/State Matrix from the Dropdowns."
-            return
+            errorChecklist.add("Location: Country/State Matrix unselected")
         }
         if (pincodeVal.isEmpty() || pincodeVal.length < 4 || pincodeVal.length > 12) {
-            _validationErrorField.value = "pincode"
-            _errorMessage.value = "Profile Check Failed: Pincode must be 4-12 digits"
-            return
+            errorChecklist.add("ZipCode: Must be 4-12 digits")
         }
         if (dobVal.isEmpty()) {
-            _validationErrorField.value = "dob"
-            _errorMessage.value = "Profile Check Failed: Date of Birth is Mandatory"
-            return
+            errorChecklist.add("BirthDay: Mandatory field missing")
         }
         if (genderIdx == 0) {
-            _validationErrorField.value = "gender"
-            _errorMessage.value = "Profile Check Failed: Gender Selection is Mandatory"
+            errorChecklist.add("Gender: Selection is mandatory")
+        }
+
+        if (errorChecklist.isNotEmpty()) {
+            _validationErrorField.value = "validation_matrix_fail"
+            _errorMessage.value = "MULTIPLE_ERRORS:" + errorChecklist.joinToString("\n")
             return
         }
 
@@ -202,6 +196,8 @@ class ProfileViewModel : BaseViewModel() {
             roleMatrix["userPhone"] = phoneVal
             roleMatrix["userAddress"] = addressVal
             roleMatrix["userEmergencyNote"] = emergencyNoteVal
+            roleMatrix["orgName"] = orgName
+            roleMatrix["deptName"] = deptName
             roleMatrix["role_family"] = famStr
             roleMatrix["role_friend"] = friendStr
             roleMatrix["role_mother"] = famStr == "Mother"
@@ -276,10 +272,17 @@ class ProfileViewModel : BaseViewModel() {
                                 }
 
                                 // Local SQLite Mirror Update (Always executed for offline stability)
-                                val forensicDb = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+                                val forensicDb = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
                                 val finalRole = if (friendStr != "None") friendStr else famStr
                                 forensicDb.saveLocalDossier(safeUid, dossierMap, finalRole, nameVal, safeUid, safeUid, "SELF_REG")
                                 forensicDb.saveRosterNode(safeUid, nameVal, famStr, "Identity Active", isAdmin = true, isFriend = false, ownerName = nameVal, ownerDeviceId = safeUid, connectedDeviceId = safeUid, qrCode = "SELF_REG")
+                                
+                                // 🚀 QA Fix: Global Corporate Sync Node
+                                val orgV = android.content.ContentValues()
+                                orgV.put("uid", safeUid)
+                                orgV.put("org_name", orgName)
+                                orgV.put("department", deptName)
+                                forensicDb.saveOrgDossier(orgV)
                                     
                                 _saveSuccess.value = true
                             } else {
@@ -335,3 +338,4 @@ class ProfileViewModel : BaseViewModel() {
     }
 
 }
+

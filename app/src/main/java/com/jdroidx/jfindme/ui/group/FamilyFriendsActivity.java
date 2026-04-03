@@ -393,7 +393,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         String famRole = isFamily ? role : "None";
         String frRole = isFamily ? "None" : role;
         
-        com.jdroidx.jfindme.data.local.CitizenDbHelper localDb = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
         localDb.updateCitizenRole(uid, famRole, frRole, frRole.contains("Friend"));
         
         String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
@@ -425,3 +425,4 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         });
     }
 }
+

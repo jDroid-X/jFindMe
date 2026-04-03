@@ -1391,7 +1391,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
 
-        items.addView(createDrawerItem("Dashboard (Live Map)", "Map Overview", android.R.drawable.ic_dialog_map, v -> drawerLayout.closeDrawers()));
+        items.addView(createDrawerItem("Live Map Dashboard", "Map Overview", android.R.drawable.ic_dialog_map, v -> drawerLayout.closeDrawers()));
+        items.addView(createDrawerItem("Profile", "Name & Details", android.R.drawable.ic_menu_edit, v -> startActivity(new Intent(this, ProfileActivity.class))));
         items.addView(createDrawerItem("Devices Pairing", "Sync children", android.R.drawable.ic_menu_share, v -> startActivity(new Intent(this, GroupActivity.class))));
         items.addView(createDrawerItem("Location History", "Review paths", android.R.drawable.ic_menu_recent_history, v -> startActivity(new Intent(this, HistoryActivity.class))));
         
@@ -1401,7 +1402,6 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         items.addView(createDrawerItem("Family and Friends", "Manage members", android.R.drawable.ic_menu_myplaces, v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class))));
         
         items.addView(createDrawerItem("Notifications & Alerts", "System warnings", android.R.drawable.ic_popup_reminder, v -> startActivity(new Intent(this, NotifActivity.class))));
-        items.addView(createDrawerItem("Profile", "Name & Details", android.R.drawable.ic_menu_edit, v -> startActivity(new Intent(this, ProfileActivity.class))));
         items.addView(createDrawerItem("Settings", "App Config", android.R.drawable.ic_menu_manage, v -> startActivity(new Intent(this, SettingsActivity.class))));
         
         items.addView(createDrawerItem("Help & Support", "App FAQ", android.R.drawable.ic_menu_help, v -> {

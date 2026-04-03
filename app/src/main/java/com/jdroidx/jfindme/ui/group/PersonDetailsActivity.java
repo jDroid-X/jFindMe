@@ -267,6 +267,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
             viewModel.fetchChangeLog(prefs.getString("active_group", null), targetUid);
         }), stdLp);
         
+        formBox.addView(createIconButton("VIEW LOCATION LOGS", android.R.drawable.ic_menu_mapmode, v -> {
+            android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
+            i.putExtra("TARGET_UID", targetUid);
+            i.putExtra("TARGET_NAME", etFullName.getText().toString());
+            startActivity(i);
+        }), stdLp);
+        
         formBox.addView(createIconButton("RETURN TO ROSTER", android.R.drawable.ic_menu_revert, v -> finish()), stdLp);
 
         scrollEngine.addView(formBox);
@@ -280,7 +287,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         dynamicTaggingContainer.removeAllViews();
         if (!isSelf) return; // Only allow tagging locally on your own profile
         
-        com.jdroidx.jfindme.data.local.CitizenDbHelper localDb = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
         java.util.List<java.util.Map<String, Object>> roster = localDb.getOfflineRoster();
         
         java.util.Map<String, String> pairedSpouses = new java.util.HashMap<>();
@@ -384,7 +391,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         else if (selected.equals("Child")) { famRole = "Child"; frRole = "None"; }
                         else if (selected.equals("Friend")) { famRole = "Child"; frRole = "Friend (Team)"; } 
                         
-                        com.jdroidx.jfindme.data.local.CitizenDbHelper localDb = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+                        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
                         localDb.updateCitizenRole(nodeUid, famRole, frRole, frRole.contains("Friend"));
                         
                         String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
@@ -749,3 +756,4 @@ public class PersonDetailsActivity extends BaseActivityJava {
         viewModel.saveDossier(this, groupId, targetUid, payload);
     }
 }
+

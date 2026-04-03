@@ -22,6 +22,7 @@ import com.jdroidx.jfindme.utils.SystemLogger;
 public class ProfileActivity extends BaseActivityJava {
 
     private final String TAG = "ProfileActivity";
+    private static boolean onboardingDialogShown = false; 
     private android.webkit.WebView activeProfileImgView; // 🧠 Upgraded to Real 3D GLTF Decoder
     private ProfileViewModel profileViewModel; // 🚀 Pure Native MVVM Pipeline Injection
 
@@ -38,6 +39,7 @@ public class ProfileActivity extends BaseActivityJava {
     private android.widget.EditText pincodeField;
     private android.widget.EditText addressField;
     private android.widget.EditText emergencyNoteField;
+    private android.widget.EditText orgField, deptField; // 🚀 QA Fix: Master Corporate Bridge
 
     protected int dpToPx(int dp) {
         return (int) android.util.TypedValue.applyDimension(
@@ -92,20 +94,6 @@ public class ProfileActivity extends BaseActivityJava {
         com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, title, "TEXT_HEADER");
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         topRow.addView(title);
-        
-        ImageView settingsBtn = new ImageView(this);
-        settingsBtn.setImageResource(android.R.drawable.ic_menu_preferences);
-        settingsBtn.setColorFilter(getGradientOverlayText());
-        settingsBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(35), dpToPx(35)));
-        settingsBtn.setPadding(dpToPx(5), dpToPx(5), dpToPx(5), dpToPx(5));
-        
-        settingsBtn.setOnClickListener(v -> {
-            try {
-                startActivity(new android.content.Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.SettingsActivity")));
-            } catch (Exception e) {}
-        });
-        applyAccessibility(settingsBtn, "Open Settings Hub");
-        topRow.addView(settingsBtn);
         header.addView(topRow);
         
         TextView subtitle = new TextView(this);
@@ -127,28 +115,22 @@ public class ProfileActivity extends BaseActivityJava {
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardLp.setMargins(0, 0, 0, quota);
 
-        // --- LAYER 1: ENTERPRISE AVATAR ARCHITECTURE (Professional Card) ---
-        LinearLayout avatarCard = new LinearLayout(this);
-        avatarCard.setOrientation(LinearLayout.VERTICAL);
-        avatarCard.setGravity(Gravity.CENTER);
-        com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, avatarCard, "CARD_STANDARD");
-        avatarCard.setPadding(quota, quota, quota, quota);
+        // --- LAYER 1: DUAL-CARD IDENTITY ARCHITECTURE ---
+        LinearLayout dualCardRow = new LinearLayout(this);
+        dualCardRow.setOrientation(LinearLayout.HORIZONTAL);
+        dualCardRow.setWeightSum(2.0f);
+        dualCardRow.setClipChildren(false);
 
-        // 1. Avatar Preview Engine
-        android.widget.FrameLayout renderStack = new android.widget.FrameLayout(this);
-        int iQuota = getResponsiveIconQuota() * 3; // 🚀 QA Fix: Increased scale for premium visibility
-        LinearLayout.LayoutParams stackParams = new LinearLayout.LayoutParams(iQuota, iQuota);
-        stackParams.gravity = Gravity.CENTER_HORIZONTAL;
-        renderStack.setLayoutParams(stackParams);
+        int headerItemGap = quota / 2;
 
+        // CARD 1: IDENTITY LENS (Left)
         ImageView nativeProfilePhoto = new ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, nativeProfilePhoto);
         
         android.graphics.drawable.GradientDrawable photoBorder = new android.graphics.drawable.GradientDrawable();
-        photoBorder.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE); // 🚀 QA Fix: Transitioning to Squrecircle
-        photoBorder.setCornerRadius(iQuota / 4.5f);
+        photoBorder.setShape(android.graphics.drawable.GradientDrawable.OVAL); 
         photoBorder.setColor(Color.TRANSPARENT);
-        photoBorder.setStroke(8, getGradientStart()); 
+        photoBorder.setStroke(6, getGradientStart()); 
         nativeProfilePhoto.setBackground(photoBorder);
         nativeProfilePhoto.setPadding(quota, quota, quota, quota); 
         nativeProfilePhoto.setClipToOutline(true);
@@ -157,70 +139,77 @@ public class ProfileActivity extends BaseActivityJava {
         activeProfileImgView.setBackgroundColor(Color.TRANSPARENT);
         activeProfileImgView.getSettings().setJavaScriptEnabled(true);
         activeProfileImgView.loadUrl("file:///android_asset/web/vrm_viewer.html");
+
+        LinearLayout lensCard = new LinearLayout(this);
+        lensCard.setOrientation(LinearLayout.VERTICAL);
+        lensCard.setGravity(Gravity.CENTER);
+        UiArchitect.applyCard(this, lensCard, "CARD_STANDARD");
+        lensCard.setPadding(quota, quota, quota, quota);
         
-        renderStack.addView(nativeProfilePhoto, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        renderStack.addView(activeProfileImgView, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f);
+        lp1.setMargins(0, 0, headerItemGap, 0);
+        lensCard.setLayoutParams(lp1);
 
-        // 🚀 4-CORNER ACTION MATRIX (Corner Overlays)
-        int cornerIconSize = 100;
-        android.graphics.drawable.GradientDrawable iconBg = new android.graphics.drawable.GradientDrawable();
-        iconBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        iconBg.setColor(getCardColor());
-        iconBg.setStroke(2, getGradientStart());
+        android.widget.FrameLayout renderStack = new android.widget.FrameLayout(this);
+        int iQuota = (int)(getResponsiveIconQuota() * 3.5f); // 🚀 Max-Fit Lens Optimization
+        renderStack.addView(nativeProfilePhoto, new android.widget.FrameLayout.LayoutParams(iQuota, iQuota, Gravity.CENTER));
+        renderStack.addView(activeProfileImgView, new android.widget.FrameLayout.LayoutParams(iQuota, iQuota, Gravity.CENTER));
+        lensCard.addView(renderStack);
 
-        // TOP-LEFT: CAMERA
-        ImageView cameraBtn = new ImageView(this);
-        cameraBtn.setImageResource(android.R.drawable.ic_menu_camera);
-        cameraBtn.setColorFilter(getGradientStart());
-        cameraBtn.setBackground(iconBg);
-        int cPad = scale(20);
-        cameraBtn.setPadding(cPad, cPad, cPad, cPad);
-        android.widget.FrameLayout.LayoutParams tlP = new android.widget.FrameLayout.LayoutParams(cornerIconSize, cornerIconSize, Gravity.TOP | Gravity.LEFT);
-        renderStack.addView(cameraBtn, tlP);
-        cameraBtn.setOnClickListener(v -> handleCameraLaunch());
+        // CARD 2: ACTION GRID (Right)
+        LinearLayout actionCard = new LinearLayout(this);
+        actionCard.setOrientation(LinearLayout.VERTICAL);
+        actionCard.setGravity(Gravity.CENTER);
+        UiArchitect.applyCard(this, actionCard, "CARD_STANDARD");
+        actionCard.setPadding(headerItemGap, headerItemGap, headerItemGap, headerItemGap);
 
-        // TOP-RIGHT: GALLERY
-        ImageView galleryBtn = new ImageView(this);
-        galleryBtn.setImageResource(android.R.drawable.ic_menu_gallery);
-        galleryBtn.setColorFilter(getGradientStart());
-        galleryBtn.setBackground(iconBg);
-        galleryBtn.setPadding(20, 20, 20, 20);
-        android.widget.FrameLayout.LayoutParams trP = new android.widget.FrameLayout.LayoutParams(cornerIconSize, cornerIconSize, Gravity.TOP | Gravity.RIGHT);
-        renderStack.addView(galleryBtn, trP);
-        galleryBtn.setOnClickListener(v -> {
+        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        lp2.setMargins(headerItemGap, 0, 0, 0);
+        actionCard.setLayoutParams(lp2);
+
+        // 2x2 Action Matrix
+        LinearLayout actionGrid = new LinearLayout(this);
+        actionGrid.setOrientation(LinearLayout.VERTICAL);
+        actionGrid.setGravity(Gravity.CENTER);
+
+        LinearLayout gridRow1 = new LinearLayout(this);
+        gridRow1.setOrientation(LinearLayout.HORIZONTAL);
+        gridRow1.setGravity(Gravity.CENTER);
+        
+        LinearLayout gridRow2 = new LinearLayout(this);
+        gridRow2.setOrientation(LinearLayout.HORIZONTAL);
+        gridRow2.setGravity(Gravity.CENTER);
+
+        int hGridIconSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        LinearLayout.LayoutParams gLp = new LinearLayout.LayoutParams(hGridIconSize, hGridIconSize);
+        int gMargin = scale(10);
+        gLp.setMargins(gMargin, gMargin, gMargin, gMargin);
+
+        // Populate Grid
+        gridRow1.addView(prepareGridIcon(android.R.drawable.ic_menu_camera, v -> handleCameraLaunch()), gLp);
+        gridRow1.addView(prepareGridIcon(android.R.drawable.ic_menu_gallery, v -> {
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
             intent.setType("image/*");
             startActivityForResult(intent, 1004);
-        });
-
-        // BOTTOM-LEFT: CROP
-        ImageView cropBtn = new ImageView(this);
-        cropBtn.setImageResource(android.R.drawable.ic_menu_crop);
-        cropBtn.setColorFilter(getGradientStart());
-        cropBtn.setBackground(iconBg);
-        cropBtn.setPadding(20, 20, 20, 20);
-        android.widget.FrameLayout.LayoutParams blP = new android.widget.FrameLayout.LayoutParams(cornerIconSize, cornerIconSize, Gravity.BOTTOM | Gravity.LEFT);
-        renderStack.addView(cropBtn, blP);
-        cropBtn.setOnClickListener(v -> {
+        }), gLp);
+        
+        gridRow2.addView(prepareGridIcon(android.R.drawable.ic_menu_crop, v -> {
             java.io.File file = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
             if (file.exists()) {
                 startActivityForResult(new android.content.Intent(this, AvatarCropActivity.class), 1002);
             }
-        });
-
-        // BOTTOM-RIGHT: PICKER
-        ImageView pickerBtn = new ImageView(this);
-        pickerBtn.setImageResource(android.R.drawable.ic_menu_edit);
-        pickerBtn.setColorFilter(getGradientStart());
-        pickerBtn.setBackground(iconBg);
-        pickerBtn.setPadding(20, 20, 20, 20);
-        android.widget.FrameLayout.LayoutParams brP = new android.widget.FrameLayout.LayoutParams(cornerIconSize, cornerIconSize, Gravity.BOTTOM | Gravity.RIGHT);
-        renderStack.addView(pickerBtn, brP);
-        pickerBtn.setOnClickListener(v -> showAvatarSelectionDialog(nativeProfilePhoto));
-
-        avatarCard.addView(renderStack);
+        }), gLp);
         
-        root.addView(avatarCard, cardLp);
+        gridRow2.addView(prepareGridIcon(android.R.drawable.ic_menu_edit, v -> showAvatarSelectionDialog(nativeProfilePhoto)), gLp);
+
+        actionGrid.addView(gridRow1);
+        actionGrid.addView(gridRow2);
+        actionCard.addView(actionGrid);
+
+        dualCardRow.addView(lensCard);
+        dualCardRow.addView(actionCard);
+        
+        root.addView(dualCardRow, cardLp);
 
         // --- LAYER 2: INTEGRITY CARD ---
         root.addView(createSectionHeader("SYSTEM INTEGRITY & HARDWARE LINKS"));
@@ -295,8 +284,17 @@ public class ProfileActivity extends BaseActivityJava {
         emergencyNoteField.setText(prefs.getString("user_emergency_note", ""));
         emergencyNoteField.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         
+        // 🚀 QA Fix: L7 Corporate Sync Injection
+        orgField = new android.widget.EditText(this);
+        orgField.setHint("Organization / Hub Name");
+        orgField.setText(prefs.getString("org_name", ""));
+        
+        deptField = new android.widget.EditText(this);
+        deptField.setHint("Department / Sector");
+        deptField.setText(prefs.getString("department", ""));
+        
         dobField = new android.widget.EditText(this);
-        dobField.setHint("BirthDay (*)");
+        dobField.setHint(android.text.Html.fromHtml("BirthDay <font color='#D32F2F'>(*)</font>"));
         dobField.setText(prefs.getString("user_dob", ""));
         dobField.setFocusable(false);
         dobField.setClickable(true);
@@ -308,9 +306,9 @@ public class ProfileActivity extends BaseActivityJava {
         });
 
         genderField = new android.widget.AutoCompleteTextView(this);
-        genderField.setHint("Gender (*)");
-        genderField.setText(prefs.getString("user_gender", "Select Gender Identity"));
-        genderField.setAdapter(createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Arrays.asList("Select Gender Identity", "Male", "Female", "Prefer Not to Say"))));
+        genderField.setHint(android.text.Html.fromHtml("Gender <font color='#D32F2F'>(*)</font>"));
+        genderField.setText(prefs.getString("user_gender", "Select Gender"));
+        genderField.setAdapter(createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Arrays.asList("Select Gender", "Male", "Female", "Prefer Not to Say"))));
         genderField.setThreshold(1);
         genderField.setDropDownBackgroundDrawable(createPopupBackground());
         genderField.setFocusable(false);
@@ -318,7 +316,7 @@ public class ProfileActivity extends BaseActivityJava {
         genderField.setOnClickListener(v -> genderField.showDropDown());
 
         countrySpinner = new android.widget.AutoCompleteTextView(this);
-        countrySpinner.setHint("Country (*)");
+        countrySpinner.setHint(android.text.Html.fromHtml("Country <font color='#D32F2F'>(*)</font>"));
         String savedCountry = prefs.getString("user_country", "");
         countrySpinner.setText(savedCountry.equals("Identifying...") ? "" : savedCountry);
         countryAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select Country")));
@@ -327,7 +325,7 @@ public class ProfileActivity extends BaseActivityJava {
         countrySpinner.setDropDownBackgroundDrawable(createPopupBackground());
 
         stateSpinner = new android.widget.AutoCompleteTextView(this);
-        stateSpinner.setHint("State / Province (*)");
+        stateSpinner.setHint(android.text.Html.fromHtml("State/Province<font color='#D32F2F'>(*)</font>"));
         String savedState = prefs.getString("user_state", "");
         stateSpinner.setText(savedState.equals("Identifying...") ? "" : savedState);
         stateAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select State")));
@@ -336,7 +334,7 @@ public class ProfileActivity extends BaseActivityJava {
         stateSpinner.setDropDownBackgroundDrawable(createPopupBackground());
         
         citySpinner = new android.widget.AutoCompleteTextView(this);
-        citySpinner.setHint("City / Zone (*)");
+        citySpinner.setHint(android.text.Html.fromHtml("City/Zone<font color='#D32F2F'>(*)</font>"));
         String savedCity = prefs.getString("user_city", "");
         citySpinner.setText(savedCity.equals("Identifying...") ? "" : savedCity);
         cityAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select City")));
@@ -360,7 +358,7 @@ public class ProfileActivity extends BaseActivityJava {
         });
 
         pincodeField = new android.widget.EditText(this);
-        pincodeField.setHint("Zip Code (*)");
+        pincodeField.setHint(android.text.Html.fromHtml("ZipCode<font color='#D32F2F'>(*)</font>"));
         pincodeField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         pincodeField.setText(prefs.getString("user_pincode", ""));
 
@@ -410,6 +408,10 @@ public class ProfileActivity extends BaseActivityJava {
 
         // Emergency Protocol (Full)
         pForm.addView(wrapEnterpriseFullGrid(emergencyNoteField, android.R.drawable.ic_dialog_info));
+        
+        // 🚀 QA Fix: Global Corporate Bridge Injection
+        pForm.addView(wrapEnterpriseFullGrid(orgField, android.R.drawable.ic_menu_agenda));
+        pForm.addView(wrapEnterpriseFullGrid(deptField, android.R.drawable.ic_menu_directions));
         
         root.addView(pForm, cardLp);
 
@@ -483,8 +485,8 @@ public class ProfileActivity extends BaseActivityJava {
         row2.addView(passBtn);
         row2.addView(saveBtn);
 
-        gridLayout.addView(row1);
         gridLayout.addView(row2);
+        gridLayout.addView(row1);
         root.addView(gridLayout);
 
         // 🚀 QA Fix: Terminal Logout Session (Post-Grid Action)
@@ -505,9 +507,9 @@ public class ProfileActivity extends BaseActivityJava {
         scrollView.addView(root);
         mainRoot.addView(scrollView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        // 🚀 QA Fix: Global Navigation Integrity (Profile Hub active)
-        String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
-        mainRoot.addView(com.jdroidx.jfindme.ui.base.UiArchitect.createBottomNav(this, keys, "NAV_ME"));
+        // 🚀 QA Fix: Global Navigation Integrity (Profile Hub active) - REMOVED AS PER USER REQUEST
+        // String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
+        // mainRoot.addView(com.jdroidx.jfindme.ui.base.UiArchitect.createBottomNav(this, keys, "NAV_ME"));
 
         return mainRoot;
     }
@@ -838,6 +840,8 @@ public class ProfileActivity extends BaseActivityJava {
                 (cVal.isEmpty() || cVal.equals("Identifying...")),
                 pincodeVal, cVal, sVal, cityVal, famStr, friendStr,
                 addressVal, emergencyNoteVal,
+                orgField.getText().toString().trim(), 
+                deptField.getText().toString().trim(),
                 prefs
             );
         }
@@ -928,6 +932,15 @@ public class ProfileActivity extends BaseActivityJava {
     @Override
     protected void setupLogic() {
         SystemLogger.INSTANCE.d(TAG, "Profile Security Cluster Initialized.");
+        
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                startActivity(new android.content.Intent(ProfileActivity.this, com.jdroidx.jfindme.ui.map.MapActivity.class)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+                finish();
+            }
+        });
         profileViewModel = new androidx.lifecycle.ViewModelProvider(this).get(ProfileViewModel.class);
         
         // 🚀 QA Fix: Device Identity Handshake!
@@ -960,8 +973,9 @@ public class ProfileActivity extends BaseActivityJava {
         profileViewModel.fetchNetworkLocation();
         
         // 🚀 QA Fix: Installation Completion Guard
-        // Standard friendly message to ensure even a child understands the final setup requirements.
-        if (prefs.getString("user_pincode", "").isEmpty()) {
+        // Suppress on every action taken in the image icons (SafeRecreate blocker)
+        if (prefs.getString("user_pincode", "").isEmpty() && !onboardingDialogShown) {
+            onboardingDialogShown = true;
             new android.app.AlertDialog.Builder(this)
                 .setTitle("🔔 Finishing Touches Required!")
                 .setMessage("Hi there! We are almost done setting up your safety shield! 🛡️\n\n" +
@@ -989,7 +1003,27 @@ public class ProfileActivity extends BaseActivityJava {
         
         profileViewModel.getErrorMessage().observe(this, error -> {
             if (error != null) {
-                android.widget.Toast.makeText(this, error, android.widget.Toast.LENGTH_SHORT).show();
+                // 🚀 QA Fix: Dynamic 'Trigger Dialog' Hub (Multi-Error Checklist)
+                String displayMsg;
+                if (error.startsWith("MULTIPLE_ERRORS:")) {
+                    String cleanList = error.replace("MULTIPLE_ERRORS:", "");
+                    java.lang.StringBuilder sb = new java.lang.StringBuilder();
+                    sb.append("Hi there! We found a few pieces of your safety shield that need completing: 🛡️\n\n");
+                    for (String line : cleanList.split("\n")) {
+                        sb.append("   • ").append(line).append("\n");
+                    }
+                    sb.append("\nOnce you fill these in, your forensic profile will be fully active! ✨");
+                    displayMsg = sb.toString();
+                } else {
+                    displayMsg = error;
+                }
+                
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("🔔 FINISHING TOUCHES REQUIRED")
+                    .setMessage(displayMsg)
+                    .setPositiveButton("RESOLVE ISSUES 🚀", null)
+                    .show();
+                
                 profileViewModel.clearError();
             }
         });
@@ -1139,6 +1173,11 @@ public class ProfileActivity extends BaseActivityJava {
                         try {
                             android.graphics.Bitmap scaledBitmap = android.graphics.Bitmap.createScaledBitmap(captured, 350, 350, true);
                             
+                            // 🚀 QA Fix: Manual Orientation Calibration Matrix for standard Android Hardware
+                            android.graphics.Matrix matrix = new android.graphics.Matrix();
+                            matrix.postRotate(0); // Standard baseline
+                            android.graphics.Bitmap rotated = android.graphics.Bitmap.createBitmap(scaledBitmap, 0, 0, scaledBitmap.getWidth(), scaledBitmap.getHeight(), matrix, true);
+
                             // 2. Local App-Specific Storage Injection Directory
                             java.io.File dir = new java.io.File(getFilesDir(), "avatars");
                             if (!dir.exists()) dir.mkdirs();
@@ -1146,7 +1185,7 @@ public class ProfileActivity extends BaseActivityJava {
                             
                             // 3. I/O Block Writer
                             java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
-                            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
+                            rotated.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
                             fos.flush();
                             fos.close();
                             
@@ -1246,6 +1285,32 @@ public class ProfileActivity extends BaseActivityJava {
         } catch (Exception e) {
             SystemLogger.INSTANCE.e(TAG, "FATAL CAMERA EXCEPTION", e);
         }
+    }
+
+    private View prepareGridIcon(int iconRes, View.OnClickListener listener) {
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(iconRes);
+        
+        // 🚀 QA Fix: Global Dashboard Sync (Implementing Semantic Shade)
+        int adaptiveMid = getGradientMid(); 
+        iv.setColorFilter(adaptiveMid); 
+        
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        
+        // 🧩 Layer VII: Glassmorphism Shade (15% Alpha Wash)
+        int logicAlpha = Color.argb(38, Color.red(adaptiveMid), Color.green(adaptiveMid), Color.blue(adaptiveMid));
+        bg.setColor(logicAlpha); 
+        
+        bg.setStroke(3, adaptiveMid); // 🧩 Circular Perimeter
+        iv.setBackground(bg);
+        
+        int p = scale(25);
+        iv.setPadding(p, p, p, p);
+        iv.setFocusable(true);
+        iv.setClickable(true);
+        iv.setOnClickListener(listener);
+        return iv;
     }
 
 }

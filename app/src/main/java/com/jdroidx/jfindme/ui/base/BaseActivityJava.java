@@ -196,12 +196,16 @@ public abstract class BaseActivityJava extends AppCompatActivity {
 
     // 🦋 Master QA Enterprise Fix: Completely Bypasses Chinese OEM 'BinderProxy' crashes natively!
     protected void safeRecreate() {
-        android.content.Intent hardwareMirror = getIntent();
-        hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
-        finish();
-        overridePendingTransition(0, 0);
-        startActivity(hardwareMirror);
-        overridePendingTransition(0, 0);
+        // 🚀 QA Fix: Input Channel Protection (Ensures window is ready for handover)
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            android.content.Intent hardwareMirror = getIntent();
+            hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            finish();
+            overridePendingTransition(0, 0);
+            startActivity(hardwareMirror);
+            overridePendingTransition(0, 0);
+        }, 150); // 🧩 Forensic Debounce (150ms)
     }
 
     protected abstract View createLayout();
@@ -245,6 +249,21 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     protected int getPrimaryColor() { return ThemeManager.getScreenBackgroundColor(getResolvedThemeId()); }
     protected int getTextColor() { return ThemeManager.getTextPrimaryColor(getResolvedThemeId()); }
     protected int getAccentColor() { return ThemeManager.getGradientStart(getResolvedThemeId()); } // Fallback
+    
+    public android.graphics.drawable.GradientDrawable getBorderDrawable(int color, int strokeWidth, float radius) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(android.graphics.Color.TRANSPARENT);
+        gd.setStroke(strokeWidth, color);
+        gd.setCornerRadius(radius);
+        return gd;
+    }
+
+    public android.graphics.drawable.GradientDrawable getSolidDrawable(int color, float radius) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(color);
+        gd.setCornerRadius(radius);
+        return gd;
+    }
     
     // 🧠 Native Mapping to the new Relational UI Database
     protected int getCardColor() { 
@@ -332,9 +351,18 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         tv.setPadding(sidePad/2, 0, 0, 0);
         tile.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        // 🧱 QA Fix: Force One-Touch Deployment!
+        // 🧱 QA Fix: Force One-Touch Deployment & Enter Key Logic!
         applyAccessibility(tile, text); 
         tile.setFocusableInTouchMode(false); // Immediate tactile response override
+
+        tile.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                v.performClick();
+                return true;
+            }
+            return false;
+        });
 
         return tile;
     }

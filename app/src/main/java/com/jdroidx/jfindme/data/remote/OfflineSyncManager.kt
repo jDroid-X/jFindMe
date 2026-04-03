@@ -7,7 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.jdroidx.jfindme.data.local.CitizenDbHelper
+import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.utils.SecureVault
 import com.jdroidx.jfindme.utils.SystemLogger
@@ -83,7 +83,7 @@ class OfflineSyncManager(private val context: Context) {
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return false
         if (userId != myUid) return true // Only the owner can restrict their own data flow here
         
-        val db = CitizenDbHelper(context)
+        val db = DatabaseHelper(context)
         val dossier = db.getLocalDossier(userId)
         return dossier?.get("acl_live_tracking") != "DENIED"
     }
@@ -123,3 +123,4 @@ class OfflineSyncManager(private val context: Context) {
         }
     }
 }
+

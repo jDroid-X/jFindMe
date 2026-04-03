@@ -340,7 +340,7 @@ public class GroupActivity extends BaseActivityJava {
         textBlock.setPadding(scale(40), 0, 0, 0);
         
         // --- 1. OWNER NAME ---
-        com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
         java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
         String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
         
@@ -416,7 +416,7 @@ public class GroupActivity extends BaseActivityJava {
         String safeUid = (myUid != null) ? myUid : "MOCK_U123";
         
         // 🚀 OWNER ROOT NODE
-        com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(GroupActivity.this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
         java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
         String myName = myDos != null ? myDos.get("full_name") : "YOU";
         
@@ -501,7 +501,7 @@ public class GroupActivity extends BaseActivityJava {
         java.util.List<String> familyIds = new java.util.ArrayList<>();
         java.util.List<String> friendIds = new java.util.ArrayList<>();
 
-        com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
         java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
         String myGender = myDos != null ? myDos.get("user_gender") : "Male";
         String myName = (myDos != null && myDos.containsKey("full_name")) ? myDos.get("full_name") : "YOU";
@@ -555,7 +555,7 @@ public class GroupActivity extends BaseActivityJava {
                     java.util.List<String> familyIds = new java.util.ArrayList<>();
                     java.util.List<String> friendIds = new java.util.ArrayList<>();
                     
-                    com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(GroupActivity.this);
+                    com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
                     int totalP2P = 0;
                     
                     // 🚀 SSOT Integration: Use the Forensic Roster Table for Group Partitioning
@@ -797,7 +797,7 @@ public class GroupActivity extends BaseActivityJava {
                             activeTag = cloudFamRole.toUpperCase();
                         } else {
                             // Local Database Fallback (V2.0 Engine)
-                            com.jdroidx.jfindme.data.local.CitizenDbHelper db = new com.jdroidx.jfindme.data.local.CitizenDbHelper(GroupActivity.this);
+                            com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
                             java.util.Map<String, String> localDos = db.getLocalDossier(uid);
                             if (localDos != null) {
                                 String fRole = localDos.get("role_family");
@@ -1370,7 +1370,7 @@ public class GroupActivity extends BaseActivityJava {
                         if (success) {
                             Toast.makeText(this, "Handshake Completed! Assets Linked.", Toast.LENGTH_SHORT).show();
                             boolean isFriend = childPrelimRole.equals("Friends");
-                            new com.jdroidx.jfindme.data.local.CitizenDbHelper(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
+                            new com.jdroidx.jfindme.data.local.DatabaseHelper(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
                         } else {
                             Toast.makeText(this, "Handshake Failed.", Toast.LENGTH_SHORT).show();
                         }
@@ -1662,3 +1662,4 @@ public class GroupActivity extends BaseActivityJava {
     }
 
 }
+

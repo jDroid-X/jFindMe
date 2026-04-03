@@ -10,11 +10,11 @@ import com.jdroidx.jfindme.utils.SystemLogger
  * Citizen Database Engine (L7 Global Architect)
  * V36 FINAL PRODUCTION RECONSTRUCTION: Forensic Schema Hardening (Zero-Gap Wipe).
  */
-class CitizenDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class CitizenDbHelper_LEGACY(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        private const val DATABASE_VERSION = 25 // 🚀 V37: Hardened Pairing Ledger
+        private const val DATABASE_VERSION = 37 // 🚀 V37: Hardened Pairing Ledger baseline (Fix: Downgrade Correction)
         private const val MAX_DATETIME = 253402300799000L
         
         private const val TABLE_PERSONAL = "personal_table"
@@ -148,10 +148,42 @@ class CitizenDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAM
     }
 
     fun savePersonalDossier(v: ContentValues) {
-        val db = this.writableDatabase; val now = System.currentTimeMillis(); val uid = v.getAsString("uid") ?: "OWNER_001"
+        val db = this.writableDatabase; val now = System.currentTimeMillis(); 
+        val uid = v.getAsString("uid") ?: "OWNER_001"
+        
+        SystemLogger.i("CitizenDB", "🛡️ ATTEMPTING PERSONAL DOSSIER COMMIT: UID=$uid")
+        
+        // 🚀 QA Fix: UID Reconciliation Matrix (Migrate 'OWNER_001' to 'safeUid' automatically)
+        if (!uid.equals("OWNER_001")) {
+            val reconcileCursor = db.query(TABLE_PERSONAL, arrayOf("log_id"), "uid=? AND end_datetime=?", arrayOf("OWNER_001", MAX_DATETIME.toString()), null, null, null)
+            if (reconcileCursor.moveToFirst()) {
+                val logId = reconcileCursor.getString(0)
+                val upgrade = ContentValues()
+                upgrade.put("uid", uid)
+                upgrade.put("modified_at", now)
+                db.update(TABLE_PERSONAL, upgrade, "log_id=?", arrayOf(logId))
+                SystemLogger.i("CitizenDB", "🔔 UID RECONCILED: Migrated OWNER_001 node to $uid")
+            }
+            reconcileCursor.close()
+        }
+
         db.query(TABLE_PERSONAL, arrayOf("log_id"), "uid=? AND end_datetime=?", arrayOf(uid, MAX_DATETIME.toString()), null, null, null).use {
-            if (it.moveToFirst()) { v.put("modified_at", now); db.update(TABLE_PERSONAL, v, "log_id=?", arrayOf(it.getString(0))) }
-            else { val log = "${uid}_$now"; v.put("log_id", log); v.put("uid", uid); v.put("start_datetime", now); v.put("end_datetime", MAX_DATETIME); v.put("created_at", now); v.put("modified_at", now); db.insert(TABLE_PERSONAL, null, v) }
+            if (it.moveToFirst()) { 
+                v.put("modified_at", now); 
+                val rows = db.update(TABLE_PERSONAL, v, "log_id=?", arrayOf(it.getString(0)))
+                SystemLogger.i("CitizenDB", "✅ DOSSIER UPDATED: Result=$rows, LogID=${it.getString(0)}")
+            }
+            else { 
+                val log = "${uid}_$now"; 
+                v.put("log_id", log); 
+                v.put("uid", uid); 
+                v.put("start_datetime", now); 
+                v.put("end_datetime", MAX_DATETIME); 
+                v.put("created_at", now); 
+                v.put("modified_at", now); 
+                val result = db.insert(TABLE_PERSONAL, null, v)
+                SystemLogger.i("CitizenDB", "🚀 DOSSIER INSERTED: New LogID=$log, ResultID=$result")
+            }
         }
     }
 
@@ -256,11 +288,12 @@ class CitizenDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAM
 
         if (exists) {
             db.update(TABLE_PAIRING, v, "host_uid=? AND child_uid=?", arrayOf(hostId, childId))
-            SystemLogger.i("CitizenDbHelper", "Audit Updated: $hostId physically linked to $childId")
+            SystemLogger.i("DatabaseHelper", "Audit Updated: $hostId physically linked to $childId")
         } else {
             v.put("created_at", now)
             db.insert(TABLE_PAIRING, null, v)
-            SystemLogger.i("CitizenDbHelper", "New Audit Logged: $hostId linked with $childId")
+            SystemLogger.i("DatabaseHelper", "New Audit Logged: $hostId linked with $childId")
         }
     }
 }
+

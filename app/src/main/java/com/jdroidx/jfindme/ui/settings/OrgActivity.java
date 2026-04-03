@@ -10,7 +10,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import com.jdroidx.jfindme.data.local.CitizenDbHelper;
+import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import java.util.HashMap;
@@ -22,12 +22,12 @@ import java.util.Map;
  */
 public class OrgActivity extends BaseActivityJava {
 
-    private CitizenDbHelper db;
+    private DatabaseHelper db;
     private Map<String, EditText> fieldMap = new HashMap<>();
 
     @Override
     protected View createLayout() {
-        db = new CitizenDbHelper(this);
+        db = new DatabaseHelper(this);
         int q = getResponsivePaddingQuota();
 
         LinearLayout mainRoot = new LinearLayout(this);
@@ -127,7 +127,9 @@ public class OrgActivity extends BaseActivityJava {
     private void handleOrgSave() {
         ContentValues v = new ContentValues();
         for (String key : fieldMap.keySet()) v.put(key, fieldMap.get(key).getText().toString().trim());
-        v.put("uid", "OWNER_001");
+        
+        String safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        v.put("uid", safeUid != null ? safeUid : "OWNER_001");
         try {
             db.saveOrgDossier(v);
             Toast.makeText(this, "Organization Timeline Secured.", Toast.LENGTH_SHORT).show();
@@ -137,3 +139,4 @@ public class OrgActivity extends BaseActivityJava {
         }
     }
 }
+

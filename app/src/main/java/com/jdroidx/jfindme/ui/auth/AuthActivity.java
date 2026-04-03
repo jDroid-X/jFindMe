@@ -270,6 +270,15 @@ public class AuthActivity extends BaseActivityJava {
                 tv.setLayoutParams(lp);
                 
                 tv.setOnClickListener(listener);
+                tv.setFocusable(true);
+                tv.setOnKeyListener((v, keyCode, event) -> {
+                    if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                        (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                        v.performClick();
+                        return true;
+                    }
+                    return false;
+                });
                 applyAccessibility(tv, null);
                 return tv;
             }

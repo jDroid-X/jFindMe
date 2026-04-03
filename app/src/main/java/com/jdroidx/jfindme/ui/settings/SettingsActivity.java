@@ -46,16 +46,6 @@ public class SettingsActivity extends BaseActivityJava {
         title.setTypeface(null, Typeface.BOLD);
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         titleRow.addView(title);
-        
-        TextView helpBtn = new TextView(this);
-        helpBtn.setText("?");
-        helpBtn.setTextColor(getGradientOverlayText());
-        helpBtn.setTextSize(32);
-        helpBtn.setTypeface(null, Typeface.BOLD);
-        helpBtn.setPadding(20, 0, 20, 0);
-        helpBtn.setOnClickListener(v -> startActivity(new Intent(this, HelpSupportActivity.class)));
-        titleRow.addView(helpBtn);
-        
         header.addView(titleRow);
         
         TextView subtitle = new TextView(this);
@@ -158,6 +148,15 @@ public class SettingsActivity extends BaseActivityJava {
                 } else {
                     statsTv.setText("Consumption: " + consumptionStats[pos] + " | Status: DISCONNECTED");
                 }
+            });
+
+            bSwitch.setOnKeyListener((v, keyCode, event) -> {
+                if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                    (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                    bSwitch.toggle();
+                    return true;
+                }
+                return false;
             });
             row.addView(bSwitch);
 

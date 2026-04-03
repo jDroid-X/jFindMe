@@ -5,7 +5,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.google.firebase.database.FirebaseDatabase
-import com.jdroidx.jfindme.data.local.CitizenDbHelper
+import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -57,7 +57,7 @@ class PersonDetailsViewModel : ViewModel() {
         }
 
         // 2. Query Local SQLite Fallback Engine
-        val localDb = CitizenDbHelper(context)
+        val localDb = DatabaseHelper(context)
         val localData = localDb.getLocalDossier(targetUid)
         if (localData != null) {
             SystemLogger.i(TAG, "Dossier Local SQL Pull Successful")
@@ -210,7 +210,7 @@ class PersonDetailsViewModel : ViewModel() {
         }
 
         // 1. Upsert securely down into the Local SQLite Table
-        val localDb = CitizenDbHelper(context)
+        val localDb = DatabaseHelper(context)
         val sRole = if ((crossValidatedPayload["role_friend"] ?: "None") != "None") crossValidatedPayload["role_friend"] else crossValidatedPayload["role_family"]
         localDb.saveLocalDossier(targetUid, crossValidatedPayload, sRole, crossValidatedPayload["fullName"], targetUid, targetUid, "USER_EDIT")
 
@@ -309,3 +309,4 @@ class PersonDetailsViewModel : ViewModel() {
             }
     }
 }
+

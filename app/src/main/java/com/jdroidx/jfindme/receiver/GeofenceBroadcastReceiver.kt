@@ -91,7 +91,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 }
                 
                 // 🚀 QA Fix: Linked Notification Table Sync (Forensic Identity Bridge)
-                val db = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+                val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
                 val activeUid = prefs.getString("user_uid", "OWNER_001") ?: "OWNER_001"
                 db.saveAlert(activeUid, "GEOFENCE: $transitionName", exactPayload)
                 
@@ -103,3 +103,4 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
     }
 }
+

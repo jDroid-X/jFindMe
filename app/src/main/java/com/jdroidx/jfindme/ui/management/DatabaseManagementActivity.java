@@ -65,7 +65,15 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         int q = getResponsivePaddingQuota();
         menuContent.setPadding(q, q, q, q * 2);
 
-        String[] tables = {"personal_table|Identity Dossier", "roster_table|P2P Network", "history_table|Tracking Archive", "alerts_table|Siren Logs", "SafeZone_Table|Boundary Matrix"};
+        String[] tables = {
+            "personal_table|Identity Dossier", 
+            "roster_table|P2P Network", 
+            "history_table|Tracking Archive", 
+            "alerts_table|Siren Logs", 
+            "SafeZone_Table|Boundary Matrix",
+            "pairing_log|Device Pairing Ledger", // 🚀 V37 Hub
+            "sim_inventory|SIM Inventory Archive" // 🚀 V38 Early-Access
+        };
         for (String tEntry : tables) {
             String[] parts = tEntry.split("\\|");
             String tName = parts[0];
@@ -88,7 +96,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
                     AngelLoader.setStatus(this, "Violently Purging Database...");
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                         db.factoryReset();
-                        AngelLoader.setStatus(this, "Reconstructing Forensic SSOT (V36)...");
+                        AngelLoader.setStatus(this, "Reconstructing Forensic SSOT (V37)...");
                         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                             AngelLoader.hide(this);
                             Toast.makeText(this, "Global Wipe Complete. Matrix Restored.", Toast.LENGTH_LONG).show();

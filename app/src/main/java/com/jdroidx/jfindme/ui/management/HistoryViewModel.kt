@@ -14,6 +14,8 @@ import com.jdroidx.jfindme.data.repository.LocationRepository
 import com.jdroidx.jfindme.ui.base.BaseViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import android.location.Geocoder
+import java.util.Locale
 
 /**
  * 🚀 Enterprise History Replay ViewModel
@@ -29,6 +31,9 @@ class HistoryViewModel : BaseViewModel() {
 
     private val _trackingTargets = MutableLiveData<List<TrackingTarget>>()
     val trackingTargets: LiveData<List<TrackingTarget>> get() = _trackingTargets
+
+    private val _historySessions = MutableLiveData<List<Map<String, Any>>>()
+    val historySessions: LiveData<List<Map<String, Any>>> get() = _historySessions
 
     data class TrackingTarget(val name: String, val uid: String)
 
@@ -57,12 +62,51 @@ class HistoryViewModel : BaseViewModel() {
     }
 
     /**
+     * 🚀 QA Logic: Synchronized Data Scavenge
+     * Fetches grouped session logs from the local Forensic DB.
+     */
+    fun loadHistorySessions(context: Context, uid: String) {
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val geocoder = Geocoder(context, Locale.getDefault())
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val sessions = dbHelper.getHistoryLogs(uid)
+            _historySessions.postValue(sessions)
+            
+            // 🚀 QA Fix: Forensic Geocoding Array (Late-Binding Resolution)
+            sessions.forEach { row ->
+                val addr = row["address"] as? String ?: "Tracing..."
+                if (addr == "Tracing..." || addr.isBlank()) {
+                    val lat = row["lat"] as? Double ?: 0.0
+                    val lng = row["lng"] as? Double ?: 0.0
+                    val logId = row["log_id"] as? String ?: ""
+                    
+                    try {
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocation(lat, lng, 1)
+                        if (!addresses.isNullOrEmpty()) {
+                            val humanAddress = addresses[0].getAddressLine(0) ?: "Unknown Terrain"
+                            dbHelper.updateHistoryAddress(logId, humanAddress)
+                            
+                            // Re-fetch to update the UI with the newly resolved forensic metadata
+                            val refreshed = dbHelper.getHistoryLogs(uid)
+                            _historySessions.postValue(refreshed)
+                        }
+                    } catch (e: Exception) {
+                        // Geocoding service may be temporarily unavailable
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * 🚀 QA Logic: Network Asset Scanner (SSOT Mirror)
      * Extracts all approved target nodes from the validated Roster Table.
      * Rule: Roster Table is the absolute Forensic SSOT (V36).
      */
     fun fetchTrackingTargets(context: Context) {
-        val dbHelper = com.jdroidx.jfindme.data.local.CitizenDbHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
         val myUid = FirebaseAuth.getInstance().uid ?: return
         
         _isLoading.value = true
@@ -116,3 +160,4 @@ class HistoryViewModel : BaseViewModel() {
         }
     }
 }
+

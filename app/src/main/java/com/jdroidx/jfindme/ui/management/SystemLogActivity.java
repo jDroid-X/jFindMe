@@ -72,7 +72,7 @@ public class SystemLogActivity extends BaseActivityJava {
         // --- PHASE 5: ENTERPRISE DIAGNOSTIC EXTENSIONS ---
         listContainer.addView(createDiagnosticItem("Network & Connectivity Telemetry", "OS Network Capabilities & Firebase Pings", this::generateNetworkTelemetryReport));
         listContainer.addView(createDiagnosticItem("Background Engine Health", "OEM Doze Restrictions & Battery Metrics", this::generateBackgroundEngineReport));
-        listContainer.addView(createDiagnosticItem("Local SQLite Synchronization", "CitizenDbHelper Offline Cache Validations", this::generateSqliteSyncReport));
+        listContainer.addView(createDiagnosticItem("Local SQLite Synchronization", "DatabaseHelper Offline Cache Validations", this::generateSqliteSyncReport));
         listContainer.addView(createDiagnosticItem("Local P2P Offline Engine", "Bluetooth LE & Wi-Fi Direct Hardware Matrix", this::generateP2PNetworkReport));
         listContainer.addView(createDiagnosticItem("Absolute OS Permissions Matrix", "Android Manifest Privilege Truth Table", this::generateOsPermissionsReport));
         listContainer.addView(createDiagnosticItem("Geofence & Alert Integrity Map", "Live Safety Zones & Memory Execution Hooks", this::generateGeofenceIntegrityReport));
@@ -274,7 +274,7 @@ public class SystemLogActivity extends BaseActivityJava {
     private String generateSqliteSyncReport() {
         int rosterCount = 0;
         try {
-            rosterCount = new com.jdroidx.jfindme.data.local.CitizenDbHelper(this).getOfflineRoster().size();
+            rosterCount = new com.jdroidx.jfindme.data.local.DatabaseHelper(this).getOfflineRoster().size();
         } catch (Exception e) {}
         
         return "• SQLite V7 Primary Allocation:\n  " + rosterCount + " Indexed Offline Nodes natively\n\n" +
@@ -325,3 +325,4 @@ public class SystemLogActivity extends BaseActivityJava {
                "• Native Map Engine Cache:\n  CLEARED";
     }
 }
+
