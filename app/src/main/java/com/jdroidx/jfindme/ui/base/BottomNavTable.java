@@ -72,6 +72,7 @@ public class BottomNavTable {
         
         nav.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height));
         EnterpriseCardTable.applyCard(activity, nav, "CARD_STANDARD");
+        UiArchitect.applyNeutralShadow(activity, nav, UiScalingMatrixTable.scaleElevation(stage, 25f));
         
         // 🚀 QA Fix: Global Footer Override (Use Gradient End Color)
         android.graphics.drawable.Drawable bg = nav.getBackground();
@@ -140,7 +141,7 @@ public class BottomNavTable {
             case SLIM:      elevation = 9f; break;
             case ULTRA_SLIM:elevation = 8f; break;
         }
-        icon.setElevation(elevation);
+        UiArchitect.applyNeutralShadow(activity, icon, elevation);
         
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconLp.gravity = Gravity.CENTER_HORIZONTAL;

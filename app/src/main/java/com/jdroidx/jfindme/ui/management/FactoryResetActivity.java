@@ -229,6 +229,7 @@ public class FactoryResetActivity extends BaseActivityJava {
                 tvCol.setTextColor(getPrimaryColor());
                 tvCol.setBackgroundColor(getGradientStart());
                 tvCol.setPadding(scale(30), scale(20), scale(30), scale(20));
+                tvCol.setGravity(Gravity.CENTER);
                 UiArchitect.applyText(this, tvCol, "TEXT_LABEL");
                 headerRow.addView(tvCol);
             }
@@ -244,6 +245,7 @@ public class FactoryResetActivity extends BaseActivityJava {
                     TextView tvVal = new TextView(this);
                     tvVal.setText(val);
                     tvVal.setTextColor(getSecondaryTextColor());
+                    tvVal.setGravity(Gravity.CENTER);
                     UiArchitect.applyText(this, tvVal, "TEXT_MINI");
                     tvVal.setPadding(scale(35), scale(20), scale(35), scale(20));
                     dataRow.addView(tvVal);

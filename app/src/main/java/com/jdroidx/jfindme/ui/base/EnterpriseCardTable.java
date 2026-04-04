@@ -66,7 +66,7 @@ public class EnterpriseCardTable {
         UiArchitect.DesignStage stage = UiArchitect.getStage(activity);
         
         // [Stage Architecture Interceptor]
-        float responsiveRadius = UiScalingMatrixTable.scaleRadius(stage, record.baseRadius);
+        float responsiveRadius = UiArchitect.getResolvedRadius(activity, record.baseRadius);
         float responsiveElevation = UiScalingMatrixTable.scaleElevation(stage, record.defaultElevation);
         int responsivePadding = activity.getResponsivePaddingQuota();
 
@@ -83,27 +83,15 @@ public class EnterpriseCardTable {
             gd.setColor(activity.getCardColor());
         }
         
-        // 🚀 QA Fix: Visual Edge! Synchronized with Spinner Profile: 3px @ 100% Gradient Start
-        gd.setStroke(3, tintStart);
+        // 🚀 QA Fix: Global Border Toggle (System Registry)
+        boolean bordersEnabled = activity.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("borders_enabled", true);
+        float borderStroke = bordersEnabled ? UiScalingMatrixTable.scaleBorderStroke(stage) : 0f;
+        gd.setStroke((int)borderStroke, tintStart);
         
         gd.setCornerRadius(responsiveRadius);
         view.setBackground(gd);
-        view.setElevation(responsiveElevation);
-        view.setTranslationZ(UiScalingMatrixTable.getTZ(stage, responsiveElevation)); // 🚀 Centralized Physical Factor
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            float intensity = record.glowIntensity;
-            // 🚀 QA Fix: Universal Depth Overdrive (L7 High-Vibrant Shadows)
-            intensity = 0.95f; 
-
-            int alpha = (int)(intensity * 255);
-            int glowColor = Color.argb(alpha, Color.red(tintStart), Color.green(tintStart), Color.blue(tintStart));
-            view.setOutlineSpotShadowColor(glowColor);
-            view.setOutlineAmbientShadowColor(glowColor);
-        }
-
-        // 🚀 QA Fix: Force the Native Android Elevation Engine to recognize the dynamic background shape!
-        view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        UiArchitect.applyNeutralShadow(activity, view, responsiveElevation);
         view.setClipToOutline(responsiveRadius > 0);
     }
 }

@@ -55,6 +55,11 @@ public class ActionButtonTable {
         registry.put("BTN_SECONDARY", new ActionRecord("BTN_SECONDARY", "Cancel", "Abort current operation", 5f, 0.3f, true, "NONE", 0, "FLOW_BACK", false));
         registry.put("BTN_DANGER",    new ActionRecord("BTN_DANGER",    "Terminated Node", "Wipe device configuration", 12f, 0.9f, false, "HEAVY", android.graphics.Color.RED, "FLOW_WIPE", true));
         registry.put("BTN_AUTH",      new ActionRecord("BTN_AUTH",      "Authorize", "Grant enterprise access", 15f, 0.7f, true, "HEAVY", 0, "AUTH_EXECUTE", true));
+        
+        // --- 🚀 Enterprise Factory Reset Matrix (V37 Integration) ---
+        registry.put("SAVE_TO_LOCAL_TXT",    new ActionRecord("SAVE_TO_LOCAL_TXT",    "Export Matrix to FS", "Save database dump to local text file", 10f, 0.4f, true, "LIGHT", 0, "SAVE_TX", false));
+        registry.put("DATABASE_EXPLORER_V37",new ActionRecord("DATABASE_EXPLORER_V37","Launch Data Explorer", "Open advanced database manager", 12f, 0.5f, true, "LIGHT", 0, "OPEN_NAV", true));
+        registry.put("DELETE_ALL_PURGE_DB",  new ActionRecord("DELETE_ALL_PURGE_DB",  "FACTORY HARD RESET", "Violently purge all local data", 25f, 0.9f, false, "HEAVY", android.graphics.Color.RED, "RESET_ALL", true));
     }
 
     public static View createButton(BaseActivityJava activity, String tableKey, View.OnClickListener listener) {
@@ -76,7 +81,7 @@ public class ActionButtonTable {
         float elevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
 
         btn.setTextSize(textSize);
-        btn.setElevation(elevation);
+        float responsiveRadius = UiArchitect.getResolvedRadius(activity, 20f);
 
         GradientDrawable gd;
         if (record.usesDynamicTheme) {
@@ -86,20 +91,12 @@ public class ActionButtonTable {
             gd = new GradientDrawable();
             gd.setColor(record.fallbackColor);
         }
-        btn.setTextSize(textSize);
-        btn.setElevation(elevation);
-        btn.setTranslationZ(elevation / 4f); // 🚀 Heavy CTA Depth Force
-
-        // 🚀 QA Fix: Global Button Depth (L7 Matrix)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            int tint = activity.getGradientStart();
-            int alpha = (int)(record.glowIntensity * 255);
-            int glowColor = android.graphics.Color.argb(alpha, android.graphics.Color.red(tint), android.graphics.Color.green(tint), android.graphics.Color.blue(tint));
-            btn.setOutlineSpotShadowColor(glowColor);
-            btn.setOutlineAmbientShadowColor(glowColor);
-        }
-        btn.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-        btn.setClipToOutline(radius > 0);
+        gd.setCornerRadius(responsiveRadius);
+        btn.setBackground(gd);
+        
+        // 🚀 QA Fix: Global Button Depth (L7 Matrix - Neutral Grey Standard)
+        UiArchitect.applyNeutralShadow(activity, btn, elevation);
+        btn.setClipToOutline(responsiveRadius > 0);
         
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height);
         lp.setMargins(0, 20, 0, 20);

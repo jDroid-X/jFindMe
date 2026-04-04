@@ -113,6 +113,33 @@ public class UiArchitect {
     // IV. GLOBAL GEOMETRY PHYSICS (Card Depth, Selection States, Shadow Logic)
     // ============================================================================================
 
+    public static float getResolvedRadius(BaseActivityJava activity, float defaultRadius) {
+        android.content.SharedPreferences prefs = activity.getSharedPreferences("system_registry", Context.MODE_PRIVATE);
+        boolean isOverrideEnabled = prefs.getBoolean("radius_override_enabled", false);
+        float baseRadius = defaultRadius;
+
+        if (isOverrideEnabled) {
+            int radiusMode = prefs.getInt("radius_mode", 1);
+            if (radiusMode == 0) baseRadius = 10f; // SHARP
+            else if (radiusMode == 1) baseRadius = 30f; // MODERN
+            else if (radiusMode == 2) baseRadius = 60f; // MAXIMUM
+        }
+        return UiScalingMatrixTable.scaleRadius(getStage(activity), baseRadius);
+    }
+
+    public static void applyNeutralShadow(BaseActivityJava activity, View view, float elevation) {
+        view.setElevation(elevation);
+        view.setTranslationZ(UiScalingMatrixTable.getTZ(getStage(activity), elevation));
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            int alpha = (int)(0.85f * 255); // 🚀 L7 Standard: 217 Alpha (85%)
+            int standardShadowColor = Color.argb(alpha, 0, 0, 0); 
+            view.setOutlineSpotShadowColor(standardShadowColor);
+            view.setOutlineAmbientShadowColor(standardShadowColor);
+        }
+        view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+    }
+
     public static void applyCard(BaseActivityJava activity, View view, String tableKey) {
         EnterpriseCardTable.applyCard(activity, view, tableKey);
     }
@@ -157,7 +184,10 @@ public class UiArchitect {
                 gd.setOrientation(android.graphics.drawable.GradientDrawable.Orientation.BR_TL);
                 view.setAlpha(1.0f);
             } else {
-                gd.setStroke(3, themeColor);
+                // 🚀 QA Fix: Global Border Toggle (System Registry)
+                boolean bordersEnabled = activity.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("borders_enabled", true);
+                float borderStroke = bordersEnabled ? UiScalingMatrixTable.scaleBorderStroke(stage) : 0f;
+                gd.setStroke((int)borderStroke, themeColor);
                 gd.setColor(activity.getCardColor());
                 view.setAlpha(0.6f);
             }

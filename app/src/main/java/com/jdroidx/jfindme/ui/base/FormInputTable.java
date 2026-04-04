@@ -77,7 +77,7 @@ public class FormInputTable {
         
         // [Stage Architecture Interceptor]
         int pad = UiScalingMatrixTable.scalePadding(stage, 40);
-        float radius = UiScalingMatrixTable.scaleRadius(stage, 16f);
+        float radius = UiArchitect.getResolvedRadius(activity, 16f);
         float elevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
 
         et.setPadding(pad, pad, pad, pad);
@@ -91,7 +91,10 @@ public class FormInputTable {
         int tint = activity.getGradientStart();
         if (record.dynamicBehavior) {
             bg.setColor(Color.argb(20, 0, 0, 0)); // 8% Adaptive Overlay
-            bg.setStroke(3, tint);
+            // 🚀 QA Fix: Global Border Toggle (System Registry)
+            boolean bordersEnabled = activity.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("borders_enabled", true);
+            float borderStroke = bordersEnabled ? UiScalingMatrixTable.scaleBorderStroke(stage) : 0f;
+            bg.setStroke((int)borderStroke, tint);
             bg.setCornerRadius(radius);
         } else {
             bg.setColor(record.fallbackColor);
@@ -99,17 +102,7 @@ public class FormInputTable {
         }
         
         et.setBackground(bg);
-        et.setElevation(elevation);
-        et.setTranslationZ(elevation / 4f); // 🚀 Form Depth Matrix Injection
-        
-        // 🚀 QA Fix: Global Shadow Visibility Logic (Android P+)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            int alpha = (int)(record.glowIntensity * 255);
-            int glowColor = android.graphics.Color.argb(alpha, android.graphics.Color.red(tint), android.graphics.Color.green(tint), android.graphics.Color.blue(tint));
-            et.setOutlineSpotShadowColor(glowColor);
-            et.setOutlineAmbientShadowColor(glowColor);
-        }
-        et.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        UiArchitect.applyNeutralShadow(activity, et, elevation);
         et.setClipToOutline(radius > 0);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);

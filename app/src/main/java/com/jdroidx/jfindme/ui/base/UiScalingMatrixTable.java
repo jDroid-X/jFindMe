@@ -25,8 +25,9 @@ public class UiScalingMatrixTable {
         public float radiusScale;
         public float translationZFactor; // 🚀 L7 Depth Hub: Layer separation logic
         public float selectionStroke;
+        public float borderStroke; // 🚀 L7 Forensic: Dynamic border thickness
 
-        public ScalingRecord(float hTxt, float bTxt, float icon, float pad, float elev, float rad, float tz, float ss) {
+        public ScalingRecord(float hTxt, float bTxt, float icon, float pad, float elev, float rad, float tz, float ss, float bs) {
             this.headerTextScale = hTxt;
             this.bodyTextScale = bTxt;
             this.iconScale = icon;
@@ -35,6 +36,7 @@ public class UiScalingMatrixTable {
             this.radiusScale = rad;
             this.translationZFactor = tz;
             this.selectionStroke = ss;
+            this.borderStroke = bs;
         }
     }
 
@@ -42,13 +44,13 @@ public class UiScalingMatrixTable {
 
     static {
         // --- 🚀 THE MASTER SCALING ENGINE: L7 Weighted Contrast Implementation ---
-        // Format: HeaderTxt, BodyTxt, Icon, Padding, Elevation, Radius, TZFactor(Z), SelectionStroke
+        // Format: HeaderTxt, BodyTxt, Icon, Padding, Elevation, Radius, TZFactor(Z), SelectionStroke, BorderStroke
         
-        matrix.put(UiArchitect.DesignStage.LIBERAL,   new ScalingRecord(1.40f, 1.30f, 1.40f, 1.40f, 2.20f, 2.00f, 1.10f, 11f)); 
-        matrix.put(UiArchitect.DesignStage.STANDARD,  new ScalingRecord(1.20f, 1.15f, 1.20f, 1.20f, 1.80f, 1.40f, 0.90f, 10f)); 
-        matrix.put(UiArchitect.DesignStage.COMPACT,   new ScalingRecord(1.00f, 1.00f, 1.00f, 1.00f, 1.50f, 1.00f, 0.75f, 9f));  
-        matrix.put(UiArchitect.DesignStage.SLIM,      new ScalingRecord(0.90f, 0.90f, 0.90f, 0.90f, 1.20f, 0.60f, 0.60f, 8f));  
-        matrix.put(UiArchitect.DesignStage.ULTRA_SLIM,new ScalingRecord(0.80f, 0.80f, 0.80f, 0.80f, 1.00f, 0.40f, 0.50f, 6f));  
+        matrix.put(UiArchitect.DesignStage.LIBERAL,   new ScalingRecord(1.40f, 1.30f, 1.40f, 1.40f, 2.20f, 2.00f, 1.10f, 11f, 8f)); 
+        matrix.put(UiArchitect.DesignStage.STANDARD,  new ScalingRecord(1.20f, 1.15f, 1.20f, 1.20f, 1.80f, 1.40f, 0.90f, 10f, 6f)); 
+        matrix.put(UiArchitect.DesignStage.COMPACT,   new ScalingRecord(1.00f, 1.00f, 1.00f, 1.00f, 1.50f, 1.00f, 0.75f, 9f, 4f));  
+        matrix.put(UiArchitect.DesignStage.SLIM,      new ScalingRecord(0.90f, 0.90f, 0.90f, 0.90f, 1.20f, 0.60f, 0.60f, 8f, 3f));  
+        matrix.put(UiArchitect.DesignStage.ULTRA_SLIM,new ScalingRecord(0.80f, 0.80f, 0.80f, 0.80f, 1.00f, 0.40f, 0.50f, 6f, 2f));  
     }
 
     public static ScalingRecord get(UiArchitect.DesignStage stage) {
@@ -87,6 +89,10 @@ public class UiScalingMatrixTable {
 
     public static float scaleSelectionStroke(UiArchitect.DesignStage stage) {
         return get(stage).selectionStroke;
+    }
+    
+    public static float scaleBorderStroke(UiArchitect.DesignStage stage) {
+        return get(stage).borderStroke;
     }
     
     public static float getTZ(UiArchitect.DesignStage stage, float currentElevation) {

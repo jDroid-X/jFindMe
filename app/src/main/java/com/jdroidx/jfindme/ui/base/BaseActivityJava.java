@@ -181,25 +181,39 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     }
 
     private void reInjectHelpIcon(android.widget.FrameLayout masterWrap) {
+        UiArchitect.DesignStage stage = UiArchitect.getStage(this);
         android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
         globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
         globalHelpBtn.setColorFilter(getGradientOverlayText()); 
-        int hPad = scale(20);
+        
+        // 🚀 L7 Symmetric Matrix: Recalibrated for Perfect Center-Axis Alignment
+        int helpSize = 100;
+        int mTop = 35;
+        int mEnd = 30;
+        float elevation = 25f;
+
+        switch (stage) {
+            case LIBERAL:   helpSize = 140; mTop = 45; mEnd = 40; elevation = 40f; break;
+            case STANDARD:  helpSize = 100; mTop = 35; mEnd = 30; elevation = 25f; break;
+            case COMPACT:   helpSize = 80;  mTop = 15; mEnd = 20; elevation = 15f; break;
+            case SLIM:      helpSize = 65;  mTop = 10; mEnd = 15; elevation = 10f; break;
+            case ULTRA_SLIM:helpSize = 50;  mTop = 8;  mEnd = 10; elevation = 5f;  break;
+        }
+
+        int scaledSize = scale(helpSize);
+        android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(scaledSize, scaledSize);
+        helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
+        helpLp.setMargins(0, scale(mTop), scale(mEnd), 0);
+        globalHelpBtn.setLayoutParams(helpLp);
+        
+        int hPad = scaledSize / 4;
         globalHelpBtn.setPadding(hPad, hPad, hPad, hPad);
         globalHelpBtn.setClickable(true);
         globalHelpBtn.setFocusable(true);
-        
-        // 🚀 Universal Architecture Sync: Calibrated for precise Header-Row centering
-        int helpSize = scale(100); 
-        android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(helpSize, helpSize);
-        helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
-        
-        int mTop = scale(55); 
-        int mEnd = scale(25);
-        helpLp.setMargins(0, mTop, mEnd, 0);
-        globalHelpBtn.setLayoutParams(helpLp);
-        UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD", 1.2f);
-        globalHelpBtn.setElevation(scale(25));
+
+        UiArchitect.applyNeutralShadow(this, globalHelpBtn, UiScalingMatrixTable.scaleElevation(stage, elevation));
+        globalHelpBtn.setClipToOutline(true);
+        globalHelpBtn.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
         
         globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
         

@@ -70,7 +70,9 @@ public class HeaderTable {
 
         EnterpriseCardTable.applyCard(activity, header, "CARD_HEADER");
         header.setPadding(pS, pT, pS, pB);
-        header.setElevation(record.elevation);
+        
+        float responsiveElevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
+        UiArchitect.applyNeutralShadow(activity, header, responsiveElevation);
         header.setContentDescription(record.talkBackDescription);
     }
 }

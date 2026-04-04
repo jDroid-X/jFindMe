@@ -52,30 +52,14 @@ public class SystemGeometryTable {
         if (record == null) return;
 
         UiArchitect.DesignStage stage = UiArchitect.getStage(activity);
-        float factor = UiScalingMatrixTable.get(stage).elevationScale;
-        view.setElevation(record.baseValue * factor);
-        view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            int tint = activity.getGradientStart();
-            int alpha = (int)(0.85f * 255); // 🚀 QA OVERDRIVE: Max Alpha for the deep shadow in reference image
-            int glowColor = android.graphics.Color.argb(alpha, android.graphics.Color.red(tint), android.graphics.Color.green(tint), android.graphics.Color.blue(tint));
-            view.setOutlineSpotShadowColor(glowColor);
-            view.setOutlineAmbientShadowColor(glowColor);
-        }
+        float elevation = record.baseValue * UiScalingMatrixTable.get(stage).elevationScale;
+        UiArchitect.applyNeutralShadow(activity, view, elevation);
     }
 
     public static float getRadius(BaseActivityJava activity, String tierKey) {
         GeometryRecord record = radiusRegistry.get(tierKey);
         if (record == null) return 0f;
 
-        UiArchitect.DesignStage stage = UiArchitect.getStage(activity);
-        float factor = 1.0f;
-        switch (stage) {
-            case LIBERAL:   factor = record.liberalFactor; break;
-            case SLIM:      factor = record.slimFactor; break;
-            case ULTRA_SLIM:factor = record.ultraSlimFactor; break;
-        }
-        return record.baseValue * factor;
+        return UiArchitect.getResolvedRadius(activity, record.baseValue);
     }
 }

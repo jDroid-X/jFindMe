@@ -93,7 +93,10 @@ public class StatusPillTable {
         int color = record.usesDynamicTheme ? record.tintColor : record.fallbackColor;
         gd.setColor(Color.argb(200, Color.red(color), Color.green(color), Color.blue(color)));
         pill.setBackground(gd);
-        pill.setElevation(elevation);
+        
+        // 🚀 QA Fix: Global Shadow Consistency (Neutral Forensic Grey)
+        UiArchitect.applyNeutralShadow(activity, pill, elevation);
+        pill.setClipToOutline(true);
 
         if (record.interactionType.equals("LIGHT")) {
             pill.setOnLongClickListener(v -> { v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); return true; });

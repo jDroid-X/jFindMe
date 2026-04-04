@@ -5,6 +5,7 @@ import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -93,19 +94,25 @@ public class UiConfigActivity extends BaseActivityJava {
 
         // --- LAYER 1.1.5: UNIFIED TYPOGRAPHY TIERS (UI ARCHITECT) ---
         renderUnifiedTypographyMatrix();
+        renderBorderMonitor();
+        renderRadiusMonitor();
 
         // --- LAYER 0.2: UNIFIED PADDING MATRIX (LIVE DIAGNOSTICS) ---
         renderUnifiedPaddingMatrix();
 
-        // --- LAYER 0.3: SHADOW ELEVATION MATRIX (DEPTH STATS) ---
-        renderShadowMatrixMonitor();
+        // 🚀 QA Fix: Dynamic Diagnostic Routing (Shadow Depth vs. Forensic Edge)
+        boolean bordersEnabled = prefs.getBoolean("borders_enabled", true);
+        if (!bordersEnabled) {
+            // --- LAYER 0.3: SHADOW ELEVATION MATRIX (DEPTH STATS) ---
+            renderShadowMatrixMonitor();
         
         // --- LAYER 0.3.5: SHADOW VISIBILITY LAB & SHADOW DECK MATTRESS (QA DEPTH) ---
         renderShadowVisibilityLab();
         renderShadowDeckMattress();
 
-        // --- LAYER 0.4: ARCHITECTURAL SCALING AWARENESS (RULES) ---
-        renderScalingAwarenessMonitor();
+            // --- LAYER 0.4: ARCHITECTURAL SCALING AWARENESS (RULES) ---
+            renderScalingAwarenessMonitor();
+        }
         
         // --- LAYER 0.5: HEADER ARCHITECTURE (PANEL HEIGHT) ---
         renderHeaderArchitectureMonitor();
@@ -553,6 +560,139 @@ public class UiConfigActivity extends BaseActivityJava {
         content.addView(container, getSectionParams());
     }
 
+    private void renderBorderMonitor() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, container, "CARD_STANDARD");
+        
+        // --- 🚀 BORDER TOGGLE (L7 FORENSIC EDGE) ---
+        CheckBox cb = new CheckBox(this);
+        cb.setText("ENABLE DYNAMIC BORDERS (L7 EDGE)");
+        cb.setTextColor(getTextColor());
+        cb.setPadding(30, 30, 30, 30);
+        
+        final android.content.SharedPreferences prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
+        boolean current = prefs.getBoolean("borders_enabled", true);
+        cb.setChecked(current);
+        
+        cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("borders_enabled", isChecked).apply();
+            String msg = isChecked ? "ENGAGING FORENSIC BORDER MATRIX..." : "LIQUIDATING DYNAMIC BORDERS...";
+            AngelLoad.engage(this, msg, this::safeRecreate);
+        });
+        container.addView(cb);
+        
+        // --- BORDER DIAGNOSTIC TILE ---
+        android.widget.GridLayout grid = new android.widget.GridLayout(this);
+        grid.setColumnCount(1);
+        grid.setPadding(0, 20, 0, 10);
+        
+        UiArchitect.DesignStage stage = UiArchitect.getStage(this);
+        float bStroke = UiScalingMatrixTable.scaleBorderStroke(stage);
+        
+        grid.addView(createDiagnosticTile("ACTIVE BORDER SIZE", (int)bStroke + "px"));
+        container.addView(grid);
+
+        content.addView(createSectionHeader("BORDER ARCHITECTURE (FORENSIC EDGE)"));
+        content.addView(container, getSectionParams());
+    }
+
+    private void renderRadiusMonitor() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, container, "CARD_STANDARD");
+
+        final android.content.SharedPreferences prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
+        boolean isOverrideEnabled = prefs.getBoolean("radius_override_enabled", false);
+        int currentMode = prefs.getInt("radius_mode", 1); // Default to MODERN
+
+        // --- 🚀 GEOMETRY OVERRIDE TOGGLE ---
+        CheckBox cb = new CheckBox(this);
+        cb.setText("OVERRIDE SYSTEM GEOMETRY (DYNAMIC Tiers)");
+        cb.setTextColor(getTextColor());
+        cb.setPadding(30, 30, 30, 30);
+        cb.setChecked(isOverrideEnabled);
+        cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("radius_override_enabled", isChecked).apply();
+            String msg = isChecked ? "ENGAGING DYNAMIC GEOMETRY MATRIX..." : "RESTORING STAGE-ITEM DEFAULTS...";
+            AngelLoad.engage(this, msg, this::safeRecreate);
+        });
+        container.addView(cb);
+
+        android.widget.GridLayout grid = new android.widget.GridLayout(this);
+        grid.setColumnCount(3);
+        grid.setPadding(0, 10, 0, 10);
+        grid.setAlpha(isOverrideEnabled ? 1.0f : 0.5f);
+
+        String[] names = {"SHARP", "MODERN", "MAXIMUM"};
+        int[] values = {10, 30, 60};
+
+        for (int i = 0; i < 3; i++) {
+            final int index = i;
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setGravity(Gravity.CENTER);
+            tile.setPadding(20, 40, 20, 40);
+            tile.setClickable(isOverrideEnabled);
+            tile.setFocusable(isOverrideEnabled);
+            
+            UiArchitect.applyCard(this, tile, "CARD_STANDARD");
+            
+            boolean isActive = (currentMode == i && isOverrideEnabled);
+            if (isActive) {
+                android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                gd.setColor(getGradientStart());
+                gd.setCornerRadius(values[i]);
+                tile.setBackground(gd);
+            }
+
+            TextView valTxt = new TextView(this);
+            valTxt.setText(values[i] + "px");
+            valTxt.setTextColor(isActive ? Color.WHITE : getGradientStart());
+            valTxt.setTextSize(18f);
+            valTxt.setTypeface(null, Typeface.BOLD);
+            tile.addView(valTxt);
+
+            TextView nameTxt = new TextView(this);
+            nameTxt.setText(names[i]);
+            nameTxt.setTextColor(isActive ? Color.WHITE : getTextColor());
+            nameTxt.setTextSize(10f);
+            nameTxt.setAlpha(isActive ? 1.0f : 0.7f);
+            nameTxt.setPadding(0, 10, 0, 0);
+            tile.addView(nameTxt);
+
+            tile.setOnClickListener(v -> {
+                if (!isOverrideEnabled) return;
+                String msg = "CALIBRATING GEOMETRY TO [" + names[index] + "] RADIUS...";
+                AngelLoad.engage(this, msg, () -> {
+                    prefs.edit().putInt("radius_mode", index).apply();
+                    safeRecreate();
+                });
+            });
+
+            android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+            lp.width = 0;
+            lp.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f);
+            int m = 10;
+            lp.setMargins(m, m, m, m);
+            tile.setLayoutParams(lp);
+            grid.addView(tile);
+        }
+
+        container.addView(grid);
+
+        TextView footer = new TextView(this);
+        footer.setText("Structural Geometry: Check the override to use global presets instead of stage-item defaults.");
+        footer.setTextColor(getSecondaryTextColor());
+        footer.setTextSize(9f);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(0, 10, 0, 0);
+        container.addView(footer);
+
+        content.addView(createSectionHeader("STRUCTURAL GEOMETRY (CORNER RADII)"));
+        content.addView(container, getSectionParams());
+    }
+
     private void renderScalingAwarenessMonitor() {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -775,6 +915,7 @@ public class UiConfigActivity extends BaseActivityJava {
             tv.setText(row[0]);
             tv.setPadding(20, 20, 20, 20);
             tv.setTextSize(13f);
+            tv.setGravity(Gravity.CENTER);
             
             if (stage.name().equals(row[1])) {
                 tv.setTextColor(getGradientStart()); // Highlight active architectural tier
@@ -810,6 +951,7 @@ public class UiConfigActivity extends BaseActivityJava {
             tv.setText(row[0]);
             tv.setPadding(20, 20, 20, 20);
             tv.setTextSize(13f);
+            tv.setGravity(Gravity.CENTER);
             
             if (stage.name().equals(row[1])) {
                 tv.setTextColor(getGradientStart()); // Highlight active geometry tier
@@ -865,6 +1007,7 @@ public class UiConfigActivity extends BaseActivityJava {
             tv.setTextSize(11f);
             tv.setTextColor(getTextColor());
             tv.setAlpha(0.85f);
+            tv.setGravity(Gravity.CENTER);
             
             // Highlight the "Effective" values for architectural clarity
             // Note: In a professional UI, we could use SpannableString for inline highlighting

@@ -114,7 +114,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         renderSectionHeader(content, "DASHBOARD TILES (DASHBOARD_TILE_TABLE)");
         renderAuditMatrix(content, "TILES");
         android.widget.GridLayout tileGrid = new android.widget.GridLayout(this);
-        tileGrid.setColumnCount(2);
+        tileGrid.setColumnCount(4); // 🚀 QA Density Boost: Switching from 2x2 to 4x4 matrix
         tileGrid.setClipChildren(false); // 🚀 Allow tile shadows to bleed
         
         java.util.Map<String, DashboardTileTable.TileRecord> tiles = DashboardTileTable.getRegistry();

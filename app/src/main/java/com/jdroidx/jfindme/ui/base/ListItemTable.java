@@ -88,6 +88,8 @@ public class ListItemTable {
         row.setPadding(pad, pad, pad, pad);
         EnterpriseCardTable.applyCard(activity, row, "CARD_STANDARD");
         
+        float responsiveElevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
+        UiArchitect.applyNeutralShadow(activity, row, responsiveElevation);        
         ImageView icon = new ImageView(activity);
         icon.setImageResource(record.iconRes);
         icon.setColorFilter(activity.getGradientStart());

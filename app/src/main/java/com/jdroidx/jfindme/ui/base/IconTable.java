@@ -131,19 +131,8 @@ public class IconTable {
             geometry.setColor(dynamicGlassBackground);
             
             view.setBackground(geometry);
-            view.setElevation(responsiveElevation);
-            
-            // QA Fix: Ensure the shadow respects the background geometry
-            view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+            UiArchitect.applyNeutralShadow(themeBase, view, responsiveElevation);
             view.setClipToOutline(true);
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                // Apply the 'Physical Glow Generator' based on intensity
-                int alpha = (int)(record.glowIntensity * 255);
-                int glowColor = Color.argb(alpha, Color.red(dynamicThemeColor), Color.green(dynamicThemeColor), Color.blue(dynamicThemeColor));
-                view.setOutlineSpotShadowColor(glowColor);
-                view.setOutlineAmbientShadowColor(glowColor);
-            }
         } else {
             view.setColorFilter(record.fallbackColor);
         }

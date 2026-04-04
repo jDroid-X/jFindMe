@@ -121,19 +121,7 @@ public class DashboardTileTable {
 
         // 🚀 MASTER SCALING INTERCEPTOR: Single Source of Truth
         float responsiveElevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
-
-        iconBg.setElevation(responsiveElevation);
-        iconBg.setTranslationZ(UiScalingMatrixTable.getTZ(stage, responsiveElevation)); 
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            int alpha = (int)(0.85f * 255); // 🚀 QA OVERDRIVE: Match reference image high-diffusion shadow
-            int glowColor = Color.argb(alpha, Color.red(tintStart), Color.green(tintStart), Color.blue(tintStart));
-            iconBg.setOutlineSpotShadowColor(glowColor);
-            iconBg.setOutlineAmbientShadowColor(glowColor);
-        }
-        
-        // 🚀 QA Fix: Force Circular Shadow Projection!
-        iconBg.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        UiArchitect.applyNeutralShadow(activity, iconBg, responsiveElevation);
         iconBg.setClipToOutline(true);
 
         ImageView icon = new ImageView(activity);
