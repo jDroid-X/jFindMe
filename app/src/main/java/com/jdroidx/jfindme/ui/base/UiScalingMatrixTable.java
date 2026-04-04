@@ -44,11 +44,11 @@ public class UiScalingMatrixTable {
         // --- 🚀 THE MASTER SCALING ENGINE: L7 Weighted Contrast Implementation ---
         // Format: HeaderTxt, BodyTxt, Icon, Padding, Elevation, Radius, TZFactor(Z), SelectionStroke
         
-        matrix.put(UiArchitect.DesignStage.LIBERAL,   new ScalingRecord(1.40f, 1.30f, 1.40f, 1.60f, 2.20f, 2.00f, 1.10f, 11f)); 
-        matrix.put(UiArchitect.DesignStage.STANDARD,  new ScalingRecord(1.20f, 1.15f, 1.20f, 1.30f, 1.80f, 1.40f, 0.90f, 10f)); 
+        matrix.put(UiArchitect.DesignStage.LIBERAL,   new ScalingRecord(1.40f, 1.30f, 1.40f, 1.40f, 2.20f, 2.00f, 1.10f, 11f)); 
+        matrix.put(UiArchitect.DesignStage.STANDARD,  new ScalingRecord(1.20f, 1.15f, 1.20f, 1.20f, 1.80f, 1.40f, 0.90f, 10f)); 
         matrix.put(UiArchitect.DesignStage.COMPACT,   new ScalingRecord(1.00f, 1.00f, 1.00f, 1.00f, 1.50f, 1.00f, 0.75f, 9f));  
-        matrix.put(UiArchitect.DesignStage.SLIM,      new ScalingRecord(0.90f, 0.90f, 0.90f, 0.80f, 1.20f, 0.60f, 0.60f, 8f));  
-        matrix.put(UiArchitect.DesignStage.ULTRA_SLIM,new ScalingRecord(0.80f, 0.80f, 0.80f, 0.50f, 1.00f, 0.40f, 0.50f, 6f));  
+        matrix.put(UiArchitect.DesignStage.SLIM,      new ScalingRecord(0.90f, 0.90f, 0.90f, 0.90f, 1.20f, 0.60f, 0.60f, 8f));  
+        matrix.put(UiArchitect.DesignStage.ULTRA_SLIM,new ScalingRecord(0.80f, 0.80f, 0.80f, 0.80f, 1.00f, 0.40f, 0.50f, 6f));  
     }
 
     public static ScalingRecord get(UiArchitect.DesignStage stage) {

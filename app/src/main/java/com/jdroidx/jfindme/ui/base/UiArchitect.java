@@ -125,12 +125,17 @@ public class UiArchitect {
         applyCard(activity, view, tableKey);
         
         // 🚀 L7 Depth Hub: Dynamic elevation factor application
-        float currentElev = view.getElevation();
-        if (currentElev > 0) {
-            view.setElevation(UiScalingMatrixTable.scaleElevation(getStage(activity), currentElev * elevationFactor));
+        EnterpriseCardTable.CardRecord record = EnterpriseCardTable.getRegistry().get(tableKey);
+        if (record != null) {
+            float baseElevation = record.defaultElevation;
+            float targetElevation = UiScalingMatrixTable.scaleElevation(getStage(activity), baseElevation * elevationFactor);
+            view.setElevation(targetElevation);
+            view.setTranslationZ(UiScalingMatrixTable.getTZ(getStage(activity), targetElevation));
+            
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                view.setOutlineAmbientShadowColor(activity.getGradientStart());
-                view.setOutlineSpotShadowColor(activity.getGradientStart());
+                int glowColor = activity.getGradientStart();
+                view.setOutlineAmbientShadowColor(glowColor);
+                view.setOutlineSpotShadowColor(glowColor);
             }
         }
 
@@ -228,5 +233,26 @@ public class UiArchitect {
 
     public static void applyThemedIcon(Context context, ImageView view, String iconKey) {
         IconTable.applyTheme(context, view, iconKey);
+    }
+
+    /**
+     * 🗺️ L7 MAP STYLING ENGINE
+     * Applies the authorized forensic theme (Night/Standard) to Google Maps.
+     */
+    public static void applyMapStyle(Context context, com.google.android.gms.maps.GoogleMap map) {
+        if (map == null) return;
+        try {
+            boolean success = map.setMapStyle(
+                com.google.android.gms.maps.model.MapStyleOptions.loadRawResourceStyle(
+                    context, 
+                    context.getResources().getIdentifier("map_style_night", "raw", context.getPackageName())
+                )
+            );
+            if (!success) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("UiArchitect", "Forensic Map Style Parsing Failed.");
+            }
+        } catch (Exception e) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("UiArchitect", "Forensic Map Rendering Blocked: " + e.getMessage());
+        }
     }
 }

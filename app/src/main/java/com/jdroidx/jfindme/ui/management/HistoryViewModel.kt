@@ -56,6 +56,8 @@ class HistoryViewModel : BaseViewModel() {
         viewModelScope.launch {
             repo.fetchHistory(uid, targetPast, now) { points ->
                 _historyPoints.postValue(points)
+                // 🚀 QA Fix: After Sync (Step 3), trigger a UI list refresh to show the new pings!
+                loadHistorySessions(repo.context, uid, timeWindow)
                 _isLoading.postValue(false)
             }
         }
@@ -63,14 +65,16 @@ class HistoryViewModel : BaseViewModel() {
 
     /**
      * 🚀 QA Logic: Synchronized Data Scavenge
-     * Fetches grouped session logs from the local Forensic DB.
+     * Fetches grouped session logs from the local Forensic DB with a Time Window filter.
      */
-    fun loadHistorySessions(context: Context, uid: String) {
+    fun loadHistorySessions(context: Context, uid: String, timeWindow: Long) {
         val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
         val geocoder = Geocoder(context, Locale.getDefault())
+        val cutoff = System.currentTimeMillis() - timeWindow
 
         viewModelScope.launch(Dispatchers.IO) {
-            val sessions = dbHelper.getHistoryLogs(uid)
+            // Updated call to include forensic time cutoff (V40)
+            val sessions = dbHelper.getHistoryLogsFiltered(uid, cutoff)
             _historySessions.postValue(sessions)
             
             // 🚀 QA Fix: Forensic Geocoding Array (Late-Binding Resolution)
@@ -89,7 +93,7 @@ class HistoryViewModel : BaseViewModel() {
                             dbHelper.updateHistoryAddress(logId, humanAddress)
                             
                             // Re-fetch to update the UI with the newly resolved forensic metadata
-                            val refreshed = dbHelper.getHistoryLogs(uid)
+                            val refreshed = dbHelper.getHistoryLogsFiltered(uid, cutoff)
                             _historySessions.postValue(refreshed)
                         }
                     } catch (e: Exception) {
@@ -115,10 +119,11 @@ class HistoryViewModel : BaseViewModel() {
         val offlineNodes = dbHelper.getOfflineRoster()
         val targets = mutableListOf<TrackingTarget>()
         
-        // 🚀 PILLAR 1: Target Identity (OWNER)
-        val myDos = dbHelper.getLocalDossier("OWNER_001")
-        val myName = myDos?.get("full_name") ?: "My Active Device"
-        targets.add(TrackingTarget("$myName (PRIMARY)", myUid))
+        // 🚀 QA Rule: Discard Self-Target to save bandwidth and battery.
+        // Primary Owner telemetry is currently redundant for history replay.
+        // val myDos = dbHelper.getLocalDossier("OWNER_001")
+        // val myName = myDos?.get("full_name") ?: "My Active Device"
+        // targets.add(TrackingTarget("$myName (PRIMARY)", myUid))
         
         // 🚀 PILLAR 2: Validated P2P Matrix
         offlineNodes.forEach { row ->

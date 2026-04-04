@@ -16,7 +16,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        private const val DATABASE_VERSION = 38 // 🚀 V38: Forensic Readable Datetime Ledger
+        private const val DATABASE_VERSION = 40 // 🚀 V40: Forensic Version Hardening & Downgrade Recovery
         private const val MAX_DATETIME = 253402300799000L
         
         private const val TABLE_PERSONAL = "personal_table"
@@ -104,6 +104,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SIM_TRANS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SYNC_QUEUE")
         onCreate(db)
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        onUpgrade(db, oldVersion, newVersion)
     }
     
     fun factoryReset() {
@@ -312,23 +316,40 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         return null
     }
 
-    fun saveHistoryPoint(uid: String, name: String, r: String, lat: Double, lng: Double, spd: Float, b: Int, sos: Boolean, addr: String?) {
+    fun saveHistoryPoint(uid: String, name: String, r: String, lat: Double, lng: Double, spd: Float, b: Int, sos: Boolean, addr: String?, ts: Long? = null) {
         val db = this.writableDatabase
-        val now = System.currentTimeMillis()
-        val readable = getReadableNow()
+        val now = ts ?: System.currentTimeMillis()
+        val readable = if (ts != null) {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(ts))
+        } else {
+            getReadableNow()
+        }
         
-        db.query(TABLE_HISTORY, null, "uid=? AND profile_name=?", arrayOf(uid, name), null, null, "to_datetime DESC", "1").use { c ->
+        // 🚀 QA Restoration: Aggressive Clubbing Matrix (V40 Standard)
+        // Rule: If pings are within 1 hour and 20 meters, consolidate into a single session.
+        db.query(TABLE_HISTORY, null, "uid=? AND ? BETWEEN (from_datetime - 3600000) AND (to_datetime + 3600000)", arrayOf(uid, now.toString()), null, null, "to_datetime DESC", "1").use { c ->
             if (c.moveToFirst()) {
-                val d = com.jdroidx.jfindme.engine.data.SpatialProcessor.getDistance(lat, lng, c.getDouble(c.getColumnIndexOrThrow("lat")), c.getDouble(c.getColumnIndexOrThrow("lng")))
-                if (d < 20.0) {
+                val lastLogId = c.getString(c.getColumnIndexOrThrow("log_id"))
+                val lastLat = c.getDouble(c.getColumnIndexOrThrow("lat"))
+                val lastLng = c.getDouble(c.getColumnIndexOrThrow("lng"))
+                val d = com.jdroidx.jfindme.engine.data.SpatialProcessor.getDistance(lat, lng, lastLat, lastLng)
+                
+                // Allow a 60m spatial radius for aggressive grouping (Recalibrated for GPS Drift)
+                if (d < 60.0) {
+                    val from = c.getLong(c.getColumnIndexOrThrow("from_datetime"))
+                    val to = c.getLong(c.getColumnIndexOrThrow("to_datetime"))
+                    
                     val v = ContentValues().apply {
-                        put("to_datetime", now)
+                        if (now < from) put("from_datetime", now)
+                        if (now > to) put("to_datetime", now)
                         put("ping_count", c.getInt(c.getColumnIndexOrThrow("ping_count")) + 1)
-                        put("battery", b)
-                        put("modified_at", now)
-                        put("readable_time", readable)
+                        put("modified_at", System.currentTimeMillis())
+                        // Update address if it was blank (Resolution Loop)
+                        if (addr != null && (c.getString(c.getColumnIndexOrThrow("address"))?.length ?: 0) < 5) {
+                            put("address", addr)
+                        }
                     }
-                    db.update(TABLE_HISTORY, v, "log_id=?", arrayOf(c.getString(c.getColumnIndexOrThrow("log_id"))))
+                    db.update(TABLE_HISTORY, v, "log_id=?", arrayOf(lastLogId))
                     return
                 }
             }
@@ -348,10 +369,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put("battery", b)
             put("sos_active", if (sos) 1 else 0)
             put("address", addr ?: "Tracing...")
-            put("modified_at", now)
+            put("modified_at", System.currentTimeMillis())
             put("readable_time", readable)
         }
-        db.insert(TABLE_HISTORY, null, v)
+        // 🚀 QA Fix: Use CONFLICT_IGNORE for forensic idempotency.
+        // This prevents primary key crashes during redundant cloud syncs.
+        db.insertWithOnConflict(TABLE_HISTORY, null, v, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
     fun saveAlert(uid: String, title: String, message: String) {
@@ -449,10 +472,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.update(TABLE_HISTORY, v, "log_id=?", arrayOf(logId))
     }
 
-    fun getHistoryLogs(uid: String): List<Map<String, Any>> {
-        val list = mutableListOf<Map<String, Any>>()
+    fun getHistoryLogsFiltered(uid: String, cutoffTime: Long): List<Map<String, Any>> {
+        val rawList = mutableListOf<Map<String, Any>>()
         val db = this.readableDatabase
-        db.query(TABLE_HISTORY, null, "uid=?", arrayOf(uid), null, null, "from_datetime DESC").use { c ->
+        
+        // Step 1: Scavenge raw segments within the time window
+        db.query(TABLE_HISTORY, null, "uid=? AND to_datetime >= ?", arrayOf(uid, cutoffTime.toString()), null, null, "to_datetime DESC").use { c ->
             while (c.moveToNext()) {
                 val row = mutableMapOf<String, Any>()
                 row["log_id"] = c.getString(c.getColumnIndexOrThrow("log_id")) ?: ""
@@ -468,10 +493,52 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 row["battery"] = c.getInt(c.getColumnIndexOrThrow("battery"))
                 row["sos_active"] = c.getInt(c.getColumnIndexOrThrow("sos_active")) == 1
                 row["address"] = c.getString(c.getColumnIndexOrThrow("address")) ?: ""
-                list.add(row)
+                rawList.add(row)
             }
         }
-        return list
+        
+        if (rawList.isEmpty()) return rawList
+
+        // Step 2: 🚀 Late-Binding Aggressive Consolidation (Rule 6)
+        val consolidated = mutableListOf<Map<String, Any>>()
+        var current: MutableMap<String, Any>? = null
+
+        for (row in rawList) {
+            if (current == null) {
+                current = row.toMutableMap()
+            } else {
+                val lat = row["lat"] as? Double ?: 0.0
+                val lng = row["lng"] as? Double ?: 0.0
+                val cLat = current["lat"] as? Double ?: 0.0
+                val cLng = current["lng"] as? Double ?: 0.0
+                
+                val dist = com.jdroidx.jfindme.engine.data.SpatialProcessor.getDistance(lat, lng, cLat, cLng)
+                
+                if (dist < 60.0) {
+                    // Club them! (Expand the time range and sum pings)
+                    val from = row["from_datetime"] as Long
+                    val currentFrom = current["from_datetime"] as Long
+                    
+                    if (from < currentFrom) current["from_datetime"] = from
+                    current["ping_count"] = (current["ping_count"] as Int) + (row["ping_count"] as Int)
+                    
+                    // Keep most recent metadata for the clubbed tile (With Null Safety)
+                    current["speed"] = row["speed"] ?: 0.0f
+                    current["battery"] = row["battery"] ?: 0
+                } else {
+                    consolidated.add(current)
+                    current = row.toMutableMap()
+                }
+            }
+        }
+        if (current != null) consolidated.add(current)
+        
+        return consolidated
+    }
+
+    fun getHistoryLogs(uid: String): List<Map<String, Any>> {
+        // Redirection to the Filtered engine with a 0-offset (Full History Extract)
+        return getHistoryLogsFiltered(uid, 0L)
     }
 
     fun getPendingSyncs(): List<Map<String, Any>> {

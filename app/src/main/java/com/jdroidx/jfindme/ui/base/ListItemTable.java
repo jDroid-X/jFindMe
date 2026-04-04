@@ -53,6 +53,7 @@ public class ListItemTable {
         registry.put("ROW_DIAG",     new ListRecord("ROW_DIAG",     "System Event", "Metric: --", android.R.drawable.ic_menu_info_details, "Diagnostic log entry", 5f, 0.4f, true, "HEAVY", 0));
         registry.put("ROW_DEVICE",   new ListRecord("ROW_DEVICE",   "Mobile Node", "Status: Active", android.R.drawable.ic_menu_mylocation, "Device identity record", 8f, 0.5f, true, "LIGHT", 0));
         registry.put("ROW_BATTERY",  new ListRecord("ROW_BATTERY",  "Telemetry Ping", "Level: Optimal", android.R.drawable.ic_lock_power_off, "Battery optimization stage", 4f, 0.2f, true, "LIGHT", 0));
+        registry.put("ROW_STORAGE",  new ListRecord("ROW_STORAGE",  "Storage Recap", "Local History Override", android.R.drawable.ic_menu_save, "Diagnostic storage terminal", 8f, 0.5f, true, "LIGHT", 0));
     }
 
     public static View createRow(BaseActivityJava activity, String tableKey, String main, String sub) {
@@ -101,6 +102,9 @@ public class ListItemTable {
         tMain.setTextColor(activity.getTextColor());
         tMain.setTextSize(mainSize);
         tMain.setTypeface(null, Typeface.BOLD);
+        tMain.setSingleLine(false);
+        tMain.setMaxLines(2);
+        tMain.setEllipsize(android.text.TextUtils.TruncateAt.END);
         textZone.addView(tMain);
         
         TextView tSub = new TextView(activity);

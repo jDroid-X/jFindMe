@@ -19,7 +19,7 @@ import com.jdroidx.jfindme.data.remote.OfflineSyncManager
  * LocationRepository manages real-time location data flow, offline synchronization,
  * and historical route fetching for the Replay Engine.
  */
-class LocationRepository(private val context: Context) {
+class LocationRepository(internal val context: Context) {
 
     private val offlineSyncManager = OfflineSyncManager(context)
     private val _userLocations = MutableLiveData<List<UserLocation>>()
@@ -112,36 +112,23 @@ class LocationRepository(private val context: Context) {
         val geocoder = Geocoder(context, Locale.getDefault())
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
         
-        // 🧱 QA Hardening: Use a Background Thread or Async Listener to prevent ANR
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1, object : Geocoder.GeocodeListener {
-                override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                    val humanAddress = if (addresses.isNotEmpty()) addresses[0].getAddressLine(0) else null
-                    finalizeLocationPush(userLocation, humanAddress)
+        // 🧱 QA Hardening: Use a stable Background Thread for all API versions to prevent 
+        // NoClassDefFoundError on devices below API 33 (Tiramisu).
+        Thread {
+            var humanAddress: String? = null
+            try {
+                @Suppress("DEPRECATION")
+                val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
+                if (!addresses.isNullOrEmpty()) {
+                    humanAddress = addresses[0].getAddressLine(0)
                 }
-                override fun onError(errorMessage: String?) {
-                    SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: $errorMessage")
-                    finalizeLocationPush(userLocation, null)
-                }
-            })
-        } else {
-            Thread {
-                var humanAddress: String? = null
-                try {
-                    @Suppress("DEPRECATION")
-                    val addresses = geocoder.getFromLocation(userLocation.latitude, userLocation.longitude, 1)
-                    if (!addresses.isNullOrEmpty()) {
-                        humanAddress = addresses[0].getAddressLine(0)
-                    }
-                } catch (e: Exception) {
-                    SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: ${e.message}")
-                }
-                
-                Handler(Looper.getMainLooper()).post {
-                    finalizeLocationPush(userLocation, humanAddress)
-                }
-            }.start()
-        }
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: ${e.message}")
+            }
+            
+            // 🚀 QA Fix: Finalize push in the BACKGROUND thread as per L7 Waterfall standards
+            finalizeLocationPush(userLocation, humanAddress)
+        }.start()
         
         offlineSyncManager.syncLocation(userLocation)
     }
@@ -161,7 +148,8 @@ class LocationRepository(private val context: Context) {
             userLocation.speed,
             userLocation.batteryLevel.toInt(),
             userLocation.isSosActive,
-            finalAddress
+            finalAddress,
+            userLocation.timestamp
         )
     }
 
@@ -180,28 +168,31 @@ class LocationRepository(private val context: Context) {
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val points = mutableListOf<UserLocation>()
-                    val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
-                    
-                    snapshot.children.forEach { child ->
-                        child.getValue(UserLocation::class.java)?.let { point ->
-                            points.add(point)
-                            
-                            // 🚀 QA Fix: Sync fetched cloud segments into local Forensic Vault
-                            // This ensures the Factory Reset matrix shows data even for remote targets!
-                            db.saveHistoryPoint(
-                                userId,
-                                point.userName,
-                                "CLOUD_SYNC",
-                                point.latitude,
-                                point.longitude,
-                                point.speed,
-                                point.batteryLevel.toInt(),
-                                point.isSosActive,
-                                null
-                            )
+                    // 🚀 QA Fix: Offload Batch-Write to Background Thread! 
+                    // 1,000+ writes on the Main Thread (Firebase Default) will cause ANR/Crash.
+                    Thread {
+                        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+                        snapshot.children.forEach { child ->
+                            child.getValue(UserLocation::class.java)?.let { point ->
+                                points.add(point)
+                                
+                                db.saveHistoryPoint(
+                                    userId,
+                                    point.userName,
+                                    "CLOUD_SYNC",
+                                    point.latitude,
+                                    point.longitude,
+                                    point.speed,
+                                    point.batteryLevel.toInt(),
+                                    point.isSosActive,
+                                    null,
+                                    point.timestamp
+                                )
+                            }
                         }
-                    }
-                    callback(points)
+                        // Post final result to the callback (which might be tied to UI)
+                        Handler(Looper.getMainLooper()).post { callback(points) }
+                    }.start()
                 }
 
                 override fun onCancelled(error: DatabaseError) {

@@ -14,6 +14,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import android.os.Handler;
+import android.os.Looper;
 import com.jdroidx.jfindme.engine.data.SpatialProcessor;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
@@ -31,6 +33,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     protected long currentUiHash;
     protected boolean isLandscape;
     private static long lastRecreateTime = 0;
+    private static final Handler registryHandler = new Handler(Looper.getMainLooper());
+    private Runnable registryCheckRunnable;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -71,14 +75,20 @@ public abstract class BaseActivityJava extends AppCompatActivity {
             globalHelpBtn.setClickable(true);
             globalHelpBtn.setFocusable(true);
             
-            int helpSize = scale(120);
+            // 🚀 Universal Architecture Sync: Calibrated for precise Header-Row centering
+            int helpSize = scale(100); 
             android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(helpSize, helpSize);
             helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
-            int m = scale(25);
-            helpLp.setMargins(0, m, m, 0);
+            
+            // 🧠 Forensic Alignment: Centered within the 140px standard header height
+            // (45px Universal Gap + ~15px vertical offset correction)
+            int mTop = scale(55); 
+            int mEnd = scale(25);
+            helpLp.setMargins(0, mTop, mEnd, 0);
             globalHelpBtn.setLayoutParams(helpLp);
             
-            UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD");
+            UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD", 1.2f);
+            globalHelpBtn.setElevation(scale(25)); // Force distinct Z-axis separation
             globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
             
             if (!(this instanceof com.jdroidx.jfindme.ui.settings.HelpSupportActivity) && 
@@ -94,30 +104,58 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         SystemLogger.i(getClass().getSimpleName(), "Native Utility Activity Resumed.");
     }
     
+    private void startRegistryAudit() {
+        if (registryCheckRunnable != null) return;
+        
+        registryCheckRunnable = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    int latestInstalledTheme = prefs.getInt("theme_id", 0);
+                    long latestUiHash = prefs.getLong("ui_config_hash", 0);
+                    int latestStage = prefs.getInt("stage_override", -1);
+                    
+                    UiArchitect.DesignStage currentStageEnum = UiArchitect.getStage(BaseActivityJava.this);
+                    int currentStageVal = currentStageEnum.ordinal();
+                    
+                    if (currentThemeId != latestInstalledTheme || currentUiHash != latestUiHash || (latestStage != -1 && currentStage != latestStage)) {
+                        if (System.currentTimeMillis() - lastRecreateTime > 2000) {
+                            lastRecreateTime = System.currentTimeMillis();
+                            currentThemeId = latestInstalledTheme;
+                            currentUiHash = latestUiHash;
+                            if (latestStage != -1) currentStage = latestStage;
+                            
+                            SystemLogger.i("BaseActivityJava", "Registry Mismatch. Rebooting UI Hub.");
+                            safeRecreate();
+                        }
+                    }
+                } catch (Exception e) {
+                    SystemLogger.e("BaseActivityJava", "Audit Error", e);
+                }
+                
+                registryHandler.postDelayed(this, 1500);
+            }
+        };
+        registryHandler.post(registryCheckRunnable);
+    }
+
+    private void stopRegistryAudit() {
+        if (registryCheckRunnable != null) {
+            registryHandler.removeCallbacks(registryCheckRunnable);
+            registryCheckRunnable = null;
+        }
+    }
+
     @Override
     protected void onStart() {
         super.onStart();
-        // 🚀 QA Fix: Global Theme & Stage Synchronization Back-Loop!
-        // Detects if the internal Theme Array or the Design Stage (Liberal/Ultraslim) was altered.
-        if (prefs != null) {
-            int latestInstalledTheme = prefs.getInt("theme_id", 0);
-            long latestUiHash = prefs.getLong("ui_config_hash", 0);
-            
-            // 🧠 PILLAR: Design Stage Interceptor
-            int latestStage = prefs.getInt("stage_override", UiArchitect.DesignStage.COMPACT.ordinal());
-            
-            UiArchitect.DesignStage currentStageEnum = UiArchitect.getStage(this);
-            int currentStage = currentStageEnum.ordinal();
+        startRegistryAudit();
+    }
 
-            if (currentThemeId != latestInstalledTheme || currentUiHash != latestUiHash || currentStage != latestStage) {
-                if (System.currentTimeMillis() - lastRecreateTime > 1500) {
-                    lastRecreateTime = System.currentTimeMillis();
-                    currentThemeId = latestInstalledTheme;
-                    currentUiHash = latestUiHash;
-                    safeRecreate();
-                }
-            }
-        }
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopRegistryAudit();
     }
     
     @Override
@@ -151,13 +189,17 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         globalHelpBtn.setClickable(true);
         globalHelpBtn.setFocusable(true);
         
-        int helpSize = scale(120);
+        // 🚀 Universal Architecture Sync: Calibrated for precise Header-Row centering
+        int helpSize = scale(100); 
         android.widget.FrameLayout.LayoutParams helpLp = new android.widget.FrameLayout.LayoutParams(helpSize, helpSize);
         helpLp.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
-        int m = scale(25);
-        helpLp.setMargins(0, m, m, 0);
+        
+        int mTop = scale(55); 
+        int mEnd = scale(25);
+        helpLp.setMargins(0, mTop, mEnd, 0);
         globalHelpBtn.setLayoutParams(helpLp);
-        UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD");
+        UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD", 1.2f);
+        globalHelpBtn.setElevation(scale(25));
         
         globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
         
@@ -177,9 +219,9 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         if (actName.equals("Group")) helpText = "CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!";
         if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
         if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
-        if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database for 24 hours.";
+        if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database (Default: 7 Days, USER Override supported).";
         if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
-        if (actName.equals("History")) helpText = "• Step 1: Open 'Location Logs' from the Dashboard Grid.\n• Step 2: Select a target user from the dropdown.\n• Step 3: Scroll through the timeline to review clustered tracking coordinates.";
+        if (actName.equals("History")) helpText = "• Step 1: Storage Limit - Tap the '7 DAYS' value box to manually override how long history logs remain on your physical device.\n• Step 2: Time Selection - Select a forensic window (e.g., 4h, 12h, 24h) to render tracking trails on the map engine.\n• Step 3: Replay Controls - Tap START to physically replay the target's path with real-time speed/battery telemetry.\n• Step 4: Diagnostic Metrics - '0.0 km/h' indicates as Static/Dwell event. 'N/A' indicates missing forensic sensor telemetry at the time of the ping.";
         if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
         if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
         if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Access individual member dossiers from the roster.\n• Step 2: Configure the Privacy & ACL Matrix (Live Sync, Biometrics).\n\n" +
