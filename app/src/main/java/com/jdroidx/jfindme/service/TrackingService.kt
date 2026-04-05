@@ -11,7 +11,12 @@ import androidx.core.app.NotificationCompat
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.repository.LocationRepository
 import com.jdroidx.jfindme.engine.location.LocationEngine
+import com.jdroidx.jfindme.engine.location.GeofenceHelper
+import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.engine.alert.AlertManager
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.google.firebase.database.*
+import com.google.firebase.auth.FirebaseAuth
 
 /**
  * TrackingService: Foreground service for persistent GPS tracking.
@@ -23,6 +28,7 @@ class TrackingService : Service() {
     private lateinit var repository: LocationRepository
     private var batteryReceiver: BroadcastReceiver? = null
     private var cpuWakeLock: android.os.PowerManager.WakeLock? = null
+    private var syncListener: ValueEventListener? = null
     private val TAG = "TrackingService_DozeBypass"
 
     override fun onCreate() {
@@ -92,6 +98,70 @@ class TrackingService : Service() {
         }
         locationEngine.startTracking()
         registerBatteryMonitor()
+        
+        // 🚀 MISSION CONNECTIVITY: Autonomous Geofence Handshake Listener (V47)
+        setupBackgroundSyncListener()
+    }
+
+    private fun setupBackgroundSyncListener() {
+        val myUid = FirebaseAuth.getInstance().uid ?: return
+        val ref = FirebaseDatabase.getInstance().getReference("users").child(myUid).child("geofence_sync_requests")
+        
+        syncListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                snapshot.children.forEach { snap ->
+                    val status = snap.child("status").getValue(String::class.java)
+                    if (status == "PENDING_ACCEPTANCE") {
+                        val zoneName = snap.child("zone_name").getValue(String::class.java) ?: return@forEach
+                        val groupId = snap.child("group_id").getValue(String::class.java) ?: return@forEach
+                        val requestId = snap.key ?: return@forEach
+                        
+                        // 🛰️ AUTO-SYNC: Fetch mission data from the group registry
+                        processBackgroundSync(requestId, zoneName, groupId)
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        ref.addValueEventListener(syncListener!!)
+    }
+
+    private fun processBackgroundSync(reqId: String, name: String, group: String) {
+        val ref = FirebaseDatabase.getInstance().getReference("groups").child(group).child("geofences").child(name)
+        ref.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snap: DataSnapshot) {
+                if (snap.exists()) {
+                    val lat = snap.child("lat").getValue(Double::class.java) ?: return
+                    val lng = snap.child("lng").getValue(Double::class.java) ?: return
+                    val rad = snap.child("radius").getValue(Double::class.java) ?: 100.0
+                    val addr = snap.child("address").getValue(String::class.java) ?: "Unknown Target"
+                    
+                    // 💾 LOCAL FORENSIC ARCHIVAL
+                    val db = DatabaseHelper.getInstance(this@TrackingService)
+                    val v = android.content.ContentValues()
+                    v.put("zone_id", name); v.put("name", name); v.put("lat", lat); v.put("lng", lng)
+                    v.put("radius", rad); v.put("sync_status", "AUTO_ACCEPTED")
+                    db.saveSafeZone(v)
+                    
+                    // 🚀 HARDWARE REGISTRATION: Geofence Active on Device B Hardware
+                    val helper = GeofenceHelper(this@TrackingService)
+                    val userName = getSharedPreferences("system_registry", MODE_PRIVATE).getString("user_nickname", "Pushpa")
+                    helper.addGeofence(name + "___" + userName, lat, lng, rad.toFloat())
+                    
+                    // 🛰️ CONFIRMATION: Update Cloud request status
+                    val myUid = FirebaseAuth.getInstance().uid
+                    if (myUid != null) {
+                        FirebaseDatabase.getInstance().getReference("users").child(myUid)
+                            .child("geofence_sync_requests").child(reqId).child("status").setValue("SYNC_CONFIRMED")
+                    }
+                    
+                    // 🔔 UX NOTIFICATION: Notify Pushpa of new protection
+                    AlertManager.showGeofenceNotification(this@TrackingService, "Safe Zone Assigned: $name. You are now protected.")
+                    SystemLogger.w(TAG, "GEOFENCE_AUTO_SYNC: Mission Node [$name] hardware-registered for device.")
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
     }
 
     private fun registerBatteryMonitor() {
@@ -154,6 +224,15 @@ class TrackingService : Service() {
         // 🚀 QA Architecture: De-allocate Hardware Wakelock cleanly preventing Phantom battery draining
         if (cpuWakeLock != null && cpuWakeLock!!.isHeld) {
             cpuWakeLock?.release()
+        }
+        
+        // 🛰️ MISSION CLEANUP: Stop background sync listener
+        syncListener?.let {
+            val myUid = FirebaseAuth.getInstance().uid
+            if (myUid != null) {
+                FirebaseDatabase.getInstance().getReference("users").child(myUid)
+                    .child("geofence_sync_requests").removeEventListener(it)
+            }
         }
     }
 

@@ -274,7 +274,7 @@ public class SystemLogActivity extends BaseActivityJava {
     private String generateSqliteSyncReport() {
         int rosterCount = 0;
         try {
-            rosterCount = new com.jdroidx.jfindme.data.local.DatabaseHelper(this).getOfflineRoster().size();
+            rosterCount = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getOfflineRoster().size();
         } catch (Exception e) {}
         
         return "• SQLite V7 Primary Allocation:\n  " + rosterCount + " Indexed Offline Nodes natively\n\n" +

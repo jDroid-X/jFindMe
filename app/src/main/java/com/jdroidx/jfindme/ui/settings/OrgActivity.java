@@ -27,7 +27,7 @@ public class OrgActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
-        db = new DatabaseHelper(this);
+        db = DatabaseHelper.getInstance(this);
         int q = getResponsivePaddingQuota();
 
         LinearLayout mainRoot = new LinearLayout(this);

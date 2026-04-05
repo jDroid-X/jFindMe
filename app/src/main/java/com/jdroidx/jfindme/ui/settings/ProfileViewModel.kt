@@ -234,6 +234,8 @@ class ProfileViewModel : BaseViewModel() {
                                     .putString("user_pincode", pincodeVal)
                                     .putString("user_address", addressVal)
                                     .putString("user_emergency_note", emergencyNoteVal)
+                                    .putString("org_name", orgName)
+                                    .putString("department", deptName)
                                     .putString("role_family", famStr)
                                     .putString("role_friend", friendStr)
                                     .putBoolean("role_mother", famStr == "Mother")
@@ -272,7 +274,7 @@ class ProfileViewModel : BaseViewModel() {
                                 }
 
                                 // Local SQLite Mirror Update (Always executed for offline stability)
-                                val forensicDb = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+                                val forensicDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                                 val finalRole = if (friendStr != "None") friendStr else famStr
                                 forensicDb.saveLocalDossier(safeUid, dossierMap, finalRole, nameVal, safeUid, safeUid, "SELF_REG")
                                 forensicDb.saveRosterNode(safeUid, nameVal, famStr, "Identity Active", isAdmin = true, isFriend = false, ownerName = nameVal, ownerDeviceId = safeUid, connectedDeviceId = safeUid, qrCode = "SELF_REG")

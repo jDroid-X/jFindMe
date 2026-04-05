@@ -100,6 +100,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.settings.AvatarEditorActivity" />
         <activity android:name=".ui.settings.AvatarCropActivity" />
+        <activity android:name=".ui.management.GeofenceNotificationActivity" />
         <activity android:name=".ui.management.HistoryActivity" />
         <activity android:name=".ui.management.GeofenceActivity" />
         <activity android:name=".ui.management.PrivacyActivity" />

@@ -40,7 +40,7 @@ public class FactoryResetActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
-        db = new DatabaseHelper(this);
+        db = DatabaseHelper.getInstance(this);
         LinearLayout mainLayout = new LinearLayout(this);
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setBackgroundColor(getPrimaryColor());

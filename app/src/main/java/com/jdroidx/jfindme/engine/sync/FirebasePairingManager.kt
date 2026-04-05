@@ -37,7 +37,7 @@ object FirebasePairingManager {
         activePairingCode = inviteCode
 
         // 🚀 Forensic Metadata retrieval for Handshake Exchange
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val myDos = dbHelper.getLocalDossier("OWNER_001")
         val hostName = myDos?.get("full_name") ?: "Host Admin"
 
@@ -81,7 +81,7 @@ object FirebasePairingManager {
         val childUid = getDeviceId()
         
         // 🚀 Forensic Metadata retrieval for Handshake Exchange
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val myDos = dbHelper.getLocalDossier("OWNER_001")
         val childName = myDos?.get("full_name") ?: "Guest"
 
@@ -120,7 +120,7 @@ object FirebasePairingManager {
      */
     fun approveHandshake(context: android.content.Context, inviteCode: String, childId: String, hostRole: String, childRole: String, onComplete: (Boolean) -> Unit) {
         val hostId = getDeviceId()
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         
         // 🦋 Premium Cinematic Transition (masking forensic data swap)
         com.jdroidx.jfindme.utils.AngelLoader.show(context as android.app.Activity)
@@ -239,15 +239,15 @@ object FirebasePairingManager {
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             if (hostId.isNotEmpty()) {
                                 // Mirror Host node to Child's local Roster SSOT with full forensic metadata
-                                com.jdroidx.jfindme.data.local.DatabaseHelper(context).saveRosterNode(
+                                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveRosterNode(
                                     hostId, hostName, "Guardian", "P2P SYNC COMPLETED", isAdmin = true, isFriend = false,
                                     ownerName = hostName, ownerDeviceId = hostId, connectedDeviceId = childId, qrCode = qrCode
                                 )
                                 
                                 // 🚀 Update local dossier with roles
-                                val myDosMap = com.jdroidx.jfindme.data.local.DatabaseHelper(context).getLocalDossier("OWNER_001")
+                                val myDosMap = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).getLocalDossier("OWNER_001")
                                 if (myDosMap != null) {
-                                    com.jdroidx.jfindme.data.local.DatabaseHelper(context).saveLocalDossier(
+                                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveLocalDossier(
                                         "OWNER_001", myDosMap, finalChildRole, hostName, hostId, childId, qrCode
                                     )
                                 }

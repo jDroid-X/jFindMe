@@ -323,6 +323,9 @@ public class ProfileActivity extends BaseActivityJava {
         countrySpinner.setAdapter(countryAdapter);
         countrySpinner.setThreshold(1);
         countrySpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        countrySpinner.setFocusable(false); // 🚀 Read-Only Dropdown Design
+        countrySpinner.setClickable(true);
+        countrySpinner.setOnClickListener(v -> countrySpinner.showDropDown());
 
         stateSpinner = new android.widget.AutoCompleteTextView(this);
         stateSpinner.setHint(android.text.Html.fromHtml("State/Province<font color='#D32F2F'>(*)</font>"));
@@ -332,6 +335,9 @@ public class ProfileActivity extends BaseActivityJava {
         stateSpinner.setAdapter(stateAdapter);
         stateSpinner.setThreshold(1);
         stateSpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        stateSpinner.setFocusable(false);
+        stateSpinner.setClickable(true);
+        stateSpinner.setOnClickListener(v -> stateSpinner.showDropDown());
         
         citySpinner = new android.widget.AutoCompleteTextView(this);
         citySpinner.setHint(android.text.Html.fromHtml("City/Zone<font color='#D32F2F'>(*)</font>"));
@@ -341,9 +347,15 @@ public class ProfileActivity extends BaseActivityJava {
         citySpinner.setAdapter(cityAdapter);
         citySpinner.setThreshold(1);
         citySpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        citySpinner.setFocusable(false);
+        citySpinner.setClickable(true);
+        citySpinner.setOnClickListener(v -> citySpinner.showDropDown());
         
         countrySpinner.setOnItemClickListener((parent, view, position, id) -> {
             String selection = countryAdapter.getItem(position);
+            // 🚀 Cascade Cascade reset state/city before fetch
+            if (stateSpinner != null) stateSpinner.setText(""); 
+            if (citySpinner != null) citySpinner.setText("");
             if (profileViewModel != null && selection != null && !selection.equals("Identifying...")) {
                 profileViewModel.fetchStatesList(selection);
             }
@@ -352,6 +364,8 @@ public class ProfileActivity extends BaseActivityJava {
         stateSpinner.setOnItemClickListener((parent, view, position, id) -> {
             String selection = stateAdapter.getItem(position);
             String parentCountry = countrySpinner.getText().toString();
+            // 🚀 Cascade reset city
+            if (citySpinner != null) citySpinner.setText("");
             if (profileViewModel != null && selection != null && !parentCountry.isEmpty() && !parentCountry.equals("Identifying...")) {
                 profileViewModel.fetchCitiesList(parentCountry, selection);
             }
@@ -971,6 +985,17 @@ public class ProfileActivity extends BaseActivityJava {
             }
         });
         profileViewModel.fetchNetworkLocation();
+        
+        // 🚀 QA Fix: Initial Geo-Matrix Hydration (V46 Architectural Hardening)
+        // If a Country/State is already saved, we must trigger the background fetch immediately to populate the child spinners.
+        String c = prefs.getString("user_country", "");
+        String s = prefs.getString("user_state", "");
+        if (!c.isEmpty() && !c.equals("Identifying...") && !c.equals("Select Country")) {
+            profileViewModel.fetchStatesList(c);
+            if (!s.isEmpty() && !s.equals("Select State")) {
+                profileViewModel.fetchCitiesList(c, s);
+            }
+        }
         
         // 🚀 QA Fix: Installation Completion Guard
         // Suppress on every action taken in the image icons (SafeRecreate blocker)

@@ -134,7 +134,7 @@ object LocalPairingManager {
             SystemLogger.i("LocalPairingManager", "Strict Local P2P Matrix Binding Complete. Logging Audit Ledger...")
             
             // 🚀 AUDIT LEDGER: Log Local P2P Node Status
-            val db = com.jdroidx.jfindme.data.local.DatabaseHelper(com.jdroidx.jfindme.JFindMeApplication.getContext())
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(com.jdroidx.jfindme.JFindMeApplication.getContext())
             db.logDevicePairing(hostDeviceId, "LOCAL_HOST_NODE", childDeviceId, "LOCAL_CHILD_NODE", "PEER_P2P", "LOCAL_ONLY", "P2P_SOCKET_ESTABLISHED")
             
             onMergeComplete(true)

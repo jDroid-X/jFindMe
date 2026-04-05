@@ -19,6 +19,7 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 
 /**
  * 📝 Phase 5 Profile Details System
@@ -33,7 +34,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private PersonDetailsViewModel viewModel;
     
     // UI Elements
-    private EditText etFullName, etPhone, etDob, etAddress, etEmergencyNote;
+    private EditText etFullName, etPhone, etDob, etAddress, etEmergencyNote, etOrgName, etDeptName;
     private AutoCompleteTextView etGender, etCountry, etState, etCity;
     private EditText etPincode;
     private EditText etSafeZoneName, etSafeZoneRadius;
@@ -49,6 +50,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         targetUid = getIntent().getStringExtra("TARGET_UID");
         targetRoleTitle = getIntent().getStringExtra("TARGET_ROLE");
         prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        
+        // 🚀 CRITICAL FIX: Identity Resolve must happen BEFORE Header construction
+        isSelf = targetUid != null && targetUid.equals(com.google.firebase.auth.FirebaseAuth.getInstance().getUid());
 
         LinearLayout mainContainer = new LinearLayout(this);
         mainContainer.setOrientation(LinearLayout.VERTICAL);
@@ -80,24 +84,25 @@ public class PersonDetailsActivity extends BaseActivityJava {
         int sideMargin = getResponsivePaddingQuota();
         ownerTile.setPadding(sideMargin, sideMargin, sideMargin, sideMargin);
         
-        // 🚀 Premium Gateway Avatar geometry
-        android.widget.FrameLayout avatarFrame = new android.widget.FrameLayout(this);
-        UiArchitect.applyCard(this, avatarFrame, "CARD_STANDARD");
-        
+        // 🚀 Premium Circular Avatar (Matching Network Gateway Style)
         android.widget.ImageView gatewayIcon = new android.widget.ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, gatewayIcon);
-        gatewayIcon.setPadding(10, 10, 10, 10); 
+        
         int iSize = getResponsiveIconQuota();
-        avatarFrame.addView(gatewayIcon, new android.widget.FrameLayout.LayoutParams(iSize, iSize));
+        android.graphics.drawable.GradientDrawable halo = new android.graphics.drawable.GradientDrawable();
+        halo.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        halo.setColor(android.graphics.Color.TRANSPARENT);
+        halo.setStroke(UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 4), getGradientStart());
+        gatewayIcon.setBackground(halo);
         
         // --- 🚀 AVATAR CLICK: Open Profile ---
-        avatarFrame.setFocusable(true);
-        avatarFrame.setClickable(true);
-        avatarFrame.setOnClickListener(v -> {
+        gatewayIcon.setFocusable(true);
+        gatewayIcon.setClickable(true);
+        gatewayIcon.setOnClickListener(v -> {
             startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
         });
         
-        ownerTile.addView(avatarFrame, new LinearLayout.LayoutParams(iSize, iSize));
+        ownerTile.addView(gatewayIcon, new LinearLayout.LayoutParams(iSize, iSize));
         
         LinearLayout metaText = new LinearLayout(this);
         metaText.setOrientation(LinearLayout.VERTICAL);
@@ -156,29 +161,53 @@ public class PersonDetailsActivity extends BaseActivityJava {
         formBox.setPadding(formPad, getResponsiveHeaderTopQuota(), formPad, formPad * 4);
         
         isSelf = targetUid != null && targetUid.equals(com.google.firebase.auth.FirebaseAuth.getInstance().getUid());
+        
+        if (isSelf) {
+            formBox.addView(createSectionHeaderWithEdit("PERSONAL IDENTITY & SECURITY"));
+        } else {
+            formBox.addView(createSectionHeader("PERSONAL IDENTITY & SECURITY"));
+        }
+        etFullName = new EditText(this); // Keep hidden for logic
+        // formBox.addView(createFormField("Name", ...)) REMOVED: Redundant with header title
+        etOrgName = createFormField("Organization", "Hub / Sector name", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_agenda, false, true);
+        etDeptName = createFormField("Department", "Sub-Sector / Team", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_directions, false, true);
 
-        formBox.addView(createSectionHeader("PERSONAL IDENTITY"));
-        etFullName = createFormField("Full Name", "Legal Identity", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_myplaces, true);
-        etPhone = createFormField("Contact Phone", "Enterprise Link", InputType.TYPE_CLASS_PHONE, android.R.drawable.ic_menu_call, true);
-        etDob = createFormField("Date of Birth", "DD/MM/YYYY Protocol", InputType.TYPE_CLASS_DATETIME, android.R.drawable.ic_menu_today, true);
+        etPhone = createFormField("Mobile Number", "Enterprise contact link...", InputType.TYPE_CLASS_PHONE, android.R.drawable.ic_menu_call, true, true);
+        etDob = createFormField("BirthDay", "DD/MM/YYYY Protocol", InputType.TYPE_CLASS_DATETIME, android.R.drawable.ic_menu_today, true, true);
         
         // 🚀 QA Fix: Master Dropdown Matrix (Adaptive Waterfall MVVM)
-        etGender = createDropdownField("Biological Protocol", "Select Gender Identity", android.R.drawable.ic_menu_info_details, true);
+        etGender = createDropdownField("Gender", "Select biological protocol", android.R.drawable.ic_menu_myplaces, true, true);
         etGender.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, new String[]{"Male", "Female", "Other", "Prefer Not to Say"}));
         
-        etCountry = createDropdownField("Matrix Country", "Locate Territory", android.R.drawable.ic_menu_mapmode, true);
-        etState = createDropdownField("Zone State", "Locate Sub-Territory", android.R.drawable.ic_menu_directions, true);
-        etCity = createDropdownField("Node City", "Locate Logical Zone", android.R.drawable.ic_menu_myplaces, true);
+        etCountry = createDropdownField("Country", "Locate Territory", android.R.drawable.ic_menu_mapmode, true, true);
+        etState = createDropdownField("State/Province", "Locate Sub-Territory", android.R.drawable.ic_menu_mylocation, true, true);
+        etCity = createDropdownField("City/Zone", "Locate Logical Zone", android.R.drawable.ic_dialog_map, true, true);
         
-        etPincode = createFormField("Postal Matrix", "Zip / Pin Code", InputType.TYPE_CLASS_NUMBER, android.R.drawable.ic_menu_compass, true);
-
-        formBox.addView(createSectionHeader("EMERGENCY PROTOCOL"));
-        etAddress = createFormField("Secure Residence", "Physical Point of Interest", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_mapmode, false);
-        etEmergencyNote = createFormField("Siren Protocol", "Emergency Medical Notes", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_dialog_info, false);
+        etPincode = createFormField("ZipCode", "Postal Matrix Hub", InputType.TYPE_CLASS_NUMBER, android.R.drawable.ic_menu_info_details, true, true);
+        
+        formBox.addView(createSectionHeader("RESIDENCE & EMERGENCY PROTOCOL"));
+        etAddress = createFormField("Address", "Physical point of interest...", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_mapmode, false, true);
+        etEmergencyNote = createFormField("Emergency Action Protocols", "Medical / Contact Notes...", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_dialog_info, false, true);
 
         formBox.addView(createSectionHeader("SAFE ZONE (GEOFENCE) RELATIONS"));
+
         etSafeZoneName = createFormField("Zone Label", "e.g. Master School", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_mylocation, false);
         etSafeZoneRadius = createFormField("Siren Radius", "Meters from Anchor", InputType.TYPE_CLASS_NUMBER, android.R.drawable.ic_menu_compass, false);
+        
+        // 🚀 "Establish New Domain" Shortcut (Waterfall Integration)
+        LinearLayout.LayoutParams btnLpD = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLpD.setMargins(0, 5, 0, 15);
+        View btnEstablish = createIconButton("ESTABLISH GEOSPATIAL DOMAIN", android.R.drawable.ic_menu_add, v -> {
+            String addr = etAddress.getText().toString();
+            String name = etSafeZoneName.getText().toString();
+            if (addr.isEmpty()) { Toast.makeText(this, "Profile Address Required for Domain Resolution.", Toast.LENGTH_SHORT).show(); return; }
+            android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
+            i.putExtra("ESTABLISH_DOMAIN_ADDRESS", addr);
+            i.putExtra("ESTABLISH_DOMAIN_NAME", name.isEmpty() ? "New Zone" : name);
+            startActivity(i);
+        });
+        formBox.addView(btnEstablish, btnLpD);
+
         formBox.addView(createSectionHeader("ENTERPRISE ACCESS CONTROL (ACL)"));
         
         android.widget.GridLayout aclGrid = new android.widget.GridLayout(this);
@@ -206,6 +235,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
         cbGlobalCloudSync.setChecked(true); // Enterprise Default: Sync all data
         formBox.addView(cbGlobalCloudSync);
 
+        // 🚀 THE UNIVERSAL DEVICE NETWORK (Hierarchical Tagging Hub)
+        dynamicTaggingContainer = new LinearLayout(this);
+        dynamicTaggingContainer.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams dtLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dtLp.setMargins(0, formPad, 0, formPad);
+        formBox.addView(dynamicTaggingContainer, dtLp);
+
         if (!isSelf) {
             // Strict Read-Only Lockdown execution!
             etFullName.setEnabled(false);
@@ -216,6 +252,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
             etState.setEnabled(false);
             etCity.setEnabled(false);
             etPincode.setEnabled(false);
+            etOrgName.setEnabled(false);
+            etDeptName.setEnabled(false);
             etEmergencyNote.setEnabled(false);
             etSafeZoneName.setEnabled(false);
             etSafeZoneRadius.setEnabled(false);
@@ -282,29 +320,28 @@ public class PersonDetailsActivity extends BaseActivityJava {
         return mainContainer;
     }
 
-    private void rebuildTaggingUI() {
+    private void rebuildTaggingUI(java.util.List<java.util.Map<String, Object>> roster) {
         if (dynamicTaggingContainer == null) return;
         dynamicTaggingContainer.removeAllViews();
         if (!isSelf) return; // Only allow tagging locally on your own profile
-        
-        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
-        java.util.List<java.util.Map<String, Object>> roster = localDb.getOfflineRoster();
         
         java.util.Map<String, String> pairedSpouses = new java.util.HashMap<>();
         java.util.Map<String, String> pairedChildren = new java.util.HashMap<>();
         java.util.Map<String, String> pairedFriends = new java.util.HashMap<>();
         java.util.Map<String, String> pairedParents = new java.util.HashMap<>();
         
-        for (java.util.Map<String, Object> node : roster) {
-            String rTitle = (String) node.get("role_title");
-            String rName = (String) node.get("display_name");
-            String rUid = (String) node.get("uid");
-            if (rTitle == null || rName == null || rUid == null) continue;
-            
-            if (rTitle.contains("SPOUSE")) pairedSpouses.put(rUid, rName);
-            else if (rTitle.contains("CHILD")) pairedChildren.put(rUid, rName);
-            else if (rTitle.contains("FRIEND")) pairedFriends.put(rUid, rName);
-            else if (rTitle.contains("FATHER") || rTitle.contains("MOTHER")) pairedParents.put(rUid, rTitle + " (" + rName + ")");
+        if (roster != null) {
+            for (java.util.Map<String, Object> node : roster) {
+                String rTitle = (String) node.get("role_title");
+                String rName = (String) node.get("display_name");
+                String rUid = (String) node.get("uid");
+                if (rTitle == null || rName == null || rUid == null) continue;
+                
+                if (rTitle.contains("SPOUSE")) pairedSpouses.put(rUid, rName);
+                else if (rTitle.contains("CHILD")) pairedChildren.put(rUid, rName);
+                else if (rTitle.contains("FRIEND")) pairedFriends.put(rUid, rName);
+                else if (rTitle.contains("FATHER") || rTitle.contains("MOTHER")) pairedParents.put(rUid, rTitle + " (" + rName + ")");
+            }
         }
 
         // QA Fix: Directly pull the Active Target's localized identity (Not the Admin's Global Name)
@@ -314,7 +351,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         // 🚀 PRIME DIRECTIVE: Universal Single Source of Truth
         dynamicTaggingContainer.addView(createSectionHeader("UNIVERSAL DEVICE NETWORK"));
-        dynamicTaggingContainer.addView(createTaggedTreeItem("GUARDIAN", pairedParents));
+        // Guardian Detail removed per Forensic Parity Update
+        // dynamicTaggingContainer.addView(createTaggedTreeItem("GUARDIAN", pairedParents));
         dynamicTaggingContainer.addView(createTaggedTreeItem("SPOUSE", pairedSpouses));
         dynamicTaggingContainer.addView(createTaggedTreeItem("CHILD", pairedChildren));
         dynamicTaggingContainer.addView(createTaggedTreeItem("FRIEND", pairedFriends));
@@ -391,8 +429,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         else if (selected.equals("Child")) { famRole = "Child"; frRole = "None"; }
                         else if (selected.equals("Friend")) { famRole = "Child"; frRole = "Friend (Team)"; } 
                         
-                        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
-                        localDb.updateCitizenRole(nodeUid, famRole, frRole, frRole.contains("Friend"));
+                        viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, frRole.contains("Friend"));
                         
                         String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
@@ -402,7 +439,6 @@ public class PersonDetailsActivity extends BaseActivityJava {
                             com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(myGrp).child("citizen_dossiers").child(nodeUid).updateChildren(cp);
                         }
                         android.widget.Toast.makeText(this, "Network Array Re-Mapped! Hit Save.", android.widget.Toast.LENGTH_SHORT).show();
-                        rebuildTaggingUI(); 
                     }).show();
             });
             categoryGroup.addView(branch);
@@ -499,6 +535,28 @@ public class PersonDetailsActivity extends BaseActivityJava {
         return tv;
     }
 
+    private View createSectionHeaderWithEdit(String text) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        
+        TextView tv = (TextView) createSectionHeader(text);
+        row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        
+        android.widget.ImageView editBtn = new android.widget.ImageView(this);
+        editBtn.setImageResource(android.R.drawable.ic_menu_edit);
+        editBtn.setColorFilter(getGradientStart()); // Fixed to Gradient Start for section level contrast
+        int iSize = getResponsiveIconQuota();
+        editBtn.setPadding(10, 10, 10, 10);
+        editBtn.setOnClickListener(v -> {
+            toggleEditMode(true);
+            android.widget.Toast.makeText(this, "Profile Unlocked for Forensic Update", android.widget.Toast.LENGTH_SHORT).show();
+        });
+        row.addView(editBtn, new LinearLayout.LayoutParams(iSize, iSize));
+        
+        return row;
+    }
+
     private View wrapInAclGrid(View v) {
         android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
         lp.width = 0;
@@ -509,30 +567,53 @@ public class PersonDetailsActivity extends BaseActivityJava {
     }
 
     private EditText createFormField(String label, String hint, int inputType, int iconRes, boolean isMandatory) {
-        LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(0, 0, 0, 25);
+        return createFormField(label, hint, inputType, iconRes, isMandatory, false);
+    }
 
-        // 🚀 PILLAR 11: Label-and-Box Format
+    private EditText createFormField(String label, String hint, int inputType, int iconRes, boolean isMandatory, boolean isProfileSource) {
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.HORIZONTAL);
+        wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        wrapper.setPadding(0, 0, 0, 15);
+        wrapper.setWeightSum(3.0f);
+
+        // 🚀 ROW-WISE PROTOCOL: Label on Left (1.0f weight)
         TextView tvLabel = new TextView(this);
         String labelHtml = isMandatory ? "<b>" + label + " <font color='#FF1744'>(*)</font></b>" : "<b>" + label + "</b>";
         tvLabel.setText(android.text.Html.fromHtml(labelHtml));
         tvLabel.setTextColor(getTextColor());
         UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
-        tvLabel.setPadding(10, 0, 0, 15);
-        wrapper.addView(tvLabel);
+        tvLabel.setPadding(10, 0, 15, 0); // Side padding for box separation
+        wrapper.addView(tvLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         EditText et = new EditText(this);
         String hintHtml = isMandatory ? hint + " <font color='#FF1744'>(*)</font>" : hint;
         et.setHint(android.text.Html.fromHtml(hintHtml));
         et.setHintTextColor(getSecondaryTextColor());
         et.setTextColor(getTextColor());
-        int boxPad = getResponsivePaddingQuota() + 10;
-        et.setPadding(boxPad, boxPad, boxPad, boxPad);
+        
+        // 🚀 QA Fix: Master Profile Verified Style!
+        if (isSelf && isProfileSource) {
+            et.setTypeface(null, android.graphics.Typeface.BOLD);
+            et.setEnabled(false); // Non-editable if data is managed in main Profile
+            android.graphics.drawable.GradientDrawable border = new android.graphics.drawable.GradientDrawable();
+            border.setColor(getCardColor());
+            border.setStroke(4, getGradientStart()); // Global Identity Border
+            border.setCornerRadius(30f);
+            et.setBackground(border);
+        } else {
+            applySolidCardGeometry(et, getCardColor(), 30f);
+            et.setEnabled(isSelf);
+        }
+
+        // 📏 L7 Standard: 20px Precision Vertical Padding
+        int horPad = getResponsivePaddingQuota();
+        int verPad = scale(20); 
+        et.setPadding(horPad, verPad, horPad, verPad);
+        
         et.setTextSize(16);
         et.setInputType(inputType);
         et.setSingleLine(true);
-        et.setEnabled(isSelf);
         
         if (inputType == InputType.TYPE_CLASS_NUMBER) {
             et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
@@ -547,14 +628,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
             et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
         }
 
+        // Icons handled natively within the box for tactile reference
         android.graphics.drawable.Drawable icon = getResources().getDrawable(iconRes, null);
         icon.setTint(getGradientStart());
         et.setCompoundDrawablesWithIntrinsicBounds(icon, null, null, null);
-        et.setCompoundDrawablePadding(30);
+        et.setCompoundDrawablePadding(25);
         
-        applySolidCardGeometry(et, getCardColor(), 30f); // 🚀 L7 Standard: 30f radius
-        wrapper.addView(et);
-        
+        wrapper.addView(et, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2.0f));
         formBox.addView(wrapper);
         return et;
     }
@@ -632,6 +712,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         // 🚀 Triggers the DB fetch entirely off the Main UI Thread architecture!
         viewModel.fetchDossier(this, prefs.getString("active_group", null), targetUid);
+        viewModel.fetchLocalRoster(this);
+        
+        viewModel.getRosterLiveData().observe(this, this::rebuildTaggingUI);
         
         viewModel.getChangeLogLiveData().observe(this, logs -> {
             if (logs == null || logs.isEmpty()) {
@@ -660,17 +743,23 @@ public class PersonDetailsActivity extends BaseActivityJava {
     }
 
     private AutoCompleteTextView createDropdownField(String label, String hint, int iconRes, boolean isMandatory) {
+        return createDropdownField(label, hint, iconRes, isMandatory, false);
+    }
+
+    private AutoCompleteTextView createDropdownField(String label, String hint, int iconRes, boolean isMandatory, boolean isProfileSource) {
         LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setPadding(0, 0, 0, 25);
+        wrapper.setOrientation(LinearLayout.HORIZONTAL);
+        wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        wrapper.setPadding(0, 0, 0, 15);
+        wrapper.setWeightSum(3.0f);
 
         TextView tvLabel = new TextView(this);
         String labelHtml = isMandatory ? "<b>" + label + " <font color='#FF1744'>(*)</font></b>" : "<b>" + label + "</b>";
         tvLabel.setText(android.text.Html.fromHtml(labelHtml));
         tvLabel.setTextColor(getTextColor());
         UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
-        tvLabel.setPadding(10, 0, 0, 15);
-        wrapper.addView(tvLabel);
+        tvLabel.setPadding(10, 0, 15, 0);
+        wrapper.addView(tvLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         AutoCompleteTextView actv = new AutoCompleteTextView(this);
         String hintHtml = isMandatory ? hint + " <font color='#FF1744'>(*)</font>" : hint;
@@ -683,19 +772,70 @@ public class PersonDetailsActivity extends BaseActivityJava {
         actv.setOnClickListener(v -> actv.showDropDown());
         actv.setDropDownBackgroundDrawable(createPopupBackground());
         
-        applySolidCardGeometry(actv, getCardColor(), 30f);
-        int ddPad = getResponsivePaddingQuota() + 10;
-        actv.setPadding(ddPad, ddPad, ddPad, ddPad);
+        if (isSelf && isProfileSource) {
+            actv.setTypeface(null, android.graphics.Typeface.BOLD);
+            actv.setEnabled(false); // Non-editable
+            android.graphics.drawable.GradientDrawable border = new android.graphics.drawable.GradientDrawable();
+            border.setColor(getCardColor());
+            border.setStroke(4, getGradientStart()); // Global Identity Border
+            border.setCornerRadius(30f);
+            actv.setBackground(border);
+        } else {
+            applySolidCardGeometry(actv, getCardColor(), 30f);
+            actv.setEnabled(isSelf);
+        }
+
+        // 📏 L7 Standard: 20px Precision Vertical Padding
+        int horPad = getResponsivePaddingQuota();
+        int verPad = scale(20); 
+        actv.setPadding(horPad, verPad, horPad, verPad);
+        
         android.graphics.drawable.Drawable icon = getResources().getDrawable(iconRes, null);
         icon.setTint(getGradientStart());
         actv.setCompoundDrawablesWithIntrinsicBounds(icon, null, null, null);
-        actv.setCompoundDrawablePadding(getResponsivePaddingQuota());
+        actv.setCompoundDrawablePadding(25);
         
-        actv.setEnabled(isSelf);
-        wrapper.addView(actv);
-        
+        wrapper.addView(actv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2.0f));
         formBox.addView(wrapper);
         return actv;
+    }
+
+
+    private void toggleEditMode(boolean enabled) {
+        etFullName.setEnabled(enabled);
+        etPhone.setEnabled(enabled);
+        etDob.setEnabled(enabled);
+        etGender.setEnabled(enabled);
+        etOrgName.setEnabled(enabled);
+        etDeptName.setEnabled(enabled);
+        etCountry.setEnabled(enabled);
+        etState.setEnabled(enabled);
+        etCity.setEnabled(enabled);
+        etPincode.setEnabled(enabled);
+        etAddress.setEnabled(enabled);
+        etEmergencyNote.setEnabled(enabled);
+        
+        if (enabled) {
+            // Change identity borders to "Active Edit" orange/gold
+            android.graphics.drawable.GradientDrawable activeBorder = new android.graphics.drawable.GradientDrawable();
+            activeBorder.setColor(getCardColor());
+            activeBorder.setStroke(6, android.graphics.Color.parseColor("#FFD600")); // Warn: Identity modification in progress
+            activeBorder.setCornerRadius(30f);
+            
+            // Apply to all core fields
+            etFullName.setBackground(activeBorder);
+            etOrgName.setBackground(activeBorder);
+            etDeptName.setBackground(activeBorder);
+            etPhone.setBackground(activeBorder);
+            etDob.setBackground(activeBorder);
+            etGender.setBackground(activeBorder);
+            etCountry.setBackground(activeBorder);
+            etState.setBackground(activeBorder);
+            etCity.setBackground(activeBorder);
+            etPincode.setBackground(activeBorder);
+            etAddress.setBackground(activeBorder);
+            etEmergencyNote.setBackground(activeBorder);
+        }
     }
 
     private void saveCitizenData() {
@@ -705,7 +845,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
         
         java.util.Map<String, String> payload = new java.util.HashMap<>();
-        payload.put("fullName", etFullName.getText().toString());
+        
+        // 🚀 QA Fix: Fetch current data from ViewModel if UI field is removed
+        String currentName = (viewModel.getDossierLiveData().getValue() != null) ? 
+                             viewModel.getDossierLiveData().getValue().get("fullName") : "";
+        payload.put("fullName", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
+        
         payload.put("phone", etPhone.getText().toString());
         payload.put("dob", etDob.getText().toString());
         payload.put("gender", etGender.getText().toString());
@@ -715,6 +860,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
         payload.put("city", etCity.getText().toString());
         payload.put("pincode", etPincode.getText().toString());
         payload.put("emergencyNote", etEmergencyNote.getText().toString());
+        payload.put("orgName", etOrgName.getText().toString());
+        payload.put("deptName", etDeptName.getText().toString());
         payload.put("safeZoneName", etSafeZoneName.getText().toString());
         payload.put("safeZoneRadius", etSafeZoneRadius.getText().toString());
         
@@ -734,8 +881,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         // 🚀 MVVM Architecture: Route payload down into exactly one Repository ViewModel layer!
         if (isSelf) {
+            String finalName = payload.get("fullName");
             // Instantly sync the local profile cache so ProfileActivity remains synchronized
-            prefs.edit().putString("user_nickname", etFullName.getText().toString())
+            prefs.edit().putString("user_nickname", finalName)
                 .putString("user_phone", etPhone.getText().toString())
                 .putString("user_dob", etDob.getText().toString())
                 .putString("user_gender", etGender.getText().toString())
@@ -745,6 +893,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 .putString("user_pincode", etPincode.getText().toString())
                 .putString("user_address", etAddress.getText().toString())
                 .putString("user_emergency_note", etEmergencyNote.getText().toString())
+                .putString("org_name", etOrgName.getText().toString())
+                .putString("department", etDeptName.getText().toString())
                 .apply();
         }
         

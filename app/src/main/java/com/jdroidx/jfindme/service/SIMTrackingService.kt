@@ -29,7 +29,7 @@ class SIMTrackingService : Service() {
     override fun onCreate() {
         super.onCreate()
         SystemLogger.i(TAG, "Forensic SIM Engine Initialized.")
-        dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(this)
+        dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
         
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, getNotification("Forensic Hardware Logging Active"))

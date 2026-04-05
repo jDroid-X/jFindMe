@@ -60,8 +60,21 @@ public class NotifActivity extends BaseActivityJava {
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
 
-        scroll.addView(createNotifList());
+        LinearLayout syncContainer = new LinearLayout(this);
+        syncContainer.setOrientation(LinearLayout.VERTICAL);
+        syncContainer.setClipChildren(false);
+        syncContainer.setClipToPadding(false);
+        
+        LinearLayout listRoot = new LinearLayout(this);
+        listRoot.setOrientation(LinearLayout.VERTICAL);
+        listRoot.addView(syncContainer);
+        listRoot.addView(createNotifList());
+
+        scroll.addView(listRoot);
         mainRoot.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+
+        // 🛰️ L7 HANDSHAKE: Live Sync Approval Listener
+        setupSyncHandshakeListener(syncContainer);
 
         // 🚀 QA Fix: Global Navigation Integrity
         String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
@@ -161,6 +174,97 @@ public class NotifActivity extends BaseActivityJava {
         card.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
 
         return card;
+    }
+
+    private void setupSyncHandshakeListener(LinearLayout container) {
+        String myUid = getSharedPreferences("system_registry", MODE_PRIVATE).getString("user_uid", null);
+        if (myUid == null) myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        if (myUid == null) return;
+
+        com.google.firebase.database.DatabaseReference ref = com.google.firebase.database.FirebaseDatabase.getInstance()
+                .getReference("users").child(myUid).child("geofence_sync_requests");
+
+        ref.addValueEventListener(new com.google.firebase.database.ValueEventListener() {
+            @Override
+            public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
+                container.removeAllViews();
+                for (com.google.firebase.database.DataSnapshot snap : snapshot.getChildren()) {
+                    String status = snap.child("status").getValue(String.class);
+                    if ("PENDING_ACCEPTANCE".equals(status)) {
+                        String zoneName = snap.child("zone_name").getValue(String.class);
+                        String groupId = snap.child("group_id").getValue(String.class);
+                        container.addView(createSyncApprovalCard(snap.getKey(), zoneName, groupId));
+                    }
+                }
+            }
+            @Override public void onCancelled(com.google.firebase.database.DatabaseError error) {}
+        });
+    }
+
+    private View createSyncApprovalCard(String requestId, String name, String group) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCardWithOverride(this, card, "CARD_DASHBOARD", 1.25f);
+        int p = getResponsivePaddingQuota();
+        card.setPadding(p, p, p, p);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(p * 2, p * 2, p * 2, p); card.setLayoutParams(lp);
+
+        TextView t = new TextView(this); t.setText("SAFEZONE ASSIGNMENT REQUEST"); UiArchitect.applyText(this, t, "TEXT_LABEL"); card.addView(t);
+        TextView b = new TextView(this); b.setText("Admin has assigned '" + name + "' to your hardware node. Accept to sync coordinates?");
+        b.setTextColor(getTextColor()); b.setTextSize(12); b.setPadding(0, p, 0, p); card.addView(b);
+
+        LinearLayout row = new LinearLayout(this);
+        row.addView(createCapsuleButton("ACCEPT & SYNC", getGradientStart(), v -> processSyncAcceptance(requestId, name, group)));
+        row.addView(createCapsuleButton("REJECT", Color.GRAY, v -> {
+            String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            if (myUid != null) com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(myUid).child("geofence_sync_requests").child(requestId).child("status").setValue("REJECTED");
+        }));
+        card.addView(row);
+        return card;
+    }
+
+    private View createCapsuleButton(String text, int color, View.OnClickListener cl) {
+        TextView b = new TextView(this);
+        b.setText(text); b.setTextColor(Color.WHITE); b.setGravity(Gravity.CENTER); b.setPadding(30, 20, 30, 20);
+        b.setTypeface(null, android.graphics.Typeface.BOLD); b.setTextSize(11);
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setColor(color); g.setCornerRadius(100f); b.setBackground(g);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f); lp.setMargins(10, 10, 10, 10); b.setLayoutParams(lp);
+        b.setOnClickListener(cl);
+        return b;
+    }
+
+    private void processSyncAcceptance(String reqId, String name, String group) {
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.google.firebase.database.FirebaseDatabase.getInstance().getReference("groups").child(group).child("geofences").child(name)
+            .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
+                @Override
+                public void onDataChange(com.google.firebase.database.DataSnapshot snap) {
+                    if (snap.exists()) {
+                        Double lat = snap.child("lat").getValue(Double.class);
+                        Double lng = snap.child("lng").getValue(Double.class);
+                        Double rad = snap.child("radius").getValue(Double.class);
+                        if (lat != null && lng != null && rad != null) {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(NotifActivity.this);
+                            android.content.ContentValues v = new android.content.ContentValues();
+                            v.put("zone_id", name); v.put("name", name); v.put("lat", lat); v.put("lng", lng); v.put("radius", rad); v.put("sync_status", "ACCEPTED");
+                            db.saveSafeZone(v);
+                            
+                            // 🚀 TARGETED REFRESH: Force re-registration of hardware geofence
+                            com.jdroidx.jfindme.engine.location.GeofenceHelper helper = new com.jdroidx.jfindme.engine.location.GeofenceHelper(NotifActivity.this);
+                            String assignedTo = snap.child("assignedName").getValue(String.class);
+                            if (assignedTo == null) assignedTo = "ALL CONNECTED DEVICES";
+                            helper.addGeofence(name + "___" + assignedTo, lat, lng, rad.floatValue());
+                            
+                            String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                            if (myUid != null) com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(myUid).child("geofence_sync_requests").child(reqId).child("status").setValue("SYNC_CONFIRMED");
+                            android.widget.Toast.makeText(NotifActivity.this, "Forensic SafeZone Synchronized!", android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(NotifActivity.this);
+                }
+                @Override public void onCancelled(com.google.firebase.database.DatabaseError error) { com.jdroidx.jfindme.utils.AngelLoader.hide(NotifActivity.this); }
+            });
     }
 
     @Override

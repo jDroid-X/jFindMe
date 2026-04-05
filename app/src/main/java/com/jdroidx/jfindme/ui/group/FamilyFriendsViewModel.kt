@@ -36,7 +36,7 @@ class FamilyFriendsViewModel : ViewModel() {
 
     fun initializeCloudSync(context: android.content.Context) {
         // 🚀 PRIME DIRECTIVE: Yield the Local SQLite Database completely offline first!
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val offlineNodes = localDb.getOfflineRoster()
         if (offlineNodes.isNotEmpty()) {
             val cached = offlineNodes.map { 
@@ -140,7 +140,7 @@ class FamilyFriendsViewModel : ViewModel() {
                     
                     // 🚀 PRIME DIRECTIVE: Backup explicitly verified Firebase Target locally!
                     val safeUid = FirebaseAuth.getInstance().uid ?: "U_001"
-                    com.jdroidx.jfindme.data.local.DatabaseHelper(context).saveRosterNode(uid, name, roleTitle, "🟢 LIVE TARGET TRACKED", isAdmin, isFriend, 
+                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveRosterNode(uid, name, roleTitle, "🟢 LIVE TARGET TRACKED", isAdmin, isFriend, 
                         ownerName = "Cloud Mirror Scan", ownerDeviceId = safeUid, connectedDeviceId = uid, qrCode = "NETWORK_SYNC")
 
                     // Synchronization Loop Restraint

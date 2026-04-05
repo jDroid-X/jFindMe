@@ -33,7 +33,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
-        db = new DatabaseHelper(this);
+        db = DatabaseHelper.getInstance(this);
         rootLayer = new FrameLayout(this);
         rootLayer.setBackgroundColor(getPrimaryColor());
 

@@ -12,11 +12,11 @@ import java.util.*
  * Citizen Database Engine (L7 Global Architect)
  * V38 FINAL PRODUCTION RECONSTRUCTION: Forensic Schema Hardening (Zero-Gap Wipe).
  */
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        private const val DATABASE_VERSION = 40 // 🚀 V40: Forensic Version Hardening & Downgrade Recovery
+        private const val DATABASE_VERSION = 45 // 🚀 V45: Forensic Geofence Sync Integration
         private const val MAX_DATETIME = 253402300799000L
         
         private const val TABLE_PERSONAL = "personal_table"
@@ -29,6 +29,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val TABLE_SIM_INVENTORY = "sim_inventory" 
         private const val TABLE_SIM_TRANS = "sim_transaction" 
         private const val TABLE_SYNC_QUEUE = "geofenc_sync_queue_table" // 🚀 Reliable Sync Engine
+        private const val TABLE_SAFE_ZONE_GROUPS = "SafeZoneGroup_Table" // 🚀 Master-Child Cluster Mapping
+        private const val TABLE_GEOFENCE_LOGS = "GeofenceLog_Table" // 🚀 Forensic Transition Archival
 
         private const val COL_FLAG_A = "flag_a"
         private const val COL_FLAG_B = "flag_b"
@@ -38,6 +40,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COL_REF_C = "ref_c"
         private const val EXT_FIELDS = "$COL_FLAG_A INTEGER, $COL_FLAG_B INTEGER, $COL_FLAG_C INTEGER, $COL_REF_A TEXT, $COL_REF_B TEXT, $COL_REF_C TEXT"
         private const val LINEAGE_FIELDS = "owner_name TEXT, owner_device_id TEXT, connected_device_id TEXT, qr_code_ref TEXT"
+
+        @Volatile
+        private var instance: DatabaseHelper? = null
+
+        @JvmStatic
+        fun getInstance(context: Context): DatabaseHelper {
+            return instance ?: synchronized(this) {
+                instance ?: DatabaseHelper(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.enableWriteAheadLogging()
+        try {
+            db.execSQL("PRAGMA synchronous = NORMAL")
+            db.execSQL("PRAGMA busy_timeout = 5000")
+        } catch (e: android.database.sqlite.SQLiteException) {
+            // Code 0 SQLITE_OK is technically a success but returns results.
+            // Ignore the result-set warning to maintain atomic sync.
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -47,6 +71,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_SAFE_ZONES (zone_id TEXT PRIMARY KEY, name TEXT, target TEXT, uid TEXT, lat REAL, lng REAL, radius REAL, assigned_uids TEXT, sync_status TEXT DEFAULT 'LOCAL', created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS)")
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_ALERTS (alert_id TEXT PRIMARY KEY, uid TEXT, timestamp INTEGER, title TEXT, message TEXT, readable_time TEXT, $EXT_FIELDS)")
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_HISTORY (log_id TEXT PRIMARY KEY, uid TEXT, profile_name TEXT, relationship TEXT, timestamp INTEGER, from_datetime INTEGER, to_datetime INTEGER, ping_count INTEGER DEFAULT 1, lat REAL, lng REAL, speed REAL, battery INTEGER, sos_active INTEGER, address TEXT, modified_at INTEGER, modified_reason TEXT, readable_time TEXT, $EXT_FIELDS, $LINEAGE_FIELDS)")
+        
+        // 🚀 MASTER-CHILD CLUSTER HUB (L7 Reporting & Analytical Structure)
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_SAFE_ZONE_GROUPS (" +
+                "log_id TEXT PRIMARY KEY, zone_id TEXT, " +
+                "device_id_a TEXT, assigned_device_ids TEXT, " +
+                "start_time INTEGER, end_time INTEGER, active_days TEXT, " +
+                "is_zone_active INTEGER DEFAULT 1, alerts_enabled INTEGER DEFAULT 1, " +
+                "address TEXT, sync_status TEXT DEFAULT 'LOCAL', " +
+                "created_at INTEGER, modified_at INTEGER, readable_time TEXT, " +
+                "$EXT_FIELDS, $LINEAGE_FIELDS)")
         
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_PAIRING (" +
                 "pairing_id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -89,7 +123,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 "flag_a INTEGER DEFAULT 0, flag_b INTEGER DEFAULT 0, flag_c INTEGER DEFAULT 0, " +
                 "ref_a TEXT, ref_b TEXT, ref_c TEXT)")
         
-        seedDefaultSafeZones(db)
+        // 🚀 MASTER-CHILD LOGGING HUB (V42: Human Readable & Analytical Transit Archival)
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_GEOFENCE_LOGS (" +
+                "log_id TEXT PRIMARY KEY, avatar_name TEXT, " +
+                "zone_id TEXT, zone_name TEXT, status TEXT, " +
+                "lat REAL, lng REAL, timestamp INTEGER, readable_time TEXT, " +
+                "sync_status TEXT DEFAULT 'LOCAL', " +
+                "$EXT_FIELDS, $LINEAGE_FIELDS)")
+        
+        // seedDefaultSafeZones(db) // 🚀 QA Removal: No Null-Island Placeholders
     }
 
     override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
@@ -103,6 +145,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SIM_INVENTORY")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SIM_TRANS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SYNC_QUEUE")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_SAFE_ZONE_GROUPS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_GEOFENCE_LOGS")
         onCreate(db)
     }
 
@@ -203,15 +247,49 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put("owner_device_id", ownerDeviceId ?: "N/A")
             put("connected_device_id", connectedDeviceId ?: "N/A")
             put("qr_code_ref", qrCode ?: "N/A")
+            put("readable_time", getReadableNow())
             put("created_at", System.currentTimeMillis())
+            put("modified_at", System.currentTimeMillis())
+            put("start_datetime", System.currentTimeMillis())
+        }
+        val db = this.writableDatabase
+        db.insertWithOnConflict(TABLE_ROSTER, null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /**
+     * 🚀 Roster Grouping Evolution: Updates both role and category (Family/Friends) across ALL ledgers.
+     */
+    fun updateRosterGrouping(uid: String, newRole: String, isFriend: Boolean) {
+        val db = this.writableDatabase
+        
+        // 📚 Ledger A: The Global Roster Table
+        val vRoster = ContentValues().apply {
+            put("role_title", newRole)
+            put("is_friend", if(isFriend) 1 else 0)
             put("modified_at", System.currentTimeMillis())
             put("readable_time", getReadableNow())
         }
-        this.writableDatabase.insertWithOnConflict(TABLE_ROSTER, null, v, SQLiteDatabase.CONFLICT_REPLACE)
+        db.update(TABLE_ROSTER, vRoster, "uid=?", arrayOf(uid))
+        
+        // 📚 Ledger B: The Personal Dossier (UI Single-Source-of-Truth)
+        val vDossier = ContentValues().apply {
+            put("role_family", if(isFriend) "None" else newRole)
+            put("role_friend", if(isFriend) newRole else "None")
+        }
+        db.update(TABLE_PERSONAL, vDossier, "uid=?", arrayOf(uid))
+    }
+
+    fun updateRosterRole(uid: String, newRole: String) {
+        val v = ContentValues().apply {
+            put("role_title", newRole)
+            put("modified_at", System.currentTimeMillis())
+            put("readable_time", getReadableNow())
+        }
+        this.writableDatabase.update(TABLE_ROSTER, v, "uid=?", arrayOf(uid))
     }
 
     fun ensureDefaultZones() {
-        seedDefaultSafeZones(this.writableDatabase)
+        // seedDefaultSafeZones(this.writableDatabase)
     }
 
     private fun seedDefaultSafeZones(db: SQLiteDatabase) {
@@ -449,6 +527,41 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    /**
+     * 🚀 MASTER-CHILD CLUSTER SYNC: Bridges the SafeZone Registry with Assigned Device Groups
+     * V41 Architectural Pivot: Ensuring all geotech and temporal data is linked to the target nodes.
+     */
+    fun syncSafeZoneGroup(zoneId: String, assignedNodes: String, start: Int, end: Int, days: String, isActive: Int, alerts: Int, addr: String) {
+        val db = this.writableDatabase
+        val now = System.currentTimeMillis()
+        val readable = getReadableNow()
+        
+        val v = ContentValues().apply {
+            put("zone_id", zoneId)
+            put("assigned_device_ids", assignedNodes)
+            put("start_time", start)
+            put("end_time", end)
+            put("active_days", days)
+            put("is_zone_active", isActive)
+            put("alerts_enabled", alerts)
+            put("address", addr)
+            put("sync_status", "CLOUD_SYNCED")
+            put("modified_at", now)
+            put("readable_time", readable)
+        }
+        
+        // 🚀 QA Fix: Upsert logic via CONFLICT_REPLACE or manual presence check
+        db.query(TABLE_SAFE_ZONE_GROUPS, arrayOf("log_id"), "zone_id=?", arrayOf(zoneId), null, null, null).use {
+            if (it.moveToFirst()) {
+                db.update(TABLE_SAFE_ZONE_GROUPS, v, "zone_id=?", arrayOf(zoneId))
+            } else {
+                v.put("log_id", "G_${zoneId}_$now")
+                v.put("created_at", now)
+                db.insert(TABLE_SAFE_ZONE_GROUPS, null, v)
+            }
+        }
+    }
+
     fun queueHandshake(type: String, pId: String, dest: String) {
         val db = this.writableDatabase
         val now = System.currentTimeMillis()
@@ -576,10 +689,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 row["lng"] = c.getDouble(c.getColumnIndexOrThrow("lng"))
                 row["radius"] = c.getDouble(c.getColumnIndexOrThrow("radius"))
                 row["assigned_uids"] = c.getString(c.getColumnIndexOrThrow("assigned_uids")) ?: ""
+                row["flag_a"] = c.getInt(c.getColumnIndexOrThrow(COL_FLAG_A)) // 🚀 QA Toggle Mapping
                 return row
             }
         }
         return null
+    }
+
+    /**
+     * 🚀 Geofence Integrity Check: Resolves if a specific zone has active siren alerts.
+     */
+    fun isGeofenceAlertEnabled(zoneId: String): Boolean {
+        val db = this.readableDatabase
+        db.query(TABLE_SAFE_ZONES, arrayOf(COL_FLAG_A), "zone_id=?", arrayOf(zoneId), null, null, null).use {
+            if (it.moveToFirst()) return it.getInt(0) == 1
+        }
+        return true
     }
 
     fun getOfflineSafeZones(): List<Map<String, Any>> {
@@ -751,5 +876,87 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COL_FLAG_A, fA); put(COL_FLAG_B, fB); put(COL_FLAG_C, fC); put(COL_REF_A, rA ?: ""); put(COL_REF_B, rB ?: ""); put(COL_REF_C, rC ?: "")
         }
         this.writableDatabase.insert(TABLE_SIM_TRANS, null, v)
+    }
+
+    fun saveAlert(uid: String, title: String, message: String, flagA: Int = 0, flagB: Int = 0, flagC: Int = 0) {
+        val v = android.content.ContentValues().apply {
+            put("alert_id", java.util.UUID.randomUUID().toString())
+            put("uid", uid); put("timestamp", System.currentTimeMillis()); put("title", title); put("message", message)
+            put("readable_time", getReadableNow())
+            put(COL_FLAG_A, flagA); put(COL_FLAG_B, flagB); put(COL_FLAG_C, flagC)
+        }
+        this.writableDatabase.insert(TABLE_ALERTS, null, v)
+    }
+
+    fun getAlertHistory(uid: String): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        this.readableDatabase.query(TABLE_ALERTS, null, "uid=?", arrayOf(uid), null, null, "timestamp DESC").use {
+            while (it.moveToNext()) {
+                val map = mutableMapOf<String, Any>()
+                for (i in 0 until it.columnCount) {
+                    val name = it.getColumnName(i)
+                    val type = it.getType(i)
+                    when (type) {
+                        android.database.Cursor.FIELD_TYPE_INTEGER -> map[name] = it.getLong(i)
+                        android.database.Cursor.FIELD_TYPE_FLOAT -> map[name] = it.getDouble(i)
+                        android.database.Cursor.FIELD_TYPE_STRING -> map[name] = it.getString(i) ?: ""
+                        android.database.Cursor.FIELD_TYPE_BLOB -> map[name] = it.getBlob(i)
+                        else -> map[name] = ""
+                    }
+                }
+                list.add(map)
+            }
+        }
+        return list
+    }
+
+    // 🚀 MASTER-CHILD LOGGING HUB (V42: Human Readable & Analytical Transit Archival)
+
+    fun saveGeofenceLog(uid: String, avatarName: String, zoneId: String, zoneName: String, status: String, lat: Double = 0.0, lng: Double = 0.0) {
+        val now = System.currentTimeMillis()
+        val v = ContentValues().apply {
+            put("log_id", UUID.randomUUID().toString())
+            put("avatar_name", avatarName); put("zone_id", zoneId); put("zone_name", zoneName); put("status", status)
+            put("lat", lat); put("lng", lng); put("timestamp", now); put("readable_time", getReadableNow())
+            put(COL_FLAG_A, 0); put(COL_FLAG_B, 0); put(COL_FLAG_C, 0)
+            put("owner_name", uid); put("owner_device_id", ""); put("connected_device_id", ""); put("qr_code_ref", "")
+        }
+        val rowId = this.writableDatabase.insert(TABLE_GEOFENCE_LOGS, null, v)
+        SystemLogger.i("DatabaseHelper", "GEOFENCE_ARCHIVAL: Mission log archived for $avatarName at $zoneName. Status: $status. ROW_ID: $rowId")
+    }
+
+    fun getGeofenceLogs(avatarFilter: String? = null, zoneFilter: String? = null): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        val selection = StringBuilder()
+        val args = mutableListOf<String>()
+
+        if (!avatarFilter.isNullOrEmpty()) {
+            selection.append("avatar_name LIKE ?")
+            args.add("%$avatarFilter%")
+        }
+        if (!zoneFilter.isNullOrEmpty()) {
+            if (selection.isNotEmpty()) selection.append(" AND ")
+            selection.append("zone_id = ?")
+            args.add(zoneFilter)
+        }
+
+        val selStr = if (selection.isEmpty()) null else selection.toString()
+        val argArray = if (args.isEmpty()) null else args.toTypedArray()
+
+        this.readableDatabase.query(TABLE_GEOFENCE_LOGS, null, selStr, argArray, null, null, "timestamp DESC").use {
+            while (it.moveToNext()) {
+                val map = mutableMapOf<String, Any>()
+                for (i in 0 until it.columnCount) {
+                    val name = it.getColumnName(i)
+                    map[name] = when (it.getType(i)) {
+                        android.database.Cursor.FIELD_TYPE_INTEGER -> it.getLong(i)
+                        android.database.Cursor.FIELD_TYPE_FLOAT -> it.getDouble(i)
+                        else -> it.getString(i) ?: ""
+                    }
+                }
+                list.add(map)
+            }
+        }
+        return list
     }
 }

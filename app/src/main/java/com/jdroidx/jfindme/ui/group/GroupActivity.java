@@ -48,6 +48,8 @@ public class GroupActivity extends BaseActivityJava {
     private LinearLayout optionGatewayPanel;
     private LinearLayout remotePairingPanel;
     private LinearLayout localPairingPanel;
+    private LinearLayout rosterCard;
+    private View identityCardField; // 🚀 Master Trigger Persistence
     
     // Architecturally sound MVVM Background Execution Pipeline
     private GroupViewModel viewModel;
@@ -199,16 +201,19 @@ public class GroupActivity extends BaseActivityJava {
         root.setOrientation(LinearLayout.VERTICAL);
         // Padding is now managed by the Enterprise Matrix within Cards
 
-        // --- LAYER 1: IDENTITY CARD (Delegated to Enterprise Matrix) ---
+        // --- LAYER 1: IDENTITY CARD (Owner Tile 1) ---
         LinearLayout identityCard = new LinearLayout(this);
         identityCard.setOrientation(LinearLayout.VERTICAL);
         com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, identityCard, "CARD_STANDARD");
         identityCard.addView(buildIdentityBlock());
+        identityCard.setFocusable(true);
+        identityCard.setClickable(true);
+        this.identityCardField = identityCard; // 🚀 Store for Re-hydration
         
         int quota = getResponsivePaddingQuota();
         int topGap = getResponsiveHeaderTopQuota();
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(quota, topGap, quota, 40);
+        cardLp.setMargins(quota, topGap, quota, 30);
         root.addView(identityCard, cardLp);
 
         // --- LAYER 2: INTERACTIVE OPTION BLOCKS (DYNAMICALLY ROUTED) ---
@@ -218,26 +223,19 @@ public class GroupActivity extends BaseActivityJava {
 
         // 🚀 L7 Architecture Sync: Unified Margin Matrix for all Gateway Selection Panels
         LinearLayout.LayoutParams standardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        standardLp.setMargins(quota, 0, quota, scale(40));
+        standardLp.setMargins(quota, 0, quota, scale(30));
 
         root.addView(optionGatewayPanel, standardLp);
         root.addView(remotePairingPanel, standardLp);
         root.addView(localPairingPanel, standardLp);
 
-        // --- LAYER 3: ROSTER CARD ---
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.argb(80, Color.red(getSecondaryTextColor()), Color.green(getSecondaryTextColor()), Color.blue(getSecondaryTextColor())));
-        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 2);
-        divLp.setMargins(quota, 10, quota, 40);
-        root.addView(divider, divLp);
+        // --- LAYER 3: MASTER ROSTER WATERFALL (ORCHESTRATED) ---
+        rosterCard = (LinearLayout) buildActiveRosterList(identityCard, root);
+        root.addView(rosterCard);
 
-        LinearLayout rosterCard = new LinearLayout(this);
-        rosterCard.setOrientation(LinearLayout.VERTICAL);
-        applySolidCardGeometry(rosterCard, getCardColor(), 30f);
-        rosterCard.setPadding(0, 20, 0, 30);
-        rosterCard.addView(buildActiveRosterList());
-        root.addView(rosterCard, standardLp);
-
+        // --- LAYER 4: TECHNICAL FOOTER & RECOVERY ASSETS ---
+        root.addView(buildTechnicalFooter());
+        
         // Default State
         optionGatewayPanel.setVisibility(View.VISIBLE);
         remotePairingPanel.setVisibility(View.GONE);
@@ -252,6 +250,9 @@ public class GroupActivity extends BaseActivityJava {
 
         // Initial setup calls to ensure visibility states
         resetGateway();
+
+        // 🛰️ ARCHITECTURAL LISTENER: Watch for Remote Identity Matrix Changes (The "WhatsApp" Factor)
+        setupSignalMatrixListener();
 
         return mainRoot;
     }
@@ -319,7 +320,7 @@ public class GroupActivity extends BaseActivityJava {
     private View buildIdentityBlock() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(scale(30), scale(40), scale(30), scale(40)); 
+        row.setPadding(scale(25), scale(25), scale(25), scale(25)); 
         row.setGravity(Gravity.CENTER_VERTICAL);
         
         ImageView myAvatar = new ImageView(this);
@@ -340,7 +341,7 @@ public class GroupActivity extends BaseActivityJava {
         textBlock.setPadding(scale(40), 0, 0, 0);
         
         // --- 1. OWNER NAME ---
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
         String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
         
@@ -405,57 +406,135 @@ public class GroupActivity extends BaseActivityJava {
         return row;
     }
 
-    private View buildActiveRosterList() {
+
+    private View buildActiveRosterList(View trigger, ViewGroup animationRoot) {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         
-        TextView header = (TextView) createSectionHeader("DEVICES IN YOUR PAIRING GROUP: CALCULATING...");
-        container.addView(header);
-
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         String safeUid = (myUid != null) ? myUid : "MOCK_U123";
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(GroupActivity.this);
         
-        // 🚀 OWNER ROOT NODE
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
-        java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
-        String myName = myDos != null ? myDos.get("full_name") : "YOU";
+        // 🚀 1. INDEPENDENT GROUP HEADER TILE (Stats Card)
+        int rosterCount = db.getOfflineRoster().size() + 1;
+        LinearLayout statsCard = new LinearLayout(this);
+        statsCard.setOrientation(LinearLayout.VERTICAL);
+        applySolidCardGeometry(statsCard, getCardColor(), 25f);
+        statsCard.setPadding(scale(40), scale(20), scale(40), scale(20));
         
-        LinearLayout branchList = new LinearLayout(this);
-        branchList.setOrientation(LinearLayout.VERTICAL);
-        branchList.setVisibility(View.VISIBLE); 
+        TextView tvStats = new TextView(this);
+        tvStats.setText("TOTAL ACTIVE DEVICES IN GROUP: " + rosterCount);
+        tvStats.setTextColor(Color.parseColor("#FF5722")); 
+        tvStats.setTextSize(13f);
+        tvStats.setTypeface(null, Typeface.BOLD);
+        statsCard.addView(tvStats);
         
-        LinearLayout rootNode = buildTreeNode(safeUid, myName + " (Primary Admin)", true, true, branchList, "OWNER");
-        container.addView(rootNode);
-        container.addView(branchList);
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        headerLp.setMargins(scale(40), 10, scale(40), scale(30));
+        container.addView(statsCard, headerLp);
 
-        // 🛡️ ARCHITECTURAL FIX: Check Local Storage Only (Silence Enforcement)
-        java.util.List<java.util.Map<String, Object>> localRoster = db.getOfflineRoster();
-        if (localRoster.isEmpty()) {
-            header.setText("NO LOCAL TRACKING DATA FOUND.");
-        } else {
-            // Display existing local data immediately
-            renderLocalRoster(safeUid, branchList, header, localRoster);
+        int famCount = 0;
+        int friCount = 0;
+        java.util.List<java.util.Map<String, Object>> liveData = db.getOfflineRoster();
+        java.util.List<java.util.Map<String, Object>> famList = new java.util.ArrayList<>();
+        java.util.List<java.util.Map<String, Object>> friList = new java.util.ArrayList<>();
+
+        for (java.util.Map<String, Object> node : liveData) {
+            Object fr = node.get("is_friend");
+            boolean isF = false;
+            if (fr instanceof Boolean) isF = (Boolean) fr;
+            else if (fr instanceof Integer) isF = ((Integer) fr == 1);
+            else if (fr instanceof String) isF = ((String) fr).equals("1") || ((String) fr).equalsIgnoreCase("true");
+            
+            if (isF) {
+                friCount++;
+                friList.add(node);
+            } else {
+                famCount++;
+                famList.add(node);
+            }
         }
 
-        // Add a manual "Force Refresh" button for UI excellence
-        TextView refreshBtn = new TextView(this);
-        refreshBtn.setText("🔄 REFRESH CLOUD MATRIX");
-        refreshBtn.setTextColor(getGradientStart());
-        refreshBtn.setTextSize(10);
-        refreshBtn.setPadding(40, 0, 0, 20);
-        refreshBtn.setFocusable(true);
-        refreshBtn.setClickable(true);
-        refreshBtn.setOnClickListener(v -> initiateCloudSync(safeUid, branchList, header));
+        // 🚀 2. INDEPENDENT FAMILY NETWORK CONTAINER (Shadow Partitioned)
+        LinearLayout famMainContainer = new LinearLayout(this);
+        famMainContainer.setOrientation(LinearLayout.VERTICAL);
+        famMainContainer.setVisibility(View.GONE); // Default Hidden (Waterfall)
+
+        TextView famTitle = new TextView(this);
+        famTitle.setText("FAMILY NETWORK (" + famCount + ")");
+        famTitle.setTextColor(getGradientStart());
+        famTitle.setTextSize(13f);
+        famTitle.setTypeface(null, Typeface.BOLD);
+        famTitle.setPadding(scale(40), scale(30), 0, scale(20));
+        famMainContainer.addView(famTitle);
+
+        famMainContainer.addView(buildForensicMemberStack(famList, getGradientStart()));
         
-        // QA Fix: Tab/Enter sequence for all devices
-        refreshBtn.setOnKeyListener((v, k, e) -> {
-            if (e.getAction() == android.view.KeyEvent.ACTION_UP && (k == android.view.KeyEvent.KEYCODE_ENTER || k == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
-                v.performClick();
-                return true;
+        LinearLayout.LayoutParams famLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        famLp.setMargins(0, 0, 0, scale(30));
+        container.addView(famMainContainer, famLp);
+
+        // 🚀 3. INDEPENDENT FRIENDS NETWORK CONTAINER (Shadow Partitioned)
+        LinearLayout friMainContainer = new LinearLayout(this);
+        friMainContainer.setOrientation(LinearLayout.VERTICAL);
+        friMainContainer.setVisibility(View.GONE); // Default Hidden (Waterfall)
+
+        TextView friTitle = new TextView(this);
+        friTitle.setText("FRIENDS NETWORK (" + friCount + ")");
+        friTitle.setTextColor(getGradientEnd());
+        friTitle.setTextSize(13f);
+        friTitle.setTypeface(null, Typeface.BOLD);
+        friTitle.setPadding(scale(40), scale(10), 0, scale(20));
+        friMainContainer.addView(friTitle);
+
+        friMainContainer.addView(buildForensicMemberStack(friList, getGradientEnd()));
+        
+        LinearLayout.LayoutParams friLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        friLp.setMargins(0, 0, 0, scale(30));
+        container.addView(friMainContainer, friLp);
+
+        // 🏎️ Master Waterfall Controller: Owner Member Card -> Recursive Reveal
+        trigger.setOnClickListener(v -> {
+            android.transition.TransitionManager.beginDelayedTransition(animationRoot, new android.transition.AutoTransition().setDuration(400));
+            int targetVis = (famMainContainer.getVisibility() == View.VISIBLE) ? View.GONE : View.VISIBLE;
+            famMainContainer.setVisibility(targetVis);
+            friMainContainer.setVisibility(targetVis);
+            
+            // Interaction Feedback (Subtitle Update)
+            if (trigger instanceof ViewGroup) {
+                View textLayer = ((ViewGroup) trigger).getChildAt(0);
+                if (textLayer instanceof LinearLayout) {
+                   for (int i=0; i<((LinearLayout)textLayer).getChildCount(); i++) {
+                       View c = ((LinearLayout)textLayer).getChildAt(i);
+                       if (c instanceof TextView && ((TextView)c).getText().toString().contains("TAP TO")) {
+                           ((TextView)c).setText(targetVis == View.VISIBLE ? "SHRINK NETWORK MATRIX ▲" : "TAP TO EXPAND NETWORK MATRIX ▼");
+                       }
+                   }
+                }
             }
-            return false;
         });
+
+        // 🚀 Add refresh and linked assets (Nested inside container now for better orchestration)
+        TextView refreshBtn = new TextView(this);
+        refreshBtn.setText("🔄 FORCE CLOUD MATRIX REFRESH");
+        refreshBtn.setTextColor(getSecondaryTextColor());
+        refreshBtn.setTextSize(scaleText(9));
+        refreshBtn.setAlpha(0.7f);
+        refreshBtn.setPadding(scale(40), scale(20), scale(40), scale(20));
+        refreshBtn.setClickable(true);
+        refreshBtn.setFocusable(true);
+        refreshBtn.setOnClickListener(v -> initiateCloudSync(safeUid, new LinearLayout(this), null));
         container.addView(refreshBtn);
+
+        // 🛡️ GATHER LOCAL ROSTER (Legacy Partitioning)
+        java.util.List<java.util.Map<String, Object>> localRoster = db.getOfflineRoster();
+        if (!localRoster.isEmpty()) {
+            LinearLayout branchList = new LinearLayout(this);
+            branchList.setOrientation(LinearLayout.VERTICAL);
+            branchList.setPadding(scale(40), 0, scale(40), 0);
+            renderLocalRoster(safeUid, branchList, null, localRoster);
+            container.addView(branchList);
+        }
 
         return container;
     }
@@ -494,168 +573,6 @@ public class GroupActivity extends BaseActivityJava {
         });
     }
 
-    private void renderLocalRoster(String safeUid, LinearLayout branchList, TextView header, java.util.List<java.util.Map<String, Object>> roster) {
-        branchList.removeAllViews();
-        int count = 0;
-        
-        java.util.List<String> familyIds = new java.util.ArrayList<>();
-        java.util.List<String> friendIds = new java.util.ArrayList<>();
-
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
-        java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
-        String myGender = myDos != null ? myDos.get("user_gender") : "Male";
-        String myName = (myDos != null && myDos.containsKey("full_name")) ? myDos.get("full_name") : "YOU";
-
-        // NETWORK GATEWAY IDENTITY (SELF)
-        branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
-        branchList.addView(buildTreeNode(safeUid, myName, true, true, null, "OWNER"));
-
-        for (java.util.Map<String, Object> node : roster) {
-            String rUid = (String) node.get("uid");
-            if (rUid == null || rUid.equals(safeUid)) continue;
-            
-            Object frFlag = node.get("is_friend");
-            boolean isFriendNode = (frFlag instanceof Boolean) ? (Boolean) frFlag : false;
-            
-            if (isFriendNode) friendIds.add(rUid);
-            else familyIds.add(rUid);
-            count++;
-        }
-
-        // 🚀 FAMILY GROUP HIERARCHY
-        if (!familyIds.isEmpty()) {
-            branchList.addView(createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")"));
-            for (String fid : familyIds) {
-                java.util.Map<String, String> fDos = db.getLocalDossier(fid);
-                String roleStr = "Member";
-                if (fDos != null) {
-                    String rFam = fDos.get("role_family");
-                    if (rFam != null && !rFam.equals("None")) roleStr = rFam;
-                }
-                branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
-            }
-        }
-
-        // 🚀 FRIENDS GROUP HIERARCHY
-        if (!friendIds.isEmpty()) {
-            branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
-            for (String frid : friendIds) {
-                branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
-            }
-        }
-
-        header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (count + 1));
-    }
-    
-    private void fetchFriendMatrix(String safeUid, LinearLayout branchList, StringBuilder authorizedUids, TextView header, long currentCount) {
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(safeUid).child("friend_matrix")
-            .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
-                @Override
-                public void onDataChange(com.google.firebase.database.DataSnapshot fmSnap) {
-                    java.util.List<String> familyIds = new java.util.ArrayList<>();
-                    java.util.List<String> friendIds = new java.util.ArrayList<>();
-                    
-                    com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
-                    int totalP2P = 0;
-                    
-                    // 🚀 SSOT Integration: Use the Forensic Roster Table for Group Partitioning
-                    java.util.List<java.util.Map<String, Object>> roster = db.getOfflineRoster();
-
-                    // 🚀 STEP 1: ZERO-GAP SYNC - Ensure every member in the cloud has a local Roster presence
-                    for (com.google.firebase.database.DataSnapshot p2pMember : fmSnap.getChildren()) {
-                        String memberId = p2pMember.getKey();
-                        if (memberId == null || memberId.equals(safeUid)) continue;
-                        
-                        boolean exists = false;
-                        for (java.util.Map<String, Object> node : roster) {
-                            if (memberId.equals(node.get("uid"))) { exists = true; break; }
-                        }
-                        
-                        if (!exists) {
-                            // 🛰️ Architectural Heal: Inject missing node into the Forensic Roster
-                            db.saveRosterNode(memberId, "Relational Identity (" + memberId.substring(0, 5) + ")", "Member", "P2P Synchronized", false, false, "System Root", safeUid, memberId, "AUTO_SYNC");
-                        }
-                    }
-
-                    // 🚀 STEP 2: ROSTER-DRIVEN GROUPING - Only the local table decides what to display
-                    // Re-fetch roster after sync to ensure 100% parity
-                    java.util.List<java.util.Map<String, Object>> liveRoster = db.getOfflineRoster();
-                    
-                    for (java.util.Map<String, Object> node : liveRoster) {
-                        String rUid = (String) node.get("uid");
-                        if (rUid == null || rUid.equals(safeUid)) continue;
-                        if (authorizedUids.toString().contains(rUid)) continue; 
-                        
-                        // Verification: Only display nodes that are part of the current active group in the cloud
-                        if (fmSnap.hasChild(rUid)) {
-                            authorizedUids.append(rUid).append(",");
-                            totalP2P++;
-                            
-                            Object frFlag = node.get("is_friend");
-                            boolean isFriendNode = (frFlag instanceof Boolean) ? (Boolean) frFlag : false;
-                            
-                            if (isFriendNode) friendIds.add(rUid);
-                            else familyIds.add(rUid);
-                        }
-                    }
-                    
-                    header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (currentCount + totalP2P));
-                    branchList.removeAllViews();
-
-                    java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
-                    String myGender = myDos != null ? myDos.get("user_gender") : "Male";
-
-                    String myName = (myDos != null && myDos.containsKey("fullName")) ? myDos.get("fullName") : getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("user_nickname", "Network Admin");
-                    
-                    // 🚀 NETWORK GATEWAY IDENTITY (SELF)
-                    branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
-                    branchList.addView(buildTreeNode(safeUid, myName, true, true, null, "OWNER"));
-                    
-                    // 🚀 FAMILY GROUP HIERARCHY
-                    if (!familyIds.isEmpty()) {
-                        View familyHeader = createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")");
-                        branchList.addView(familyHeader);
-                        
-                        int childCount = 0;
-                        for (String fid : familyIds) {
-                            java.util.Map<String, String> fDos = db.getLocalDossier(fid);
-                            String roleStr = "Member";
-                            if (fDos != null) {
-                                String rFam = fDos.get("role_family");
-                                String gender = fDos.get("user_gender");
-                                if (rFam != null) {
-                                    if (rFam.equals("Child")) {
-                                        childCount++;
-                                        String sonDaughter = (gender != null && gender.equalsIgnoreCase("Female")) ? "Daughter" : "Son";
-                                        roleStr = "Child #" + childCount + " (" + sonDaughter + ")";
-                                    } else if (rFam.equals("Spouse")) {
-                                        if (gender != null && gender.equalsIgnoreCase(myGender)) {
-                                            roleStr = "Spouse";
-                                        } else {
-                                            roleStr = (gender != null && gender.equalsIgnoreCase("Female")) ? "Wife" : "Husband";
-                                        }
-                                    } else {
-                                        roleStr = rFam;
-                                    }
-                                }
-                            }
-                            branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
-                        }
-                    }
-
-                    // 🚀 FRIENDS GROUP HIERARCHY
-                    if (!friendIds.isEmpty()) {
-                        branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
-                        for (String frid : friendIds) {
-                            branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
-                        }
-                    }
-                }
-                @Override
-                public void onCancelled(com.google.firebase.database.DatabaseError error) {}
-            });
-    }
-
     private View createGroupHeading(String title) {
         android.widget.CheckBox cb = new android.widget.CheckBox(this);
         cb.setButtonTintList(android.content.res.ColorStateList.valueOf(getWidgetTint()));
@@ -664,7 +581,13 @@ public class GroupActivity extends BaseActivityJava {
         cb.setChecked(true);
         cb.setClickable(true);
         cb.setFocusable(true);
-        cb.setPadding(20, 20, 20, 20);
+        cb.setPadding(scale(40), scale(20), scale(40), scale(10));
+        
+        android.widget.LinearLayout.LayoutParams cbLp = new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        cbLp.setMargins(0, scale(60), 0, scale(10)); 
+        cb.setLayoutParams(cbLp);
+        
+        com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, cb, "TEXT_TITLE");
         
         // QA Focus Mapping: Tab/Enter sequence
         cb.setOnKeyListener((v, k, e) -> {
@@ -675,9 +598,6 @@ public class GroupActivity extends BaseActivityJava {
             return false;
         });
 
-        android.widget.LinearLayout.LayoutParams cbLp = new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-        cbLp.setMargins(60, 10, 0, 5);
-        cb.setLayoutParams(cbLp);
         return cb;
     }
     
@@ -704,7 +624,7 @@ public class GroupActivity extends BaseActivityJava {
         node.setElevation(8f);
         
         LinearLayout.LayoutParams nodeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        nodeLp.setMargins(isRoot ? 0 : scale(40), 0, 0, scale(40)); 
+        nodeLp.setMargins(isRoot ? 0 : scale(30), 0, 0, scale(30)); 
         node.setLayoutParams(nodeLp);
         node.setPadding(scale(30), scale(20), scale(30), scale(20)); 
         
@@ -741,6 +661,60 @@ public class GroupActivity extends BaseActivityJava {
         node.addView(textData, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         
         if (!isRoot) {
+            // 🚀 TIGHTLY COUPLED FORENSIC ACTION HUB
+            LinearLayout actionHub = new LinearLayout(this);
+            actionHub.setOrientation(LinearLayout.HORIZONTAL);
+            actionHub.setGravity(Gravity.CENTER_VERTICAL);
+
+            // 🚀 IDENTITY OWNER ICON (Manual Dossier Change)
+            ImageView ownerIcon = new ImageView(this);
+            ownerIcon.setImageResource(android.R.drawable.ic_menu_info_details);
+            ownerIcon.setColorFilter(getGradientStart(), android.graphics.PorterDuff.Mode.SRC_IN);
+            ownerIcon.setPadding(scale(10), scale(10), 0, scale(10));
+            int iconSize = com.jdroidx.jfindme.ui.base.UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+            actionHub.addView(ownerIcon, new LinearLayout.LayoutParams(iconSize, iconSize));
+
+            // 🚀 RELATIONSHIP REASSIGNMENT ICON (Waterfall Select)
+            ImageView groupIcon = new ImageView(this);
+            groupIcon.setImageResource(android.R.drawable.ic_menu_myplaces);
+            groupIcon.setColorFilter(getGradientEnd(), android.graphics.PorterDuff.Mode.SRC_IN);
+            groupIcon.setPadding(scale(5), scale(10), scale(10), scale(10));
+            groupIcon.setFocusable(true);
+            groupIcon.setClickable(true);
+            
+            groupIcon.setOnClickListener(v -> {
+                final String[] categories = {"Family", "Friends"};
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Select Hierarchy Category")
+                    .setItems(categories, (d1, cIdx) -> {
+                        String category = categories[cIdx];
+                        if (category.equals("Friends")) {
+                            executeForensicRoleChange(uid, "Friends", true);
+                        } else {
+                            // 🚀 WATERFALL LEVEL 2: ROLE SELECT
+                            final String[] famRoles = {"Mother", "Father", "Child", "Spouse", "Guardian"};
+                            new android.app.AlertDialog.Builder(this)
+                                .setTitle("Select Family Identity")
+                                .setItems(famRoles, (d2, rIdx) -> {
+                                    String role = famRoles[rIdx];
+                                    if (role.equals("Child")) {
+                                        // 🚀 WATERFALL LEVEL 3: GENDER SPECIFIC
+                                        final String[] genders = {"Son", "Daughter"};
+                                        new android.app.AlertDialog.Builder(this)
+                                            .setTitle("Select Child Detail")
+                                            .setItems(genders, (d3, gIdx) -> {
+                                                executeForensicRoleChange(uid, "Child (" + genders[gIdx] + ")", false);
+                                            }).show();
+                                    } else {
+                                        executeForensicRoleChange(uid, role, false);
+                                    }
+                                }).show();
+                        }
+                    }).show();
+            });
+            actionHub.addView(groupIcon, new LinearLayout.LayoutParams((int)(iconSize * 1.25f), iconSize));
+            node.addView(actionHub);
+
             ImageView deleteIcon = new ImageView(this);
             deleteIcon.setImageResource(android.R.drawable.ic_menu_delete);
             deleteIcon.setColorFilter(Color.RED, android.graphics.PorterDuff.Mode.SRC_IN); 
@@ -755,14 +729,14 @@ public class GroupActivity extends BaseActivityJava {
                         if (myGrp != null) {
                             com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(myGrp).child("members").child(uid).removeValue();
                             com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(uid).child("active_group").removeValue();
+                            rebuildActiveRosterList();
                         }
                     })
                     .setNegativeButton("CANCEL", null)
                     .show();
             });
             
-            int delSize = com.jdroidx.jfindme.ui.base.UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
-            node.addView(deleteIcon, new LinearLayout.LayoutParams(delSize, delSize)); 
+            node.addView(deleteIcon, new LinearLayout.LayoutParams(iconSize, iconSize)); 
         }
         
         // Accordion Interaction
@@ -797,7 +771,7 @@ public class GroupActivity extends BaseActivityJava {
                             activeTag = cloudFamRole.toUpperCase();
                         } else {
                             // Local Database Fallback (V2.0 Engine)
-                            com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(GroupActivity.this);
+                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(GroupActivity.this);
                             java.util.Map<String, String> localDos = db.getLocalDossier(uid);
                             if (localDos != null) {
                                 String fRole = localDos.get("role_family");
@@ -873,7 +847,8 @@ public class GroupActivity extends BaseActivityJava {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(scale(40), scale(50), scale(40), scale(50));
+        int padding = scale(25);
+        card.setPadding(padding, padding, padding, padding);
         card.setFocusable(true);
         card.setClickable(true);
         card.setOnClickListener(listener);
@@ -932,7 +907,7 @@ public class GroupActivity extends BaseActivityJava {
         // OPTION A [Remote]
         container.addView(buildGatewayCard("☁️ OPTION A [Remote]", 
             "Firebase Pairing + QR Codes\nWorks globally over Cellular Data.", 
-            android.R.drawable.ic_popup_sync, v -> {
+            android.R.drawable.ic_menu_myplaces, v -> {
                 optionGatewayPanel.setVisibility(View.GONE);
                 remotePairingPanel.setVisibility(View.VISIBLE);
             }), lp);
@@ -945,44 +920,8 @@ public class GroupActivity extends BaseActivityJava {
                 localPairingPanel.setVisibility(View.VISIBLE);
             }), lp);
 
-        // Section Divider as requested in Image 1
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.argb(80, Color.red(getSecondaryTextColor()), Color.green(getSecondaryTextColor()), Color.blue(getSecondaryTextColor())));
-        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(2));
-        divLp.setMargins(0, scale(20), 0, scale(40));
-        container.addView(divider, divLp);
-
-        // RESTORE LOST ROSTER ASSETS Action
-        LinearLayout restoreAction = new LinearLayout(this);
-        restoreAction.setOrientation(LinearLayout.HORIZONTAL);
-        restoreAction.setGravity(Gravity.CENTER_VERTICAL);
-        restoreAction.setPadding(scale(40), scale(40), scale(40), scale(40));
-        restoreAction.setFocusable(true);
-        restoreAction.setClickable(true);
-        restoreAction.setOnClickListener(v -> showRestoreLostRosterAssetsDialog());
-        com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, restoreAction, "CARD_STANDARD");
-
-        ImageView searchIcon = new ImageView(this);
-        searchIcon.setImageResource(android.R.drawable.ic_menu_search);
-        searchIcon.setColorFilter(getGradientEnd());
-        int rIconSize = scale(80);
-        restoreAction.addView(searchIcon, new LinearLayout.LayoutParams(rIconSize, rIconSize));
-
-        ImageView toolsIcon = new ImageView(this);
-        toolsIcon.setImageResource(android.R.drawable.ic_menu_preferences);
-        toolsIcon.setColorFilter(getSecondaryTextColor());
-        toolsIcon.setPadding(10, 0, 0, 0);
-        restoreAction.addView(toolsIcon, new LinearLayout.LayoutParams(rIconSize, rIconSize));
-
-        TextView restoreText = new TextView(this);
-        restoreText.setText("RESTORE LOST ROSTER ASSETS");
-        restoreText.setTextColor(getTextColor());
-        restoreText.setTextSize(scaleText(16));
-        restoreText.setTypeface(null, Typeface.BOLD);
-        restoreText.setPadding(20, 0, 0, 0);
-        restoreAction.addView(restoreText);
-
-        container.addView(restoreAction, lp);
+        // Section Divider removed: Logic moved to Footer
+        // RESTORE LOST ROSTER ASSETS logic migrated to separate buildTechnicalFooter() method per user request
 
         return container;
     }
@@ -1370,7 +1309,7 @@ public class GroupActivity extends BaseActivityJava {
                         if (success) {
                             Toast.makeText(this, "Handshake Completed! Assets Linked.", Toast.LENGTH_SHORT).show();
                             boolean isFriend = childPrelimRole.equals("Friends");
-                            new com.jdroidx.jfindme.data.local.DatabaseHelper(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
                         } else {
                             Toast.makeText(this, "Handshake Failed.", Toast.LENGTH_SHORT).show();
                         }
@@ -1594,6 +1533,231 @@ public class GroupActivity extends BaseActivityJava {
         }
     }
 
+    private void rebuildActiveRosterList() {
+        if (rosterCard != null && identityCardField != null) {
+            ViewGroup parent = (ViewGroup) rosterCard.getParent();
+            if (parent != null) {
+                int index = parent.indexOfChild(rosterCard);
+                parent.removeViewAt(index);
+                rosterCard = (LinearLayout) buildActiveRosterList(identityCardField, parent);
+                parent.addView(rosterCard, index);
+            }
+        }
+    }
+
+    /**
+     * 🚀 Forensic Role Change: Delegated to ViewModel for Close-Loop MVVM Parity.
+     */
+    private void executeForensicRoleChange(String uid, String newRole, boolean isFriend) {
+        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", "GRP_78822");
+        
+        viewModel.updateForensicIdentity(this, uid, myGrp, newRole, isFriend, () -> {
+            Toast.makeText(this, "Identity Matrix Finalized: " + newRole, Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void setupSignalMatrixListener() {
+        // Redundant: Managed by GroupViewModel SignalMatrix observer
+    }
+
+    private View buildTechnicalFooter() {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        int dp = scale(40);
+        footer.setPadding(dp, 0, dp, dp);
+
+        // 🚀 RESTORE LOST ROSTER ASSETS (Prominent Recovery Action)
+        LinearLayout restoreAction = new LinearLayout(this);
+        restoreAction.setOrientation(LinearLayout.HORIZONTAL);
+        restoreAction.setGravity(Gravity.CENTER_VERTICAL);
+        restoreAction.setPadding(scale(40), scale(40), scale(40), scale(40));
+        restoreAction.setFocusable(true);
+        restoreAction.setClickable(true);
+        restoreAction.setOnClickListener(v -> showRestoreLostRosterAssetsDialog());
+        com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, restoreAction, "CARD_STANDARD");
+
+        ImageView searchIcon = new ImageView(this);
+        searchIcon.setImageResource(android.R.drawable.ic_menu_search);
+        searchIcon.setColorFilter(getGradientEnd());
+        int rIconSize = scale(80);
+        restoreAction.addView(searchIcon, new LinearLayout.LayoutParams(rIconSize, rIconSize));
+
+        TextView restoreText = new TextView(this);
+        restoreText.setText("RESTORE LOST ROSTER ASSETS");
+        restoreText.setTextColor(getTextColor());
+        restoreText.setTextSize(scaleText(14));
+        restoreText.setTypeface(null, Typeface.BOLD);
+        restoreText.setPadding(20, 0, 0, 0);
+        restoreAction.addView(restoreText);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, scale(40));
+        footer.addView(restoreAction, lp);
+
+        return footer;
+    }
+
+    private void renderLocalRoster(String safeUid, LinearLayout branchList, TextView header, java.util.List<java.util.Map<String, Object>> roster) {
+        branchList.removeAllViews();
+        int count = 0;
+        
+        java.util.Set<String> processedUids = new java.util.HashSet<>();
+        java.util.List<String> familyIds = new java.util.ArrayList<>();
+        java.util.List<String> friendIds = new java.util.ArrayList<>();
+
+        // 🚀 STEP 1: GATHER UNIQUE TARGETS (Exclude Owner - represented by Identity Card)
+        for (java.util.Map<String, Object> node : roster) {
+            String rUid = (String) node.get("uid");
+            if (rUid == null || rUid.equals(safeUid)) continue;
+            if (!processedUids.add(rUid)) continue;
+            
+            // 🏎️ FORENSIC PARTITIONING: The Shuffling Decider
+            Object frFlag = node.get("is_friend");
+            boolean isFriendNode = false;
+            if (frFlag instanceof Boolean) isFriendNode = (Boolean) frFlag;
+            else if (frFlag instanceof Integer) isFriendNode = ((Integer) frFlag == 1);
+            else if (frFlag instanceof String) isFriendNode = ((String) frFlag).equals("1") || ((String) frFlag).equalsIgnoreCase("true");
+
+            if (isFriendNode) friendIds.add(rUid);
+            else familyIds.add(rUid);
+            count++;
+        }
+
+        // 🚀 FAMILY GROUP HIERARCHY
+        if (!familyIds.isEmpty()) {
+            branchList.addView(createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")"));
+            for (String fid : familyIds) {
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                java.util.Map<String, String> fDos = db.getLocalDossier(fid);
+                String roleStr = "Family Member";
+                if (fDos != null) {
+                    String rFam = fDos.get("role_family");
+                    if (rFam != null && !rFam.equals("None")) roleStr = rFam;
+                }
+                branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
+            }
+        }
+
+        // 🚀 FRIENDS GROUP HIERARCHY
+        if (!friendIds.isEmpty()) {
+            branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
+            for (String frid : friendIds) {
+                branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
+            }
+        }
+
+        if (header != null) header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (count + 1));
+    }
+    
+    private void fetchFriendMatrix(String safeUid, LinearLayout branchList, StringBuilder authorizedUids, TextView header, long currentCount) {
+        com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(safeUid).child("friend_matrix")
+            .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
+                @Override
+                public void onDataChange(com.google.firebase.database.DataSnapshot fmSnap) {
+                    java.util.List<String> familyIds = new java.util.ArrayList<>();
+                    java.util.List<String> friendIds = new java.util.ArrayList<>();
+                    
+                    com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(GroupActivity.this);
+                    int totalP2P = 0;
+                    
+                    // 🚀 SSOT Integration: Use the Forensic Roster Table for Group Partitioning
+                    java.util.List<java.util.Map<String, Object>> roster = db.getOfflineRoster();
+
+                    // 🚀 STEP 1: ZERO-GAP SYNC - Ensure every member in the cloud has a local Roster presence
+                    for (com.google.firebase.database.DataSnapshot p2pMember : fmSnap.getChildren()) {
+                        String memberId = p2pMember.getKey();
+                        if (memberId == null || memberId.equals(safeUid)) continue;
+                        
+                        boolean exists = false;
+                        for (java.util.Map<String, Object> node : roster) {
+                            if (memberId.equals(node.get("uid"))) { exists = true; break; }
+                        }
+                        
+                        if (!exists) {
+                            // 🛰️ Architectural Heal: Inject missing node into the Forensic Roster
+                            db.saveRosterNode(memberId, "Relational Identity (" + memberId.substring(0, 5) + ")", "Member", "P2P Synchronized", false, false, "System Root", safeUid, memberId, "AUTO_SYNC");
+                        }
+                    }
+
+                    // 🚀 STEP 2: ROSTER-DRIVEN GROUPING - Only the local table decides what to display
+                    // Re-fetch roster after sync to ensure 100% parity
+                    java.util.List<java.util.Map<String, Object>> liveRoster = db.getOfflineRoster();
+                    
+                    for (java.util.Map<String, Object> node : liveRoster) {
+                        String rUid = (String) node.get("uid");
+                        if (rUid == null || rUid.equals(safeUid)) continue;
+                        if (authorizedUids.toString().contains(rUid)) continue; 
+                        
+                        // Verification: Only display nodes that are part of the current active group in the cloud
+                        if (fmSnap.hasChild(rUid)) {
+                            authorizedUids.append(rUid).append(",");
+                            totalP2P++;
+                            
+                            Object frFlag = node.get("is_friend");
+                            boolean isFriendNode = (frFlag instanceof Boolean) ? (Boolean) frFlag : false;
+                            
+                            if (isFriendNode) friendIds.add(rUid);
+                            else familyIds.add(rUid);
+                        }
+                    }
+                    
+                    if (header != null) header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (currentCount + totalP2P));
+                    branchList.removeAllViews();
+
+                    java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
+                    String myGender = myDos != null ? myDos.get("user_gender") : "Male";
+
+                    String myName = (myDos != null && myDos.containsKey("full_name")) ? myDos.get("full_name") : getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("user_nickname", "Network Admin");
+                    
+                    // 🚀 NETWORK GATEWAY IDENTITY (SELF)
+                    branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
+                    branchList.addView(buildTreeNode(safeUid, myName, true, true, null, "OWNER"));
+                    
+                    // 🚀 FAMILY GROUP HIERARCHY
+                    if (!familyIds.isEmpty()) {
+                        View familyHeader = createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")");
+                        branchList.addView(familyHeader);
+                        
+                        int childCount = 0;
+                        for (String fid : familyIds) {
+                            java.util.Map<String, String> fDos = db.getLocalDossier(fid);
+                            String roleStr = "Member";
+                            if (fDos != null) {
+                                String rFam = fDos.get("role_family");
+                                String gender = fDos.get("user_gender");
+                                if (rFam != null) {
+                                    if (rFam.equals("Child")) {
+                                        childCount++;
+                                        String sonDaughter = (gender != null && gender.equalsIgnoreCase("Female")) ? "Daughter" : "Son";
+                                        roleStr = "Child #" + childCount + " (" + sonDaughter + ")";
+                                    } else if (rFam.equals("Spouse")) {
+                                        if (gender != null && gender.equalsIgnoreCase(myGender)) {
+                                            roleStr = "Spouse";
+                                        } else {
+                                            roleStr = (gender != null && gender.equalsIgnoreCase("Female")) ? "Wife" : "Husband";
+                                        }
+                                    } else {
+                                        roleStr = rFam;
+                                    }
+                                }
+                            }
+                            branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
+                        }
+                    }
+
+                    // 🚀 FRIENDS GROUP HIERARCHY
+                    if (!friendIds.isEmpty()) {
+                        branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
+                        for (String frid : friendIds) {
+                            branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
+                        }
+                    }
+                }
+                @Override
+                public void onCancelled(com.google.firebase.database.DatabaseError error) {}
+            });
+    }
+
     /**
      * 🛡️ QR Handshake Toast Automation (V39 FINAL)
      * Renders a high-fidelity tactical overlay upon QR recognition.
@@ -1651,15 +1815,155 @@ public class GroupActivity extends BaseActivityJava {
 
     @Override
     protected void setupLogic() {
-        SystemLogger.INSTANCE.i(TAG, "Unified Gateway Screen Successfully Executed.");
+        SystemLogger.INSTANCE.i(TAG, "Forensic Gateway Engine Successfully Executed.");
         viewModel = new androidx.lifecycle.ViewModelProvider(this).get(GroupViewModel.class);
         
-        viewModel.getSyncStatus().observe(this, status -> {
-            if (status != null) {
-                tvSyncStatus.setText(status);
+        // 🧱 Observer: Roster Matrix Synchronization
+        viewModel.getRosterData().observe(this, roster -> {
+            if (roster != null) {
+                rebuildActiveRosterList();
             }
         });
+        
+        // 🦋 Observer: AngelLoader Lifecycle (The Butterfly Guard)
+        viewModel.isLoading().observe(this, loading -> {
+            if (loading != null && loading) {
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            } else {
+                new android.os.Handler().postDelayed(() -> com.jdroidx.jfindme.utils.AngelLoader.hide(this), 1000);
+            }
+        });
+        
+        // 🛰️ Observer: Signal Matrix (WhatsApp-style UI re-hydration)
+        viewModel.getSignalReceived().observe(this, received -> {
+            if (received != null && received) {
+                Toast.makeText(this, "Network Identity Synchronized: Roster Updated.", Toast.LENGTH_SHORT).show();
+                rebuildActiveRosterList();
+            }
+        });
+        
+        // 🚀 Observer: Forensic Sync Status
+        viewModel.getSyncStatus().observe(this, status -> {
+             if (status != null) com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, status);
+        });
+
+        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        if (myUid != null) {
+            viewModel.setupSignalListener(myUid);
+            rebuildActiveRosterList();
+        }
     }
 
+    private View buildForensicMemberStack(java.util.List<java.util.Map<String, Object>> nodes, int accentColor) {
+        if (nodes.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("No active network nodes in this segment.");
+            empty.setTextColor(getSecondaryTextColor());
+            empty.setTextSize(scaleText(9));
+            empty.setPadding(scale(40), 0, 0, 0);
+            return empty;
+        }
+
+        LinearLayout stack = new LinearLayout(this);
+        stack.setOrientation(LinearLayout.VERTICAL);
+        stack.setPadding(scale(40), 10, scale(40), 10);
+        
+        for (java.util.Map<String, Object> node : nodes) {
+            String uid = (String) node.get("uid");
+            String name = (String) node.get("display_name");
+            String role = (String) node.get("role_title");
+            if (name == null) name = "Unknown Node";
+            if (role == null) role = "Encrypted Node";
+
+            // 🧥 DOSSIER CARD (Independent Shadow Partition)
+            LinearLayout dossier = new LinearLayout(this);
+            dossier.setOrientation(LinearLayout.HORIZONTAL);
+            dossier.setGravity(Gravity.CENTER_VERTICAL);
+            applySolidCardGeometry(dossier, getCardColor(), 20f);
+            dossier.setPadding(scale(30), scale(30), scale(30), scale(30));
+            
+            // 🛡️ Avatar Block (Circular Shadow)
+            ImageView av = new ImageView(this);
+            av.setImageResource(android.R.drawable.ic_menu_myplaces);
+            av.setPadding(8, 8, 8, 8);
+            android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
+            c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            c.setColor(getPrimaryColor());
+            c.setStroke(4, accentColor);
+            av.setBackground(c);
+            dossier.addView(av, new LinearLayout.LayoutParams(scale(110), scale(110)));
+
+            // 🧱 Metadata Block
+            LinearLayout meta = new LinearLayout(this);
+            meta.setOrientation(LinearLayout.VERTICAL);
+            meta.setPadding(scale(30), 0, 0, 0);
+            meta.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+            TextView tvName = new TextView(this);
+            tvName.setText(name.toUpperCase());
+            tvName.setTextColor(getTextColor());
+            tvName.setTypeface(null, Typeface.BOLD);
+            tvName.setTextSize(13);
+            meta.addView(tvName);
+
+            TextView tvRole = new TextView(this);
+            tvRole.setText(role);
+            tvRole.setTextColor(getSecondaryTextColor());
+            tvRole.setTextSize(10);
+            tvRole.setAlpha(0.8f);
+            meta.addView(tvRole);
+            
+            dossier.addView(meta);
+
+            // 🏎️ Forensic Telemetry Icon (Right Aligned)
+            ImageView telemetry = new ImageView(this);
+            telemetry.setImageResource(android.R.drawable.ic_media_play);
+            telemetry.setColorFilter(Color.parseColor("#FF5722"));
+            dossier.addView(telemetry, new LinearLayout.LayoutParams(scale(40), scale(40)));
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 0, scale(20)); // Secondary Shadow Gap
+            stack.addView(dossier, lp);
+        }
+        
+        return stack;
+    }
+
+    private View buildMiniAvatarStack(java.util.List<java.util.Map<String, Object>> nodes, int borderColor) {
+        FrameLayout stack = new FrameLayout(this);
+        int size = scale(55);
+        int overlap = scale(35);
+        
+        if (nodes.isEmpty()) {
+             ImageView empty = new ImageView(this);
+             empty.setImageResource(android.R.drawable.ic_menu_add);
+             empty.setColorFilter(Color.GRAY);
+             empty.setAlpha(0.3f);
+             stack.addView(empty, new FrameLayout.LayoutParams(size, size));
+             return stack;
+        }
+
+        for (int i = 0; i < nodes.size(); i++) {
+            ImageView av = new ImageView(this);
+            av.setImageResource(android.R.drawable.ic_menu_myplaces);
+            av.setPadding(5, 5, 5, 5);
+            
+            android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
+            c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            c.setColor(getPrimaryColor());
+            c.setStroke(2, borderColor);
+            av.setBackground(c);
+            
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(size, size);
+            lp.leftMargin = i * overlap;
+            stack.addView(av, lp);
+        }
+        
+        // Wrap in a sizing container to ensure it centers in the vertical parent
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setGravity(Gravity.CENTER);
+        wrap.addView(stack, new LinearLayout.LayoutParams(size + (Math.max(0, nodes.size()-1) * overlap), size));
+        return wrap;
+    }
 }
 

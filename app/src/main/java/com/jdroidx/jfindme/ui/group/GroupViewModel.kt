@@ -2,53 +2,79 @@ package com.jdroidx.jfindme.ui.group
 
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import com.jdroidx.jfindme.data.repository.PairingRepository
-import com.jdroidx.jfindme.utils.SystemLogger
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.jdroidx.jfindme.data.local.DatabaseHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
+ * 🚀 Enterprise Identity & Grouping ViewModel (L7 Global Architect)
  * Acts as the precise architectural bridge between the UI (GroupActivity)
- * and the Core DevicePairingEngine. Resolves the missing execution logic natively.
+ * and the Core Identity Matrix. Manages the 5-second Butterfly waterfall.
  */
 class GroupViewModel : ViewModel() {
 
     private val TAG = "GroupViewModel_Bridge"
 
     val syncStatus = MutableLiveData<String>()
-    val pairingCode = MutableLiveData<String>()
     val isLoading = MutableLiveData<Boolean>()
-    val errorMessage = MutableLiveData<String>()
+    val rosterData = MutableLiveData<List<Map<String, Any>>>()
+    val signalReceived = MutableLiveData<Boolean>()
 
-    fun injectGenesisNode(uid: String, callback: (String) -> Unit) {
+    /**
+     * 🚀 Forensic Role Change Waterfall: Orchestrates the 5s delay and SSOT sync.
+     */
+    fun updateForensicIdentity(context: android.content.Context, uid: String, myGrp: String, newRole: String, isFriend: Boolean, onComplete: Runnable) {
         isLoading.value = true
-        syncStatus.value = "ALLOCATING NEW HOST GROUP..."
-        PairingRepository.executeGenesisNode(uid) { newGroupId ->
-            isLoading.postValue(false)
-            syncStatus.postValue("ROOT HUB ESTABLISHED: $newGroupId")
-            callback(newGroupId)
+        syncStatus.value = "FINALIZING IDENTITY MATRIX..."
+        
+        // 📚 1. Local Database Settlement (SSOT)
+        val db = DatabaseHelper.getInstance(context)
+        db.updateRosterGrouping(uid, newRole, isFriend)
+        
+        // 🦋 2. Mandatory Butterfly Guard (5 Seconds)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            
+            // 🛰️ 3. Cloud Propagation (Waterfall)
+            val ref = FirebaseDatabase.getInstance().reference
+            
+            // Step A: Update Group Membership Role
+            ref.child("groups").child(myGrp).child("members").child(uid).child("role")
+                .setValue(newRole)
+                .addOnCompleteListener { task ->
+                    
+                    // Step B: Inject Real-time Signal (WhatsApp-style)
+                    ref.child("users").child(uid).child("signals").child("refresh_roster")
+                        .setValue(System.currentTimeMillis())
+                        .addOnCompleteListener {
+                            isLoading.postValue(false)
+                            syncStatus.postValue("NETWORK PARITY SECURED: $newRole")
+                            refreshLocalRoster(db)
+                            onComplete.run()
+                        }
+                }
+        }, 5000)
+    }
+
+    fun refreshLocalRoster(db: DatabaseHelper) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val roster = db.getOfflineRoster()
+            rosterData.postValue(roster)
         }
     }
 
-    fun approveFamilyTarget(hostUid: String, hostGroupId: String, targetUid: String, role: String, callback: () -> Unit) {
-        isLoading.value = true
-        syncStatus.value = "MERGING TARGET INTO FAMILY ARRAY..."
-        PairingRepository.executeFamilyHandshake(hostUid, hostGroupId, targetUid, role) {
-            isLoading.postValue(false)
-            syncStatus.postValue("FAMILY HANDSHAKE COMPLETE.")
-            callback()
-        }
-    }
-
-    fun approveInsulatedFriend(hostUid: String, targetUid: String, callback: () -> Unit) {
-        isLoading.value = true
-        syncStatus.value = "ESTABLISHING P2P FRIEND LINK..."
-        PairingRepository.executeFriendHandshake(hostUid, targetUid) {
-            isLoading.postValue(false)
-            syncStatus.postValue("INSULATED FRIEND LINK ACTIVE.")
-            callback()
-        }
-    }
-
-    fun clearError() {
-        errorMessage.value = null
+    fun setupSignalListener(myUid: String) {
+        FirebaseDatabase.getInstance().reference
+            .child("users").child(myUid).child("signals").child("refresh_roster")
+            .addValueEventListener(object : ValueEventListener {
+                override fun onDataChange(snap: DataSnapshot) {
+                    if (snap.exists()) signalReceived.postValue(true)
+                }
+                override fun onCancelled(error: DatabaseError) {}
+            })
     }
 }

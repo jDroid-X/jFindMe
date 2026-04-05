@@ -110,7 +110,7 @@ class LocationRepository(internal val context: Context) {
     fun updateMyLocation(userLocation: UserLocation) {
         // 🚀 QA Fix: Resolve Physical Address before Forensic Commit
         val geocoder = Geocoder(context, Locale.getDefault())
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         
         // 🧱 QA Hardening: Use a stable Background Thread for all API versions to prevent 
         // NoClassDefFoundError on devices below API 33 (Tiramisu).
@@ -134,7 +134,7 @@ class LocationRepository(internal val context: Context) {
     }
 
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val rel = if (userLocation.role_family != "None") "FAMILY (${userLocation.role_family})"
                   else if (userLocation.role_friend != "None") "FRIEND (${userLocation.role_friend})"
                   else "UNLINKED"
@@ -171,7 +171,7 @@ class LocationRepository(internal val context: Context) {
                     // 🚀 QA Fix: Offload Batch-Write to Background Thread! 
                     // 1,000+ writes on the Main Thread (Firebase Default) will cause ANR/Crash.
                     Thread {
-                        val db = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+                        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                         snapshot.children.forEach { child ->
                             child.getValue(UserLocation::class.java)?.let { point ->
                                 points.add(point)

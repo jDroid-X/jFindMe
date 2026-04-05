@@ -864,7 +864,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         } else {
             // 🚀 QA Rule: Contextual Anchor (Owner Location)
             new Thread(() -> {
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
                 String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
                 if (myUid != null) {
                     List<Map<String, Object>> logs = db.getHistoryLogsFiltered(myUid, 0L);

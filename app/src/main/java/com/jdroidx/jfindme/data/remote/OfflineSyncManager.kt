@@ -83,7 +83,7 @@ class OfflineSyncManager(private val context: Context) {
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return false
         if (userId != myUid) return true // Only the owner can restrict their own data flow here
         
-        val db = DatabaseHelper(context)
+        val db = DatabaseHelper.getInstance(context)
         val dossier = db.getLocalDossier(userId)
         return dossier?.get("acl_live_tracking") != "DENIED"
     }

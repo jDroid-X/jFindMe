@@ -19,6 +19,9 @@ class PersonDetailsViewModel : ViewModel() {
 
     private val TAG = "PersonDetailsViewModel"
 
+    private val _rosterLiveData = MutableLiveData<List<Map<String, Any>>>()
+    val rosterLiveData: LiveData<List<Map<String, Any>>> = _rosterLiveData
+
     private val _dossierLiveData = MutableLiveData<Map<String, String>>()
     val dossierLiveData: LiveData<Map<String, String>> = _dossierLiveData
 
@@ -47,6 +50,8 @@ class PersonDetailsViewModel : ViewModel() {
             prefsMap["pincode"] = prefs.getString("user_pincode", "") ?: ""
             prefsMap["address"] = prefs.getString("user_address", "") ?: ""
             prefsMap["emergencyNote"] = prefs.getString("user_emergency_note", "") ?: ""
+            prefsMap["orgName"] = prefs.getString("org_name", "") ?: ""
+            prefsMap["deptName"] = prefs.getString("department", "") ?: ""
             prefsMap["role_family"] = prefs.getString("role_family", "None") ?: "None"
             prefsMap["role_friend"] = prefs.getString("role_friend", "None") ?: "None"
             
@@ -57,11 +62,27 @@ class PersonDetailsViewModel : ViewModel() {
         }
 
         // 2. Query Local SQLite Fallback Engine
-        val localDb = DatabaseHelper(context)
-        val localData = localDb.getLocalDossier(targetUid)
-        if (localData != null) {
-            SystemLogger.i(TAG, "Dossier Local SQL Pull Successful")
-            _dossierLiveData.postValue(localData)
+        val localDb = DatabaseHelper.getInstance(context)
+        val localRaw = localDb.getLocalDossier(targetUid)
+        if (localRaw != null) {
+            val localMapped = mutableMapOf<String, String>()
+            localMapped["fullName"] = localRaw["full_name"] ?: ""
+            localMapped["phone"] = localRaw["user_phone"] ?: ""
+            localMapped["dob"] = localRaw["user_dob"] ?: ""
+            localMapped["gender"] = localRaw["user_gender"] ?: ""
+            localMapped["address"] = localRaw["user_address"] ?: ""
+            localMapped["country"] = localRaw["user_country"] ?: ""
+            localMapped["state"] = localRaw["user_state"] ?: ""
+            localMapped["city"] = localRaw["user_city"] ?: ""
+            localMapped["pincode"] = localRaw["user_pincode"] ?: ""
+            localMapped["emergencyNote"] = localRaw["user_emergency_note"] ?: ""
+            localMapped["orgName"] = localRaw["org_name"] ?: ""
+            localMapped["deptName"] = localRaw["department"] ?: ""
+            localMapped["role_family"] = localRaw["role_family"] ?: ""
+            localMapped["role_friend"] = localRaw["role_friend"] ?: ""
+            
+            SystemLogger.i(TAG, "Dossier Local SQL Pull Normalized & Pushed.")
+            _dossierLiveData.postValue(localMapped)
         }
 
         // 2. Query Firebase Cloud for the latest Synced State
@@ -85,6 +106,8 @@ class PersonDetailsViewModel : ViewModel() {
                 cloudMap["city"] = snapshot.child("city").getValue(String::class.java) ?: ""
                 cloudMap["pincode"] = snapshot.child("pincode").getValue(String::class.java) ?: ""
                 cloudMap["emergencyNote"] = snapshot.child("emergencyNote").getValue(String::class.java) ?: ""
+                cloudMap["orgName"] = snapshot.child("orgName").getValue(String::class.java) ?: ""
+                cloudMap["deptName"] = snapshot.child("deptName").getValue(String::class.java) ?: ""
                 cloudMap["role_family"] = snapshot.child("role_family").getValue(String::class.java) ?: ""
                 cloudMap["role_friend"] = snapshot.child("role_friend").getValue(String::class.java) ?: ""
                 cloudMap["safeZoneName"] = snapshot.child("safeZoneName").getValue(String::class.java) ?: ""
@@ -141,6 +164,37 @@ class PersonDetailsViewModel : ViewModel() {
             } catch (e: Exception) {
                 _countriesList.postValue(listOf("Select Country", "India", "USA", "UK"))
             }
+        }
+    }
+
+    /**
+     * 🚀 Roster Bridge: Fetches the local offline roster for device tagging.
+     */
+    fun fetchLocalRoster(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val localDb = DatabaseHelper.getInstance(context)
+            _rosterLiveData.postValue(localDb.getOfflineRoster())
+        }
+    }
+
+    /**
+     * 🚀 Role Mapping Bridge: Updates citizen roles in both Local SQL and Cloud.
+     */
+    fun updateCitizenRoleProtocol(context: Context, groupId: String?, targetUid: String, famRole: String, frRole: String, isFriend: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 1. Local Commit
+            val localDb = DatabaseHelper.getInstance(context)
+            localDb.updateCitizenRole(targetUid, famRole, frRole, isFriend)
+            
+            // 2. Cloud Commit
+            if (!groupId.isNullOrEmpty()) {
+                val cp = mapOf("role_family" to famRole, "role_friend" to frRole)
+                FirebaseDatabase.getInstance().reference.child("groups").child(groupId)
+                    .child("citizen_dossiers").child(targetUid).updateChildren(cp)
+            }
+            
+            // 3. Refresh Roster
+            _rosterLiveData.postValue(localDb.getOfflineRoster())
         }
     }
 
@@ -210,7 +264,7 @@ class PersonDetailsViewModel : ViewModel() {
         }
 
         // 1. Upsert securely down into the Local SQLite Table
-        val localDb = DatabaseHelper(context)
+        val localDb = DatabaseHelper.getInstance(context)
         val sRole = if ((crossValidatedPayload["role_friend"] ?: "None") != "None") crossValidatedPayload["role_friend"] else crossValidatedPayload["role_family"]
         localDb.saveLocalDossier(targetUid, crossValidatedPayload, sRole, crossValidatedPayload["fullName"], targetUid, targetUid, "USER_EDIT")
 
@@ -263,6 +317,8 @@ class PersonDetailsViewModel : ViewModel() {
                 mirrorMap["userPhone"] = payload["phone"] ?: ""
                 mirrorMap["userAddress"] = payload["address"] ?: ""
                 mirrorMap["userEmergencyNote"] = payload["emergencyNote"] ?: ""
+                mirrorMap["orgName"] = payload["orgName"] ?: ""
+                mirrorMap["deptName"] = payload["deptName"] ?: ""
                 
                 FirebaseDatabase.getInstance().reference.child("users").child(targetUid).updateChildren(mirrorMap)
             }

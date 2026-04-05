@@ -474,8 +474,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     }
 
     protected int getResponsivePaddingQuota() {
-        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (Baseline: 30px)
-        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 30);
+        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (Baseline: 25px)
+        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 25);
     }
 
     protected int getResponsiveHeaderTopQuota() {
@@ -536,10 +536,15 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     }
 
     protected android.graphics.drawable.GradientDrawable createPopupBackground() {
+        int nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        boolean isDark = nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        
+        int color = isDark ? Color.argb(230, 15, 15, 15) : Color.argb(230, 255, 255, 255);
+        
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(getPopupColor()); // Use high-density alpha
-        bg.setCornerRadius(25f); 
-        bg.setStroke(3, getGradientStart()); 
+        bg.setColor(color); // 🧪 Forensic Glassmorphism (230 Alpha)
+        bg.setCornerRadius(40f); 
+        bg.setStroke(4, getGradientStart()); // Clinical Stroke Sync
         return bg;
     }
 
@@ -586,10 +591,41 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         android.widget.Button btnNeg = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
         if (btnNeg != null) btnNeg.setTextColor(Color.GRAY);
         
-        // 🧱 BACKGROUND: Forensic Glassmorphism (Neutralized to earlier standard alert breakdown)
-        // if (dialog.getWindow() != null) {
-        //    dialog.getWindow().setBackgroundDrawable(createPopupBackground());
-        // }
+        // 🧱 BACKGROUND: Forensic Glassmorphism (Universal System Match)
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(createPopupBackground());
+            dialog.getWindow().setDimAmount(0.6f); // Enhanced Forensic Shadowing
+        }
+    }
+
+    /**
+     * 🛰️ L7 UNIVERSAL ADVISOR: Contextual Help Portal
+     */
+    protected void showHelpDialog(android.content.Context context, String featureKey) {
+        String title = "FORENSIC GUIDANCE";
+        StringBuilder msg = new StringBuilder();
+
+        switch (featureKey) {
+            case "GEOFENCE_MAP_HUB":
+                title = "GEOSPATIAL DEPLOYMENT HUB";
+                msg.append("📍 LONG-PRESS: Drop a safezone anchor on the map.\n\n");
+                msg.append("🏷️ IDENTITY: Label the zone (e.g., Home, School).\n\n");
+                msg.append("⭕ RADIUS: Enter the siren range in meters.\n\n");
+                msg.append("🛰️ NODE: Assign this zone to a specific member device.\n\n");
+                msg.append("🚀 DEPLOY: Synchronize the perimeter with the network.");
+                break;
+            default:
+                msg.append("Operational protocols for this module are currently being de-encrypted. Please contact your forensic administrator for further tactical support.");
+                break;
+        }
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(msg.toString())
+            .setPositiveButton("Understood", null)
+            .show();
+        
+        applyDialogTheme(dialog);
     }
 }
 

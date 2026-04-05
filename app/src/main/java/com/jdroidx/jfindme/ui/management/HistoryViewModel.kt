@@ -68,7 +68,7 @@ class HistoryViewModel : BaseViewModel() {
      * Fetches grouped session logs from the local Forensic DB with a Time Window filter.
      */
     fun loadHistorySessions(context: Context, uid: String, timeWindow: Long) {
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val geocoder = Geocoder(context, Locale.getDefault())
         val cutoff = System.currentTimeMillis() - timeWindow
 
@@ -110,7 +110,7 @@ class HistoryViewModel : BaseViewModel() {
      * Rule: Roster Table is the absolute Forensic SSOT (V36).
      */
     fun fetchTrackingTargets(context: Context) {
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper(context)
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val myUid = FirebaseAuth.getInstance().uid ?: return
         
         _isLoading.value = true

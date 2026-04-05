@@ -66,45 +66,46 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         // 2. DUAL-TAB NAVIGATION CLUSTER
         LinearLayout tabController = new LinearLayout(this);
         tabController.setOrientation(LinearLayout.HORIZONTAL);
-        tabController.setBackgroundColor(Color.parseColor("#151515")); // Deep Dark Separator Constraint
+        tabController.setGravity(Gravity.CENTER);
+        int masterPad = getResponsivePaddingQuota();
+        tabController.setPadding(masterPad, masterPad / 2, masterPad, masterPad / 2);
         
-        // Tab A: FAMILY
+        // Tab A: FAMILY (Capsule Button)
         tabFamily = new LinearLayout(this);
-        tabFamily.setOrientation(LinearLayout.VERTICAL);
+        tabFamily.setOrientation(LinearLayout.HORIZONTAL);
         tabFamily.setGravity(Gravity.CENTER);
-        int tabPad = getResponsivePaddingQuota() + 15;
-        tabFamily.setPadding(0, tabPad, 0, tabPad);
+        int tapPad = scale(15);
+        tabFamily.setPadding(tapPad * 2, tapPad, tapPad * 2, tapPad);
         tabFamily.setFocusable(true);
         tabFamily.setClickable(true);
-        android.util.TypedValue outValueTabs = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueTabs, true);
-        tabFamily.setBackgroundResource(outValueTabs.resourceId);
         
         tvFamily = new TextView(this);
-        tvFamily.setText("👨‍👩‍👧‍👦 FAMILY");
-        tvFamily.setTextColor(getGradientStart()); // Active Green
+        tvFamily.setText("FAMILY");
         tvFamily.setTextSize(14);
         tvFamily.setTypeface(null, Typeface.BOLD);
         tabFamily.addView(tvFamily);
         
-        // Tab B: FRIENDS
+        // Tab B: FRIENDS (Capsule Button)
         tabFriends = new LinearLayout(this);
-        tabFriends.setOrientation(LinearLayout.VERTICAL);
+        tabFriends.setOrientation(LinearLayout.HORIZONTAL);
         tabFriends.setGravity(Gravity.CENTER);
-        tabPad = getResponsivePaddingQuota() + 15;
-        tabFriends.setPadding(0, tabPad, 0, tabPad);
+        tabFriends.setPadding(tapPad * 2, tapPad, tapPad * 2, tapPad);
         tabFriends.setFocusable(true);
         tabFriends.setClickable(true);
-        tabFriends.setBackgroundResource(outValueTabs.resourceId);
         
         tvFriends = new TextView(this);
-        tvFriends.setText("🤝 FRIENDS");
-        tvFriends.setTextColor(Color.GRAY); // Inactive Base
+        tvFriends.setText("FRIENDS");
         tvFriends.setTextSize(14);
         tvFriends.setTypeface(null, Typeface.BOLD);
         tabFriends.addView(tvFriends);
 
         LinearLayout.LayoutParams tabLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        tabLp.setMargins(10, 0, 10, 0);
+        
+        // 🚀 L7 Architecture Sync: Initialize with CARD_CAPSULE_BUTTON geometry
+        UiArchitect.applyCardWithOverride(this, tabFamily, "CARD_CAPSULE_BUTTON");
+        UiArchitect.applyCardWithOverride(this, tabFriends, "CARD_CAPSULE_BUTTON");
+
         tabController.addView(tabFamily, tabLp);
         tabController.addView(tabFriends, tabLp);
         
@@ -132,8 +133,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
     private void renderFamilyTab() {
         activeTab = 0;
-        tvFamily.setTextColor(getGradientStart()); tvFamily.setAlpha(1.0f);
-        tvFriends.setTextColor(Color.GRAY); tvFriends.setAlpha(0.5f);
+        UiArchitect.applySelection(this, tabFamily, true);
+        UiArchitect.applySelection(this, tabFriends, false);
         rosterContainer.removeAllViews();
         
         // --- 🚀 PILLAR 1: CORE GUARDIANS (NETWORK ADMINS) ---
@@ -175,8 +176,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
     private void renderFriendsTab() {
         activeTab = 1;
-        tvFriends.setTextColor(getGradientStart()); tvFriends.setAlpha(1.0f);
-        tvFamily.setTextColor(Color.GRAY); tvFamily.setAlpha(0.5f);
+        UiArchitect.applySelection(this, tabFamily, false);
+        UiArchitect.applySelection(this, tabFriends, true);
         rosterContainer.removeAllViews();
         
         rosterContainer.addView(createSectionHeader("EXTENDED NETWORK (TRUSTED NODES)"));
@@ -393,7 +394,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         String famRole = isFamily ? role : "None";
         String frRole = isFamily ? "None" : role;
         
-        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = new com.jdroidx.jfindme.data.local.DatabaseHelper(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         localDb.updateCitizenRole(uid, famRole, frRole, frRole.contains("Friend"));
         
         String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
