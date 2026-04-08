@@ -155,19 +155,40 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 }
                 
                 // 🚀 V36 Optimized Sync: Single Batch Commit (Forensic Efficiency)
-                viewModelScope.launch(Dispatchers.IO) {
-                    list.forEach { zone ->
-                        val v = ContentValues().apply {
-                            put("zone_id", zone.name); put("name", zone.name); put("target", zone.assignedName)
-                            put("lat", zone.lat); put("lng", zone.lng); put("radius", zone.radius)
-                            put("sync_status", "CLOUD_SYNCED")
-                            put("flag_a", if(zone.alertsEnabled) 1 else 0) // 🚀 Alert Toggle Sync
-                            put("flag_b", if(zone.isZoneActive) 1 else 0) // 🚀 Active State Sync
+                if (list.isNotEmpty()) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        list.forEach { zone ->
+                            val v = ContentValues().apply {
+                                put("zone_id", zone.id); put("name", zone.name); put("target", zone.assignedName)
+                                put("lat", zone.lat); put("lng", zone.lng); put("radius", zone.radius)
+                                put("sync_status", "CLOUD_SYNCED")
+                                put("flag_a", if (zone.alertsEnabled) 1 else 0)
+                                put("flag_b", if (zone.isZoneActive) 1 else 0)
+                            }
+                            dbDelegate.saveSafeZone(v)
                         }
-                        dbDelegate.saveSafeZone(v)
+                        
+                        // 🚀 QA Fix: Force Merge with Local Cache (Prevent Vanishing Nodes)
+                        val localZones = dbDelegate.getOfflineSafeZones()
+                        val mergedList = list.toMutableList()
+                        localZones.forEach { map ->
+                            val id = map["zone_id"] as String
+                            if (mergedList.none { it.id == id }) {
+                                mergedList.add(RenderedGeofence(
+                                    id, map["name"] as? String ?: "Local Node",
+                                    map["lat"] as? Double ?: 0.0, map["lng"] as? Double ?: 0.0,
+                                    map["radius"] as? Double ?: 100.0, map["target"] as? String ?: "All",
+                                    "Local Forensic Cache", (map["flag_a"] as? Int ?: 1) == 1,
+                                    (map["flag_b"] as? Int ?: 1) == 1, 0, 2359, "1,2,3,4,5,6,0"
+                                ))
+                            }
+                        }
+                        _activeZones.postValue(mergedList)
                     }
+                } else {
+                     // Empty Cloud: We keep the Local Cache (V47 Protocol)
+                     loadLocalBackupVault(false)
                 }
-                _activeZones.postValue(list)
             }
             override fun onCancelled(error: DatabaseError) { loadLocalBackupVault(true) }
         }
@@ -264,10 +285,14 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("history").limitToLast(100).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.saveHistoryPoint(
-                        snap.child("uid").getValue(String::class.java) ?: "",
-                        "RESTORED",
-                        "NODE",
+                    for (snap in s.children) {
+                        val historyUid = snap.child("uid").getValue(String::class.java) ?: ""
+                        // 🚀 QA Fix: Identity Resolution Bridge
+                        val resolvedName = dbDelegate.getLocalDossier(historyUid)?.get("full_name") ?: "Active Node"
+                        dbDelegate.saveHistoryPoint(
+                            historyUid,
+                            resolvedName,
+                            "IDENTITY_MIRROR",
                         snap.child("lat").getValue(Double::class.java) ?: 0.0,
                         snap.child("lng").getValue(Double::class.java) ?: 0.0,
                         snap.child("speed").getValue(Double::class.java)?.toFloat() ?: 0f,
@@ -277,8 +302,9 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
             }
-            override fun onCancelled(e: DatabaseError) {}
-        })
+        }
+        override fun onCancelled(e: DatabaseError) {}
+    })
 
         // Cluster 4: Hardware Situational Awareness (SIM Inventory + Transactions)
         rootRef.child("sim_inventory").addValueEventListener(object : ValueEventListener {
@@ -328,13 +354,16 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
     
     private fun syncCloudProfileRegistry(uid: String) {
-        FirebaseDatabase.getInstance().getReference("users").child(uid).child("profile")
+        FirebaseDatabase.getInstance().getReference("users").child(uid)
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    val map = snapshot.value as? Map<String, String> ?: return
+                    val map = snapshot.value as? Map<String, Any> ?: return
+                    val stringMap = mutableMapOf<String, String>()
+                    map.forEach { (k, v) -> stringMap[k] = v.toString() }
+                    
                     viewModelScope.launch(Dispatchers.IO) {
-                        dbDelegate.saveLocalDossier(uid, map)
-                        SystemLogger.i("GlobalSync", "PROFILE_SYNC: Identity dossier architected locally for $uid")
+                        dbDelegate.commitForensicDossier(uid, stringMap)
+                        SystemLogger.i("GlobalSync", "PROFILE_SYNC: Root identity dossier architected locally for $uid")
                     }
                 }
                 override fun onCancelled(error: DatabaseError) {}

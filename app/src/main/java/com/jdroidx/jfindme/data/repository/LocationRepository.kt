@@ -27,10 +27,10 @@ class LocationRepository(internal val context: Context) {
 
     private val locationListener = object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            val validUids = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
-            val friendUids = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("friend_matrix_csv", "") ?: ""
+            val validUids = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
+            val friendUids = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("friend_matrix_csv", "") ?: ""
             val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: "null_u"
-            val myGroup = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("active_group", "") ?: ""
+            val myGroup = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("active_group", "") ?: ""
             val allowedList = validUids.split(",").map { it.trim() }
             val friendList = friendUids.split(",").map { it.trim() }
             val locations = mutableListOf<UserLocation>()
@@ -59,7 +59,7 @@ class LocationRepository(internal val context: Context) {
         
         // 🚀 QA Fix: Global Security Synchronizer! Automatically maintains explicit connection array in the background.
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
-        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
         com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(myUid).child("active_group")
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snap: DataSnapshot) {

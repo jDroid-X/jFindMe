@@ -42,8 +42,15 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private android.widget.CheckBox cbAclBiometrics;
     private android.widget.CheckBox cbGlobalCloudSync;
     private boolean isSelf = false;
+    private android.widget.ImageView headerAvatar;
     private android.widget.LinearLayout dynamicTaggingContainer;
     private android.widget.LinearLayout formBox;
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (headerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+    }
 
     @Override
     protected View createLayout() {
@@ -85,24 +92,24 @@ public class PersonDetailsActivity extends BaseActivityJava {
         ownerTile.setPadding(sideMargin, sideMargin, sideMargin, sideMargin);
         
         // 🚀 Premium Circular Avatar (Matching Network Gateway Style)
-        android.widget.ImageView gatewayIcon = new android.widget.ImageView(this);
-        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, gatewayIcon);
+        headerAvatar = new android.widget.ImageView(this);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
         
         int iSize = getResponsiveIconQuota();
         android.graphics.drawable.GradientDrawable halo = new android.graphics.drawable.GradientDrawable();
         halo.setShape(android.graphics.drawable.GradientDrawable.OVAL);
         halo.setColor(android.graphics.Color.TRANSPARENT);
         halo.setStroke(UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 4), getGradientStart());
-        gatewayIcon.setBackground(halo);
+        headerAvatar.setBackground(halo);
         
         // --- 🚀 AVATAR CLICK: Open Profile ---
-        gatewayIcon.setFocusable(true);
-        gatewayIcon.setClickable(true);
-        gatewayIcon.setOnClickListener(v -> {
+        headerAvatar.setFocusable(true);
+        headerAvatar.setClickable(true);
+        headerAvatar.setOnClickListener(v -> {
             startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
         });
         
-        ownerTile.addView(gatewayIcon, new LinearLayout.LayoutParams(iSize, iSize));
+        ownerTile.addView(headerAvatar, new LinearLayout.LayoutParams(iSize, iSize));
         
         LinearLayout metaText = new LinearLayout(this);
         metaText.setOrientation(LinearLayout.VERTICAL);
@@ -116,7 +123,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         metaText.addView(gatewayTitle);
         
         TextView gatewayName = new TextView(this);
-        String gName = prefs.getString("user_group_nickname", "SECURE_HUB_X01");
+        String gName = prefs.getString("user_group_nickname", "SECURE_HUB_SENTINEL");
         String gId = prefs.getString("active_group", "UNLINKED");
         gatewayName.setText(gName + " [" + gId + "]");
         gatewayName.setTextColor(getSecondaryTextColor());
@@ -431,7 +438,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         
                         viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, frRole.contains("Friend"));
                         
-                        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+                        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
                             java.util.Map<String, Object> cp = new java.util.HashMap<>();
                             cp.put("role_family", famRole);

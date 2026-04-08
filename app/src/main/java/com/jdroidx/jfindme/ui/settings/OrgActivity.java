@@ -3,22 +3,27 @@ package com.jdroidx.jfindme.ui.settings;
 import android.content.ContentValues;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.database.FirebaseDatabase;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
+import com.jdroidx.jfindme.utils.SystemLogger;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Enterprise Organization Suite (V35 PRO-Standard)
- * Fully compliant with BaseActivityJava (L3) Architecture.
+ * 🚀 L7 REVISED: Enterprise Organization Suite
+ * Closed-Loop Synchronization with Profile Identity and Cloud Matrix.
  */
 public class OrgActivity extends BaseActivityJava {
 
@@ -58,11 +63,6 @@ public class OrgActivity extends BaseActivityJava {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(q, q, q, q * 2);
 
-        LinearLayout formCard = new LinearLayout(this);
-        formCard.setOrientation(LinearLayout.VERTICAL);
-        UiArchitect.applyCard(this, formCard, "CARD_STANDARD");
-        formCard.setPadding(q, q, q, q);
-
         String[] fields = {
             "org_name|🏢 ORGANIZATION NAME", "department|📂 DEPARTMENT", "employee_id|🔢 EMPLOYEE ID",
             "designation|🎓 RANK", "supervisor|👮 SUPERVISOR", "shift_timing|🕒 SHIFT",
@@ -72,25 +72,23 @@ public class OrgActivity extends BaseActivityJava {
 
         for (String field : fields) {
             String[] parts = field.split("\\|");
+            
             TextView tvLabel = new TextView(this);
             tvLabel.setText(parts[1]);
             tvLabel.setTextColor(getGradientStart());
             tvLabel.setTextSize(12);
             tvLabel.setTypeface(null, Typeface.BOLD);
             tvLabel.setPadding(10, 30, 0, 10);
-            formCard.addView(tvLabel);
+            content.addView(tvLabel);
 
             EditText et = new EditText(this);
-            et.setHint("Entry node...");
-            et.setTextColor(getTextColor());
-            et.setHintTextColor(getSecondaryTextColor());
-            et.setPadding(35, 30, 35, 30);
-            et.setTextSize(14);
+            et.setHint("Awaiting input...");
+            et.setBackgroundColor(Color.TRANSPARENT);
             fieldMap.put(parts[0], et);
-            formCard.addView(et);
+            
+            // 🚀 QA Fix: Wrap in L7 Enterprise Capsule
+            content.addView(wrapInL7Capsule(et));
         }
-
-        content.addView(formCard);
 
         View saveBtn = createIconButton("COMMIT PROFESSIONAL DOSSIER", android.R.drawable.ic_menu_save, true, v -> handleOrgSave());
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160);
@@ -104,14 +102,35 @@ public class OrgActivity extends BaseActivityJava {
         return mainRoot;
     }
 
+    private View wrapInL7Capsule(View inner) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(35, 20, 35, 20);
+        
+        android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
+        fieldBg.setColor(Color.parseColor("#1A000000")); // Glassmorphism Tint
+        fieldBg.setStroke(3, getGradientStart()); 
+        fieldBg.setCornerRadius(60f);
+        row.setBackground(fieldBg);
+        
+        inner.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        row.addView(inner);
+        return row;
+    }
+
     @Override
     protected void setupLogic() {
         loadActiveOrgDossier();
     }
 
     private void loadActiveOrgDossier() {
+        String safeUid = FirebaseAuth.getInstance().getUid();
+        if (safeUid == null) return;
+
         android.database.sqlite.SQLiteDatabase sdb = db.getReadableDatabase();
-        android.database.Cursor cursor = sdb.query("org_table", null, "end_datetime = 253402300799000", null, null, null, null);
+        // 🚀 QA Fix: Strict UID Filtering (Forensic Identity Logic)
+        android.database.Cursor cursor = sdb.query("org_table", null, "uid=? AND end_datetime = 253402300799000", new String[]{safeUid}, null, null, null);
         if (cursor.moveToFirst()) {
             for (String key : fieldMap.keySet()) {
                 int idx = cursor.getColumnIndex(key);
@@ -125,18 +144,35 @@ public class OrgActivity extends BaseActivityJava {
     }
 
     private void handleOrgSave() {
+        String safeUid = FirebaseAuth.getInstance().getUid();
+        if (safeUid == null) {
+            Toast.makeText(this, "Hardware Identity Missing.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         ContentValues v = new ContentValues();
-        for (String key : fieldMap.keySet()) v.put(key, fieldMap.get(key).getText().toString().trim());
+        Map<String, Object> cloudMap = new HashMap<>();
         
-        String safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        v.put("uid", safeUid != null ? safeUid : "OWNER_001");
+        for (String key : fieldMap.keySet()) {
+            String val = fieldMap.get(key).getText().toString().trim();
+            v.put(key, val);
+            cloudMap.put(key, val);
+        }
+        
+        v.put("uid", safeUid);
+
         try {
+            // 🚀 Phase 1: Local Forensic Commit
             db.saveOrgDossier(v);
-            Toast.makeText(this, "Organization Timeline Secured.", Toast.LENGTH_SHORT).show();
+            
+            // 🚀 Phase 2: Waterfall Cloud Sync (Absolute Parity)
+            FirebaseDatabase.getInstance().getReference("users").child(safeUid).child("org").updateChildren(cloudMap);
+            
+            Toast.makeText(this, "Organization Timeline Secured Locally & Cloud.", Toast.LENGTH_SHORT).show();
+            SystemLogger.INSTANCE.i("OrgActivity", "Corporate Matrix Hardened for ID: " + safeUid);
             finish();
         } catch (Exception e) {
             Toast.makeText(this, "Forensic Transaction Error.", Toast.LENGTH_LONG).show();
         }
     }
 }
-

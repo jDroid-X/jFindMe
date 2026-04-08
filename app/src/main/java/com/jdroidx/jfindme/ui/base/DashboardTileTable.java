@@ -56,12 +56,14 @@ public class DashboardTileTable {
 
     static {
         // [Enterprise Registry] - Core Monitoring Hierarchy
-        registry.put("NETWORK_LOCATOR", new TileRecord("NETWORK_LOCATOR", "Network\nLocator", android.R.drawable.ic_dialog_map, "Scan Unified Satellite Network", 15f, 0.6f, "LIGHT", true, Color.CYAN, "DASH_RADAR"));
-        registry.put("SYNC_DEVICES",   new TileRecord("SYNC_DEVICES",   "Sync\nDevices", android.R.drawable.ic_input_add, "Manage Associated Hardware Nodes", 15f, 0.5f, "HEAVY", true, Color.GREEN, "DASH_PAIRING"));
-        registry.put("LOCATION_LOGS",  new TileRecord("LOCATION_LOGS",  "Location\nLogs", android.R.drawable.ic_menu_recent_history, "Access Clustered Tracking Data", 15f, 0.4f, "LIGHT", true, Color.GRAY, "DASH_HISTORY"));
+        registry.put("NETWORK_LOCATOR", new TileRecord("NETWORK_LOCATOR", "Network\nLocator", com.jdroidx.jfindme.R.drawable.ic_locator_pin, "Scan Unified Satellite Network", 15f, 0.6f, "LIGHT", true, Color.CYAN, "DASH_RADAR"));
+        registry.put("SYNC_DEVICES",   new TileRecord("SYNC_DEVICES",   "Device\nPairing", com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "Manage Associated Hardware Nodes", 15f, 0.5f, "HEAVY", true, Color.GREEN, "DASH_PAIRING"));
+        registry.put("LOCATION_LOGS",  new TileRecord("LOCATION_LOGS",  "Location\nLogs", com.jdroidx.jfindme.R.drawable.ic_location_history, "Access Clustered Tracking Data", 15f, 0.4f, "LIGHT", true, Color.GRAY, "DASH_HISTORY"));
         registry.put("PANIC_ALERTS",   new TileRecord("PANIC_ALERTS",   "Panic\nAlerts", android.R.drawable.ic_dialog_alert, "View Critical Siren History", 15f, 0.8f, "HEAVY", true, Color.RED, "DASH_NOTIFS"));
-        registry.put("SAFE_ZONES",     new TileRecord("SAFE_ZONES",     "Safe\nZones", android.R.drawable.ic_dialog_map, "Configure Geographic Protected Domains", 15f, 0.6f, "LIGHT", true, Color.BLUE, "DASH_GEOFENCE"));
-        registry.put("SETTINGS_HUB",   new TileRecord("SETTINGS_HUB",   "Settings\nHub", android.R.drawable.ic_dialog_info, "Override Global Application Directives", 15f, 0.3f, "LIGHT", true, Color.DKGRAY, "DASH_SETTINGS"));
+        registry.put("SAFE_ZONES",     new TileRecord("SAFE_ZONES",     "Safe\nZones", com.jdroidx.jfindme.R.drawable.ic_safe_zone, "Configure Geographic Protected Domains", 15f, 0.6f, "LIGHT", true, Color.BLUE, "DASH_GEOFENCE"));
+        registry.put("FAMILY_FRIENDS", new TileRecord("FAMILY_FRIENDS", "Family\nFriends", com.jdroidx.jfindme.R.drawable.ic_family_friends, "Coordinate with Trusted Contacts", 15f, 0.5f, "LIGHT", true, Color.MAGENTA, "DASH_FAMILY"));
+        registry.put("SETTINGS_HUB",   new TileRecord("SETTINGS_HUB",   "Settings\nHub", com.jdroidx.jfindme.R.drawable.ic_settings_gears, "Override Global Application Directives", 15f, 0.3f, "LIGHT", true, Color.DKGRAY, "DASH_SETTINGS"));
+        registry.put("PEOPLE",         new TileRecord("PEOPLE",         "People\nMatrix", com.jdroidx.jfindme.R.drawable.ic_people, "Audit Connected Target Roster", 15f, 0.5f, "LIGHT", true, Color.MAGENTA, "DASH_PEOPLE"));
         
         // --- 🚀 QA Optimization Hub: Battery Pulse Matrix ---
         registry.put("BATTERY_1S",  new TileRecord("BATTERY_1S",  "1s\nPing",  android.R.drawable.ic_menu_rotate, "Max Tracking Intensity (-25%/day)", 20f, 0.8f, "HEAVY", true, Color.RED, "PULSE_1S"));

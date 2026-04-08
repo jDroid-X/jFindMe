@@ -125,7 +125,7 @@ class PersonDetailsViewModel : ViewModel() {
                 
                 // 🚀 LIVE QA FIX: Instantly sync Cloud override down to SQLite so other systems (like Map Engine) read the truth!
                 val fRole = if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]
-                localDb.saveLocalDossier(targetUid, cloudMap, fRole, cloudMap["fullName"], targetUid, targetUid, "CLOUD_SYNC")
+                localDb.commitForensicDossier(targetUid, cloudMap, fRole, cloudMap["fullName"], targetUid, targetUid, "CLOUD_SYNC")
                 val rFri = cloudMap["role_friend"] ?: "None"
                 localDb.updateCitizenRole(targetUid, cloudMap["role_family"] ?: "None", rFri, rFri.contains("Friend"))
                 
@@ -266,7 +266,7 @@ class PersonDetailsViewModel : ViewModel() {
         // 1. Upsert securely down into the Local SQLite Table
         val localDb = DatabaseHelper.getInstance(context)
         val sRole = if ((crossValidatedPayload["role_friend"] ?: "None") != "None") crossValidatedPayload["role_friend"] else crossValidatedPayload["role_family"]
-        localDb.saveLocalDossier(targetUid, crossValidatedPayload, sRole, crossValidatedPayload["fullName"], targetUid, targetUid, "USER_EDIT")
+        localDb.commitForensicDossier(targetUid, crossValidatedPayload, sRole, crossValidatedPayload["fullName"], targetUid, targetUid, "USER_EDIT")
 
         // 2. Evaluate Privacy Setting before touching Cloud Arrays
         val cloudSyncEnabled = payload["cloud_sync_enabled"] ?: "TRUE"

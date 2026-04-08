@@ -21,6 +21,7 @@ import com.jdroidx.jfindme.ui.map.MapActivity;
 import com.jdroidx.jfindme.ui.group.GroupActivity;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import android.view.KeyEvent;
+import java.util.Map;
 
 /**
  * Main -> UI Engine -> AuthScreen -> AuthActivity
@@ -442,32 +443,58 @@ public class AuthActivity extends BaseActivityJava {
                 
                 // 🚀 Sync Protocol: Use the local nickname (Agent_XXXX) unless it's empty, in which case we fallback to Cloud!
                 String finalInjectedName = name.isEmpty() ? "Resident Node" : name;
-                String cloudGroup = null, linkedCsv = null;
+                String finalInjectedEmail = etEmail.getText().toString().trim();
+                String cloudGroup = null, linkedCsv = null, cloudPin = "";
                 
                 if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
                     com.google.firebase.database.DataSnapshot snap = task.getResult();
                     cloudGroup = snap.child("active_group").getValue(String.class);
                     linkedCsv = snap.child("valid_linked_uids").getValue(String.class);
-                    
+                    cloudPin = snap.child("userPincode").getValue(String.class);
+                    if (cloudPin == null) cloudPin = "";
+
                     // If we locally selected the generic 'Resident Node', check for a custom Cloud name!
                     if (finalInjectedName.equals("Resident Node")) {
                         String fetchedName = snap.child("userName").getValue(String.class);
                         if (fetchedName != null && !fetchedName.isEmpty()) finalInjectedName = fetchedName;
                     }
+                    
+                    // Email Backfill if empty locally
+                    if (finalInjectedEmail.isEmpty()) {
+                        String fetchedEmail = snap.child("userEmail").getValue(String.class);
+                        if (fetchedEmail != null) finalInjectedEmail = fetchedEmail;
+                    }
                 }
                 
                 prefs.edit().putString("user_nickname", finalInjectedName).apply();
+                prefs.edit().putString("email", finalInjectedEmail).apply();
+                prefs.edit().putString("user_pincode", cloudPin).apply();
+
                 if (cloudGroup != null) prefs.edit().putString("active_group", cloudGroup).apply();
                 if (linkedCsv != null) prefs.edit().putString("linked_devices_csv", linkedCsv).apply();
+
+                // 🚀 CLOSED-LOOP INTEGRATION: Commit to Forensic Ledger (SQLite)
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(AuthActivity.this);
+                Map<String, String> dossier = new java.util.HashMap<>();
+                dossier.put("full_name", finalInjectedName);
+                dossier.put("user_pincode", cloudPin);
+                dossier.put("userEmail", finalInjectedEmail);
+                db.commitForensicDossier(uid, dossier, "Subject", finalInjectedName, uid, uid, "AUTH_HANDSHAKE");
                 
-                SystemLogger.INSTANCE.i(TAG, "Authorization Success. Redirecting to Profile Screen.");
+                final String targetPin = cloudPin;
+                SystemLogger.INSTANCE.i(TAG, "Authorization Success. Routing Flow: PIN=" + targetPin);
                 Toast.makeText(this, "Session Verified. Finalizing Dossier...", Toast.LENGTH_SHORT).show();
                 
                 // 🧱 QA Fix: Post-Transition Buffer (150ms)
-                // Prevents 'No registered input channel' errors during rapid screen hopping!
                 getWindow().getDecorView().postDelayed(() -> {
                     if (!isDestroyed() && !isFinishing()) {
-                        startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                        if (targetPin.isEmpty()) {
+                            // Fresh Install or Incomplete Profile
+                            startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                        } else {
+                            // Established Agent -> Map Central
+                            startActivity(new Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class));
+                        }
                         finish();
                     }
                 }, 150);

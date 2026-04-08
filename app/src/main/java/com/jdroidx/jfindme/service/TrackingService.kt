@@ -49,11 +49,11 @@ class TrackingService : Service() {
         cpuWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::TelemetryWakeLock")
         cpuWakeLock?.acquire() // Forces CPU to physically stay awake executing Coroutines safely even when Screen is Locked!
 
-        val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE)
         val userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
 
         locationEngine = LocationEngine(this) { location ->
-            val p = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+            val p = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE)
             if (p.getBoolean("pref_service_halted", false)) {
                 SystemLogger.w(TAG, "Forensic Isolation Active: Background Telemetry Blocked.")
                 return@LocationEngine
@@ -145,7 +145,7 @@ class TrackingService : Service() {
                     
                     // 🚀 HARDWARE REGISTRATION: Geofence Active on Device B Hardware
                     val helper = GeofenceHelper(this@TrackingService)
-                    val userName = getSharedPreferences("system_registry", MODE_PRIVATE).getString("user_nickname", "Pushpa")
+                    val userName = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("user_nickname", "Pushpa")
                     helper.addGeofence(name + "___" + userName, lat, lng, rad.toFloat())
                     
                     // 🛰️ CONFIRMATION: Update Cloud request status

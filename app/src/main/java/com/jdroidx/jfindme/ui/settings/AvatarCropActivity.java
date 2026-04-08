@@ -199,13 +199,17 @@ public class AvatarCropActivity extends BaseActivityJava {
                 exportMatrix.postTranslate(-(circleCX - circleRadius), -(circleCY - circleRadius));
                 cropCanvas.drawBitmap(rawPhoto, exportMatrix, bmpPaint);
                 
-                // Re-standardize App Structural Dimension Limits (350px Profile Array Matrix)
-                Bitmap scaledFinal = Bitmap.createScaledBitmap(output, 350, 350, true);
+                // 🚀 QA Fix: Master resolution (600px) ensures a 'best fit' within the 420px profile circle
+                Bitmap scaledFinal = Bitmap.createScaledBitmap(output, 600, 600, true);
                 
                 java.io.File cf = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
                 java.io.FileOutputStream fos = new java.io.FileOutputStream(cf);
                 scaledFinal.compress(Bitmap.CompressFormat.PNG, 100, fos);
                 fos.flush(); fos.close();
+                
+                // 🚀 QA Fix: Atomic Preference Sync (Set to Custom Identity -1)
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
+                prefs.edit().putInt("equipped_avatar_id", -1).apply();
                 
                 setResult(RESULT_OK);
                 finish();

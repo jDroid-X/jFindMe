@@ -16,22 +16,33 @@ public class AvatarLoader {
 
     // 🚀 QA Fix: Centralized Source of Truth for Local Custom Graphic Avatars
     public static void bindCurrentUserAvatar(Context context, ImageView targetView) {
-        int currentId = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-                               .getInt("equipped_avatar_id", 1);
+        String prefsName = "system_registry";
+        android.content.SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
+        int currentId = prefs.getInt("equipped_avatar_id", 1);
+        String customPath = prefs.getString("equipped_vrm_string", "");
         
-        java.io.File customPhotoFile = new java.io.File(context.getFilesDir() + "/avatars", "custom_photo.png");
-        if (currentId == -1 && customPhotoFile.exists()) {
-            String cacheKey = "local_custom_photo";
+        if (currentId == -1) {
+            String cacheKey = "local_custom_" + customPath;
             Bitmap cached = bitmapCache.get(cacheKey);
             if (cached != null) {
                 targetView.setImageBitmap(cached);
                 return;
             }
-            Bitmap b = BitmapFactory.decodeFile(customPhotoFile.getAbsolutePath());
-            if (b != null) {
-                bitmapCache.put(cacheKey, b);
-                targetView.setImageBitmap(b);
-                return;
+            
+            // Try path-based resolution first, fallback to legacy custom_photo.png
+            java.io.File targetFile = null;
+            if (!customPath.isEmpty()) targetFile = new java.io.File(customPath);
+            if (targetFile == null || !targetFile.exists()) {
+                targetFile = new java.io.File(context.getFilesDir() + "/avatars", "custom_photo.png");
+            }
+            
+            if (targetFile.exists()) {
+                Bitmap b = BitmapFactory.decodeFile(targetFile.getAbsolutePath());
+                if (b != null) {
+                    bitmapCache.put(cacheKey, b);
+                    targetView.setImageBitmap(b);
+                    return;
+                }
             }
         }
         
@@ -48,14 +59,24 @@ public class AvatarLoader {
         Bitmap cached = bitmapCache.get(cacheKey);
         if (cached != null) return cached;
 
-        java.io.File customPhotoFile = new java.io.File(context.getFilesDir() + "/avatars", "custom_photo.png");
+        String customPath = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                               .getString("equipped_vrm_string", "");
+        
         Bitmap result;
-        if (currentId == -1 && customPhotoFile.exists()) {
-            Bitmap raw = BitmapFactory.decodeFile(customPhotoFile.getAbsolutePath());
-            if (raw != null) {
-                result = Bitmap.createScaledBitmap(raw, targetSize, targetSize, true);
-                bitmapCache.put(cacheKey, result);
-                return result;
+        if (currentId == -1) {
+            java.io.File targetFile = null;
+            if (!customPath.isEmpty()) targetFile = new java.io.File(customPath);
+            if (targetFile == null || !targetFile.exists()) {
+                targetFile = new java.io.File(context.getFilesDir() + "/avatars", "custom_photo.png");
+            }
+
+            if (targetFile.exists()) {
+                Bitmap raw = BitmapFactory.decodeFile(targetFile.getAbsolutePath());
+                if (raw != null) {
+                    result = Bitmap.createScaledBitmap(raw, targetSize, targetSize, true);
+                    bitmapCache.put(cacheKey, result);
+                    return result;
+                }
             }
         }
         
@@ -103,6 +124,20 @@ public class AvatarLoader {
         }
         bitmapCache.put(cacheKey, result);
         return result;
+    }
+
+    public static void bindAvatar(Context context, ImageView targetView, String avatarIdStr) {
+        if (avatarIdStr == null || avatarIdStr.isEmpty()) {
+            targetView.setImageResource(android.R.drawable.ic_menu_myplaces);
+            return;
+        }
+        int resId = context.getResources().getIdentifier(avatarIdStr, "drawable", context.getPackageName());
+        if (resId == 0) {
+            // Hash hack for .vrm placeholders
+            int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 22 + 1;
+            resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
+        }
+        targetView.setImageResource(resId != 0 ? resId : android.R.drawable.ic_menu_myplaces);
     }
 
     public static void clearCache() {

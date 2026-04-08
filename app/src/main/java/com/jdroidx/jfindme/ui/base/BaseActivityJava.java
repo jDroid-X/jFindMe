@@ -32,6 +32,7 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     protected int currentStage;
     protected long currentUiHash;
     protected boolean isLandscape;
+    protected boolean isUiRebuilding = false; // 🚀 Lifecycle Guard
     private static long lastRecreateTime = 0;
     private static final Handler registryHandler = new Handler(Looper.getMainLooper());
     private Runnable registryCheckRunnable;
@@ -101,8 +102,22 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         }
         
         setupLogic();
+        if (savedInstanceState != null) {
+            onUiRebuilt();
+        }
         SystemLogger.i(getClass().getSimpleName(), "Native Utility Activity Resumed.");
     }
+    
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        onSaveCurrentState();
+        outState.putBoolean("BASE_IS_LANDSCAPE", isLandscape);
+    }
+    
+    // contract methods for subclasses
+    protected void onSaveCurrentState() {}
+    protected void onUiRebuilt() {}
     
     private void startRegistryAudit() {
         if (registryCheckRunnable != null) return;
@@ -224,9 +239,7 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         }
     }
 
-    protected void onUiRebuilt() {} 
-    protected void onSaveCurrentState() {} 
-    protected void triggerHelpDialog() {
+    protected void  triggerHelpDialog() {
         String actName = getClass().getSimpleName().replace("Activity", "");
         String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
         if (actName.contains("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
@@ -474,8 +487,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     }
 
     protected int getResponsivePaddingQuota() {
-        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (Baseline: 25px)
-        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 25);
+        // 🚀 L7 Architecture Sync: Dynamically recalibrated for exact Screen Padding metrics (User Baseline: 20px)
+        return UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 20);
     }
 
     protected int getResponsiveHeaderTopQuota() {

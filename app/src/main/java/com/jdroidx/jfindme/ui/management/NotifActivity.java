@@ -77,7 +77,7 @@ public class NotifActivity extends BaseActivityJava {
         setupSyncHandshakeListener(syncContainer);
 
         // 🚀 QA Fix: Global Navigation Integrity
-        String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
+        String[] keys = {"NAV_NOTICE", "NAV_ALERT", "NAV_DEVICE", "NAV_ME"};
         mainRoot.addView(UiArchitect.createBottomNav(this, keys, "NAV_NOTICE"));
 
         return mainRoot;

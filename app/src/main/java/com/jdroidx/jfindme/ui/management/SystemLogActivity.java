@@ -201,12 +201,25 @@ public class SystemLogActivity extends BaseActivityJava {
     private String generateDeviceIdentityReport() {
         String uid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         String safeUid = uid != null ? uid : "Null / Ghost State";
-        boolean onboarded = prefs.getBoolean("profile_onboarded", false);
+        
+        // 🧪 STEP 1: PULL FROM SQL LEDGER (Physical Data Parity)
+        java.util.Map<String, String> devInfo = null;
+        try {
+            java.util.List<java.util.Map<String, String>> data = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getPagedData("device_table", 1, 0, null);
+            if (!data.isEmpty()) devInfo = data.get(0);
+        } catch (Exception e) {}
+
+        if (devInfo == null) return "• SECURITY ALERT:\n  No Hardware Signature detected in local SQL Ledger.\n  Perform Sync to establish Silicon Fingerprint.";
+
         return "• Firebase Tracking UID:\n  " + safeUid + "\n\n" +
-               "• Hardware Bound ID:\n  " + prefs.getString("hardware_id", "Not Assigned") + "\n\n" +
-               "• Native Profile Alias:\n  " + prefs.getString("user_nickname", "Unknown") + "\n\n" +
-               "• Linked Secure Phone:\n  " + prefs.getString("user_phone", "No Phone Linked") + "\n\n" +
-               "• Mandatory Onboarding Cleared:\n  " + (onboarded ? "YES (SECURE)" : "NO (ORPHANED)");
+               "• Hardware Bound ID:\n  " + devInfo.get("hardware_id") + "\n\n" +
+               "• Manufacturer & Model:\n  " + devInfo.get("manufacturer") + " [" + devInfo.get("device_model") + "]\n\n" +
+               "• OS Security Patch Level:\n  " + devInfo.get("security_patch") + "\n\n" +
+               "• Forensic IMEI Array:\n  IMEI 1: " + devInfo.get("imei_1") + "\n  IMEI 2: " + devInfo.get("imei_2") + "\n\n" +
+               "• Network SIM Metadata:\n  SIM 1: " + devInfo.get("sim_operator_1") + " [" + devInfo.get("iccid_1") + "]\n  SIM 2: " + devInfo.get("sim_operator_2") + " [" + devInfo.get("iccid_2") + "]\n\n" +
+               "• Secured Phone State:\n  " + devInfo.get("secured_phone") + "\n\n" +
+               "• Resource Capacity:\n  CPU: " + devInfo.get("total_cpu_cores") + " Cores | RAM: " + devInfo.get("total_ram") + " | Disk: " + devInfo.get("total_storage") + "\n\n" +
+               "• Identity Alias:\n  " + prefs.getString("user_nickname", "Unknown");
     }
 
     private String generateRoleCacheReport() {

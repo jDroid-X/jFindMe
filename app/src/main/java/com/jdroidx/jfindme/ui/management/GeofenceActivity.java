@@ -4,6 +4,7 @@ import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
@@ -49,6 +50,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private final String TAG = "GeofenceActivity";
     private GeofenceHelper geofenceHelper;
     private GeofenceViewModel viewModel;
+    private android.widget.ImageView myAvatarField;
     private static final int GEOFENCE_PERMISSION_CODE = 200;
 
     private GoogleMap googleMap;
@@ -78,6 +80,12 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private EditText edtStart, edtEnd;
     private android.widget.CheckBox[] dayChecks;
     private View btnConfirm; // 🚀 Action Terminal Controller
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (myAvatarField != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatarField);
+    }
 
     @Override
     protected View createLayout() {
@@ -112,6 +120,15 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         header.addView(titleBundle);
         listStateContainer.addView(header);
+        
+        // 🚀 IDENTITY CARD (Owner Tile 1): Mapped from Core Profile
+        View identityBlock = buildIdentityBlock();
+        identityBlock.setOnClickListener(v -> {
+            Toast.makeText(this, "Master Sync Initialized...", Toast.LENGTH_SHORT).show();
+            viewModel.fetchRosterMetadata();
+            viewModel.resolveActiveProfileAddress();
+        });
+        listStateContainer.addView(identityBlock, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = new LinearLayout(this);
@@ -368,7 +385,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         rootLayer.addView(mapStateContainer);
 
         SupportMapFragment mapFragment = SupportMapFragment.newInstance();
-        getSupportFragmentManager().beginTransaction().add(1005, mapFragment).commit();
+        getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit(); 
         mapFragment.getMapAsync(this);
 
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
@@ -1159,6 +1176,29 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         });
     }
 
+    // 🚀 L7 ORIENTATION SHIELD: Preserve Forensic Editor State
+    private boolean isEditorActive = false;
+
+    @Override
+    protected void onSaveCurrentState() {
+        // Capture live state before layout teardown
+        isEditorActive = (mapStateContainer != null && mapStateContainer.getVisibility() == View.VISIBLE);
+    }
+
+    @Override
+    protected void onUiRebuilt() {
+        // Restore visibility after orientation matrix re-calculation
+        if (isEditorActive) {
+            openMapEditorState();
+        }
+        
+        // 🛰️ Map Fragment Re-Injection: Forced handshake after layout re-pivot
+        SupportMapFragment mapFragment = SupportMapFragment.newInstance();
+        getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit();
+        mapFragment.getMapAsync(this);
+    }
+
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -1192,5 +1232,98 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             }
             return h * 100 + m;
         } catch (Exception e) { return 0; }
+    }
+
+    private View buildIdentityBlock() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(scale(25), scale(25), scale(25), scale(25)); 
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        
+        myAvatarField = new ImageView(this);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatarField);
+        
+        // 🚀 Premium Circular Avatar (Responsive Scaling)
+        int avatarSize = scale(168); 
+        android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
+        c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        c.setColor(Color.TRANSPARENT);
+        c.setStroke(scale(4), getGradientStart());
+        myAvatarField.setBackground(c);
+        
+        row.addView(myAvatarField, new LinearLayout.LayoutParams(avatarSize, avatarSize));
+        
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setPadding(scale(40), 0, 0, 0);
+        
+        // --- 1. OWNER NAME ---
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
+        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
+        
+        android.content.SharedPreferences prefs = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE);
+        String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        
+        TextView myName = new TextView(this);
+        myName.setText("👤 Owner: " + nameStr);
+        myName.setTextColor(getTextColor());
+        myName.setTextSize(scaleText(15));
+        myName.setTypeface(null, Typeface.BOLD);
+        textBlock.addView(myName);
+        
+        // Fetch Persistent UIDs
+        android.content.SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String hardwareId = jPrefs.getString("hardware_device_id", null);
+        if (hardwareId == null) {
+            hardwareId = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            jPrefs.edit().putString("hardware_device_id", hardwareId).apply();
+        }
+        String deviceId = jPrefs.getString("device_uid", null);
+        if (deviceId == null) {
+            deviceId = "UID-" + java.util.UUID.randomUUID().toString().substring(0, 7).toUpperCase();
+            jPrefs.edit().putString("device_uid", deviceId).apply();
+        }
+
+        String myUidCheck = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        String safeUid = (myUidCheck != null) ? myUidCheck : "MOCK_U123";
+        String upperFirebaseId = safeUid.toUpperCase();
+
+        // --- 2. DEVICE UID ---
+        TextView tvDeviceUid = new TextView(this);
+        tvDeviceUid.setText("📱 Device ID: - " + deviceId);
+        tvDeviceUid.setTextColor(getSecondaryTextColor());
+        tvDeviceUid.setTextSize(10);
+        textBlock.addView(tvDeviceUid);
+
+        // --- 3. HARDWARE UID ---
+        TextView tvHardwareUid = new TextView(this);
+        tvHardwareUid.setText("⚙️ Hardware UID: - " + hardwareId);
+        tvHardwareUid.setTextColor(getSecondaryTextColor());
+        tvHardwareUid.setTextSize(10);
+        textBlock.addView(tvHardwareUid);
+
+        // --- 4. NETWORK ID ---
+        TextView tvNetworkId = new TextView(this);
+        tvNetworkId.setText("🌐 Network ID: - " + upperFirebaseId);
+        tvNetworkId.setTextColor(getSecondaryTextColor());
+        tvNetworkId.setTextSize(9);
+        textBlock.addView(tvNetworkId);
+        
+        // 🛡️ ARCHITECTURAL SILENCE: Check local persistence for Hub status
+        String localActiveGroup = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+        if (localActiveGroup != null) {
+            TextView tvStatus = new TextView(this);
+            tvStatus.setText("LOCKED TO HUB: " + localActiveGroup);
+            tvStatus.setTextColor(Color.parseColor("#00E676"));
+            tvStatus.setTextSize(10);
+            tvStatus.setTypeface(null, Typeface.BOLD);
+            tvStatus.setPadding(0, 10, 0, 0);
+            textBlock.addView(tvStatus);
+        }
+        
+        row.addView(textBlock);
+        return row;
     }
 }

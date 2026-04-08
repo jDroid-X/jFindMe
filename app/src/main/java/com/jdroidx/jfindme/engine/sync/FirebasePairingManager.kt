@@ -240,14 +240,14 @@ object FirebasePairingManager {
                             if (hostId.isNotEmpty()) {
                                 // Mirror Host node to Child's local Roster SSOT with full forensic metadata
                                 com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveRosterNode(
-                                    hostId, hostName, "Guardian", "P2P SYNC COMPLETED", isAdmin = true, isFriend = false,
+                                    hostId, hostName, "Guardian", "P2P SYNC COMPLETED", isAdmin = true, isFriend = isFriend,
                                     ownerName = hostName, ownerDeviceId = hostId, connectedDeviceId = childId, qrCode = qrCode
                                 )
                                 
                                 // 🚀 Update local dossier with roles
                                 val myDosMap = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).getLocalDossier("OWNER_001")
                                 if (myDosMap != null) {
-                                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveLocalDossier(
+                                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).commitForensicDossier(
                                         "OWNER_001", myDosMap, finalChildRole, hostName, hostId, childId, qrCode
                                     )
                                 }

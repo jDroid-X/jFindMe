@@ -10,6 +10,10 @@ import com.google.firebase.auth.FirebaseAuth
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.repository.LocationRepository
 import com.jdroidx.jfindme.engine.location.GeohashHelper
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.jdroidx.jfindme.utils.SystemLogger
 
 /**
@@ -23,6 +27,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     
     private val _filteredLocations = MutableLiveData<List<UserLocation>>()
     val userLocations: LiveData<List<UserLocation>> = _filteredLocations
+    
+    private val _myLocation = MutableLiveData<Location>()
+    val myLocation: LiveData<Location> = _myLocation
     
     // 🏷️ Filter State Matrix
     private var currentFilterMode = "ALL" // Default
@@ -39,11 +46,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentUserRole = MutableLiveData<String>("VIEWER")
     val currentUserRole: LiveData<String> get() = _currentUserRole
 
+    private val _pendingSafeZoneRequestsCount = MutableLiveData<Int>(0)
+    val pendingSafeZoneRequestsCount: LiveData<Int> = _pendingSafeZoneRequestsCount
+
     init {
         SystemLogger.i(TAG, "MapViewModel initialized")
         repository.startListening()
         fetchCurrentUserRole()
         bindSecureFamilyMesh()
+        bindPendingRequestsListener()
         
         repository.userLocations.observeForever { rawLocations ->
             rawLocationCache.clear()
@@ -56,6 +67,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         this.currentFilterMode = mode
         applyTacticalFilter()
     }
+
+    fun getCurrentFilterMode(): String = currentFilterMode
 
     private fun applyTacticalFilter() {
         val safeUid = auth.uid ?: return
@@ -188,11 +201,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun isAdmin(): Boolean = _currentUserRole.value == "ADMIN"
 
     fun updateMyLocation(context: Context, location: Location) {
+        _myLocation.postValue(location)
         val currentUser = auth.currentUser ?: return
         val userId = currentUser.uid
         
         // 🧠 QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
-        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
         val customName = prefs.getString("user_nickname", null)
         val userName = customName ?: currentUser.displayName ?: currentUser.email ?: "User"
         
@@ -276,6 +290,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         repository.stopListening()
     }
 
+    private fun bindPendingRequestsListener() {
+        val safeUid = auth.uid ?: return
+        val rootDb = FirebaseDatabase.getInstance().reference
+        val ref = rootDb.child("users").child(safeUid).child("geofence_sync_requests")
+        
+        ref.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                var count = 0
+                for (snap in snapshot.children) {
+                    val status = snap.child("status").getValue(String::class.java)
+                    if ("PENDING_ACCEPTANCE" == status) {
+                        count++
+                    }
+                }
+                _pendingSafeZoneRequestsCount.postValue(count)
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopListening()
@@ -285,6 +319,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _refreshTrigger = MutableLiveData<Long>()
     val refreshTrigger: LiveData<Long> = _refreshTrigger
 
+    @kotlin.jvm.JvmOverloads
     fun triggerRefresh(time: Long = System.currentTimeMillis()) {
         _refreshTrigger.value = time
     }

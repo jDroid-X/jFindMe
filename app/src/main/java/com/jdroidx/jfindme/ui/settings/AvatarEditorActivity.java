@@ -83,6 +83,8 @@ public class AvatarEditorActivity extends BaseActivityJava {
         
         workspace.addView(scrollZone);
         
+        root.addView(workspace);
+        
         // Wrap everything into a clean RelativeLayout to allow overlays
         android.widget.RelativeLayout wrap = new android.widget.RelativeLayout(this);
         wrap.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -141,8 +143,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
         return wrap;
     }
 
-    // Purged buildTopNav() physically from the database to enforce Top-Down Hero Header matrix parity.
-
     private View buildPreviewStage() {
         RelativeLayout stage = new RelativeLayout(this);
         int stageHeight = (int) (getResources().getDisplayMetrics().heightPixels * 0.40);
@@ -162,7 +162,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
         renderingStageWindow.setBackgroundColor(Color.TRANSPARENT);
         renderingStageWindow.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         
-        // 🧠 QA Fix: Stream HTML Payload directly to Memory, mocking Base URL to trick Chrome Engine bounds natively!
         try {
             java.io.InputStream is = getAssets().open("web/vrm_viewer.html");
             byte[] buffer = new byte[is.available()];
@@ -196,15 +195,14 @@ public class AvatarEditorActivity extends BaseActivityJava {
         stageParams.setMargins(0, 0, 0, 80); // Create room for Suggestion Bar
         stage.addView(renderingStageWindow, stageParams);
 
-        // 🧠 RULE-BASED CUSTOMIZATION (Contextual AI Map Engine)
+        // 🧠 RULE-BASED CUSTOMIZATION
         TextView aiSuggestionBar = new TextView(this);
-        // Using sample current GPS (e.g. 18.52, 73.85 from our Map Bridge) 
         String smartestOutfit = com.jdroidx.jfindme.engine.avatar.AvatarSmartEngine.INSTANCE.generateLocationBasedSuggestions(18.52, 73.85);
         aiSuggestionBar.setText("💡 " + smartestOutfit);
         aiSuggestionBar.setTextColor(Color.parseColor("#00E676"));
         aiSuggestionBar.setTextSize(12);
         aiSuggestionBar.setGravity(Gravity.CENTER);
-        aiSuggestionBar.setBackgroundColor(Color.parseColor("#33004400")); // Dark green translucent block
+        aiSuggestionBar.setBackgroundColor(Color.parseColor("#33004400"));
         aiSuggestionBar.setPadding(0, 20, 0, 20);
 
         RelativeLayout.LayoutParams suggestionParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -212,12 +210,10 @@ public class AvatarEditorActivity extends BaseActivityJava {
         suggestionParams.setMargins(0, 0, 0, 30);
         stage.addView(aiSuggestionBar, suggestionParams);
 
-        // Interactive Zoom/Pan Hint
         TextView hint = new TextView(this);
         hint.setText("🔍 PINCH & CUBE ROTATE");
         hint.setTextColor(Color.parseColor("#555555"));
         hint.setTextSize(10);
-        
         RelativeLayout.LayoutParams hintParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hintParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
         hintParams.addRule(RelativeLayout.CENTER_HORIZONTAL);
@@ -230,7 +226,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
     private View buildAnimationToggles() {
         HorizontalScrollView hScroll = new HorizontalScrollView(this);
         hScroll.setHorizontalScrollBarEnabled(false);
-        applySolidCardGeometry(hScroll, getCardColor(), 0f); // Stripped glassmorphism, injected flat geometry
+        applySolidCardGeometry(hScroll, getCardColor(), 0f);
 
         LinearLayout animRow = new LinearLayout(this);
         animRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -246,11 +242,10 @@ public class AvatarEditorActivity extends BaseActivityJava {
             animBtn.setTypeface(null, Typeface.BOLD);
             animBtn.setGravity(Gravity.CENTER);
             
-            // Central Modules
             android.graphics.drawable.GradientDrawable modBg = new android.graphics.drawable.GradientDrawable();
             modBg.setColor(Color.TRANSPARENT);
             modBg.setCornerRadius(100f);
-            modBg.setStroke(3, getGradientStart()); // Active Gradient Sync Hook
+            modBg.setStroke(3, getGradientStart());
             animBtn.setBackground(modBg);
             animBtn.setElevation(10f);
             
@@ -261,7 +256,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
             animBtn.setOnClickListener(v -> {
                 android.widget.Toast.makeText(this, "▶ " + b, android.widget.Toast.LENGTH_SHORT).show();
                 triggerNativeFallbackAnimation(b);
-                com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE.syncAnimationState(b);
             });
             animRow.addView(animBtn);
         }
@@ -270,7 +264,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
         return hScroll;
     }
     
-    // 🧠 Native 3D WebGL Integration via Javascript Bridge
     private void triggerNativeFallbackAnimation(String state) {
         if (renderingStageWindow == null) return;
         renderingStageWindow.evaluateJavascript("if(window.playAnimation) window.playAnimation('" + state + "');", null);
@@ -293,7 +286,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
             tab.setTypeface(null, Typeface.BOLD);
             tab.setPadding(50, 20, 50, 20);
             
-            // Native UI Tab Indicator
             android.graphics.drawable.GradientDrawable chipBg = new android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{getCardColor(), getPrimaryColor()}
@@ -319,19 +311,33 @@ public class AvatarEditorActivity extends BaseActivityJava {
         com.jdroidx.jfindme.engine.avatar.AvatarSmartEngine.INSTANCE.preemptivelyCacheAssets(category.toLowerCase(), 1);
 
         if (category.equalsIgnoreCase("AVATARS")) {
-            try {
-                boolean foundMesh = false;
-                String[] physicalModels = getAssets().list("models");
-                if (physicalModels != null && physicalModels.length > 0) {
-                    for (String vrmFilename : physicalModels) {
-                        if (vrmFilename.endsWith(".vrm")) {
-                            inventoryOptionsGrid.addView(createInventoryCard("AVATARS", vrmFilename, 0, null));
-                            foundMesh = true;
+            boolean foundMesh = false;
+            String[] searchPaths = {"models", "models/body", "models/hair", "models/outfit", "models/shoes", "models/accessories"};
+            
+            for (String path : searchPaths) {
+                try {
+                    String[] files = getAssets().list(path);
+                    if (files != null && files.length > 0) {
+                        for (String f : files) {
+                            if (f.endsWith(".vrm") || f.endsWith(".png") || f.endsWith(".jpg")) {
+                                String fullPath = path + "/" + f;
+                                inventoryOptionsGrid.addView(createInventoryCard("AVATARS", f, 0, null, fullPath));
+                                foundMesh = true;
+                            }
                         }
                     }
+                } catch (java.io.IOException e) {
+                    SystemLogger.INSTANCE.w(TAG, "Search Path Not Found: " + path);
                 }
-            } catch (java.io.IOException e) {
-                SystemLogger.INSTANCE.e(TAG, "Local Storage Assets Mount Failure", e);
+            }
+            
+            if (!foundMesh) {
+                TextView error = new TextView(this);
+                error.setText("⚠ IDENTITY INDEX FAILURE: NO ASSETS DETECTED");
+                error.setTextColor(Color.RED);
+                error.setGravity(Gravity.CENTER);
+                error.setPadding(0, 50, 0, 50);
+                inventoryOptionsGrid.addView(error);
             }
         } else {
             // 🧠 COMPONENT STYLING SYSTEM:
@@ -341,12 +347,12 @@ public class AvatarEditorActivity extends BaseActivityJava {
             String[] styleNames = {"Base Standard", "Obsidian Black", "Crimson Red", "Neon Green", "Sapphire Blue", "Sakura Pink", "Leather Brown"};
             
             for (int i = 0; i < hexColors.length; i++) {
-                inventoryOptionsGrid.addView(createInventoryCard(category, "Style: " + styleNames[i], 0, hexColors[i]));
+                inventoryOptionsGrid.addView(createInventoryCard(category, "Style: " + styleNames[i], 0, hexColors[i], null));
             }
         }
     }
 
-    private View createInventoryCard(String category, String itemName, int coinCost, String hexColorCommand) {
+    private View createInventoryCard(String category, String itemName, int coinCost, String hexColorCommand, String assetPathOverride) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         applySolidCardGeometry(row, getCardColor(), 30f); // Material 3 UI Standard
@@ -426,13 +432,13 @@ public class AvatarEditorActivity extends BaseActivityJava {
                     com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE.queueCustomizationUpdate(category.toLowerCase(), hexColorCommand);
                 } else {
                     // It's a Root VRM File Swap!
-                    String relativeUri = itemName;
+                    String relativeUri = (assetPathOverride != null) ? assetPathOverride : itemName;
                     prefs.edit().putString("equipped_vrm_string", relativeUri).apply();
                     
                     // Apply visual proxy integer for backward compatibility
                     prefs.edit().putInt("equipped_avatar_id", Math.abs(itemName.hashCode())).apply();
                     
-                    String absoluteVRM = "https://jfindme.local/models/" + relativeUri;
+                    String absoluteVRM = "https://jfindme.local/" + relativeUri;
                     renderingStageWindow.evaluateJavascript("window.loadModel('" + absoluteVRM + "');", null);
                     
                     android.widget.Toast.makeText(this, "Master Mesh Root Extracted Successfully!", android.widget.Toast.LENGTH_SHORT).show();
@@ -442,20 +448,6 @@ public class AvatarEditorActivity extends BaseActivityJava {
         });
         
         return row;
-    }
-
-    private View createPillButton(String text, View.OnClickListener action) {
-        TextView btn = new TextView(this);
-        btn.setText(text);
-        btn.setTextColor(Color.WHITE);
-        btn.setBackgroundColor(Color.parseColor("#333333"));
-        btn.setPadding(40, 15, 40, 15);
-        
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        p.setMargins(10, 0, 10, 0);
-        btn.setLayoutParams(p);
-        btn.setOnClickListener(action);
-        return btn;
     }
 
     private void saveCustomizationPayload() {

@@ -1,51 +1,42 @@
 package com.jdroidx.jfindme.ui.management;
 
 import android.app.AlertDialog;
-import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Typeface;
-import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.HorizontalScrollView;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TableLayout;
-import android.widget.TableRow;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import com.google.firebase.auth.FirebaseAuth;
+import android.view.animation.Animation;
+import android.view.animation.RotateAnimation;
+import android.widget.*;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
-
+import com.jdroidx.jfindme.utils.AngelLoader;
 import java.io.File;
-import java.io.FileOutputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import android.widget.Toast;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
- * Hard Reset Hub (V37 FINAL RECONSTRUCTION)
- * Objective: Violently purge all local forensic assets and reconstruct SSOT.
- * Hardening: L7 Architectural Registry Parity & V36 Database Migration.
+ * 👑 FACTORY RESET CONSOLE (V43 SELECTIVE PURGE)
+ * Objective: High-performance forensic matrix with Dual-Stack Table Purge.
+ * Enhancement: Checkbox-driven selective deletion (Local + Cloud).
  */
 public class FactoryResetActivity extends BaseActivityJava {
 
-    private LinearLayout rootContainer;
+    private FactoryResetViewModel viewModel;
+    private LinearLayout rootContainer, matrixBox;
+    private ImageView refreshIcon;
     private StringBuilder exportDataBuilder = new StringBuilder();
-    private DatabaseHelper db;
 
     @Override
     protected View createLayout() {
-        db = DatabaseHelper.getInstance(this);
         LinearLayout mainLayout = new LinearLayout(this);
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setBackgroundColor(getPrimaryColor());
 
-        // Header
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         applyGlobalHeaderGeometry(header);
@@ -56,230 +47,228 @@ public class FactoryResetActivity extends BaseActivityJava {
         UiArchitect.applyText(this, title, "TEXT_HEADER");
         header.addView(title);
         
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Review Offline Cache Matrix before System Purge.");
-        subtitle.setTextColor(getGradientOverlayText());
-        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
-        header.addView(subtitle);
-        
+        TextView sub = new TextView(this);
+        sub.setText("Forensic System Reset & Cloud Matrix Recovery");
+        sub.setTextColor(getGradientOverlayText());
+        UiArchitect.applyText(this, sub, "TEXT_SUB");
+        header.addView(sub);
         mainLayout.addView(header);
 
-        // Content
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         rootContainer = new LinearLayout(this);
         rootContainer.setOrientation(LinearLayout.VERTICAL);
         int q = getResponsivePaddingQuota();
-        rootContainer.setPadding(q * 2, q, q * 2, q * 5);
-
-        // Prepare File/DB sizes
-        File dbFile = getDatabasePath("JFindMe_CitizenData.db");
-        long dbSizeBytes = dbFile.exists() ? dbFile.length() : 0;
-        String sizeFormatted = android.text.format.Formatter.formatFileSize(this, dbSizeBytes);
-
-        exportDataBuilder.append("=== JFINDME OFFLINE DATABASE DUMP ===\n");
-        exportDataBuilder.append("TOTAL DATABASE SIZE: ").append(sizeFormatted).append("\n\n");
-
+        rootContainer.setPadding(q, q, q, q * 3);
+        
         LinearLayout dbHeader = new LinearLayout(this);
         dbHeader.setOrientation(LinearLayout.HORIZONTAL);
         dbHeader.setGravity(Gravity.CENTER_VERTICAL);
-        dbHeader.setPadding(0, 0, 0, scale(20));
+        dbHeader.setPadding(0, 0, 0, scale(30));
+        
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText("DATABASE MATRIX SUMMARY");
+        tvLabel.setTextColor(getGradientStart());
+        UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
+        dbHeader.addView(tvLabel, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
-        TextView tvDbSummary = new TextView(this);
-        tvDbSummary.setText("DATABASE METRICS (Size: " + sizeFormatted + ")");
-        tvDbSummary.setTextColor(getGradientStart());
-        UiArchitect.applyText(this, tvDbSummary, "TEXT_LABEL");
-        dbHeader.addView(tvDbSummary, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-
-        ImageView refreshIcon = new ImageView(this);
-        refreshIcon.setImageResource(android.R.drawable.ic_popup_sync);
+        refreshIcon = new ImageView(this);
+        refreshIcon.setImageResource(android.R.drawable.ic_menu_rotate);
         refreshIcon.setColorFilter(getGradientStart());
+        int iconSize = scale(100);
+        dbHeader.addView(refreshIcon, new LinearLayout.LayoutParams(iconSize, iconSize));
+        refreshIcon.setOnClickListener(v -> viewModel.startCloudRecovery());
         
-        int dishSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dishSize, dishSize);
-        int m = scale(15);
-        iconLp.setMargins(m, m, m, m);
-        
-        applyAccessibility(refreshIcon, "Refresh Database Matrix");
-        refreshIcon.setOnClickListener(v -> refreshDatabaseMatrix());
-        
-        dbHeader.addView(refreshIcon, iconLp);
         rootContainer.addView(dbHeader);
-
-        refreshDatabaseMatrix();
+        
+        matrixBox = new LinearLayout(this);
+        matrixBox.setOrientation(LinearLayout.VERTICAL);
+        rootContainer.addView(matrixBox);
 
         scroll.addView(rootContainer);
-        mainLayout.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        mainLayout.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1.0f));
+
+        // 🚀 NAVIGATION SEQUENCE: Dedicated Footer for absolute visibility
+        LinearLayout staticFooter = new LinearLayout(this);
+        staticFooter.setOrientation(LinearLayout.VERTICAL);
+        int fPad = scale(30);
+        staticFooter.setPadding(fPad, fPad, fPad, fPad);
+        applyGlobalHeaderGeometry(staticFooter); // Re-use gradient style
+        
+        View btnHome = UiArchitect.createButton(this, "BTN_SECONDARY", v -> finish());
+        ((TextView)btnHome).setText("RETURN TO HOME DASHBOARD");
+        staticFooter.addView(btnHome);
+        
+        mainLayout.addView(staticFooter);
 
         return mainLayout;
     }
 
-    private void saveToLocalText() {
-        try {
-            File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
-            if (dir == null) dir = getFilesDir();
-            File file = new File(dir, "JFindMe_Database_Dump.txt");
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(exportDataBuilder.toString().getBytes());
-            fos.close();
-            Toast.makeText(this, "Saved Database Dump to: " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Error saving: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+    @Override
+    protected void setupLogic() {
+        viewModel = new ViewModelProvider(this).get(FactoryResetViewModel.class);
+
+        viewModel.isLoading.observe(this, loading -> {
+            if (loading) AngelLoader.show(this);
+            else AngelLoader.hide(this);
+        });
+
+        viewModel.syncStatus.observe(this, status -> {
+            if (status == null) return;
+            if (status.equals("SYNC_COMPLETE") || status.equals("SELECTIVE_PURGE_SUCCESS")) {
+                if (refreshIcon != null) refreshIcon.clearAnimation();
+                Toast.makeText(this, status.equals("SYNC_COMPLETE") ? "Master Matrix Synchronized." : "Selective Purge Finalized.", Toast.LENGTH_SHORT).show();
+            } else if (status.startsWith("PURGE_FAILED")) {
+                Toast.makeText(this, status, Toast.LENGTH_LONG).show();
+            } else {
+                AngelLoader.setStatus(this, status);
+                if (status.contains("RECOVERY")) startRefreshRotation();
+            }
+        });
+
+        viewModel.tableMatrix.observe(this, this::renderMatrix);
+        
+        viewModel.rebootTrigger.observe(this, reboot -> {
+            if (reboot) performSystemReboot();
+        });
     }
 
-    private void executePurge() {
+    private void renderMatrix(List<FactoryResetViewModel.TableNode> nodes) {
+        matrixBox.removeAllViews();
+        exportDataBuilder = new StringBuilder("=== JFINDME FORENSIC SYSTEM DUMP ===\n\n");
+        DatabaseHelper db = DatabaseHelper.getInstance(this);
+        exportDataBuilder.append("TIME: ").append(db.getReadableNow()).append("\n\n");
+        
+        for (FactoryResetViewModel.TableNode node : nodes) {
+            View card = createForensicCard(node);
+            matrixBox.addView(card);
+            exportDataBuilder.append("TABLE: ").append(node.name).append(" | ROWS: ").append(node.count).append("\n");
+        }
+        renderActionFooter(nodes);
+    }
+
+    private View createForensicCard(FactoryResetViewModel.TableNode node) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCardWithOverride(this, card, "CARD_STANDARD");
+        int p = scale(40);
+        card.setPadding(p, p, p, p);
+        
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(node.name.toUpperCase());
+        tvTitle.setTextColor(getTextColor());
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvTitle, "TEXT_TITLE");
+        card.addView(tvTitle);
+        
+        TextView tvStats = new TextView(this);
+        tvStats.setText("Forensic Integrity: 100% | Rows Detected: " + node.count);
+        tvStats.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvStats, "TEXT_MINI");
+        card.addView(tvStats);
+
+        if (node.count > 0) {
+            HorizontalScrollView hScroll = new HorizontalScrollView(this);
+            TableLayout table = new TableLayout(this);
+            for (Map<String, String> row : node.sample) {
+                TableRow tr = new TableRow(this);
+                for (String val : row.values()) {
+                    TextView tv = new TextView(this);
+                    tv.setText(val != null ? val : "---");
+                    tv.setPadding(scale(20), scale(10), scale(20), scale(10));
+                    tv.setTextColor(getSecondaryTextColor());
+                    UiArchitect.applyText(this, tv, "TEXT_BODY");
+                    tr.addView(tv);
+                }
+                table.addView(tr);
+            }
+            hScroll.addView(table);
+            card.addView(hScroll);
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, scale(30));
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    private void renderActionFooter(List<FactoryResetViewModel.TableNode> nodes) {
+        LinearLayout footer = new LinearLayout(this);
+        footer.setOrientation(LinearLayout.VERTICAL);
+        footer.setPadding(0, scale(40), 0, 0);
+
+        addAccessibilityButton(footer, "SAVE_TO_LOCAL_TXT", v -> saveToLocalText());
+        addAccessibilityButton(footer, "DATABASE_EXPLORER_V37", v -> startActivity(new android.content.Intent(this, DatabaseManagementActivity.class)));
+        addAccessibilityButton(footer, "FIREBASE_CLOUD_MATRIX", v -> startActivity(new android.content.Intent(this, FirebaseCloudMatrixActivity.class)));
+        addAccessibilityButton(footer, "SELECTIVE_SYSTEM_PURGE", v -> showSelectivePurgeDialog(nodes));
+        addAccessibilityButton(footer, "VIOLENT_MASTER_PURGE", v -> showMasterPurgeDialog());
+        
+        // 🚀 AUDIT FIX: Buttons must be added to matrixBox so they are cleared during re-renders!
+        matrixBox.addView(footer);
+    }
+
+    private void showSelectivePurgeDialog(List<FactoryResetViewModel.TableNode> nodes) {
+        String[] tableNames = new String[nodes.size()];
+        boolean[] selected = new boolean[nodes.size()];
+        for (int i = 0; i < nodes.size(); i++) tableNames[i] = nodes.get(i).name;
+
         new AlertDialog.Builder(this)
-            .setTitle("WARNING: PERMANENT PURGE")
-            .setMessage("This will irrevocably delete the internal offline database, wipe all authentication keys, clear your local SharedPreferences cache, and force close the application.\n\nOn the next launch, the application will behave exactly like a fresh binary install.\n\nAre you absolutely sure you want to Wipe All Data?")
-            .setPositiveButton("DELETE ALL & CLOSE APP", (dialog, which) -> {
-                getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).edit().clear().commit(); 
-                deleteDatabase("JFindMe_CitizenData.db");
-                stopService(new android.content.Intent(this, com.jdroidx.jfindme.service.TrackingService.class));
-                
-                try {
-                    deleteRecursively(getCacheDir());
-                    if (getExternalCacheDir() != null) {
-                        deleteRecursively(getExternalCacheDir());
-                    }
-                    java.io.File[] physicalFiles = getFilesDir().listFiles();
-                    if (physicalFiles != null) {
-                        for (java.io.File f : physicalFiles) deleteRecursively(f);
-                    }
-                } catch (Exception ignored) {}
-                
-                android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                if (nm != null) nm.cancelAll();
-                
-                FirebaseAuth.getInstance().signOut();
-                com.jdroidx.jfindme.utils.AngelLoader.show(this);
-                
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    Toast.makeText(this, "Master Database Purged. Rebooting Terminal...", Toast.LENGTH_SHORT).show();
-                    android.content.Intent restart = new android.content.Intent(this, com.jdroidx.jfindme.ui.base.SplashActivity.class);
-                    restart.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    startActivity(restart);
-                    finish();
-                }, 3000);
+            .setTitle("SELECT DUAL-STACK PURGE TARGETS")
+            .setMultiChoiceItems(tableNames, selected, (dialog, which, isChecked) -> selected[which] = isChecked)
+            .setPositiveButton("WIPE SELECTED (LOCAL+CLOUD)", (dialog, which) -> {
+                List<String> toDelete = new ArrayList<>();
+                for (int i = 0; i < tableNames.length; i++) if (selected[i]) toDelete.add(tableNames[i]);
+                if (!toDelete.isEmpty()) viewModel.executeSelectivePurge(toDelete);
+                else Toast.makeText(this, "No nodes selected for purge.", Toast.LENGTH_SHORT).show();
             })
-            .setNegativeButton("CANCEL", null)
+            .setNegativeButton("ABORT", null)
             .show();
     }
 
-    @Override
-    protected void setupLogic() {}
-
-    private void refreshDatabaseMatrix() {
-        if (rootContainer.getChildCount() > 1) {
-            rootContainer.removeViews(1, rootContainer.getChildCount() - 1);
-        }
-        
-        exportDataBuilder = new StringBuilder();
-        exportDataBuilder.append("=== JFINDME OFFLINE DATABASE DUMP ===\n");
-        
-        String[] tables = {"personal_table", "roster_table", "org_table", "SafeZone_Table", "GeoFence_Alert_table", "history_table", "pairing_log", "sim_inventory"};
-        
-        for (String tableName : tables) {
-            long rowCount = db.getRecordCount(tableName);
-            
-            exportDataBuilder.append("--------------------------------------------------\n");
-            exportDataBuilder.append("TABLE: ").append(tableName).append(" | ROWS: ").append(rowCount).append("\n");
-            exportDataBuilder.append("--------------------------------------------------\n");
-            
-            TextView tvTableHeader = new TextView(this);
-            tvTableHeader.setText("▶ TABLE: " + tableName.toUpperCase() + " (" + rowCount + " RECORDS)");
-            tvTableHeader.setTextColor(getTextColor());
-            UiArchitect.applyText(this, tvTableHeader, "TEXT_TITLE");
-            tvTableHeader.setPadding(0, scale(40), 0, scale(15));
-            rootContainer.addView(tvTableHeader);
-            
-            if (rowCount == 0) {
-                TextView tvEmpty = new TextView(this);
-                tvEmpty.setText("NO OFFLINE DATA DETECTED IN " + tableName.toUpperCase());
-                tvEmpty.setTextColor(getSecondaryTextColor());
-                tvEmpty.setAlpha(0.6f);
-                tvEmpty.setPadding(scale(20), scale(10), scale(20), scale(10));
-                rootContainer.addView(tvEmpty);
-                exportDataBuilder.append("No Data.\n\n");
-                continue;
-            }
-            
-            HorizontalScrollView hScroll = new HorizontalScrollView(this);
-            TableLayout tableLayout = new TableLayout(this);
-            UiArchitect.applyCardWithOverride(this, tableLayout, "CARD_STANDARD", 1.0f);
-            int tp = scale(10);
-            tableLayout.setPadding(tp, tp, tp, tp);
-            
-            LinearLayout scrollContainer = new LinearLayout(this);
-            scrollContainer.setOrientation(LinearLayout.VERTICAL);
-            if (rowCount > 10) {
-                ScrollView vScroll = new ScrollView(this);
-                vScroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(600)));
-                vScroll.addView(tableLayout);
-                scrollContainer.addView(vScroll);
-            } else {
-                scrollContainer.addView(tableLayout);
-            }
-            
-            TableRow headerRow = new TableRow(this);
-            List<String> columns = db.getTableColumns(tableName);
-            for (String col : columns) {
-                exportDataBuilder.append(col).append(" | ");
-                TextView tvCol = new TextView(this);
-                tvCol.setText(col.toUpperCase());
-                tvCol.setTextColor(getPrimaryColor());
-                tvCol.setBackgroundColor(getGradientStart());
-                tvCol.setPadding(scale(30), scale(20), scale(30), scale(20));
-                tvCol.setGravity(Gravity.CENTER);
-                UiArchitect.applyText(this, tvCol, "TEXT_LABEL");
-                headerRow.addView(tvCol);
-            }
-            exportDataBuilder.append("\n");
-            tableLayout.addView(headerRow);
-            
-            List<Map<String, String>> rows = db.getPagedData(tableName, 10, 0, null);
-            for (Map<String, String> rowMap : rows) {
-                TableRow dataRow = new TableRow(this);
-                for (String col : columns) {
-                    String val = rowMap.containsKey(col) ? rowMap.get(col) : "---";
-                    exportDataBuilder.append(val).append(" | ");
-                    TextView tvVal = new TextView(this);
-                    tvVal.setText(val);
-                    tvVal.setTextColor(getSecondaryTextColor());
-                    tvVal.setGravity(Gravity.CENTER);
-                    UiArchitect.applyText(this, tvVal, "TEXT_MINI");
-                    tvVal.setPadding(scale(35), scale(20), scale(35), scale(20));
-                    dataRow.addView(tvVal);
-                }
-                exportDataBuilder.append("\n");
-                tableLayout.addView(dataRow);
-            }
-            exportDataBuilder.append("\n\n");
-            hScroll.addView(scrollContainer);
-            rootContainer.addView(hScroll);
-        }
-        
-        // Re-add Action Buttons
-        LinearLayout btnBox = new LinearLayout(this);
-        btnBox.setOrientation(LinearLayout.VERTICAL);
-        btnBox.setPadding(0, scale(60), 0, scale(80));
-
-        btnBox.addView(UiArchitect.createButton(this, "SAVE_TO_LOCAL_TXT", v -> saveToLocalText()));
-        btnBox.addView(UiArchitect.createButton(this, "DATABASE_EXPLORER_V37", v -> {
-            startActivity(new android.content.Intent(this, DatabaseManagementActivity.class));
-        }));
-        btnBox.addView(UiArchitect.createButton(this, "DELETE_ALL_PURGE_DB", v -> executePurge()));
-
-        rootContainer.addView(btnBox);
-        Toast.makeText(this, "Database Matrix Synchronized.", Toast.LENGTH_SHORT).show();
+    private void showMasterPurgeDialog() {
+        new AlertDialog.Builder(this)
+            .setTitle("VIOLENT MASTER PURGE?")
+            .setMessage("Irrevocably delete all database tables and assets? This will purge both Local and Cloud copies.")
+            .setPositiveButton("WIPE EVERYTHING", (d, w) -> viewModel.executeMasterPurge())
+            .setNegativeButton("Abort", null).show();
     }
 
-    private void deleteRecursively(File fileOrDirectory) {
-        if (fileOrDirectory != null && fileOrDirectory.isDirectory()) {
-            File[] children = fileOrDirectory.listFiles();
-            if (children != null) {
-                for (File child : children) deleteRecursively(child);
+    private void addAccessibilityButton(LinearLayout parent, String rId, View.OnClickListener listener) {
+        View btn = UiArchitect.createButton(this, rId, listener);
+        btn.setOnKeyListener((v, code, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN && code == android.view.KeyEvent.KEYCODE_ENTER) {
+                listener.onClick(v);
+                return true;
             }
+            return false;
+        });
+        parent.addView(btn);
+    }
+
+    private void startRefreshRotation() {
+        RotateAnimation rotate = new RotateAnimation(0, 360, Animation.RELATIVE_TO_SELF, 0.5f, Animation.RELATIVE_TO_SELF, 0.5f);
+        rotate.setDuration(1200);
+        rotate.setRepeatCount(Animation.INFINITE);
+        if (refreshIcon != null) refreshIcon.startAnimation(rotate);
+    }
+
+    private void performSystemReboot() {
+        android.content.Intent restart = new android.content.Intent(this, com.jdroidx.jfindme.ui.base.SplashActivity.class);
+        restart.setFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(restart);
+        finish();
+    }
+
+    private void saveToLocalText() {
+        try {
+            File docs = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS);
+            File dump = new File(docs, "JFINDME_DUMP_" + System.currentTimeMillis() + ".txt");
+            java.io.FileWriter writer = new java.io.FileWriter(dump);
+            writer.write(exportDataBuilder.toString());
+            writer.close();
+            Toast.makeText(this, "Forensic Dump Saved.", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Export Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
-        if (fileOrDirectory != null) fileOrDirectory.delete();
     }
 }

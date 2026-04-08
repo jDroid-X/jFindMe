@@ -70,7 +70,7 @@ public class AboutActivity extends BaseActivityJava {
 
         // Interactive Enterprise Action Handlers dynamically drawn
         master.addView(buildActionButton("Check for System Updates", "Ping secure servers for latest binaries", v -> {
-            android.widget.Toast.makeText(this, "System is securely up to date (Build 1.0.0)", android.widget.Toast.LENGTH_SHORT).show();
+            startActivity(new android.content.Intent(this, SystemUpdateActivity.class));
         }));
         
         master.addView(buildActionButton("View Enterprise License (EULA)", "Read corporate bounds and authorization limitations", v -> {

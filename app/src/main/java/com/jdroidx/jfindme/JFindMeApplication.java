@@ -22,5 +22,8 @@ public class JFindMeApplication extends Application {
         
         SystemLogger.init(this);
         SystemLogger.i("AppLifecycle", "JFindMeApplication onCreate - App Started with Secure Offline Sync");
+        
+        // 🚀 L7 Silent Update Check: Execute update check at boot-up
+        com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleCheck(this);
     }
 }

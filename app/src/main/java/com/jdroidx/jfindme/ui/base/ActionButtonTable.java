@@ -59,7 +59,11 @@ public class ActionButtonTable {
         // --- 🚀 Enterprise Factory Reset Matrix (V37 Integration) ---
         registry.put("SAVE_TO_LOCAL_TXT",    new ActionRecord("SAVE_TO_LOCAL_TXT",    "Export Matrix to FS", "Save database dump to local text file", 10f, 0.4f, true, "LIGHT", 0, "SAVE_TX", false));
         registry.put("DATABASE_EXPLORER_V37",new ActionRecord("DATABASE_EXPLORER_V37","Launch Data Explorer", "Open advanced database manager", 12f, 0.5f, true, "LIGHT", 0, "OPEN_NAV", true));
-        registry.put("DELETE_ALL_PURGE_DB",  new ActionRecord("DELETE_ALL_PURGE_DB",  "FACTORY HARD RESET", "Violently purge all local data", 25f, 0.9f, false, "HEAVY", android.graphics.Color.RED, "RESET_ALL", true));
+        registry.put("FIREBASE_CLOUD_MATRIX",new ActionRecord("FIREBASE_CLOUD_MATRIX","FIREBASE CLOUD MATRIX", "Explore raw data assets in Firebase Realtime Hub", 15f, 0.6f, true, "LIGHT", 0, "OPEN_CLOUD", true));
+        registry.put("SELECTIVE_SYSTEM_PURGE",new ActionRecord("SELECTIVE_SYSTEM_PURGE","SELECTIVE SYSTEM PURGE", "Target specific tables for dual-stack removal", 20f, 0.8f, false, "HEAVY", android.graphics.Color.RED, "PURGE_SELECT", true));
+        registry.put("VIOLENT_MASTER_PURGE",  new ActionRecord("VIOLENT_MASTER_PURGE",  "FACTORY HARD RESET (WIPE ALL)", "Irrevocably purge all local and cloud data", 25f, 0.9f, false, "HEAVY", android.graphics.Color.parseColor("#C62828"), "PURGE_ALL", true));
+        registry.put("FACTORY_RESET",         new ActionRecord("FACTORY_RESET",         "RETURN TO CONSOLE", "Return to the factory reset management hub", 10f, 0.3f, true, "LIGHT", 0, "FLOW_BACK", false));
+        registry.put("RETURN_TO_HOME",        new ActionRecord("RETURN_TO_HOME",        "RETURN TO HOME", "Exit diagnostic mode and return to map", 10f, 0.3f, true, "LIGHT", 0, "FLOW_BACK", false));
     }
 
     public static View createButton(BaseActivityJava activity, String tableKey, View.OnClickListener listener) {

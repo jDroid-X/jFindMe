@@ -5,6 +5,8 @@ import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.graphics.drawable.GradientDrawable;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -50,24 +52,27 @@ public class BottomNavTable {
     public static Map<String, NavRecord> getRegistry() { return registry; }
 
     static {
-        registry.put("NAV_NOTICE", new NavRecord("NAV_NOTICE", "Notice", android.R.drawable.ic_popup_reminder, "Alerts Matrix", true, Color.GRAY, 25f, "LIGHT", "OPEN_NOTIF", true));
-        registry.put("NAV_DEVICE", new NavRecord("NAV_DEVICE", "Map",    android.R.drawable.ic_menu_mapmode, "Active Nodes", true, Color.BLUE, 25f, "HEAVY", "OPEN_MAP", true));
-        registry.put("NAV_ME",     new NavRecord("NAV_ME",     "Profile",  android.R.drawable.ic_menu_myplaces, "Identity Hub", true, Color.MAGENTA, 25f, "LIGHT", "OPEN_PROFILE", true));
+        registry.put("NAV_NOTICE", new NavRecord("NAV_NOTICE", "Notice",  android.R.drawable.ic_popup_reminder, "Alerts Matrix", true, Color.GRAY, 25f, "LIGHT", "OPEN_NOTIF", true));
+        registry.put("NAV_ALERT",  new NavRecord("NAV_ALERT",  "Alert",   android.R.drawable.ic_dialog_email, "System Alerts", true, Color.YELLOW, 25f, "LIGHT", "OPEN_ALERT", true));
+        registry.put("NAV_DEVICE", new NavRecord("NAV_DEVICE", "Map",     android.R.drawable.ic_menu_mapmode, "Active Nodes", true, Color.BLUE, 25f, "HEAVY", "OPEN_MAP", true));
+        registry.put("NAV_ME",     new NavRecord("NAV_ME",     "Profile", android.R.drawable.ic_menu_myplaces, "Identity Hub", true, Color.MAGENTA, 25f, "LIGHT", "OPEN_PROFILE", true));
     }
 
     public static View createNav(BaseActivityJava activity, String[] tableKeys, String activeKey) {
         UiArchitect.DesignStage stage = UiArchitect.getStage(activity);
         LinearLayout nav = new LinearLayout(activity);
+        nav.setId(View.generateViewId()); // Or a fixed ID if shared
+        nav.setTag("nav_bar_root"); // Tag is safer for finding across activities
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setGravity(Gravity.CENTER_VERTICAL);
         
-        int height = 180;
+        int height = 126; // Default (180 * 0.7)
         switch (stage) {
-            case LIBERAL:   height = 300; break;
-            case STANDARD:  height = 240; break;
-            case COMPACT:   height = 200; break;
-            case SLIM:      height = 170; break;
-            case ULTRA_SLIM:height = 150; break;
+            case LIBERAL:   height = 210; break; // 300 * 0.7
+            case STANDARD:  height = 168; break; // 240 * 0.7
+            case COMPACT:   height = 140; break; // 200 * 0.7
+            case SLIM:      height = 119; break; // 170 * 0.7
+            case ULTRA_SLIM:height = 105; break; // 150 * 0.7
         }
         
         nav.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height));
@@ -143,9 +148,34 @@ public class BottomNavTable {
         }
         UiArchitect.applyNeutralShadow(activity, icon, elevation);
         
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
-        iconLp.gravity = Gravity.CENTER_HORIZONTAL;
-        tab.addView(icon, iconLp);
+        // 🚀 QA Fix: Global Badge Integration (WhatsApp Style)
+        FrameLayout iconWrapper = new FrameLayout(activity);
+        iconWrapper.setClipChildren(false);
+        iconWrapper.setClipToPadding(false);
+        
+        iconWrapper.addView(icon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
+        
+        TextView badge = new TextView(activity);
+        badge.setTag("badge_" + record.id);
+        badge.setTextColor(Color.WHITE);
+        badge.setTextSize(9f);
+        badge.setGravity(Gravity.CENTER);
+        badge.setTypeface(null, android.graphics.Typeface.BOLD);
+        
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(Color.RED);
+        badge.setBackground(bg);
+        
+        int bP = (int) UiArchitect.getResponsiveTextSize(activity, "TEXT_MINI") / 2;
+        badge.setPadding(bP, 2, bP, 2);
+        badge.setVisibility(View.GONE);
+        
+        FrameLayout.LayoutParams badgeLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        badgeLp.gravity = Gravity.TOP | Gravity.END;
+        iconWrapper.addView(badge, badgeLp);
+        
+        tab.addView(iconWrapper, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView tv = new TextView(activity);
         tv.setText(record.label.toUpperCase());
@@ -154,6 +184,7 @@ public class BottomNavTable {
         UiArchitect.applyText(activity, tv, "TEXT_SUB");
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(0, stage == UiArchitect.DesignStage.LIBERAL ? 20 : 10, 0, 0);
+        tv.setVisibility(View.GONE); // 🚀 QA Fix: Suppressing Navigation Labels for Max Viewport space
         tab.addView(tv);
 
         // [Stage 4: Haptic & Action Routing]
@@ -178,6 +209,20 @@ public class BottomNavTable {
         return tab;
     }
 
+    public static void updateBadge(View navRoot, String key, int count) {
+        if (navRoot == null || key == null) return;
+        View b = navRoot.findViewWithTag("badge_" + key);
+        if (b instanceof TextView) {
+            TextView tv = (TextView) b;
+            if (count > 0) {
+                tv.setText(String.valueOf(count));
+                tv.setVisibility(View.VISIBLE);
+            } else {
+                tv.setVisibility(View.GONE);
+            }
+        }
+    }
+
     /**
      * Centralized Navigation Controller for the Enterprise Bottom Matrix
      */
@@ -186,6 +231,8 @@ public class BottomNavTable {
         
         switch (action) {
             case "OPEN_NOTIF":
+            case "OPEN_ALERT":
+            case "OPEN_EMAIL": // Legacy support
                 if (!activity.getClass().getSimpleName().contains("NotifActivity")) {
                     activity.startActivity(new android.content.Intent(activity, com.jdroidx.jfindme.ui.management.NotifActivity.class)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));

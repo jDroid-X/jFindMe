@@ -5,7 +5,9 @@
     <!-- L1: System Connectivity & Data Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     
     <!-- L2: Location Engine Permissions - MANDATORY -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -44,10 +46,10 @@
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
     </queries>
-
     <application
         android:name=".JFindMeApplication"
         android:allowBackup="true"
+        android:largeHeap="true"
         android:icon="@drawable/butterfly"
         android:label="@string/app_name"
         android:roundIcon="@drawable/butterfly"
@@ -85,12 +87,17 @@
             android:name=".ui.map.MapActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity 
+            android:name=".ui.map.LiveMapDashboardActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+            android:label="Tactical Dashboard" />
+        <activity 
             android:name=".ui.settings.SettingsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <!-- Master UI Settings Controller -->
         <activity android:name=".ui.settings.UiConfigActivity" />
         <activity android:name=".ui.settings.UiGalleryActivity" />
         <activity android:name=".ui.settings.AboutActivity" />
+        <activity android:name=".ui.settings.SystemUpdateActivity" />
         <activity android:name=".ui.settings.HelpSupportActivity" />
         <activity android:name=".ui.group.GroupActivity" />
         <activity android:name=".ui.group.FamilyFriendsActivity" />
@@ -98,6 +105,7 @@
         <activity 
             android:name=".ui.settings.ProfileActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+        <activity android:name=".ui.settings.OrgActivity" />
         <activity android:name=".ui.settings.AvatarEditorActivity" />
         <activity android:name=".ui.settings.AvatarCropActivity" />
         <activity android:name=".ui.management.GeofenceNotificationActivity" />
@@ -108,7 +116,10 @@
         <activity android:name=".ui.management.NotifActivity" />
         <activity android:name=".ui.management.SystemLogActivity" />
         <activity android:name=".ui.management.FactoryResetActivity" />
-        <activity android:name=".ui.management.DatabaseManagementActivity" />
+        <activity android:name="com.jdroidx.jfindme.ui.management.DatabaseManagementActivity" />
+        <activity android:name="com.jdroidx.jfindme.ui.management.FirebaseCloudMatrixActivity" />
+        <activity android:name="com.jdroidx.jfindme.ui.management.ForensicVaultExplorerActivity" />
+        <activity android:name="com.jdroidx.jfindme.ui.management.ForensicStructureActivity" />
         
         <!-- 🦋 JBUTTERFLY ENTERPRISE NODES (Level 7) -->
         

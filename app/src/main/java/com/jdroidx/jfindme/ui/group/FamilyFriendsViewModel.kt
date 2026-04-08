@@ -88,7 +88,6 @@ class FamilyFriendsViewModel : ViewModel() {
         var resolutionCount = 0
 
         if (uids.isEmpty()) {
-            _rosterLiveData.postValue(emptyList())
             return
         }
 

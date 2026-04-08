@@ -68,4 +68,19 @@ public class ThemeManager {
     public static int getPrimaryColor(int themeId) { return getScreenBackgroundColor(themeId); }
     public static int getTextColor(int themeId) { return getTextPrimaryColor(themeId); }
     public static int getAccentColor(int themeId) { return getGradientStart(themeId); }
+
+    /**
+     * 🍸 GLASSMORPHISM ENGINE
+     * Creates a translucent gradient or solid background with rounded corners.
+     */
+    public static android.graphics.drawable.GradientDrawable createGlassDrawable(int color, float alpha, float radius) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        int r = (int)(Color.red(color));
+        int g = (int)(Color.green(color));
+        int b = (int)(Color.blue(color));
+        int a = (int)(alpha * 255);
+        gd.setColor(Color.argb(a, r, g, b));
+        gd.setCornerRadius(radius);
+        return gd;
+    }
 }

@@ -101,6 +101,6 @@ public class UiScalingMatrixTable {
 
     /** 🚀 L7 Architecture Sync: Established Universal Gap (Header-to-Tile standard) */
     public static int getUniversalGap(UiArchitect.DesignStage stage) {
-        return scalePadding(stage, 30); // 🚀 V40 Recalibration: 30px Baseline (Standard Smartphones)
+        return scalePadding(stage, 20); // 🚀 V40 Recalibration: 20px User Baseline (Standard Smartphones)
     }
 }

@@ -15,31 +15,33 @@ import java.util.*
 class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
-        private const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        private const val DATABASE_VERSION = 45 // 🚀 V45: Forensic Geofence Sync Integration
-        private const val MAX_DATETIME = 253402300799000L
+        const val DATABASE_NAME = "JFindMe_CitizenData.db"
+        const val DATABASE_VERSION = 48 // 🚀 V48: Advanced Forensic Hardware Meta-Sync
+        const val MAX_DATETIME = 253402300799000L
         
-        private const val TABLE_PERSONAL = "personal_table"
-        private const val TABLE_ROSTER = "roster_table"
-        private const val TABLE_ORG = "org_table"
-        private const val TABLE_SAFE_ZONES = "SafeZone_Table" 
-        private const val TABLE_ALERTS = "GeoFence_Alert_table"
-        private const val TABLE_HISTORY = "history_table" 
-        private const val TABLE_PAIRING = "pairing_log" 
-        private const val TABLE_SIM_INVENTORY = "sim_inventory" 
-        private const val TABLE_SIM_TRANS = "sim_transaction" 
-        private const val TABLE_SYNC_QUEUE = "geofenc_sync_queue_table" // 🚀 Reliable Sync Engine
-        private const val TABLE_SAFE_ZONE_GROUPS = "SafeZoneGroup_Table" // 🚀 Master-Child Cluster Mapping
-        private const val TABLE_GEOFENCE_LOGS = "GeofenceLog_Table" // 🚀 Forensic Transition Archival
+        const val TABLE_PROFILE = "profile_table"
+        const val TABLE_PERSONAL = TABLE_PROFILE // 🚀 Legacy Alias (V37 Forensic Bridge)
+        const val TABLE_ROSTER = "roster_table"
+        const val TABLE_ORG = "org_table"
+        const val TABLE_SAFE_ZONES = "SafeZone_Table" 
+        const val TABLE_ALERTS = "GeoFence_Alert_table"
+        const val TABLE_HISTORY = "history_table" 
+        const val TABLE_PAIRING = "pairing_log" 
+        const val TABLE_SIM_INVENTORY = "sim_inventory" 
+        const val TABLE_SIM_TRANS = "sim_transaction" 
+        const val TABLE_SYNC_QUEUE = "geofenc_sync_queue_table" // 🚀 Reliable Sync Engine
+        const val TABLE_SAFE_ZONE_GROUPS = "SafeZoneGroup_Table" // 🚀 Master-Child Cluster Mapping
+        const val TABLE_GEOFENCE_LOGS = "GeofenceLog_Table" // 🚀 Forensic Transition Archival
+        const val TABLE_DEVICE = "device_table" // 🚀 Master Hardware Hub (Silicon Fingerprint)
 
-        private const val COL_FLAG_A = "flag_a"
-        private const val COL_FLAG_B = "flag_b"
-        private const val COL_FLAG_C = "flag_c"
-        private const val COL_REF_A = "ref_a"
-        private const val COL_REF_B = "ref_b"
-        private const val COL_REF_C = "ref_c"
-        private const val EXT_FIELDS = "$COL_FLAG_A INTEGER, $COL_FLAG_B INTEGER, $COL_FLAG_C INTEGER, $COL_REF_A TEXT, $COL_REF_B TEXT, $COL_REF_C TEXT"
-        private const val LINEAGE_FIELDS = "owner_name TEXT, owner_device_id TEXT, connected_device_id TEXT, qr_code_ref TEXT"
+        const val COL_FLAG_A = "flag_a"
+        const val COL_FLAG_B = "flag_b"
+        const val COL_FLAG_C = "flag_c"
+        const val COL_REF_A = "ref_a"
+        const val COL_REF_B = "ref_b"
+        const val COL_REF_C = "ref_c"
+        const val EXT_FIELDS = "$COL_FLAG_A INTEGER, $COL_FLAG_B INTEGER, $COL_FLAG_C INTEGER, $COL_REF_A TEXT, $COL_REF_B TEXT, $COL_REF_C TEXT"
+        const val LINEAGE_FIELDS = "owner_name TEXT, owner_device_id TEXT, connected_device_id TEXT, qr_code_ref TEXT"
 
         @Volatile
         private var instance: DatabaseHelper? = null
@@ -65,7 +67,7 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_PERSONAL (log_id TEXT PRIMARY KEY, uid TEXT, network_id TEXT, device_id TEXT, full_name TEXT, user_phone TEXT, user_address TEXT, user_dob TEXT, user_gender TEXT, user_country TEXT, user_state TEXT, user_city TEXT, user_pincode TEXT, user_emergency_note TEXT, role_family TEXT, role_friend TEXT, start_datetime INTEGER, end_datetime INTEGER DEFAULT $MAX_DATETIME, created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS, $LINEAGE_FIELDS)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_PROFILE (log_id TEXT PRIMARY KEY, uid TEXT, network_id TEXT, device_id TEXT, full_name TEXT, user_phone TEXT, user_address TEXT, user_dob TEXT, user_gender TEXT, user_country TEXT, user_state TEXT, user_city TEXT, user_pincode TEXT, user_emergency_note TEXT, org_name TEXT, department TEXT, role_family TEXT, role_friend TEXT, start_datetime INTEGER, end_datetime INTEGER DEFAULT $MAX_DATETIME, created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS, $LINEAGE_FIELDS)")
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_ROSTER (log_id TEXT PRIMARY KEY, uid TEXT, display_name TEXT, role_title TEXT, status_text TEXT, start_datetime INTEGER, end_datetime INTEGER DEFAULT $MAX_DATETIME, is_admin INTEGER DEFAULT 0, is_friend INTEGER DEFAULT 1, created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS, $LINEAGE_FIELDS)")
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_ORG (log_id TEXT PRIMARY KEY, uid TEXT, org_name TEXT, department TEXT, employee_id TEXT, designation TEXT, supervisor TEXT, shift_timing TEXT, work_location TEXT, badge_number TEXT, emergency_ext TEXT, access_level TEXT, start_datetime INTEGER, end_datetime INTEGER DEFAULT $MAX_DATETIME, created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS, $LINEAGE_FIELDS)")
         db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_SAFE_ZONES (zone_id TEXT PRIMARY KEY, name TEXT, target TEXT, uid TEXT, lat REAL, lng REAL, radius REAL, assigned_uids TEXT, sync_status TEXT DEFAULT 'LOCAL', created_at INTEGER, modified_at INTEGER, readable_time TEXT, $EXT_FIELDS)")
@@ -131,11 +133,22 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
                 "sync_status TEXT DEFAULT 'LOCAL', " +
                 "$EXT_FIELDS, $LINEAGE_FIELDS)")
         
+        db.execSQL("CREATE TABLE IF NOT EXISTS $TABLE_DEVICE (" +
+                "log_id TEXT PRIMARY KEY, uid TEXT, hardware_id TEXT, device_model TEXT, " +
+                "manufacturer TEXT, manufacturing_date TEXT, os_version TEXT, " +
+                "security_patch TEXT, kernel_version TEXT, build_fingerprint TEXT, " +
+                "total_cpu_cores INTEGER, total_ram TEXT, total_storage TEXT, " +
+                "secured_phone TEXT, imei_1 TEXT, imei_2 TEXT, " +
+                "iccid_1 TEXT, iccid_2 TEXT, sim_operator_1 TEXT, sim_operator_2 TEXT, " +
+                "is_rooted INTEGER DEFAULT 0, mac_address TEXT, " +
+                "created_at INTEGER, modified_at INTEGER, readable_time TEXT, " +
+                "$EXT_FIELDS, $LINEAGE_FIELDS)")
+        
         // seedDefaultSafeZones(db) // 🚀 QA Removal: No Null-Island Placeholders
     }
 
     override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_PERSONAL")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_PROFILE")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_ROSTER")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_ORG")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SAFE_ZONES")
@@ -147,6 +160,7 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SYNC_QUEUE")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SAFE_ZONE_GROUPS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_GEOFENCE_LOGS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_DEVICE")
         onCreate(db)
     }
 
@@ -160,45 +174,17 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
 
     // 🚀 MASTER BRIDGE SUITE (V38 FINAL)
 
+    /** 🚀 Universal Forensic Temporal Rule: All date/time must be readable dd-MM-yyyy HH:mm:ss */
     fun getReadableNow(): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        return formatMillis(System.currentTimeMillis())
+    }
+
+    fun formatMillis(ms: Long): String {
+        return SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault()).format(Date(ms))
     }
 
     fun getActiveProfileAddress(): String {
         return getLocalDossier("OWNER_001")?.get("user_address") ?: "Unknown Location"
-    }
-
-    fun saveLocalDossier(uid: String, payload: Map<String, String>, role: String? = null, owner: String? = null, devId: String? = null, connId: String? = null, qRef: String? = null) {
-        val v = ContentValues().apply {
-            put("uid", uid)
-            put("full_name", payload["fullName"] ?: "")
-            put("user_phone", payload["phone"] ?: "")
-            put("user_dob", payload["dob"] ?: "")
-            put("user_gender", payload["gender"] ?: "")
-            put("user_address", payload["address"] ?: "")
-            put("user_country", payload["country"] ?: "")
-            put("user_state", payload["state"] ?: "")
-            put("user_city", payload["city"] ?: "")
-            put("user_pincode", payload["pincode"] ?: "")
-            put("user_emergency_note", payload["emergencyNote"] ?: "")
-            
-            val normalizedRole = role ?: "PEER"
-            if (normalizedRole.equals("Friends", ignoreCase = true)) {
-                put("role_family", "None")
-                put("role_friend", normalizedRole)
-            } else {
-                put("role_family", normalizedRole)
-                put("role_friend", "None")
-            }
-
-            put("network_id", payload["network_id"] ?: "")
-            put("owner_name", owner ?: "N/A")
-            put("owner_device_id", devId ?: "N/A")
-            put("connected_device_id", connId ?: "N/A")
-            put("qr_code_ref", qRef ?: "N/A")
-            put("readable_time", getReadableNow())
-        }
-        savePersonalDossier(v)
     }
 
     /**
@@ -276,7 +262,7 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
             put("role_family", if(isFriend) "None" else newRole)
             put("role_friend", if(isFriend) newRole else "None")
         }
-        db.update(TABLE_PERSONAL, vDossier, "uid=?", arrayOf(uid))
+        db.update(TABLE_PROFILE, vDossier, "uid=?", arrayOf(uid))
     }
 
     fun updateRosterRole(uid: String, newRole: String) {
@@ -349,14 +335,14 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
         v.put("readable_time", getReadableNow())
 
         if (!uid.equals("OWNER_001")) {
-            val rc = db.query(TABLE_PERSONAL, arrayOf("log_id"), "uid=? AND end_datetime=?", arrayOf("OWNER_001", MAX_DATETIME.toString()), null, null, null)
+            val rc = db.query(TABLE_PROFILE, arrayOf("log_id"), "uid=? AND end_datetime=?", arrayOf("OWNER_001", MAX_DATETIME.toString()), null, null, null)
             if (rc.moveToFirst()) {
                 val upgrade = ContentValues().apply {
                     put("uid", uid)
                     put("modified_at", now)
                     put("readable_time", getReadableNow())
                 }
-                db.update(TABLE_PERSONAL, upgrade, "log_id=?", arrayOf(rc.getString(0)))
+                db.update(TABLE_PROFILE, upgrade, "log_id=?", arrayOf(rc.getString(0)))
             }
             rc.close()
         }
@@ -366,7 +352,7 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
             put("modified_at", now)
             put("readable_time", getReadableNow())
         }
-        db.update(TABLE_PERSONAL, vUpd, "uid=? AND end_datetime=?", arrayOf(uid, MAX_DATETIME.toString()))
+        db.update(TABLE_PROFILE, vUpd, "uid=? AND end_datetime=?", arrayOf(uid, MAX_DATETIME.toString()))
         
         val log = "${uid}_$now"
         v.put("log_id", log)
@@ -375,14 +361,78 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
         v.put("end_datetime", MAX_DATETIME)
         v.put("created_at", now)
         v.put("modified_at", now)
-        db.insert(TABLE_PERSONAL, null, v)
+        db.insert(TABLE_PROFILE, null, v)
+    }
+
+    @JvmOverloads
+    /** 🚀 Forensic Sync Bridge for ViewModels */
+    fun commitForensicDossier(uid: String, map: Map<String, String>, role: String? = null, name: String? = null, d1: String? = null, d2: String? = null, ref: String? = "SYNC") {
+        val v = ContentValues()
+        v.put("uid", uid)
+        
+        // 🧪 Robust Key Mapping: Align camelCase cloud tags with snake_case table columns
+        for ((k, value) in map) {
+            when(k) {
+                "userName", "fullName" -> v.put("full_name", value)
+                "userPhone", "phone" -> v.put("user_phone", value)
+                "userDob", "dob" -> v.put("user_dob", value)
+                "userGender", "gender" -> v.put("user_gender", value)
+                "userCountry", "country" -> v.put("user_country", value)
+                "userState", "state" -> v.put("user_state", value)
+                "userCity", "city" -> v.put("user_city", value)
+                "userPincode", "pincode" -> v.put("user_pincode", value)
+                "userAddress", "address" -> v.put("user_address", value)
+                "userEmergencyNote", "emergencyNote" -> v.put("user_emergency_note", value)
+                "orgName" -> v.put("org_name", value)
+                "deptName", "department" -> v.put("department", value)
+                else -> v.put(k, value)
+            }
+        }
+        
+        if (role != null) v.put("role_family", role)
+        if (name != null) v.put("owner_name", name)
+        if (d1 != null) {
+            v.put("owner_device_id", d1)
+            v.put("connected_device_id", d1)
+        }
+        if (ref != null) v.put(COL_REF_A, ref)
+        v.put("uid", uid)
+        savePersonalDossier(v)
+    }
+
+    /** 🚀 Hardware Forensic Bridge: Syncs Deep-Tier Silicon & OS Signatures */
+    fun commitHardwareForensic(uid: String, hardwareId: String, model: String, manufacturer: String, mfgDate: String, os: String, patch: String, kernel: String, fingerprint: String, cpu: Int, ram: String, store: String, phone: String, imei1: String, imei2: String, iccid1: String, iccid2: String, op1: String, op2: String, rooted: Boolean, mac: String) {
+        val v = ContentValues().apply {
+            put("uid", uid)
+            put("hardware_id", hardwareId)
+            put("device_model", model)
+            put("manufacturer", manufacturer)
+            put("manufacturing_date", mfgDate)
+            put("os_version", os)
+            put("security_patch", patch)
+            put("kernel_version", kernel)
+            put("build_fingerprint", fingerprint)
+            put("total_cpu_cores", cpu)
+            put("total_ram", ram)
+            put("total_storage", store)
+            put("secured_phone", phone)
+            put("imei_1", imei1)
+            put("imei_2", imei2)
+            put("iccid_1", iccid1)
+            put("iccid_2", iccid2)
+            put("sim_operator_1", op1)
+            put("sim_operator_2", op2)
+            put("is_rooted", if(rooted) 1 else 0)
+            put("mac_address", mac)
+        }
+        saveDeviceDossier(v)
     }
 
     fun getLocalDossier(uid: String? = null): Map<String, String>? {
         val db = this.readableDatabase
         val sel = if(uid != null) "uid=? AND end_datetime=?" else "end_datetime=?"
         val args = if(uid != null) arrayOf(uid, MAX_DATETIME.toString()) else arrayOf(MAX_DATETIME.toString())
-        db.query(TABLE_PERSONAL, null, sel, args, null, null, null).use {
+        db.query(TABLE_PROFILE, null, sel, args, null, null, null).use {
             if (it.moveToFirst()) {
                 val map = mutableMapOf<String, String>()
                 for (i in 0 until it.columnCount) {
@@ -491,6 +541,22 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
         v.put("modified_at", now)
         v.put("readable_time", getReadableNow())
         db.insert(TABLE_ORG, null, v)
+    }
+
+    fun saveDeviceDossier(v: ContentValues) {
+        val db = this.writableDatabase
+        val now = System.currentTimeMillis()
+        val uid = v.getAsString("uid") ?: "OWNER_001"
+        v.put("readable_time", getReadableNow())
+        v.put("created_at", now)
+        v.put("modified_at", now)
+        
+        // 🚀 Forensic Hardware Logic: We only keep ONE active hardware record per UID to prevent spoofing.
+        db.delete(TABLE_DEVICE, "uid=?", arrayOf(uid))
+        
+        val log = "DEV_${uid}_$now"
+        v.put("log_id", log)
+        db.insert(TABLE_DEVICE, null, v)
     }
 
     fun saveSafeZone(v: ContentValues) {
@@ -714,10 +780,13 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
             while (cursor.moveToNext()) {
                 val row = mutableMapOf<String, Any>()
                 row["zone_id"] = cursor.getString(cursor.getColumnIndexOrThrow("zone_id")) ?: ""
+                row["name"] = cursor.getString(cursor.getColumnIndexOrThrow("name")) ?: "Local Node"
                 row["lat"] = cursor.getDouble(cursor.getColumnIndexOrThrow("lat"))
                 row["lng"] = cursor.getDouble(cursor.getColumnIndexOrThrow("lng"))
                 row["radius"] = cursor.getDouble(cursor.getColumnIndexOrThrow("radius"))
                 row["target"] = cursor.getString(cursor.getColumnIndexOrThrow("target")) ?: "All"
+                row["flag_a"] = cursor.getInt(cursor.getColumnIndexOrThrow("flag_a"))
+                row["flag_b"] = cursor.getInt(cursor.getColumnIndexOrThrow("flag_b"))
                 list.add(row)
             }
         }
@@ -742,8 +811,17 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
                 } while (c.moveToNext())
             }
         }
-        if (cols.contains("uid") && t != TABLE_PERSONAL) cols.add(0, "IDENTITY_RESOLVED")
+        if (cols.contains("uid") && t != TABLE_PROFILE) cols.add(0, "IDENTITY_RESOLVED")
         return cols
+    }
+
+    /** 🚀 Authoritative Forensic Table Registry: SSOT for Management Consoles */
+    fun getAllTables(): Array<String> {
+        return arrayOf(
+            TABLE_PROFILE, TABLE_ROSTER, TABLE_ORG, TABLE_SAFE_ZONES, 
+            TABLE_ALERTS, TABLE_HISTORY, TABLE_PAIRING, TABLE_SIM_INVENTORY, 
+            TABLE_SIM_TRANS, TABLE_SYNC_QUEUE, TABLE_SAFE_ZONE_GROUPS, TABLE_GEOFENCE_LOGS, TABLE_DEVICE
+        )
     }
 
     fun getPagedData(t: String, l: Int, o: Int, q: String?): List<Map<String, String>> {
@@ -752,9 +830,9 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
         val rc = getTableColumns(t).toMutableList()
         if(rc.contains("IDENTITY_RESOLVED")) rc.removeAt(0)
         
-        val hasUid = rc.contains("uid") && t != TABLE_PERSONAL
+        val hasUid = rc.contains("uid") && t != TABLE_PROFILE
         val sel = if (hasUid) "t.*, p.full_name as IDENTITY_RESOLVED" else "*"
-        val join = if (hasUid) "$t t LEFT JOIN $TABLE_PERSONAL p ON t.uid = p.uid AND p.end_datetime = $MAX_DATETIME" else "$t t"
+        val join = if (hasUid) "$t t LEFT JOIN $TABLE_PROFILE p ON t.uid = p.uid AND p.end_datetime = $MAX_DATETIME" else "$t t"
         val whr = if (q.isNullOrEmpty()) "" else "WHERE " + rc.joinToString(" OR ") { "t.$it LIKE '%$q%'" }
         
         db.rawQuery("SELECT $sel FROM $join $whr LIMIT $l OFFSET $o", null).use { cursor ->
@@ -763,7 +841,26 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
                 val row = mutableMapOf<String, String>()
                 for (cn in dc) {
                     val ix = cursor.getColumnIndex(cn)
-                    row[cn] = if (ix != -1) cursor.getString(ix) ?: "---" else "---"
+                    if (ix != -1) {
+                        var raw = cursor.getString(ix) ?: "---"
+                        
+                        // 🚀 UNIVERSAL FORENSIC TEMPORAL RULE: Auto-Format timestamps
+                        if (cn.contains("_at") || cn.contains("_datetime") || cn.contains("timestamp") || cn.contains("_time")) {
+                            try {
+                                val ms = raw.toLong()
+                                if (ms == 253402300799000L) {
+                                    raw = "FORENSIC_INFINITY"
+                                } else if (ms > 1000000000000L) { // Post-2001 detection
+                                    raw = formatMillis(ms)
+                                } else if (ms == 0L) {
+                                    raw = "GENESIS"
+                                }
+                            } catch (e: Exception) { /* Field already readable or non-numeric */ }
+                        }
+                        row[cn] = raw
+                    } else {
+                        row[cn] = "---"
+                    }
                 }
                 list.add(row)
             }
@@ -782,12 +879,12 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
             put("modified_at", now)
             put("readable_time", getReadableNow())
         }
-        db.update(TABLE_PERSONAL, v, "uid=? AND end_datetime=?", arrayOf(uid, MAX_DATETIME.toString()))
+        db.update(TABLE_PROFILE, v, "uid=? AND end_datetime=?", arrayOf(uid, MAX_DATETIME.toString()))
     }
 
     fun getDossierHistory(uid: String): List<Map<String, String>> {
         val list = mutableListOf<Map<String, String>>()
-        this.readableDatabase.query(TABLE_PERSONAL, null, "uid=?", arrayOf(uid), null, null, "start_datetime DESC").use { c ->
+        this.readableDatabase.query(TABLE_PROFILE, null, "uid=?", arrayOf(uid), null, null, "start_datetime DESC").use { c ->
             while (c.moveToNext()) {
                 val row = mutableMapOf<String, String>()
                 for (i in 0 until c.columnCount) row[c.getColumnName(i)] = c.getString(i) ?: ""
@@ -799,6 +896,28 @@ class DatabaseHelper private constructor(context: Context) : SQLiteOpenHelper(co
 
     fun saveEnterpriseDossier(v: ContentValues) {
         saveOrgDossier(v)
+    }
+
+    fun deleteRecord(t: String, idCol: String, idVal: String): Boolean {
+        return this.writableDatabase.delete(t, "$idCol=?", arrayOf(idVal)) > 0
+    }
+
+    fun updateRecord(t: String, idCol: String, idVal: String, v: ContentValues): Boolean {
+        return this.writableDatabase.update(t, v, "$idCol=?", arrayOf(idVal)) > 0
+    }
+
+    fun getRecordById(t: String, idCol: String, idVal: String): Map<String, String>? {
+        val db = this.readableDatabase
+        db.query(t, null, "$idCol=?", arrayOf(idVal), null, null, null).use {
+            if (it.moveToFirst()) {
+                val map = mutableMapOf<String, String>()
+                for (i in 0 until it.columnCount) {
+                    map[it.getColumnName(i)] = it.getString(i) ?: ""
+                }
+                return map
+            }
+        }
+        return null
     }
 
     fun getEnterpriseDossier(uid: String): Map<String, String>? {

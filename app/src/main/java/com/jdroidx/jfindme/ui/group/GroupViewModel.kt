@@ -47,15 +47,24 @@ class GroupViewModel : ViewModel() {
                 .setValue(newRole)
                 .addOnCompleteListener { task ->
                     
-                    // Step B: Inject Real-time Signal (WhatsApp-style)
-                    ref.child("users").child(uid).child("signals").child("refresh_roster")
-                        .setValue(System.currentTimeMillis())
-                        .addOnCompleteListener {
-                            isLoading.postValue(false)
-                            syncStatus.postValue("NETWORK PARITY SECURED: $newRole")
-                            refreshLocalRoster(db)
-                            onComplete.run()
-                        }
+                    // Step B: Update User Dossier for Family/Friends sync
+                    val userRef = ref.child("users").child(uid)
+                    val map = mapOf(
+                        "role_family" to (if (isFriend) "None" else newRole),
+                        "role_friend" to (if (isFriend) newRole else "None")
+                    )
+                    userRef.updateChildren(map).addOnCompleteListener {
+                        
+                        // Step C: Inject Real-time Signal (WhatsApp-style)
+                        ref.child("users").child(uid).child("signals").child("refresh_roster")
+                            .setValue(System.currentTimeMillis())
+                            .addOnCompleteListener {
+                                isLoading.postValue(false)
+                                syncStatus.postValue("NETWORK PARITY SECURED: $newRole")
+                                refreshLocalRoster(db)
+                                onComplete.run()
+                            }
+                    }
                 }
         }, 5000)
     }

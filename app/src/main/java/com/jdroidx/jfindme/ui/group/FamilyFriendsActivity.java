@@ -3,7 +3,6 @@ package com.jdroidx.jfindme.ui.group;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,6 +26,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     // Core Layout Arrays
     private LinearLayout rosterContainer;
     private ScrollView mainScrollView;
+    private ImageView ownerAvatar;
     
     // Tab Interaction Cache
     private LinearLayout tabFamily;
@@ -110,6 +110,10 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tabController.addView(tabFriends, tabLp);
         
         mainRoot.addView(tabController);
+        
+        // 🚀 IDENTITY CARD (Owner Tile 1): Mapped from Core Profile
+        mainRoot.addView(buildIdentityBlock(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
 
         // 3. DYNAMIC RENDERING SURFACE
         int masterPadding = getResponsivePaddingQuota();
@@ -127,6 +131,10 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
         // BOOT STATE
         renderFamilyTab();
+
+        // 🚀 QA Fix: Global Navigation Integrity
+        String[] keys = {"NAV_NOTICE", "NAV_ALERT", "NAV_DEVICE", "NAV_ME"};
+        mainRoot.addView(UiArchitect.createBottomNav(this, keys, "NAV_ME"));
 
         return mainRoot;
     }
@@ -402,10 +410,25 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             java.util.Map<String, Object> cp = new java.util.HashMap<>();
             cp.put("role_family", famRole);
             cp.put("role_friend", frRole);
-            com.google.firebase.database.FirebaseDatabase.getInstance().getReference()
-                .child("groups").child(myGrp).child("citizen_dossiers").child(uid).updateChildren(cp);
+            
+            com.google.firebase.database.DatabaseReference root = com.google.firebase.database.FirebaseDatabase.getInstance().getReference();
+            
+            // 📚 Step 1: Update Group Dossier
+            root.child("groups").child(myGrp).child("citizen_dossiers").child(uid).updateChildren(cp);
+            
+            // 🛰️ Step 2: Update User Dossier (Primary Identity Source)
+            root.child("users").child(uid).updateChildren(cp);
+            
+            // 🚀 Step 3: Trigger Network Refresh Signal
+            root.child("users").child(uid).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
         }
         android.widget.Toast.makeText(this, "Network Array Re-Mapped! Role Verified.", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (ownerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
     }
 
     @Override
@@ -424,6 +447,98 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 renderFriendsTab();
             }
         });
+    }
+
+    private View buildIdentityBlock() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(scale(25), scale(25), scale(25), scale(25)); 
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        
+        ownerAvatar = new ImageView(this);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
+        
+        // 🚀 Premium Circular Avatar (Responsive Scaling)
+        int avatarSize = scale(168); 
+        android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
+        c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        c.setColor(Color.TRANSPARENT);
+        c.setStroke(scale(4), getGradientStart());
+        ownerAvatar.setBackground(c);
+        
+        row.addView(ownerAvatar, new LinearLayout.LayoutParams(avatarSize, avatarSize));
+        
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setPadding(scale(40), 0, 0, 0);
+        
+        // --- 1. OWNER NAME ---
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
+        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
+        
+        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        
+        TextView myName = new TextView(this);
+        myName.setText("👤 Owner: " + nameStr);
+        myName.setTextColor(getTextColor());
+        myName.setTextSize(scaleText(15));
+        myName.setTypeface(null, Typeface.BOLD);
+        textBlock.addView(myName);
+        
+        // Fetch Persistent UIDs
+        android.content.SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String hardwareId = jPrefs.getString("hardware_device_id", null);
+        if (hardwareId == null) {
+            hardwareId = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+            jPrefs.edit().putString("hardware_device_id", hardwareId).apply();
+        }
+        String deviceId = jPrefs.getString("device_uid", null);
+        if (deviceId == null) {
+            deviceId = "UID-" + java.util.UUID.randomUUID().toString().substring(0, 7).toUpperCase();
+            jPrefs.edit().putString("device_uid", deviceId).apply();
+        }
+
+        String safeUid = (myUid != null) ? myUid : "MOCK_U123";
+        String upperFirebaseId = safeUid.toUpperCase();
+
+        // --- 2. DEVICE UID ---
+        TextView tvDeviceUid = new TextView(this);
+        tvDeviceUid.setText("📱 Device ID: - " + deviceId);
+        tvDeviceUid.setTextColor(getSecondaryTextColor());
+        tvDeviceUid.setTextSize(10);
+        textBlock.addView(tvDeviceUid);
+
+        // --- 3. HARDWARE UID ---
+        TextView tvHardwareUid = new TextView(this);
+        tvHardwareUid.setText("⚙️ Hardware UID: - " + hardwareId);
+        tvHardwareUid.setTextColor(getSecondaryTextColor());
+        tvHardwareUid.setTextSize(10);
+        textBlock.addView(tvHardwareUid);
+
+        // --- 4. NETWORK ID ---
+        TextView tvNetworkId = new TextView(this);
+        tvNetworkId.setText("🌐 Network ID: - " + upperFirebaseId);
+        tvNetworkId.setTextColor(getSecondaryTextColor());
+        tvNetworkId.setTextSize(9);
+        textBlock.addView(tvNetworkId);
+        
+        // 🛡️ ARCHITECTURAL SILENCE: Check local persistence for Hub status
+        String localActiveGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        if (localActiveGroup != null) {
+            TextView tvStatus = new TextView(this);
+            tvStatus.setText("LOCKED TO HUB: " + localActiveGroup);
+            tvStatus.setTextColor(Color.parseColor("#00E676"));
+            tvStatus.setTextSize(10);
+            tvStatus.setTypeface(null, Typeface.BOLD);
+            tvStatus.setPadding(0, 10, 0, 0);
+            textBlock.addView(tvStatus);
+        }
+        
+        row.addView(textBlock);
+        return row;
     }
 }
 

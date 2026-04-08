@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24.0"
+    android:viewportHeight="24.0">
+    <!-- Audit Report Skeleton -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M14,2H6C4.9,2 4,2.9 4,4v16c0,1.1 0.89,2 1.99,2H18c1.1,0 2,-0.9 2,-2V8L14,2zM18,20H6V4h7v5h5V20z" />
+    <!-- Charts / Content Lines -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M8,12h8v2H8zM8,16h5v2H8zM13,7h1v1h-1z" />
+    <!-- Verified Search Matrix (Magnifying Glass + Check) -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M16.5,13c-2.49,0 -4.5,2.01 -4.5,4.5s2.01,4.5 4.5,4.5s4.5,-2.01 4.5,-4.5S18.99,13 16.5,13zM16.5,20c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5s2.5,1.12 2.5,2.5S17.88,20 16.5,20z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M15.42,18.06l-1.06,-1.06l0.71,-0.71l1.06,1.06l2.12,-2.12l0.71,0.71L15.42,18.06z" />
+</vector>

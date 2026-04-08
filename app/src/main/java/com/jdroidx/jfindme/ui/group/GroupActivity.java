@@ -56,7 +56,7 @@ public class GroupActivity extends BaseActivityJava {
     
     // Dynamic Fields Option A
     private TextView tvCode, tvSyncStatus;
-    private ImageView ivQrCode;
+    private ImageView ivQrCode, ownerAvatar;
     private EditText etCode;
 
     // Dynamic Fields Option B
@@ -146,6 +146,12 @@ public class GroupActivity extends BaseActivityJava {
             dialog.show();
             applyDialogTheme(dialog);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (ownerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
     }
 
     @Override
@@ -323,8 +329,8 @@ public class GroupActivity extends BaseActivityJava {
         row.setPadding(scale(25), scale(25), scale(25), scale(25)); 
         row.setGravity(Gravity.CENTER_VERTICAL);
         
-        ImageView myAvatar = new ImageView(this);
-        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatar);
+        ownerAvatar = new ImageView(this);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
         
         // 🚀 Premium Circular Avatar (Responsive Scaling)
         int avatarSize = scale(168); 
@@ -332,9 +338,9 @@ public class GroupActivity extends BaseActivityJava {
         c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
         c.setColor(Color.TRANSPARENT);
         c.setStroke(scale(4), getGradientStart());
-        myAvatar.setBackground(c);
+        ownerAvatar.setBackground(c);
         
-        row.addView(myAvatar, new LinearLayout.LayoutParams(avatarSize, avatarSize));
+        row.addView(ownerAvatar, new LinearLayout.LayoutParams(avatarSize, avatarSize));
         
         LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);

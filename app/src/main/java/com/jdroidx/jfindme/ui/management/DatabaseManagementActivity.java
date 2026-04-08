@@ -14,22 +14,15 @@ import com.jdroidx.jfindme.utils.AngelLoader;
 import java.util.*;
 
 /**
- * Universal Analytical Hub (V37 FINAL RECONSTRUCTION)
- * Objective: High-impact Gradient Menu transitioning to Dynamic Forensic Explorer.
+ * Universal Analytical Hub (V38 NAVIGATION HARDENING)
+ * Objective: High-impact Gradient Menu with Sequence-Correct Back Navigation.
  * Hardening: L7 Architectural Registry Parity & V36 Database Migration.
  */
 public class DatabaseManagementActivity extends BaseActivityJava {
 
     private DatabaseHelper db;
     private FrameLayout rootLayer;
-    private LinearLayout menuState, explorerState;
-    private TableLayout tableHeader, tableData;
-    private HorizontalScrollView headerScroll, dataScroll;
-    private TextView tvStats;
-    
-    private String activeTable = "";
-    private int pSize = 15, pOffset = 0;
-    private String currentSearch = null;
+    private LinearLayout menuState;
 
     @Override
     protected View createLayout() {
@@ -42,21 +35,37 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         menuState.setOrientation(LinearLayout.VERTICAL);
         
         LinearLayout menuHeader = new LinearLayout(this);
-        menuHeader.setOrientation(LinearLayout.VERTICAL);
+        menuHeader.setOrientation(LinearLayout.HORIZONTAL);
+        menuHeader.setGravity(Gravity.CENTER_VERTICAL);
         applyGlobalHeaderGeometry(menuHeader);
         
+        // 🚀 NAVIGATION FIX: Back Button Integration
+        ImageView backBtn = new ImageView(this);
+        backBtn.setImageResource(android.R.drawable.ic_menu_revert); 
+        backBtn.setColorFilter(getGradientOverlayText());
+        int bSize = scale(120);
+        backBtn.setPadding(scale(20), scale(20), scale(20), scale(20));
+        backBtn.setOnClickListener(v -> finish());
+        menuHeader.addView(backBtn, new LinearLayout.LayoutParams(bSize, bSize));
+
+        LinearLayout textLayout = new LinearLayout(this);
+        textLayout.setOrientation(LinearLayout.VERTICAL);
+        textLayout.setPadding(scale(30), 0, 0, 0);
+
         TextView menuTitle = new TextView(this);
         menuTitle.setText("FORENSIC VAULT");
         menuTitle.setTextColor(getGradientOverlayText());
         UiArchitect.applyText(this, menuTitle, "TEXT_HEADER");
-        menuHeader.addView(menuTitle);
+        textLayout.addView(menuTitle);
         
         TextView menuSub = new TextView(this);
         menuSub.setText("L7 Universal Analytical Registry");
         menuSub.setTextColor(getGradientOverlayText());
         menuSub.setAlpha(0.8f);
         UiArchitect.applyText(this, menuSub, "TEXT_SUB");
-        menuHeader.addView(menuSub);
+        textLayout.addView(menuSub);
+        
+        menuHeader.addView(textLayout, new LinearLayout.LayoutParams(0, -2, 1.0f));
         menuState.addView(menuHeader);
 
         ScrollView menuScroll = new ScrollView(this);
@@ -64,117 +73,48 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         menuContent.setOrientation(LinearLayout.VERTICAL);
         int q = getResponsivePaddingQuota();
         menuContent.setPadding(q, q, q, q * 2);
+        menuContent.setClipChildren(false); 
+        menuContent.setClipToPadding(false);
 
-        String[] tables = {
-            "personal_table|Identity Dossier", 
-            "roster_table|P2P Network", 
-            "history_table|Tracking Archive", 
-            "alerts_table|Siren Logs", 
-            "SafeZone_Table|Boundary Matrix",
-            "pairing_log|Device Pairing Ledger", // 🚀 V37 Hub
-            "sim_inventory|SIM Inventory Archive" // 🚀 V38 Early-Access
-        };
-        for (String tEntry : tables) {
-            String[] parts = tEntry.split("\\|");
-            String tName = parts[0];
-            String tLabel = parts[1];
-
+        String[] tables = db.getAllTables();
+        for (String tName : tables) {
+            String tLabel = getTableFriendlyLabel(tName);
             View btn = createTableMenuButton(tName, tLabel);
-            int btnHeight = scale(180); // 🚀 Purged hardcoded 220
+            int btnHeight = scale(180); 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, btnHeight);
             lp.setMargins(0, 0, 0, scale(30));
             menuContent.addView(btn, lp);
         }
         
-        // 🚀 QA Fix: Master Factory Reset Hub (With Butterfly Transition)
-        View btnReset = UiArchitect.createButton(this, "FACTORY_RESET", v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Hard Reset Matrix?")
-                .setMessage("This will violently wipe the local SQLite Single Source of Truth and delete all forensic assets. Proceed with absolute caution.")
-                .setPositiveButton("WIPE ALL", (d, w) -> {
-                    AngelLoader.show(this);
-                    AngelLoader.setStatus(this, "Violently Purging Database...");
-                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        db.factoryReset();
-                        AngelLoader.setStatus(this, "Reconstructing Forensic SSOT (V37)...");
-                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                            AngelLoader.hide(this);
-                            Toast.makeText(this, "Global Wipe Complete. Matrix Restored.", Toast.LENGTH_LONG).show();
-                            safeRecreate();
-                        }, 2500);
-                    }, 2500);
-                })
-                .setNegativeButton("Abort", null).show();
-        });
+        // 🚀 MASTER HOME REDIRECT: Sending user back to the Factory Reset Console
+        View btnReset = UiArchitect.createButton(this, "FACTORY_RESET", v -> finish());
+        if (btnReset instanceof TextView) {
+            ((TextView)btnReset).setText("RETURN TO SYSTEM CONSOLE");
+        }
         menuContent.addView(btnReset);
         
         menuScroll.addView(menuContent);
         menuState.addView(menuScroll);
         rootLayer.addView(menuState);
 
-        // 🧱 STATE 2: DYNAMIC FORENSIC EXPLORER
-        explorerState = new LinearLayout(this);
-        explorerState.setOrientation(LinearLayout.VERTICAL);
-        explorerState.setVisibility(View.GONE);
-        explorerState.setPadding(q, q, q, q);
-
-        tvStats = new TextView(this);
-        tvStats.setTextColor(getGradientStart());
-        tvStats.setPadding(0, scale(15), 0, scale(15));
-        UiArchitect.applyText(this, tvStats, "TEXT_LABEL");
-        explorerState.addView(tvStats);
-
-        EditText etSearch = UiArchitect.createInputField(this, "FIELD_SEARCH_RECORDS");
-        etSearch.setHint("Search Dynamic Records...");
-        etSearch.addTextChangedListener(new android.text.TextWatcher() {
-            public void afterTextChanged(android.text.Editable s) { currentSearch = s.toString(); pOffset = 0; renderExplorerUI(); }
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-        });
-        explorerState.addView(etSearch);
-
-        headerScroll = new HorizontalScrollView(this);
-        tableHeader = new TableLayout(this);
-        headerScroll.addView(tableHeader);
-        explorerState.addView(headerScroll);
-
-        dataScroll = new HorizontalScrollView(this);
-        ScrollView verticalScroll = new ScrollView(this);
-        tableData = new TableLayout(this);
-        verticalScroll.addView(tableData);
-        dataScroll.addView(verticalScroll);
-        dataScroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> headerScroll.scrollTo(x, 0));
-        explorerState.addView(dataScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
-
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setGravity(Gravity.CENTER);
-        
-        View btnPrev = UiArchitect.createButton(this, "PREV", v -> { if(pOffset >= pSize) { pOffset -= pSize; renderExplorerUI(); } });
-        View btnNext = UiArchitect.createButton(this, "NEXT", v -> { pOffset += pSize; renderExplorerUI(); });
-
-        View btnWipe = UiArchitect.createButton(this, "WIPE_TABLE", v -> {
-            new android.app.AlertDialog.Builder(this).setTitle("Purge Table?")
-                .setMessage("Delete all records in " + activeTable + "?")
-                .setPositiveButton("DELETE", (d, w) -> { db.truncateTable(activeTable); renderExplorerUI(); })
-                .setNegativeButton("Abort", null).show();
-        });
-
-        View btnBack = UiArchitect.createButton(this, "BACK", v -> { explorerState.setVisibility(View.GONE); menuState.setVisibility(View.VISIBLE); });
-
-        int navMargin = scale(10);
-        LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        navLp.setMargins(navMargin, navMargin, navMargin, navMargin);
-        
-        nav.addView(btnPrev, navLp); 
-        nav.addView(btnNext, navLp); 
-        nav.addView(btnWipe, navLp); 
-        nav.addView(btnBack, navLp);
-        explorerState.addView(nav);
-
-        rootLayer.addView(explorerState);
-
         return rootLayer;
+    }
+
+    private String getTableFriendlyLabel(String tName) {
+        if (tName.equals("profile_table")) return "Identity Dossier";
+        if (tName.equals("device_table")) return "Hardware Identity Ledger";
+        if (tName.equals("roster_table")) return "P2P Network Matrix";
+        if (tName.equals("org_table")) return "Enterprise Dossier";
+        if (tName.equals("history_table")) return "Forensic Archive";
+        if (tName.equals("SafeZone_Table")) return "Boundary Matrix";
+        if (tName.equals("GeoFence_Alert_table")) return "Siren Logs";
+        if (tName.equals("pairing_log")) return "Pairing Ledger";
+        if (tName.equals("sim_inventory")) return "SIM Inventory";
+        if (tName.equals("sim_transaction")) return "SIM Transitions";
+        if (tName.equals("geofenc_sync_queue_table")) return "Sync Queue";
+        if (tName.equals("SafeZoneGroup_Table")) return "Zone Clusters";
+        if (tName.equals("GeofenceLog_Table")) return "Geofence Transitions";
+        return tName.replace("_table", "").toUpperCase();
     }
 
     private View createTableMenuButton(String tName, String tLabel) {
@@ -184,20 +124,25 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         int rp = scale(50);
         row.setPadding(rp, 0, rp, 0);
 
-        // 🚀 L7 Enterprise Gradient Button (Aligned with UiArchitect Radius and Physics)
+        UiArchitect.applyCardWithOverride(this, row, "CARD_STANDARD", 1.5f);
+        row.setClipToOutline(false); 
+        
         GradientDrawable gd = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{getGradientStart(), getGradientEnd()});
         gd.setCornerRadius(getResponsiveRadiusQuota());
         gd.setStroke(scale(3), Color.WHITE);
         row.setBackground(gd);
-        
-        // 🚀 Depth & Shadow Optimization: Unified Z-axis elevation via applyCardWithOverride
-        UiArchitect.applyCardWithOverride(this, row, "CARD_STANDARD", 1.2f);
 
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(android.R.drawable.ic_menu_agenda);
-        icon.setColorFilter(getGradientOverlayText());
-        int iconSize = scale(80);
-        row.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
+        ImageView gear = new ImageView(this);
+        gear.setImageResource(android.R.drawable.ic_menu_preferences); 
+        gear.setColorFilter(getGradientOverlayText());
+        int gearSize = scale(100);
+        row.addView(gear, new LinearLayout.LayoutParams(gearSize, gearSize));
+        gear.setOnClickListener(v -> {
+            android.content.Intent structure = new android.content.Intent(this, ForensicStructureActivity.class);
+            structure.putExtra("TABLE_NAME", tName);
+            structure.putExtra("TABLE_LABEL", tLabel);
+            startActivity(structure);
+        });
 
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
@@ -214,7 +159,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         tvSub.setText(tLabel);
         tvSub.setTextColor(getGradientOverlayText());
         tvSub.setAlpha(0.85f);
-        UiArchitect.applyText(this, tvSub, "TEXT_LABEL"); // 🚀 Purged hardcoded 12
+        UiArchitect.applyText(this, tvSub, "TEXT_LABEL"); 
         text.addView(tvSub);
 
         row.addView(text);
@@ -222,62 +167,13 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         row.setFocusable(true);
         applyAccessibility(row, "Navigate to " + tLabel);
         row.setOnClickListener(v -> {
-            activeTable = tName;
-            pOffset = 0;
-            menuState.setVisibility(View.GONE);
-            explorerState.setVisibility(View.VISIBLE);
-            renderExplorerUI();
+            android.content.Intent explorer = new android.content.Intent(this, ForensicVaultExplorerActivity.class);
+            explorer.putExtra("TABLE_NAME", tName);
+            explorer.putExtra("TABLE_LABEL", tLabel);
+            startActivity(explorer);
         });
 
         return row;
-    }
-
-    private void renderExplorerUI() {
-        tableHeader.removeAllViews();
-        tableData.removeAllViews();
-
-        try {
-            List<String> cols = db.getTableColumns(activeTable);
-            List<Map<String, String>> rows = db.getPagedData(activeTable, pSize, pOffset, currentSearch);
-            long total = db.getRecordCount(activeTable);
-
-            // 🚀 DYNAMIC FORENSIC HEADER
-            TableRow hRow = new TableRow(this);
-            int hp = scale(45);
-            for (String c : cols) {
-                TextView tv = new TextView(this);
-                tv.setText(c.toUpperCase());
-                tv.setPadding(hp, scale(30), hp, scale(30));
-                tv.setTextColor(getGradientOverlayText());
-                tv.setBackgroundColor(getGradientStart());
-                tv.setTypeface(null, android.graphics.Typeface.BOLD);
-                UiArchitect.applyText(this, tv, "TEXT_LABEL");
-                hRow.addView(tv);
-            }
-            tableHeader.addView(hRow);
-
-            // 🚀 DYNAMIC DATA ROWS (With Alternating Contrast)
-            int count = 0;
-            int bp = scale(45);
-            for (Map<String, String> r : rows) {
-                TableRow bRow = new TableRow(this);
-                bRow.setBackgroundColor(count % 2 == 0 ? Color.argb(15, 255, 255, 255) : Color.TRANSPARENT);
-                for (String c : cols) {
-                    TextView tv = new TextView(this);
-                    tv.setText(r.containsKey(c) ? r.get(c) : "---");
-                    tv.setTextColor(getTextColor());
-                    tv.setPadding(bp, scale(25), bp, scale(25));
-                    UiArchitect.applyText(this, tv, "TEXT_BODY");
-                    bRow.addView(tv);
-                }
-                tableData.addView(bRow);
-                count++;
-            }
-            tvStats.setText("INVESTIGATING: [ " + activeTable.toUpperCase() + " ] | Records: " + (pOffset + 1) + " - " + (pOffset + rows.size()) + " of " + total);
-        } catch (Exception e) {
-            tvStats.setText("CRITICAL: [ " + e.getMessage() + " ]");
-            SystemLogger.e("AnalyticalHub", "Explorer Failure", e);
-        }
     }
 
     @Override
