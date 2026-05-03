@@ -90,6 +90,44 @@ Global parameters for managing the dashboard behavior.
 }
 ```
 
+### 2.7 SafeZone Assignment Hierarchy (Closed-Loop)
+Defines the relational integrity between SafeZones and assigned Avatars/Devices. This schema guarantees that SafeZone parameters remain synchronized across all grouped devices.
+```json
+{
+  "safe_zones": {
+    "$zoneId": {
+      "zone_name": "Home Base",
+      "lat": 34.0522,
+      "lng": -118.2437,
+      "radius_meters": 500,
+      "created_by": "$uid",
+      "assigned_devices": {
+        "$deviceId_1": {
+          "status": "ACTIVE",
+          "assigned_at": 1712575000000
+        },
+        "$deviceId_2": {
+          "status": "PENDING_ACCEPTANCE",
+          "assigned_at": 1712575500000
+        }
+      }
+    }
+  },
+  "user_safe_zone_map": {
+    "$deviceId": {
+      "$zoneId": {
+        "status": "ACTIVE",
+        "role": "MEMBER"
+      }
+    }
+  }
+}
+```
+**Governance Rules:**
+1. **Atomic Dual-Write:** Any assignment of a device to a SafeZone MUST write to both `safe_zones/$zoneId/assigned_devices` and `user_safe_zone_map/$deviceId/$zoneId` simultaneously in a batch operation.
+2. **Cascading Deletions:** If a SafeZone is deleted, an atomic batch must wipe all matching references in `user_safe_zone_map`.
+3. **Pending Handshake:** A newly assigned user remains in `PENDING_ACCEPTANCE` until their device successfully synchronizes the SafeZone.
+
 ---
 
 ## 3. UI/UX Sequence (Enterprise Standard)

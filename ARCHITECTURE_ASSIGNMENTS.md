@@ -40,10 +40,10 @@ This document outlines the current division of labor and active execution branch
 
 | Scenario ID | Agent | Phase | Feature | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **SCN-AUTH-01** | Agent 3 | Solutioning | Register/Login UI (L7 Standard) | IN_PROGRESS |
+| **SCN-AUTH-01** | Agent 3 | Solutioning | Register/Login UI (L7 Standard) | COMPLETED |
 | **SCN-SYNC-02** | Agent 2 | Implementation | Closed-Loop Profile Core (Avatar/Name) | COMPLETED |
-| **SCN-SAFE-03** | Agent 1 | Analysis | SafeZone Assignment Hierarchy | PENDING_ANALYSIS |
-| **SCN-QA-04** | Agent 4 | Standby | Offline-Online Handshake Verification | QUEUED |
+| **SCN-SAFE-03** | Agent 1 | Analysis | SafeZone Assignment Hierarchy | COMPLETED |
+| **SCN-QA-04** | Agent 4 | Execution | Offline-Online Handshake Verification | IN_PROGRESS |
 
 ---
 
