@@ -5,7 +5,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.DataSnapshot
 import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,8 +42,9 @@ class PersonDetailsViewModel : ViewModel() {
         if (targetUid == myUid) {
             val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             val prefsMap = mutableMapOf<String, String>()
-            prefsMap["fullName"] = prefs.getString("user_nickname", "") ?: ""
+            prefsMap["full_name"] = prefs.getString("user_nickname", "") ?: ""
             prefsMap["phone"] = prefs.getString("user_phone", "") ?: ""
+            prefsMap["email_id"] = prefs.getString("email", "") ?: ""
             prefsMap["dob"] = prefs.getString("user_dob", "") ?: ""
             prefsMap["gender"] = prefs.getString("user_gender", "") ?: ""
             prefsMap["country"] = prefs.getString("user_country", "") ?: ""
@@ -66,38 +69,39 @@ class PersonDetailsViewModel : ViewModel() {
         val localRaw = localDb.getLocalDossier(targetUid)
         if (localRaw != null) {
             val localMapped = mutableMapOf<String, String>()
-            localMapped["fullName"] = localRaw["full_name"] ?: ""
-            localMapped["phone"] = localRaw["user_phone"] ?: ""
-            localMapped["dob"] = localRaw["user_dob"] ?: ""
-            localMapped["gender"] = localRaw["user_gender"] ?: ""
-            localMapped["address"] = localRaw["user_address"] ?: ""
-            localMapped["country"] = localRaw["user_country"] ?: ""
-            localMapped["state"] = localRaw["user_state"] ?: ""
-            localMapped["city"] = localRaw["user_city"] ?: ""
-            localMapped["pincode"] = localRaw["user_pincode"] ?: ""
-            localMapped["emergencyNote"] = localRaw["user_emergency_note"] ?: ""
+            localMapped["full_name"] = localRaw["id_full_name"] ?: ""
+            localMapped["phone"] = localRaw["id_phone"] ?: ""
+            localMapped["email_id"] = localRaw["id_email"] ?: ""
+            localMapped["dob"] = localRaw["id_dob"] ?: ""
+            localMapped["gender"] = localRaw["id_gender"] ?: ""
+            localMapped["address"] = localRaw["geo_address"] ?: ""
+            localMapped["country"] = localRaw["id_country"] ?: ""
+            localMapped["state"] = localRaw["id_state"] ?: ""
+            localMapped["city"] = localRaw["id_city"] ?: ""
+            localMapped["pincode"] = localRaw["id_pincode"] ?: ""
+            localMapped["emergencyNote"] = localRaw["id_emergency_note"] ?: ""
             localMapped["orgName"] = localRaw["org_name"] ?: ""
-            localMapped["deptName"] = localRaw["department"] ?: ""
+            localMapped["deptName"] = localRaw["id_department"] ?: ""
             localMapped["role_family"] = localRaw["role_family"] ?: ""
             localMapped["role_friend"] = localRaw["role_friend"] ?: ""
             
-            SystemLogger.i(TAG, "Dossier Local SQL Pull Normalized & Pushed.")
+            SystemLogger.i(TAG, "Dossier Local SQL Pull Normalized (V55 Standard) & Pushed.")
             _dossierLiveData.postValue(localMapped)
         }
 
         // 2. Query Firebase Cloud for the latest Synced State
-        // 🚀 QA Fix: Support Strict P2P Matrix Sync. If groupId empty, use isolated peer routing!
         val citizenRef = if (!groupId.isNullOrEmpty()) {
-            FirebaseDatabase.getInstance().reference.child("groups").child(groupId).child("citizen_dossiers").child(targetUid)
+            FirebaseComm.groupsRef.child("citizen_dossiers").child(targetUid)
         } else {
-            FirebaseDatabase.getInstance().reference.child("users").child(myUid).child("isolated_dossiers").child(targetUid)
+            FirebaseComm.devicesRef.child(myUid).child("profile").child("isolated_dossiers").child(targetUid)
         }
 
         citizenRef.get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
                 val cloudMap = mutableMapOf<String, String>()
-                cloudMap["fullName"] = snapshot.child("fullName").getValue(String::class.java) ?: ""
+                cloudMap["full_name"] = snapshot.child("full_name").getValue(String::class.java) ?: snapshot.child("fullName").getValue(String::class.java) ?: ""
                 cloudMap["phone"] = snapshot.child("phone").getValue(String::class.java) ?: ""
+                cloudMap["email_id"] = snapshot.child("email_id").getValue(String::class.java) ?: snapshot.child("email").getValue(String::class.java) ?: ""
                 cloudMap["dob"] = snapshot.child("dob").getValue(String::class.java) ?: ""
                 cloudMap["gender"] = snapshot.child("gender").getValue(String::class.java) ?: ""
                 cloudMap["address"] = snapshot.child("address").getValue(String::class.java) ?: ""
@@ -124,8 +128,8 @@ class PersonDetailsViewModel : ViewModel() {
                 SystemLogger.i(TAG, "Dossier Firebase Sync Successful (P2P routing applied if needed)")
                 
                 // 🚀 LIVE QA FIX: Instantly sync Cloud override down to SQLite so other systems (like Map Engine) read the truth!
-                val fRole = if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]
-                localDb.commitForensicDossier(targetUid, cloudMap, fRole, cloudMap["fullName"], targetUid, targetUid, "CLOUD_SYNC")
+                val fRole = (if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]) ?: "MEMBER"
+                localDb.commitHandshakeDossier(targetUid, cloudMap, fRole, cloudMap["fullName"] ?: "Asset Node", targetUid, targetUid, "CLOUD_SYNC", "CLOUD")
                 val rFri = cloudMap["role_friend"] ?: "None"
                 localDb.updateCitizenRole(targetUid, cloudMap["role_family"] ?: "None", rFri, rFri.contains("Friend"))
                 
@@ -189,7 +193,7 @@ class PersonDetailsViewModel : ViewModel() {
             // 2. Cloud Commit
             if (!groupId.isNullOrEmpty()) {
                 val cp = mapOf("role_family" to famRole, "role_friend" to frRole)
-                FirebaseDatabase.getInstance().reference.child("groups").child(groupId)
+                FirebaseComm.relationshipsRef.child(groupId)
                     .child("citizen_dossiers").child(targetUid).updateChildren(cp)
             }
             
@@ -266,7 +270,22 @@ class PersonDetailsViewModel : ViewModel() {
         // 1. Upsert securely down into the Local SQLite Table
         val localDb = DatabaseHelper.getInstance(context)
         val sRole = if ((crossValidatedPayload["role_friend"] ?: "None") != "None") crossValidatedPayload["role_friend"] else crossValidatedPayload["role_family"]
-        localDb.commitForensicDossier(targetUid, crossValidatedPayload, sRole, crossValidatedPayload["fullName"], targetUid, targetUid, "USER_EDIT")
+        localDb.commitHandshakeDossier(targetUid, crossValidatedPayload, sRole ?: "MEMBER", crossValidatedPayload["fullName"] ?: "Asset Node", targetUid, targetUid, "USER_EDIT", "LOCAL")
+        
+        // 🚀 Real-time Livemap Sync (Managed Target): Push identity override to the target's location node
+        val targetName = crossValidatedPayload["full_name"] ?: "Asset Node"
+        val targetAvatar = crossValidatedPayload["avatar_id"] ?: "avatar_custom_1"
+        val locSync = mapOf("userName" to targetName, "avatar_id" to targetAvatar)
+        FirebaseComm.locationsRef.child(targetUid).updateChildren(locSync)
+        
+        // Push to Group Roster if active
+        val myGrp = context.getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+        if (myGrp != null) {
+            val rosterUpdate = mapOf("display_name" to targetName, "avatar_id" to targetAvatar)
+            FirebaseComm.relationshipsRef.child(myGrp).child("roster").child(targetUid).updateChildren(rosterUpdate)
+            // Send group signal
+            FirebaseComm.relationshipsRef.child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+        }
 
         // 2. Evaluate Privacy Setting before touching Cloud Arrays
         val cloudSyncEnabled = payload["cloud_sync_enabled"] ?: "TRUE"
@@ -295,32 +314,34 @@ class PersonDetailsViewModel : ViewModel() {
         // 3. Push finalized (and potentially stripped) array to Cloud Firebase
         
         val targetRef = if (!groupId.isNullOrEmpty()) {
-            FirebaseDatabase.getInstance().reference.child("groups").child(groupId).child("citizen_dossiers").child(targetUid)
+            FirebaseComm.groupsRef.child("citizen_dossiers").child(targetUid)
         } else {
-            FirebaseDatabase.getInstance().reference.child("users").child(myUid).child("isolated_dossiers").child(targetUid)
+            FirebaseComm.devicesRef.child(myUid).child("profile").child("isolated_dossiers").child(targetUid)
         }
 
         targetRef.setValue(finalPayload).addOnSuccessListener {
             SystemLogger.i(TAG, if(cloudSyncEnabled == "FALSE") "Private Skeleton Saved to Cloud." else "Full Dossier Successfully Saved to Cloud Matrix")
             
             // 🚀 QA Fix: Global Identity Mirror!
-            // If we are updating OUR OWN dossier, mirroring core fields to the main Profile table!
+            // If we are updating OUR OWN dossier, mirroring core fields to the main Profile node in the Hub!
             if (targetUid == myUid) {
                 val mirrorMap = mutableMapOf<String, Any>()
-                mirrorMap["userName"] = payload["fullName"] ?: ""
-                mirrorMap["userDob"] = payload["dob"] ?: ""
-                mirrorMap["userGender"] = payload["gender"] ?: ""
-                mirrorMap["userCountry"] = payload["country"] ?: ""
-                mirrorMap["userState"] = payload["state"] ?: ""
-                mirrorMap["userCity"] = payload["city"] ?: ""
-                mirrorMap["userPincode"] = payload["pincode"] ?: ""
-                mirrorMap["userPhone"] = payload["phone"] ?: ""
-                mirrorMap["userAddress"] = payload["address"] ?: ""
-                mirrorMap["userEmergencyNote"] = payload["emergencyNote"] ?: ""
-                mirrorMap["orgName"] = payload["orgName"] ?: ""
-                mirrorMap["deptName"] = payload["deptName"] ?: ""
+                mirrorMap["full_name"] = payload["full_name"] ?: ""
+                mirrorMap["id_dob"] = payload["dob"] ?: ""
+                mirrorMap["id_gender"] = payload["gender"] ?: ""
+                mirrorMap["id_country"] = payload["country"] ?: ""
+                mirrorMap["id_state"] = payload["state"] ?: ""
+                mirrorMap["id_city"] = payload["city"] ?: ""
+                mirrorMap["id_pincode"] = payload["pincode"] ?: ""
+                mirrorMap["id_phone"] = payload["phone"] ?: ""
+                mirrorMap["email_id"] = payload["email_id"] ?: ""
+                mirrorMap["geo_address"] = payload["address"] ?: ""
+                mirrorMap["id_emergency_note"] = payload["emergencyNote"] ?: ""
+                mirrorMap["org_name"] = payload["orgName"] ?: ""
+                mirrorMap["id_department"] = payload["deptName"] ?: ""
+                mirrorMap["updated_at"] = FirebaseComm.getForensicTimestamp()
                 
-                FirebaseDatabase.getInstance().reference.child("users").child(targetUid).updateChildren(mirrorMap)
+                FirebaseComm.devicesRef.child(targetUid).child("profile").updateChildren(mirrorMap)
             }
             
             _saveStatus.postValue(true)
@@ -336,9 +357,9 @@ class PersonDetailsViewModel : ViewModel() {
         )
         
         val logRef = if (!groupId.isNullOrEmpty()) {
-            FirebaseDatabase.getInstance().reference.child("groups").child(groupId).child("citizen_dossier_logs").child(targetUid)
+            FirebaseComm.groupsRef.child("citizen_dossier_logs").child(targetUid)
         } else {
-            FirebaseDatabase.getInstance().reference.child("users").child(myUid).child("isolated_dossier_logs").child(targetUid)
+            FirebaseComm.devicesRef.child(myUid).child("profile").child("isolated_dossier_logs").child(targetUid)
         }
         logRef.push().setValue(logMap)
     }
@@ -346,9 +367,9 @@ class PersonDetailsViewModel : ViewModel() {
     fun fetchChangeLog(groupId: String?, targetUid: String) {
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
         val logRef = if (!groupId.isNullOrEmpty()) {
-            FirebaseDatabase.getInstance().reference.child("groups").child(groupId).child("citizen_dossier_logs").child(targetUid)
+            FirebaseComm.groupsRef.child("citizen_dossier_logs").child(targetUid)
         } else {
-            FirebaseDatabase.getInstance().reference.child("users").child(myUid).child("isolated_dossier_logs").child(targetUid)
+            FirebaseComm.devicesRef.child(myUid).child("profile").child("isolated_dossier_logs").child(targetUid)
         }
         
         logRef.orderByChild("timestamp").limitToLast(10)

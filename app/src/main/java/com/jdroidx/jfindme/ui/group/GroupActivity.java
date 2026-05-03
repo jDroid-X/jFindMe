@@ -1381,9 +1381,9 @@ public class GroupActivity extends BaseActivityJava {
                                 for (com.google.firebase.database.DataSnapshot child : snapshot.getChildren()) {
                                     com.jdroidx.jfindme.data.model.UserLocation loc = child.getValue(com.jdroidx.jfindme.data.model.UserLocation.class);
                                     if (loc != null && !loc.getUserId().equals(safeUid)) {
-                                        if (!assetUids.contains(loc.getUserId()) && currentlyPairedUids.contains(loc.getUserId())) {
-                                            assetNames.add(loc.getUserName());
-                                            assetUids.add(loc.getUserId());
+                                        if (!assetUids.contains(String.valueOf(loc.getUserId())) && currentlyPairedUids.contains(String.valueOf(loc.getUserId()))) {
+                                            assetNames.add(String.valueOf(loc.getUserName()));
+                                            assetUids.add(String.valueOf(loc.getUserId()));
                                         }
                                     }
                                 }
@@ -1855,7 +1855,8 @@ public class GroupActivity extends BaseActivityJava {
 
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         if (myUid != null) {
-            viewModel.setupSignalListener(myUid);
+            String activeGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+            viewModel.setupSignalListener(myUid, activeGrp);
             rebuildActiveRosterList();
         }
     }

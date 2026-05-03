@@ -62,6 +62,7 @@ public class IconTable {
         registry.put("ACTION_ZONES",  new IconRecord("ACTION_ZONES",  android.R.drawable.ic_dialog_map, "Define Geo-Bounds", 35f, 25, 0.7f, "HEAVY", true, Color.WHITE, "ROUTE_GEOFENCE"));
         registry.put("ACTION_GHOST",  new IconRecord("ACTION_GHOST",  android.R.drawable.ic_dialog_info, "Stealth Visibility Mask", 35f, 25, 0.5f, "LIGHT", true, Color.WHITE, "TOGGLE_CALLOUTS"));
         registry.put("ACTION_SEARCH", new IconRecord("ACTION_SEARCH", android.R.drawable.ic_dialog_map, "Query Target Array", 35f, 25, 0.6f, "LIGHT", true, Color.WHITE, "MAP_SEARCH_NODES"));
+        registry.put("ACTION_WATCHDOG", new IconRecord("ACTION_WATCHDOG", R.drawable.ic_watchdog, "WatchDog Security Heartbeat", 45f, 20, 0.9f, "HEAVY", true, Color.WHITE, "ROUTE_WATCHDOG"));
     }
 
 

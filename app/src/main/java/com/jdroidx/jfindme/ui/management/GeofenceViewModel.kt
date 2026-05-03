@@ -261,8 +261,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) dbDelegate.logDevicePairing(
-                        uid, "ME", snap.child("peer_uid").getValue(String::class.java) ?: "OTHER",
-                        snap.child("peer_name").getValue(String::class.java) ?: "NODE", "SUBJECT", "GUARDIAN"
+                        uid, "ME", "SELF", // Host identity
+                        snap.child("peer_uid").getValue(String::class.java) ?: "OTHER",
+                        snap.child("peer_name").getValue(String::class.java) ?: "NODE", 
+                        "SUBJECT", "GUARDIAN" // Peer identity & Role
                     )
                 }
             }
@@ -273,8 +275,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("alerts").limitToLast(50).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.saveAlert(
-                        uid,
+                    for (snap in s.children) dbDelegate.saveSysLog("I", 
                         snap.child("title").getValue(String::class.java) ?: "ALERT", 
                         snap.child("msg").getValue(String::class.java) ?: ""
                     )
@@ -289,22 +290,23 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         val historyUid = snap.child("uid").getValue(String::class.java) ?: ""
                         // 🚀 QA Fix: Identity Resolution Bridge
                         val resolvedName = dbDelegate.getLocalDossier(historyUid)?.get("full_name") ?: "Active Node"
+                        val tsStr = snap.child("timestamp").value?.toString() ?: dbDelegate.getReadableNow()
                         dbDelegate.saveHistoryPoint(
                             historyUid,
-                            resolvedName,
                             "IDENTITY_MIRROR",
-                        snap.child("lat").getValue(Double::class.java) ?: 0.0,
-                        snap.child("lng").getValue(Double::class.java) ?: 0.0,
-                        snap.child("speed").getValue(Double::class.java)?.toFloat() ?: 0f,
-                        snap.child("battery").getValue(Long::class.java)?.toInt() ?: 100,
-                        (snap.child("sos").getValue(Long::class.java) ?: 0L) == 1L,
-                        snap.child("address").getValue(String::class.java) ?: ""
-                    )
+                            snap.child("lat").getValue(Double::class.java) ?: 0.0,
+                            snap.child("lng").getValue(Double::class.java) ?: 0.0,
+                            snap.child("speed").getValue(Double::class.java)?.toFloat() ?: 0f,
+                            snap.child("battery").getValue(Long::class.java)?.toInt() ?: 100,
+                            (snap.child("sos").getValue(Long::class.java) ?: 0L) == 1L,
+                            "CLOUD_SYNC",
+                            tsStr
+                        )
+                    }
                 }
             }
-        }
-        override fun onCancelled(e: DatabaseError) {}
-    })
+            override fun onCancelled(e: DatabaseError) {}
+        })
 
         // Cluster 4: Hardware Situational Awareness (SIM Inventory + Transactions)
         rootRef.child("sim_inventory").addValueEventListener(object : ValueEventListener {
@@ -314,7 +316,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         snap.child("slot").getValue(Int::class.java) ?: 0,
                         snap.child("serial").getValue(String::class.java) ?: "RESTORED",
                         snap.child("operator").getValue(String::class.java) ?: "PROVIDER",
-                        null, null, null, null, false
+                        "", "", "", "", false
                     )
                 }
             }
@@ -325,12 +327,13 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) dbDelegate.logSimTransaction(
                         snap.child("slot").getValue(Int::class.java) ?: 0,
-                        snap.child("mcc").getValue(String::class.java),
-                        snap.child("mnc").getValue(String::class.java),
-                        snap.child("lac").getValue(String::class.java),
-                        snap.child("cid").getValue(String::class.java),
+                        snap.child("mcc").getValue(String::class.java) ?: "",
+                        snap.child("mnc").getValue(String::class.java) ?: "",
+                        snap.child("lac").getValue(String::class.java) ?: "",
+                        snap.child("cid").getValue(String::class.java) ?: "",
                         snap.child("lat").getValue(Double::class.java) ?: 0.0,
-                        snap.child("lng").getValue(Double::class.java) ?: 0.0
+                        snap.child("lng").getValue(Double::class.java) ?: 0.0,
+                        "CLOUD"
                     )
                 }
             }
@@ -362,7 +365,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     map.forEach { (k, v) -> stringMap[k] = v.toString() }
                     
                     viewModelScope.launch(Dispatchers.IO) {
-                        dbDelegate.commitForensicDossier(uid, stringMap)
+                        dbDelegate.commitAnalyticalDossier(uid, stringMap)
                         SystemLogger.i("GlobalSync", "PROFILE_SYNC: Root identity dossier architected locally for $uid")
                     }
                 }
@@ -432,31 +435,36 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
 
     @kotlin.jvm.JvmOverloads
     fun submitCloudCoordinateSync(rawName: String, assignedName: String, lat: Double, lng: Double, radius: Double, startTime: Int = 0, endTime: Int = 2359, activeDays: String = "1,2,3,4,5,6,0", existingId: String? = null) {
-        val name = rawName // 🚀 L7 PURE-SOURCE: Remove cluster redundancy from the name title
-        _uiToastEvent.postValue(SingleEvent("Acquiring Hardware Sync..."))
-        
-        val geocoder = Geocoder(getApplication())
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
-                override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                    val addr = if (addresses.isNotEmpty()) addresses[0].getAddressLine(0) else "Unknown Target"
-                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addr, startTime, endTime, activeDays, existingId)
+        try {
+            val name = rawName // 🚀 L7 PURE-SOURCE: Remove cluster redundancy from the name title
+            _uiToastEvent.postValue(SingleEvent("Acquiring Hardware Sync..."))
+            
+            val geocoder = Geocoder(getApplication())
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
+                    override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                        val addr = if (addresses.isNotEmpty()) addresses[0].getAddressLine(0) else "Unknown Target"
+                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addr, startTime, endTime, activeDays, existingId)
+                    }
+                    override fun onError(errorMessage: String?) {
+                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, "Address Offline", startTime, endTime, activeDays, existingId)
+                    }
+                })
+            } else {
+                viewModelScope.launch {
+                    val addressString = withContext(Dispatchers.IO) {
+                        try {
+                            @Suppress("DEPRECATION")
+                            val res = geocoder.getFromLocation(lat, lng, 1)
+                            if (!res.isNullOrEmpty()) res[0].getAddressLine(0) else "Unknown Target"
+                        } catch (e: Exception) { "Address Offline" }
+                    }
+                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addressString, startTime, endTime, activeDays, existingId)
                 }
-                override fun onError(errorMessage: String?) {
-                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, "Address Offline", startTime, endTime, activeDays, existingId)
-                }
-            })
-        } else {
-            viewModelScope.launch {
-                val addressString = withContext(Dispatchers.IO) {
-                    try {
-                        @Suppress("DEPRECATION")
-                        val res = geocoder.getFromLocation(lat, lng, 1)
-                        if (!res.isNullOrEmpty()) res[0].getAddressLine(0) else "Unknown Target"
-                    } catch (e: Exception) { "Address Offline" }
-                }
-                finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addressString, startTime, endTime, activeDays, existingId)
             }
+        } catch (e: Exception) {
+            SystemLogger.e("GeofenceViewModel", "SUBMIT_SYNC_FATAL", e)
+            _uiToastEvent.postValue(SingleEvent("Hardware Sync Fatal: " + e.message))
         }
     }
 
@@ -521,7 +529,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         // 🚀 AUDIT TRAIL: Record the deployment action in the forensic history vault
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: "ADMIN"
         val missionStatus = if (existingId != null) "UPDATED" else "DEPLOYED"
-        dbDelegate.saveAlert(myUid, "SAFEZONE $missionStatus", "Node '$name' has been successfully ${missionStatus.lowercase()} and assigned to: $assignedName")
+        dbDelegate.saveSysLog("I", "SAFEZONE $missionStatus", "Node '$name' has been successfully ${missionStatus.lowercase()} and assigned to: $assignedName")
 
         _closeMapEvent.postValue(SingleEvent(true)) 
         setDraftPin(null)
@@ -573,8 +581,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         db.syncSafeZoneGroup("ACTIVE_MISSION", targetUid, 0, 100, "ALL", 1, 1, "MISSION_DEPLOYED")
         
         // 2. Update Pairing Log (Confirm Handshake in the TABLE_PAIRING)
-        db.logDevicePairing(FirebaseAuth.getInstance().uid ?: "ADMIN", "MISSION_COMMANDER", 
-                           targetUid, targetName, "SUBJECT", "GUARDIAN", "DEVICE_A", "DEVICE_B")
+        db.logDevicePairing(FirebaseAuth.getInstance().uid ?: "ADMIN", "MISSION_COMMANDER", "DEVICE_A",
+                           targetUid, targetName, "DEVICE_B", "GUARDIAN", activeId)
 
         // 3. Log Forensic Deployment (History Archive)
         val missionMsg = "HANDSHAKE SENT: $nowFormatted. DELIVERY: IN_TRANSIT. RECEIVED: PENDING."

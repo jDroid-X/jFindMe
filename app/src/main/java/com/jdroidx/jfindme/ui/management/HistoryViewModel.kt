@@ -18,11 +18,11 @@ import android.location.Geocoder
 import java.util.Locale
 
 /**
- * 🚀 Enterprise History Replay ViewModel
+ * ≡ƒÜÇ Enterprise History Replay ViewModel
  * Adheres to Waterfall MVVM standards by isolating Repository and Network
  * interactions from the HistoryActivity UI Controller.
  */
-class HistoryViewModel : BaseViewModel() {
+class HistoryViewModel(application: android.app.Application) : BaseViewModel(application) {
 
     private var repository: LocationRepository? = null
 
@@ -44,7 +44,7 @@ class HistoryViewModel : BaseViewModel() {
     }
 
     /**
-     * 🚀 QA Logic: Secure History Extraction Matrix
+     * ≡ƒÜÇ QA Logic: Secure History Extraction Matrix
      */
     fun loadHistoryData(uid: String, timeWindow: Long) {
         val repo = repository ?: return
@@ -56,7 +56,7 @@ class HistoryViewModel : BaseViewModel() {
         viewModelScope.launch {
             repo.fetchHistory(uid, targetPast, now) { points ->
                 _historyPoints.postValue(points)
-                // 🚀 QA Fix: After Sync (Step 3), trigger a UI list refresh to show the new pings!
+                // ≡ƒÜÇ QA Fix: After Sync (Step 3), trigger a UI list refresh to show the new pings!
                 loadHistorySessions(repo.context, uid, timeWindow)
                 _isLoading.postValue(false)
             }
@@ -64,7 +64,7 @@ class HistoryViewModel : BaseViewModel() {
     }
 
     /**
-     * 🚀 QA Logic: Synchronized Data Scavenge
+     * ≡ƒÜÇ QA Logic: Synchronized Data Scavenge
      * Fetches grouped session logs from the local Forensic DB with a Time Window filter.
      */
     fun loadHistorySessions(context: Context, uid: String, timeWindow: Long) {
@@ -77,7 +77,7 @@ class HistoryViewModel : BaseViewModel() {
             val sessions = dbHelper.getHistoryLogsFiltered(uid, cutoff)
             _historySessions.postValue(sessions)
             
-            // 🚀 QA Fix: Forensic Geocoding Array (Late-Binding Resolution)
+            // ≡ƒÜÇ QA Fix: Forensic Geocoding Array (Late-Binding Resolution)
             sessions.forEach { row ->
                 val addr = row["address"] as? String ?: "Tracing..."
                 if (addr == "Tracing..." || addr.isBlank()) {
@@ -105,7 +105,7 @@ class HistoryViewModel : BaseViewModel() {
     }
 
     /**
-     * 🚀 QA Logic: Network Asset Scanner (SSOT Mirror)
+     * ≡ƒÜÇ QA Logic: Network Asset Scanner (SSOT Mirror)
      * Extracts all approved target nodes from the validated Roster Table.
      * Rule: Roster Table is the absolute Forensic SSOT (V36).
      */
@@ -119,13 +119,13 @@ class HistoryViewModel : BaseViewModel() {
         val offlineNodes = dbHelper.getOfflineRoster()
         val targets = mutableListOf<TrackingTarget>()
         
-        // 🚀 QA Rule: Discard Self-Target to save bandwidth and battery.
+        // ≡ƒÜÇ QA Rule: Discard Self-Target to save bandwidth and battery.
         // Primary Owner telemetry is currently redundant for history replay.
         // val myDos = dbHelper.getLocalDossier("OWNER_001")
         // val myName = myDos?.get("full_name") ?: "My Active Device"
         // targets.add(TrackingTarget("$myName (PRIMARY)", myUid))
         
-        // 🚀 PILLAR 2: Validated P2P Matrix
+        // ≡ƒÜÇ PILLAR 2: Validated P2P Matrix
         offlineNodes.forEach { row ->
             val uid = row["uid"] as? String ?: ""
             val name = row["display_name"] as? String ?: "Target ($uid)"
@@ -141,17 +141,17 @@ class HistoryViewModel : BaseViewModel() {
             _trackingTargets.postValue(targets)
             _isLoading.postValue(false)
         } else {
-            // 🛡️ EMERGENCY FALLBACK: Local table is unpopulated, trigger forensic network scavenge
+            // ≡ƒ¢í∩╕Å EMERGENCY FALLBACK: Local table is unpopulated, trigger forensic network scavenge
             FirebaseDatabase.getInstance().getReference("locations")
                 .addListenerForSingleValueEvent(object : ValueEventListener {
                     override fun onDataChange(snapshot: DataSnapshot) {
                         snapshot.children.forEach { child ->
                             val loc = child.getValue(UserLocation::class.java)
-                            if (loc != null && loc.userId != myUid) {
+                            if (loc != null && loc.getResolvedUserId() != myUid) {
                                 // If found remotely, save back to SSOT (Persistence Loop)
-                                dbHelper.saveRosterNode(loc.userId, loc.userName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,
-                                    ownerName = "P2P Mirror Recovery", ownerDeviceId = myUid, connectedDeviceId = loc.userId, qrCode = "RECOVERY")
-                                targets.add(TrackingTarget("${loc.userName} (P2P MIRROR)", loc.userId))
+                                dbHelper.saveRosterNode(loc.getResolvedUserId(), loc.userName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,
+                                    ownerName = "P2P Mirror Recovery", connectedDeviceId = loc.getResolvedUserId(), qrCode = "RECOVERY")
+                                targets.add(TrackingTarget("${loc.userName} (P2P MIRROR)", loc.getResolvedUserId()))
                             }
                         }
                         _trackingTargets.postValue(targets)

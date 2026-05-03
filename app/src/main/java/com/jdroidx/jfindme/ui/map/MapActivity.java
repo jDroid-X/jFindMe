@@ -162,7 +162,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
 
     @Override
-    protected void onUiRebuilt() {
+    protected void onUiRebuilt(android.os.Bundle savedState) {
         SystemLogger.i(TAG, "L7 Lifecycle: Map Dashboard Re-Synchronizing after Rotation.");
         
         // 1. Re-Target and Re-Sync Map Fragment
@@ -209,18 +209,18 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // Map natively consumes remaining absolute space above the tiles!
         int quota = getResponsivePaddingQuota();
         LinearLayout.LayoutParams mcLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
-        mcLp.setMargins(quota, getResponsiveHeaderTopQuota(), quota, 10); // 🚀 QA Fix: Compressed Mission Gap (10px)
+        mcLp.setMargins(quota, getResponsiveHeaderTopQuota(), quota, 10); // ≡ƒÜÇ QA Fix: Compressed Mission Gap (10px)
         mapCardContainer.setLayoutParams(mcLp);
 
         FrameLayout mapContainer = new FrameLayout(this);
         mapContainer.setId(ID_MAP_CONTAINER);
 
-        // 🚀 Expand Feature Matrix
+        // ≡ƒÜÇ Expand Feature Matrix
         ImageView expandIcon = new ImageView(this);
         com.jdroidx.jfindme.ui.base.IconTable.applyTheme(this, expandIcon, "ACTION_EXPAND");
         expandIcon.setPadding(25, 25, 25, 25);
         
-        // 🚀 Native Vertical 'Old Style' Menu Overlay
+        // ≡ƒÜÇ Native Vertical 'Old Style' Menu Overlay
         LinearLayout sideActionPanel = new LinearLayout(this);
         sideActionPanel.setOrientation(LinearLayout.VERTICAL);
         sideActionPanel.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
@@ -237,7 +237,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         applyAccessibility(expandIcon, "Toggle Full Screen Map");
         expandIcon.setOnClickListener(v -> {
             isMapExpanded = !isMapExpanded;
-            // 🚀 QA OS Transition Engine: Auto-morphs all XML layouts frictionlessly!
+            // ≡ƒÜÇ QA OS Transition Engine: Auto-morphs all XML layouts frictionlessly!
             android.transition.TransitionManager.beginDelayedTransition(root, new android.transition.AutoTransition().setDuration(350));
 
             LinearLayout wrapper = (LinearLayout) dashboardGridZone;
@@ -252,7 +252,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 com.jdroidx.jfindme.ui.base.IconTable.applyTheme(this, expandIcon, "ACTION_MINIMIZE");
                 
                 label.setVisibility(View.GONE);
-                lp.setMargins(0, 0, 0, 0); // 🚀 Bleeds out completely
+                lp.setMargins(0, 0, 0, 0); // ≡ƒÜÇ Bleeds out completely
                 // Ensure map container takes maximum weight
                 lp.weight = 10.0f; 
                 
@@ -272,7 +272,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                         LinearLayout tile = (LinearLayout) cell;
                         if (tile.getChildCount() >= 2) {
                             FrameLayout iconBg = (FrameLayout) tile.getChildAt(0);
-                            iconBg.setPadding(10, 10, 10, 10); // 🚀 Situational Ribbon (10px)
+                            iconBg.setPadding(10, 10, 10, 10); // ≡ƒÜÇ Situational Ribbon (10px)
                             iconBg.setLayoutParams(new LinearLayout.LayoutParams(100, 100));
                             tile.getChildAt(1).setVisibility(View.GONE);
                         }
@@ -287,7 +287,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 r2.setVisibility(View.VISIBLE);
                 lp.weight = 1.0f; // Return to shared weight
                 int rQuota = getResponsivePaddingQuota();
-                lp.setMargins(rQuota, getResponsiveHeaderTopQuota(), rQuota, 10); // 🚀 QA Fix: Compressed Mission Gap (10px)
+                lp.setMargins(rQuota, getResponsiveHeaderTopQuota(), rQuota, 10); // ≡ƒÜÇ QA Fix: Compressed Mission Gap (10px)
                 
                 // Return bottom 4 items to R2 Stack (Standard Row parity)
                 if(r1.getChildCount() > 4) {
@@ -327,13 +327,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         sideLp.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
         sideLp.setMargins(0, 0, 30, 30);
 
-        // 🧱 QA Overlay Matrix Z-Index Fix! Ensure Native Fragment doesn't swallow our UI elements
+        // ≡ƒº▒ QA Overlay Matrix Z-Index Fix! Ensure Native Fragment doesn't swallow our UI elements
         FrameLayout mapOverlayWrapper = new FrameLayout(this);
         mapOverlayWrapper.addView(mapContainer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         
         mapCardContainer.addView(mapOverlayWrapper, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        // 🚀 QA Fix: High-Velocity Marquee Animator
+        // ≡ƒÜÇ QA Fix: High-Velocity Marquee Animator
         tvAddressMarquee = new TextView(this);
         tvAddressMarquee.setSingleLine(true);
         tvAddressMarquee.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
@@ -348,7 +348,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         tvAddressMarquee.setPadding(mPad * 2, mPad, mPad * 2, mPad);
         tvAddressMarquee.setTypeface(null, Typeface.BOLD);
         
-        // 🚀 QA Fix: Link the Address Marquee back to the 10% Dynamic Gradient Theme natively!
+        // ≡ƒÜÇ QA Fix: Link the Address Marquee back to the 10% Dynamic Gradient Theme natively!
         String masterAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
         android.graphics.drawable.GradientDrawable marqueeBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
@@ -369,7 +369,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         UiArchitect.applyCard(this, dashboardGridZone, "CARD_DASHBOARD"); // Secure native Tile rendering
         int gQuota = getResponsivePaddingQuota();
         LinearLayout.LayoutParams gridLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        gridLp.setMargins(gQuota, gQuota, gQuota, gQuota); // 🚀 QA Fix: Balanced Vertical Momentum (Top/Bottom Symmetry)
+        gridLp.setMargins(gQuota, gQuota, gQuota, gQuota); // ≡ƒÜÇ QA Fix: Balanced Vertical Momentum (Top/Bottom Symmetry)
         dashboardGridZone.setLayoutParams(gridLp);
         
         root.addView(dashboardGridZone); // Stacks solidly below map, right above Navbar
@@ -389,11 +389,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         
-        // 🚀 QA Fix: Synchronize Map HUD with the Global Architect Header and Enforce Vertical Symmetry
+        // ≡ƒÜÇ QA Fix: Synchronize Map HUD with the Global Architect Header and Enforce Vertical Symmetry
         int pTop = getResponsiveHeaderTopQuota();
         header.setPadding(10, pTop, 10, pTop); 
         
-        // 🚀 QA Fix: Master Theme 10% Opacity Overlay matching the Native Header specifications!
+        // ≡ƒÜÇ QA Fix: Master Theme 10% Opacity Overlay matching the Native Header specifications!
         String masterAlpha_H = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
         android.graphics.drawable.GradientDrawable headBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
@@ -413,7 +413,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         ImageView menuIcon = new ImageView(this);
         menuIcon.setImageResource(com.jdroidx.jfindme.R.drawable.ic_main_menu);
-        menuIcon.setColorFilter(getGradientMid()); // 🚀 QA Chrominance Sync (Drawer Trigger)
+        menuIcon.setColorFilter(getGradientMid()); // ≡ƒÜÇ QA Chrominance Sync (Drawer Trigger)
         menuIcon.setPadding(5, 10, 5, 10); // Severely restricted X-Axis padding to reduce gap between Icon and Avatar natively!
         applyAccessibility(menuIcon, "Open Navigation Drawer");
         menuIcon.setOnClickListener(v -> { if (drawerLayout != null) drawerLayout.openDrawer(Gravity.START); });
@@ -450,7 +450,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         activeCard.setOrientation(LinearLayout.VERTICAL);
         int aPad = getResponsivePaddingQuota();
         activeCard.setPadding(aPad, aPad / 2, aPad, aPad / 2); 
-        activeCard.setMinimumHeight(iQuota); // 🚀 QA Fix: Dynamically synchronized to the icon quota for absolute alignment
+        activeCard.setMinimumHeight(iQuota); // ≡ƒÜÇ QA Fix: Dynamically synchronized to the icon quota for absolute alignment
         ImageView logo = new ImageView(this);
         logo.setImageResource(com.jdroidx.jfindme.R.drawable.logo_m2g); 
         logo.setColorFilter(getGradientStart());
@@ -468,7 +468,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         UiArchitect.applyCardWithOverride(this, flipperCard, "CARD_STANDARD", 1.0f);
         
         headerFlipper = new android.widget.ViewFlipper(this);
-        headerFlipper.setFlipInterval(60000); // 🚀 QA Restore: 60 Second Situational Rotation
+        headerFlipper.setFlipInterval(60000); // ≡ƒÜÇ QA Restore: 60 Second Situational Rotation
         headerFlipper.setAutoStart(true);
         headerFlipper.setClipChildren(false); 
         
@@ -481,14 +481,14 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         tvLocName = new TextView(this);
         tvLocName.setText("ME | INITIALIZING...");
-        tvLocName.setTextColor(getGradientStart()); // 🌈 L7 Vibrant Accent: High-Pop Primary Identity
+        tvLocName.setTextColor(getGradientStart()); // ≡ƒîê L7 Vibrant Accent: High-Pop Primary Identity
         tvLocName.setTextSize(scaleText(12f)); 
         tvLocName.setTypeface(null, Typeface.BOLD);
         tvLocName.setGravity(Gravity.END);
         statusCard.addView(tvLocName);
 
         tvBatteryPer = new TextView(this);
-        tvBatteryPer.setText("SYNCING | --% ⚡");
+        tvBatteryPer.setText("SYNCING | --% ΓÜí");
         tvBatteryPer.setTextColor(getTextColor()); // Crisp Neutral Metadata
         tvBatteryPer.setTextSize(scaleText(9.75f)); 
         tvBatteryPer.setTypeface(null, Typeface.BOLD);
@@ -496,7 +496,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         statusCard.addView(tvBatteryPer);
         headerFlipper.addView(statusCard);
         
-        // 🚀 QA Fix: Top-to-Bottom Slide Implementation organically via L7 Animation Table
+        // ≡ƒÜÇ QA Fix: Top-to-Bottom Slide Implementation organically via L7 Animation Table
         headerFlipper.setInAnimation(this, com.jdroidx.jfindme.R.anim.slide_in_top);
         headerFlipper.setOutAnimation(this, com.jdroidx.jfindme.R.anim.slide_out_bottom);
 
@@ -514,7 +514,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
         int wrapPad = getResponsivePaddingQuota();
-        wrapper.setPadding(wrapPad, 20, wrapPad, 20); // 🚀 QA Fix: Symmetric Grid Alignment (Top/Bottom Balance)
+        wrapper.setPadding(wrapPad, 20, wrapPad, 20); // ≡ƒÜÇ QA Fix: Symmetric Grid Alignment (Top/Bottom Balance)
         
         TextView label = new TextView(this);
         label.setText("MONITORING TILE");
@@ -524,25 +524,25 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         label.setPadding(20, 10, 0, 20); // Compressed padding for title balance
         wrapper.addView(label);
 
-        // 🚀 Row 1
+        // ≡ƒÜÇ Row 1
         LinearLayout r1 = new LinearLayout(this);
         r1.setOrientation(LinearLayout.HORIZONTAL);
-        r1.setPadding(0, 0, 0, 10); // 🚀 QA Fix: Compressed Inter-Row Momentum (10px)
+        r1.setPadding(0, 0, 0, 10); // ≡ƒÜÇ QA Fix: Compressed Inter-Row Momentum (10px)
         r1.addView(UiArchitect.createTile(this, "NETWORK_LOCATOR", v -> openLocateDrawer()));
         r1.addView(UiArchitect.createTile(this, "SYNC_DEVICES",   v -> startActivity(new Intent(this, GroupActivity.class))));
         r1.addView(UiArchitect.createTile(this, "LOCATION_LOGS",  v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class))));
         r1.addView(UiArchitect.createTile(this, "PANIC_ALERTS",   v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class))));
         wrapper.addView(r1);
 
-        // 🚀 Row 2
+        // ≡ƒÜÇ Row 2
         LinearLayout r2 = new LinearLayout(this);
         r2.setOrientation(LinearLayout.HORIZONTAL);
-        r2.setPadding(0, 0, 0, 10); // 🚀 QA Fix: Compressed Inter-Row Momentum (10px)
+        r2.setPadding(0, 0, 0, 10); // ≡ƒÜÇ QA Fix: Compressed Inter-Row Momentum (10px)
         r2.addView(UiArchitect.createTile(this, "SAFE_ZONES",     v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class))));
         r2.addView(UiArchitect.createTile(this, "FAMILY_FRIENDS", v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class))));
         r2.addView(UiArchitect.createTile(this, "SETTINGS_HUB",   v -> startActivity(new Intent(this, SettingsActivity.class))));
         
-        // 🚀 QA Filter Engine: Toggle Matrix (FAMILY <-> FRIENDS)
+        // ≡ƒÜÇ QA Filter Engine: Toggle Matrix (FAMILY <-> FRIENDS)
         r2.addView(UiArchitect.createTile(this, "PEOPLE", v -> {
             String current = viewModel.getCurrentFilterMode();
             String next = "FAMILY"; // Start with Family
@@ -574,7 +574,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
         
-        // 🚀 QA Fix: Inject true Theme Colors for inactive states natively via 50% Alpha masks
+        // ≡ƒÜÇ QA Fix: Inject true Theme Colors for inactive states natively via 50% Alpha masks
         int themeStateColor = getGradientStart();
         if (!isActive) {
             themeStateColor = Color.parseColor("#66" + String.format("%06X", (0xFFFFFF & themeStateColor))); // 40% Opacity Fade
@@ -635,7 +635,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         for (int i = 0; i < locs.size(); i++) {
             UserLocation u = locs.get(i);
             String safeName = u.getUserName();
-            if (u.getUserId().equals(FirebaseAuth.getInstance().getUid())) {
+            if (u.getResolvedUserId().equals(FirebaseAuth.getInstance().getUid())) {
                 safeName = "YOU (Recenter Tracker)";
             }
             names[i] = safeName;
@@ -651,7 +651,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(finalPos, 16.5f));
                 }
                 
-                String timeString = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(target.getTimestamp()));
+                String timeString = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(target.getLongTimestamp()));
                 updateAddressMarquee(target.getLatitude(), target.getLongitude(), target.getUserName(), timeString);
             })
             .setNegativeButton("Cancel Selection", null)
@@ -661,7 +661,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
     
     private com.google.android.gms.maps.model.Polyline currentProximityLine;
-    private String activeProximityTargetId = null; // 🚀 QA Fix: Master Tracking Lock
+    private String activeProximityTargetId = null; // ≡ƒÜÇ QA Fix: Master Tracking Lock
 
     private View createProximityTile(String avatarName, String targetUserId, String distance, long timeChecked, double hLat, double hLng, double cLat, double cLng) {
         LinearLayout row = new LinearLayout(this);
@@ -697,13 +697,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         bg.setCornerRadius(30f);
         row.setBackground(bg);
         
-        row.setPadding(20, 20, 20, 20); // 🚀 QA Fix: Global Padding Symmetry
-        row.setMinimumHeight(125); // 🚀 High-Fidelity Clamping
+        row.setPadding(20, 20, 20, 20); // ≡ƒÜÇ QA Fix: Global Padding Symmetry
+        row.setMinimumHeight(125); // ≡ƒÜÇ High-Fidelity Clamping
         
         TextView t1 = new TextView(this);
         // Line 1: High Size Metric (JANE | 8.2 KM)
         t1.setText(avatarName.toUpperCase() + "  |  " + distance);
-        // 🚀 QA Fix: Master Dynamic Contrast Override cleanly matches the active global theme
+        // ≡ƒÜÇ QA Fix: Master Dynamic Contrast Override cleanly matches the active global theme
         t1.setTextColor(getTextColor()); 
         t1.setTextSize(12f); // Emphasized Upscale size specifically over background geometry!
         t1.setTypeface(null, Typeface.BOLD);
@@ -729,7 +729,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         TextView tTime = new TextView(this);
         tTime.setText(timeString.toUpperCase()); 
         tTime.setTextColor(Color.WHITE); // High-contrast White for distinct readability natively
-        tTime.setTextSize(14f); // 🚀 QA Fix: Font Size mathematically doubled (7f -> 14f) explicitly for the Time String
+        tTime.setTextSize(14f); // ≡ƒÜÇ QA Fix: Font Size mathematically doubled (7f -> 14f) explicitly for the Time String
         tTime.setTypeface(null, Typeface.BOLD);
         tTime.setGravity(Gravity.CENTER);
         timeRow.addView(tTime);
@@ -775,12 +775,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             resultStr = "LAT: " + lat + " | LNG: " + lng;
         }
         
-        String finalPayload = "📡 TARGET LOCKED: [" + targetName + "] • Last Known Sync: " + timeStr + " • Exact Physical Location: " + resultStr + "        ";
+        String finalPayload = "≡ƒôí TARGET LOCKED: [" + targetName + "] ΓÇó Last Known Sync: " + timeStr + " ΓÇó Exact Physical Location: " + resultStr + "        ";
         tvAddressMarquee.setText(finalPayload);
     }
 
     private View createSmallIcon(String tableKey, View.OnClickListener listener) {
-        // 🚀 QA Fix: Global Sync! Use the Architect's 5-Stage scaling engine instead of ad-hoc density prefs.
+        // ≡ƒÜÇ QA Fix: Global Sync! Use the Architect's 5-Stage scaling engine instead of ad-hoc density prefs.
         int activeSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
         int dpPadding = (int)(activeSize * 0.20f); // 20% internal padding for side icons
         
@@ -796,7 +796,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         iv.setFocusable(true);
         iv.setOnClickListener(listener);
 
-        // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+        // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
         iv.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                 (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -810,10 +810,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     @Override
     protected void setupLogic() {
-        // 🧱 UX Override: Architectural lifecycle fix -> Safely init after views configure
+        // ≡ƒº▒ UX Override: Architectural lifecycle fix -> Safely init after views configure
         viewModel = new ViewModelProvider(this).get(MapViewModel.class);
         
-        // 🔒 Back-Stack Protocol: Double-Tap Exit on Live Dashboard
+        // ≡ƒöÆ Back-Stack Protocol: Double-Tap Exit on Live Dashboard
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             private long backPressedTime = 0;
             @Override
@@ -853,12 +853,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
 
         viewModel.getUserLocations().observe(this, locations -> {
-            // 🚀 QA Fix: Strict MVVM Execution bypassing rogue Firebase Listeners
+            // ≡ƒÜÇ QA Fix: Strict MVVM Execution bypassing rogue Firebase Listeners
             if (googleMap != null) {
                 com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(this, googleMap, locations);
             }
             
-            // 🚀 QA Fix: Tactical Zoom Lock (V8.9)
+            // ≡ƒÜÇ QA Fix: Tactical Zoom Lock (V8.9)
             if (selectedUserId != null && !hasZoomedToTarget && googleMap != null) {
                 for (com.jdroidx.jfindme.data.model.UserLocation ul : locations) {
                     if (ul.getUserId().equals(selectedUserId)) {
@@ -874,13 +874,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
             updateRadarScanner(locations);
             
-            // 🧠 Fulfill QA Request: Live user aggregation rendering
+            // ≡ƒºá Fulfill QA Request: Live user aggregation rendering
             if (tvUserStatus != null) {
             }
             long count = Math.max(0, locations.size() - 1); // exclude self
-            // 🚀 QA Fix: Legacy Proximity Counter decommissioned in favor of Logo Matrix.
+            // ≡ƒÜÇ QA Fix: Legacy Proximity Counter decommissioned in favor of Logo Matrix.
             
-            // 🚀 QA Fix: Proximity Flipper Removed (Situational Awareness consolidated to Markers)
+            // ≡ƒÜÇ QA Fix: Proximity Flipper Removed (Situational Awareness consolidated to Markers)
 
             for (UserLocation ul : locations) {
                 if (ul.isSosActive() && !ul.getUserId().equals(FirebaseAuth.getInstance().getUid())) {
@@ -920,14 +920,14 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         SystemLogger.i(TAG, "MapActivity [onMapReady] callback received. GoogleMap instance physically bound natively.");
         this.googleMap = googleMap;
         this.googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-        this.googleMap.setBuildingsEnabled(true); // 🚀 3D Perspective Fix (V12.0)
+        this.googleMap.setBuildingsEnabled(true); // ≡ƒÜÇ 3D Perspective Fix (V12.0)
         this.googleMap.setIndoorEnabled(true);
         this.googleMap.getUiSettings().setCompassEnabled(true);
         this.googleMap.getUiSettings().setMyLocationButtonEnabled(false);
         this.googleMap.getUiSettings().setTiltGesturesEnabled(true);
         this.googleMap.getUiSettings().setAllGesturesEnabled(true);
         
-        // 🚀 QA MVVM Strict Enforcement: 
+        // ≡ƒÜÇ QA MVVM Strict Enforcement: 
         // Rendering layers no longer boot their own tracking loops! 
         // MultiMarkerEngine now officially strictly slaves itself to the MapViewModel natively!
         
@@ -942,13 +942,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (locs != null && !rawTitle.equalsIgnoreCase("YOU")) {
                 for (UserLocation l : locs) {
                     if (rawTitle.equals(l.getUserName())) {
-                        selectedUserId = l.getUserId();
+                        selectedUserId = l.getResolvedUserId();
                         break;
                     }
                 }
             }
             
-            // 🚀 QA Fix: Force the Native Map Tooltip to become visible over the Custom Profile avatars!
+            // ≡ƒÜÇ QA Fix: Force the Native Map Tooltip to become visible over the Custom Profile avatars!
             marker.showInfoWindow();
             
             // Return false allows the standard OS Google Maps behavior to securely execute (Camera pan & Tooltip hover)
@@ -984,20 +984,20 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
             
-            // 🚀 QA Fix: Android 12+ Explicit Hardware Crash Preventer natively requires Coarse Location bundled in!
+            // ≡ƒÜÇ QA Fix: Android 12+ Explicit Hardware Crash Preventer natively requires Coarse Location bundled in!
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
             }
         }
         
-        // 🚀 QA Fix: Background Tracking Enforcement for Android 10+ (Stage 5 Hardening)
+        // ≡ƒÜÇ QA Fix: Background Tracking Enforcement for Android 10+ (Stage 5 Hardening)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                 perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
             }
         }
         
-        // 🚀 QA Fix: Force OS UI Dialog for Background Tracing Notifications (Android 13+)
+        // ≡ƒÜÇ QA Fix: Force OS UI Dialog for Background Tracing Notifications (Android 13+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 perms.add(Manifest.permission.POST_NOTIFICATIONS);
@@ -1031,7 +1031,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         try {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return;
             
-            // 🚀 QA Fix: Force active polling. getLastLocation() usually returns null on fresh installs causing blank maps!
+            // ≡ƒÜÇ QA Fix: Force active polling. getLastLocation() usually returns null on fresh installs causing blank maps!
             fusedLocationClient.getCurrentLocation(100, null).addOnSuccessListener(location -> {
                 if (location != null) {
                     LatLng current = new LatLng(location.getLatitude(), location.getLongitude());
@@ -1057,7 +1057,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 startService(serviceIntent);
             }
             
-            // 🚀 QA Fix: Force the User to explicitly whitelist this Architecture from OEM "Doze" battery killers!
+            // ≡ƒÜÇ QA Fix: Force the User to explicitly whitelist this Architecture from OEM "Doze" battery killers!
             verifyDozeModeExclusion();
             
         } catch (Exception e) { SystemLogger.e(TAG, "GPS Boot OS Protection Handled: ", e); }
@@ -1136,13 +1136,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             tvLocName.setTextColor(getGradientStart()); // Sync with Flipper Theme
         }
 
-        // 🚀 QA Fix: Master Battery Sync -> Update the ME status card in the flipper!
+        // ≡ƒÜÇ QA Fix: Master Battery Sync -> Update the ME status card in the flipper!
         if (tvBatteryPer != null) {
             android.content.IntentFilter ifilter = new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED);
             android.content.Intent batteryStatus = registerReceiver(null, ifilter);
             int level = batteryStatus != null ? batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) : -1;
             String timeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date());
-            tvBatteryPer.setText(timeStr + " | " + (level >= 0 ? level + "% ⚡" : "CALIBRATING"));
+            tvBatteryPer.setText(timeStr + " | " + (level >= 0 ? level + "% ΓÜí" : "CALIBRATING"));
             tvBatteryPer.setTextColor(getTextColor());
         }
     }
@@ -1201,9 +1201,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     @Override
     protected void onResume() {
         super.onResume();
-        triggerCalloutRefresh(); // Automatically reveals callouts for 5 seconds organically upon screen navigation!
         
-        // 🚀 QA Fix: Master Hardware Enforcement (V14.1)
+        // 🚀 QA Fix: Master Callout Refresh Engine (V14.1)
+        triggerCalloutRefresh(); 
+        
+        // ≡ƒÜÇ QA Fix: Master Hardware Enforcement (V14.1)
         validateLocationHardwareStatus();
         
         if (headerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
@@ -1234,34 +1236,34 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private void updateRadarScanner(List<UserLocation> locations) {
         if (headerFlipper == null) return;
         
-        // 🚀 QA Fix: GPS Recovery Loop -> Fallback to ViewModel position if hardware sensor is still warming up!
+        // ≡ƒÜÇ QA Fix: GPS Recovery Loop -> Fallback to ViewModel position if hardware sensor is still warming up!
         Location referenceLoc = lastKnownLocation;
         if (referenceLoc == null && viewModel != null) {
             referenceLoc = viewModel.getMyLocation().getValue();
         }
         if (referenceLoc == null) return; 
         
-        // 🚀 QA Fix: Preserve Current Displayed Situational Index (Persistence Engine)
+        // ≡ƒÜÇ QA Fix: Preserve Current Displayed Situational Index (Persistence Engine)
         int currentIdx = headerFlipper.getDisplayedChild();
         boolean wasFlipping = headerFlipper.isFlipping();
 
-        // 🚀 QA Fix: Consolidating all "Away Details" into the Header Flipper Matrix
+        // ≡ƒÜÇ QA Fix: Consolidating all "Away Details" into the Header Flipper Matrix
         View baseCard = headerFlipper.getChildAt(0);
         headerFlipper.removeAllViews();
         headerFlipper.addView(baseCard);
 
         String myUid = FirebaseAuth.getInstance().getUid();
         for (UserLocation ul : locations) {
-            if (ul.getUserId().equals(myUid) || ul.getUserId().isEmpty()) continue;
+            if (ul.getResolvedUserId().equals(myUid) || ul.getResolvedUserId().isEmpty()) continue;
             
             float[] results = new float[3];
             Location.distanceBetween(referenceLoc.getLatitude(), referenceLoc.getLongitude(), 
                                     ul.getLatitude(), ul.getLongitude(), results);
             float distance = results[0];
             String distText = distance > 1000 ? String.format("%.1fkm", distance/1000) : String.format("%.0fm", distance);
-            String timeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(ul.getTimestamp()));
+            String timeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(ul.getLongTimestamp()));
 
-            // 🚀 QA Fix: "Away" Visibility Logic -> Highlight distance in RED if > 100m threshold!
+            // ≡ƒÜÇ QA Fix: "Away" Visibility Logic -> Highlight distance in RED if > 100m threshold!
             int row1Color = getGradientStart(); // Vibrant Theme Accent for visibility
             if (distance > RADIUS_METERS) {
                 row1Color = Color.RED; // High-Fidelity Alert: Device has breached the interaction radius!
@@ -1285,9 +1287,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             tvRow1.setMaxLines(2);
             memberCard.addView(tvRow1);
 
-            // Row 2: SYNC TIME | BATTERY% ⚡
+            // Row 2: SYNC TIME | BATTERY% ΓÜí
             TextView tvRow2 = new TextView(this);
-            String bat = ul.getBatteryLevel() >= 0 ? ul.getBatteryLevel() + "% ⚡" : "CALIBRATING";
+            String bat = ul.getBatteryLevel() >= 0 ? ul.getBatteryLevel() + "% ΓÜí" : "CALIBRATING";
             tvRow2.setText(timeStr + " | " + bat);
             tvRow2.setTextColor(getTextColor()); // Crisp Neutral Metadata 
             tvRow2.setTextSize(scaleText(9.75f)); 
@@ -1325,19 +1327,19 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         drawer.setPadding(0, 0, 0, 0);
 
         // Header Section (Profile Photo, Name, Email)
-        // 🚀 QA Fix: Global Horizontal Header Segmentation (V11)
+        // ≡ƒÜÇ QA Fix: Global Horizontal Header Segmentation (V11)
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         applyGlobalHeaderGeometry(header); 
-        header.setPadding(40, 60, 40, 60); // 🚀 Enforcing deep vertical symmetry
+        header.setPadding(40, 60, 40, 60); // ≡ƒÜÇ Enforcing deep vertical symmetry
         
         // --- 1. Left Segment: Avatar Engine (Best Fit) ---
         ImageView drawerAvatar = new ImageView(this);
         navDrawerAvatar = drawerAvatar;
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, navDrawerAvatar);
         
-        int avatarSize = (int)(getResponsiveIconQuota() * 1.2f); // 🚀 Liberal scale for drawer branding
+        int avatarSize = (int)(getResponsiveIconQuota() * 1.2f); // ≡ƒÜÇ Liberal scale for drawer branding
         LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(avatarSize, avatarSize);
         avLp.setMargins(0, 0, 40, 0);
         header.addView(drawerAvatar, avLp);
@@ -1350,7 +1352,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         TextView appTitle = new TextView(this);
         appTitle.setText(prefs.getString("user_nickname", "Guardian Name"));
         appTitle.setTextColor(getGradientOverlayText()); 
-        appTitle.setTextSize(22); // 🚀 Forensic Tier Title sizing
+        appTitle.setTextSize(22); // ≡ƒÜÇ Forensic Tier Title sizing
         appTitle.setTypeface(null, Typeface.BOLD);
         profileInfo.addView(appTitle);
         
@@ -1389,8 +1391,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         items.addView(createDrawerItem("Privacy & Permissions", "Security Rules", android.R.drawable.ic_lock_idle_lock, v -> startActivity(new Intent(this, PrivacyActivity.class))));
         
-        // 🚀 Native Diagnostic/Logging Dashboard Gateway
-        items.addView(createDrawerItem("System Audit Log", "Diagnostic Data", com.jdroidx.jfindme.R.drawable.ic_system_audit, v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class))));
+        // ≡ƒÜÇ Native Diagnostic/Logging Dashboard Gateway
+        items.addView(createDrawerItem("Watchdog Command", "Diagnostic Data", com.jdroidx.jfindme.R.drawable.ic_system_audit, v -> startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.WatchDogAuditActivity.class))));
         
         items.addView(createDrawerItem("About Application", "Version 1.0.0", com.jdroidx.jfindme.R.drawable.ic_about_app, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.AboutActivity.class));
@@ -1424,7 +1426,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         item.setFocusable(true);
         item.setOnClickListener(listener);
 
-        // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+        // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
         item.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                 (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -1436,7 +1438,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         ImageView iv = new ImageView(this);
         iv.setImageResource(iconRes);
-        iv.setColorFilter(getGradientMid()); // 🚀 QA Chrominance Sync (Drawer Items)
+        iv.setColorFilter(getGradientMid()); // ≡ƒÜÇ QA Chrominance Sync (Drawer Items)
         
         int dSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
         item.addView(iv, new LinearLayout.LayoutParams(dSize, dSize));

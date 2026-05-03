@@ -33,7 +33,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     
     private LinearLayout contentMatrix;
     private TextView tvTableMeta;
-    private boolean isComparisonMode = true;
+    private boolean isGridView = true; // 🚀 Toggle: GRID (Spreadsheet) vs LIST (Transposed)
+    private int listPageOffset = 0;
 
     @Override
     protected View createLayout() {
@@ -41,6 +42,10 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         tableLabel = getIntent().getStringExtra("TABLE_LABEL");
         db = DatabaseHelper.getInstance(this);
         cloudRef = FirebaseDatabase.getInstance().getReference().child(tableName);
+
+        // 🚀 NAVIGATION OVERRIDE: Check for requested View Mode
+        String modeStr = getIntent().getStringExtra("VIEW_MODE");
+        if ("LIST".equals(modeStr)) isGridView = false;
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -71,11 +76,14 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         toolbar.setBackgroundColor(Color.argb(30, 0, 0, 0));
         
         View btnRefresh = UiArchitect.createButton(this, "REFRESH", v -> syncExplorer());
-        View btnExport = UiArchitect.createButton(this, "EXPORT_XLS", v -> Toast.makeText(this, "Exporting to Forensic Excel...", Toast.LENGTH_SHORT).show());
+        View btnMode = UiArchitect.createButton(this, "TOGGLE_MODE", v -> {
+            isGridView = !isGridView;
+            renderSnapshot(lastSnapshot);
+        });
         
         LinearLayout.LayoutParams toolLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         toolbar.addView(btnRefresh, toolLp);
-        toolbar.addView(btnExport, toolLp);
+        toolbar.addView(btnMode, toolLp);
         root.addView(toolbar);
 
         tvTableMeta = new TextView(this);
@@ -99,9 +107,12 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     @Override
     protected void onResume() {
         super.onResume();
-        // 🚀 FORCE LANDSCAPE FOR MAXIMUM EXCEL VISIBILITY
-        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        // 🚀 ADAPTIVE ARCHITECT: Only force landscape if in Grid Mode
+        if (isGridView) setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        else setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
     }
+
+    private com.google.firebase.database.DataSnapshot lastSnapshot;
 
     @Override
     protected void setupLogic() {
@@ -112,30 +123,42 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         AngelLoader.show(this);
         AngelLoader.setStatus(this, "SYNCHRONIZING FORENSIC MATRIX...");
         
-        // 🚀 CLOUD PATH RESOLVER: Map local table names to their Firebase JSON architecture
+        // 🚀 CLOUD PATH RESOLVER: Map local table names to their 5-Tier Firebase JSON architecture
         DatabaseReference activeTarget = cloudRef;
         String activeGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
         
-        if (tableName.equals("profile_table")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("users");
-        } else if (tableName.equals("roster_table") && activeGroup != null) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("groups").child(activeGroup).child("roster");
-        } else if (tableName.equals("history_table")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("tracking_history");
-        } else if (tableName.equals("device_table")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("users"); // Hardware often nested or in bulk users
+        // 5-Tier Analytical Node Mapping (V57 Standards)
+        if (tableName.equals("user_identity")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("identities");
+        } else if (tableName.equals("user_profile")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("profiles");
+        } else if (tableName.equals("devices")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("devices");
+        } else if (tableName.equals("group_members") || tableName.equals("groups")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("relationships");
+        } else if (tableName.equals("location_events") || tableName.equals("geofence_events")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("events");
+        } else if (tableName.equals("device_pairings")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("pairing_sessions");
+        } else if (tableName.equals("organizations")) {
+            activeTarget = FirebaseDatabase.getInstance().getReference("organizations");
+        } else {
+            // Fallback for custom or legacy nodes
+            activeTarget = FirebaseDatabase.getInstance().getReference(tableName);
         }
         
         activeTarget.limitToLast(20).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 AngelLoader.hide(ForensicVaultExplorerActivity.this);
+                lastSnapshot = snapshot;
                 renderSnapshot(snapshot);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 AngelLoader.hide(ForensicVaultExplorerActivity.this);
+                lastSnapshot = null;
                 renderSnapshot(null);
                 Toast.makeText(ForensicVaultExplorerActivity.this, "Cloud Sync Offline", Toast.LENGTH_SHORT).show();
             }
@@ -147,25 +170,29 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         List<String> columns = db.getTableColumns(tableName);
         List<Map<String, String>> localRows = db.getPagedData(tableName, 30, 0, null);
         
-        tvTableMeta.setText("VAULT: [" + tableName + "] | OFFLINE: " + localRows.size() + " | ONLINE: " + (cloudSnapshot != null ? cloudSnapshot.getChildrenCount() : 0));
+        tvTableMeta.setText("VAULT: [" + tableName + "] | MODE: " + (isGridView ? "GRID" : "LIST") + " | LOCAL: " + localRows.size());
 
-        renderSectionHeader("OFFLINE LEDGER (LOCAL SQLITE)");
-        renderTable(localRows, columns, true);
-
-        if (cloudSnapshot != null) {
-            renderSectionHeader("ONLINE REGISTRY (FIREBASE HUB)");
-            List<Map<String, String>> cloudRows = new ArrayList<>();
-            for (DataSnapshot ds : cloudSnapshot.getChildren()) {
-                Map<String, String> row = new HashMap<>();
-                row.put("_LOG_ID", ds.getKey());
-                Object v = ds.getValue();
-                if (v instanceof Map) {
-                    Map<?, ?> m = (Map<?, ?>) v;
-                    for (Map.Entry<?, ?> e : m.entrySet()) row.put(e.getKey().toString(), String.valueOf(e.getValue()));
+        if (isGridView) {
+            renderSectionHeader("OFFLINE LEDGER (GRID)");
+            renderTable(localRows, columns, true);
+            if (cloudSnapshot != null) {
+                renderSectionHeader("ONLINE REGISTRY (FIREBASE)");
+                List<Map<String, String>> cloudRows = new ArrayList<>();
+                for (DataSnapshot ds : cloudSnapshot.getChildren()) {
+                    Map<String, String> row = new HashMap<>();
+                    row.put("_LOG_ID", ds.getKey());
+                    Object v = ds.getValue();
+                    if (v instanceof Map) {
+                        Map<?, ?> m = (Map<?, ?>) v;
+                        for (Map.Entry<?, ?> e : m.entrySet()) row.put(e.getKey().toString(), String.valueOf(e.getValue()));
+                    }
+                    cloudRows.add(row);
                 }
-                cloudRows.add(row);
+                renderTable(cloudRows, columns, false);
             }
-            renderTable(cloudRows, columns, false);
+        } else {
+            renderSectionHeader("FORENSIC STRUCTURE (TRANSPOSED)");
+            renderTransposedMatrix(localRows, columns);
         }
     }
 
@@ -178,6 +205,84 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         UiArchitect.applyText(this, tv, "TEXT_SUB");
         contentMatrix.addView(tv);
     }
+
+    private void renderTransposedMatrix(List<Map<String, String>> allData, List<String> columns) {
+        if (allData.isEmpty()) return;
+        
+        // 🚀 Analytical Command Hub (List Page Controller)
+        LinearLayout hub = new LinearLayout(this);
+        hub.setOrientation(LinearLayout.HORIZONTAL);
+        hub.setGravity(Gravity.CENTER_VERTICAL);
+        hub.setPadding(0, 0, 0, scale(35));
+        
+        if (listPageOffset > 0) {
+            hub.addView(createSmallIcon(android.R.drawable.ic_media_previous, getGradientStart(), v -> {
+                listPageOffset--;
+                renderSnapshot(lastSnapshot);
+            }));
+        }
+
+        int max = Math.min(listPageOffset + 1, allData.size()); // Render 1 node in deep list mode
+        Map<String, String> data = allData.get(listPageOffset);
+
+        hub.addView(createSmallIcon(com.jdroidx.jfindme.R.drawable.ic_edit, getGradientStart(), v -> editLocalRecord(data)));
+        hub.addView(createSmallIcon(android.R.drawable.ic_menu_delete, Color.RED, v -> deleteLocalRecord(data)));
+        hub.addView(createSmallIcon(android.R.drawable.ic_popup_sync, Color.parseColor("#43A047"), v -> syncToCloud(data)));
+
+        if (listPageOffset + 1 < allData.size()) {
+            hub.addView(createSmallIcon(android.R.drawable.ic_media_next, getGradientStart(), v -> {
+                listPageOffset++;
+                renderSnapshot(lastSnapshot);
+            }));
+        }
+
+        TextView pageInfo = new TextView(this);
+        pageInfo.setText("INSPECTING NODE " + (listPageOffset + 1) + " OF " + allData.size());
+        pageInfo.setTextColor(getTextColor());
+        pageInfo.setPadding(scale(30), 0, 0, 0);
+        hub.addView(pageInfo);
+        contentMatrix.addView(hub);
+
+        TableLayout table = new TableLayout(this);
+        UiArchitect.applyCard(this, table, "CARD_STANDARD");
+
+        for (String col : columns) {
+            TableRow row = new TableRow(this);
+            row.addView(createCell(col.toUpperCase(), true));
+            String val = data.get(col);
+            row.addView(createCell(val != null ? val : "---", false));
+            table.addView(row);
+        }
+        contentMatrix.addView(table);
+    }
+
+    private ImageView createSmallIcon(int res, int color, View.OnClickListener listener) {
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(res);
+        iv.setColorFilter(color);
+        int s = scale(100);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(s, s);
+        lp.setMargins(0, 0, scale(20), 0);
+        iv.setLayoutParams(lp);
+        iv.setBackgroundColor(Color.argb(20, 0, 0, 0));
+        iv.setOnClickListener(listener);
+        return iv;
+    }
+
+    private void syncToCloud(Map<String, String> data) {
+        String idCol = findIdColumn(data);
+        if (idCol == null) return;
+        String idVal = data.get(idCol);
+        
+        AngelLoader.show(this);
+        AngelLoader.setStatus(this, "Mirroring Node to Cloud...");
+        cloudRef.child(idVal).setValue(data).addOnCompleteListener(t -> {
+            AngelLoader.hide(this);
+            if (t.isSuccessful()) Toast.makeText(this, "Cloud Sync Completed", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(this, "Sync Blocked: " + t.getException().getMessage(), Toast.LENGTH_LONG).show();
+        });
+    }
+
     private void renderTable(List<Map<String, String>> rows, List<String> columns, boolean isLocal) {
         HorizontalScrollView hScroll = new HorizontalScrollView(this);
         TableLayout table = new TableLayout(this);
@@ -216,7 +321,7 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
                 actions.addView(del, new LinearLayout.LayoutParams(s, s));
 
                 ImageView edit = new ImageView(this);
-                edit.setImageResource(android.R.drawable.ic_menu_edit);
+                edit.setImageResource(com.jdroidx.jfindme.R.drawable.ic_edit);
                 edit.setColorFilter(getGradientStart());
                 edit.setPadding(scale(5), scale(5), scale(5), scale(5));
                 edit.setOnClickListener(v -> editLocalRecord(row));
@@ -335,7 +440,9 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     }
 
     private String findIdColumn(Map<String, String> row) {
-        String[] possibleIds = {"log_id", "uid", "zone_id", "alert_id", "pairing_id", "sim_id", "trans_id", "sync_id", "id"};
+        // 🚀 V54 Forensic Trust Pair: uid_1 is the primary account key
+        String[] possibleIds = {"log_id", "zone_id", "alert_id", "pairing_id", "sim_id",
+                "trans_id", "sync_id", "member_log_id", "uid_1", "id"};
         for (String id : possibleIds) {
             if (row.containsKey(id)) return id;
         }

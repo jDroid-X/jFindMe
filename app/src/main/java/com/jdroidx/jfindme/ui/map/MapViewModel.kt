@@ -15,6 +15,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * MapViewModel: Handles business logic for map tracking.
@@ -31,15 +32,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _myLocation = MutableLiveData<Location>()
     val myLocation: LiveData<Location> = _myLocation
     
-    // 🏷️ Filter State Matrix
+    // ≡ƒÅ╖∩╕Å Filter State Matrix
     private var currentFilterMode = "ALL" // Default
     private val rawLocationCache = mutableListOf<UserLocation>()
 
-    // 🚀 Geofence Sentinel Engine: Natively pushes dependent alerts back to the Guardian UI
+    // ≡ƒÜÇ Geofence Sentinel Engine: Natively pushes dependent alerts back to the Guardian UI
     private val _geofenceAlertTrigger = MutableLiveData<String>()
     val geofenceAlertTrigger: LiveData<String> = _geofenceAlertTrigger
 
-    // 🔒 Security Matrix: Restricts the visible universe to local verified family members only
+    // ≡ƒöÆ Security Matrix: Restricts the visible universe to local verified family members only
     private val familyMeshIds = mutableSetOf<String>()
     private var activeGroupAlertListener: com.google.firebase.database.ChildEventListener? = null
     
@@ -108,15 +109,15 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 
                 if (myGroupId == null || myGroupId.isEmpty()) {
                     familyMeshIds.clear()
-                    familyMeshIds.addAll(explicitFriendUids) // 🚀 QA Fix: P2P Friendship Stability (V9.8)
+                    familyMeshIds.addAll(explicitFriendUids) // ≡ƒÜÇ QA Fix: P2P Friendship Stability (V9.8)
                     val currentRaw = repository.userLocations.value ?: return
                     val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
                     _filteredLocations.postValue(authorized)
                     return
                 }
                 
-                // 🚀 QA Fix: Standalone Mesh Resilience (V9.4)
-                rootDb.child("users").orderByChild("active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                // 🚀 V66.7: Relational Bridge - Use Agent Hub, NOT Legacy users node
+                rootDb.child(FirebaseComm.NODE_DEVICES).orderByChild("profile/active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
                         val newMesh = mutableSetOf<String>()
                         newMesh.addAll(explicitFriendUids) // Preserving 1-to-1 pairings in the hybrid mesh!
@@ -125,7 +126,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             val possibleNodeId = it.key ?: ""
                             val thisNodeRole = it.child("role_family").getValue(String::class.java) ?: "None"
                             
-                            // 🛰️ MASTER TRUST HEURISTICS: 
+                            // ≡ƒ¢░∩╕Å MASTER TRUST HEURISTICS: 
                             // 1. Explicitly scanned devices (approvedUids) / Friend Matrix
                             // 2. Administrators/Parents (Father/Mother)
                             // 3. Members of the SAME Group (Stability Fallback)
@@ -150,7 +151,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 })
 
-                // 🛑 PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
+                // ≡ƒ¢æ PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
                 if (activeGroupAlertListener != null) rootDb.child("groups").child(myGroupId).child("alerts").removeEventListener(activeGroupAlertListener!!)
                 activeGroupAlertListener = object : com.google.firebase.database.ChildEventListener {
                     override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {
@@ -177,8 +178,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
         })
         
-        // 🚀 QA Fix: P2P Strict Tracking Array Matrix! Ensure offline strictly paired 1-to-1 users ALSO load!
-        rootDb.child("users").child(safeUid).child("friend_matrix").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+        // 🚀 V66.7: P2P Strict Tracking Array Matrix! Ensure offline strictly paired 1-to-1 users ALSO load!
+        FirebaseComm.getProfileRef(safeUid).child("friend_matrix").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
             override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                 snapshot.children.forEach { familyMeshIds.add(it.key ?: "") }
                 val currentRaw = repository.userLocations.value ?: return
@@ -190,12 +191,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchCurrentUserRole() {
-        val userId = auth.uid ?: return
-        com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(userId).limitToFirst(1)
-            .get().addOnSuccessListener { snapshot ->
-                val device = snapshot.children.firstOrNull()?.getValue(com.jdroidx.jfindme.data.model.DeviceRegistry::class.java)
+        val safeUid = auth.uid ?: return
+        FirebaseComm.resolveHardwareIdentity(safeUid) { agentId: String? ->
+            val finalId = agentId ?: safeUid
+            FirebaseComm.devicesRef.child(finalId).child("profile").get().addOnSuccessListener { snapshot ->
+                val device = snapshot.getValue(com.jdroidx.jfindme.data.model.DeviceRegistry::class.java)
                 _currentUserRole.postValue(device?.userRole ?: "VIEWER")
             }
+        }
     }
 
     fun isAdmin(): Boolean = _currentUserRole.value == "ADMIN"
@@ -205,7 +208,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val currentUser = auth.currentUser ?: return
         val userId = currentUser.uid
         
-        // 🧠 QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
+        // ≡ƒºá QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
         val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
         val customName = prefs.getString("user_nickname", null)
         val userName = customName ?: currentUser.displayName ?: currentUser.email ?: "User"
@@ -214,7 +217,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
         val genderStr = prefs.getString("user_gender", "Male") ?: "Male"
         
-        // 🚀 QA Fix: Dynamic Gender-Based Proxy for Cloud Sync (V8 Fallback)
+        // ≡ƒÜÇ QA Fix: Dynamic Gender-Based Proxy for Cloud Sync (V8 Fallback)
         val safeBaseId = if (rawBaseId == -1) {
              if (genderStr.contains("Female", true)) 4 else 1 // Fallback to 'Student' (F) or 'Walker' (M)
         } else {
@@ -224,22 +227,27 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
         val resolvedAvatarId = "avatar_custom_$dynamicIdx"
         
-        val userLocation = UserLocation(
-            userId = userId,
-            userName = userName,
-            avatar_id = resolvedAvatarId,
-            latitude = location.latitude,
-            longitude = location.longitude,
-            geohash = GeohashHelper.encode(location.latitude, location.longitude),
-            bearing = location.bearing,
-            speed = location.speed,
-            timestamp = System.currentTimeMillis(),
-            active_group = prefs.getString("active_group", "") ?: "",
-            role_family = prefs.getString("role_family", "None") ?: "None",
-            role_friend = prefs.getString("role_friend", "None") ?: "None"
-        )
-        
-        repository.updateMyLocation(userLocation)
+        // 🚀 V66.7: Resolve Agent ID before broadcast to ensure Cloud Matrix Parity
+        FirebaseComm.resolveHardwareIdentity(userId) { agentId: String? ->
+            val finalAgentId = agentId ?: userId
+            
+            val userLocation = UserLocation(
+                userId = finalAgentId,
+                userName = userName,
+                avatar_id = resolvedAvatarId,
+                latitude = location.latitude,
+                longitude = location.longitude,
+                geohash = GeohashHelper.encode(location.latitude, location.longitude),
+                bearing = location.bearing,
+                speed = location.speed,
+                timestamp = System.currentTimeMillis(),
+                active_group = prefs.getString("active_group", "") ?: "",
+                role_family = prefs.getString("role_family", "None") ?: "None",
+                role_friend = prefs.getString("role_friend", "None") ?: "None"
+            )
+            
+            repository.updateMyLocation(userLocation)
+        }
     }
 
     fun toggleSOS(context: Context, state: Boolean) {
@@ -293,9 +301,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private fun bindPendingRequestsListener() {
         val safeUid = auth.uid ?: return
         val rootDb = FirebaseDatabase.getInstance().reference
-        val ref = rootDb.child("users").child(safeUid).child("geofence_sync_requests")
-        
-        ref.addValueEventListener(object : ValueEventListener {
+        FirebaseComm.resolveHardwareIdentity(safeUid) { agentId: String? ->
+            val finalId = agentId ?: safeUid
+            val ref = rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).child("identity").child("geofence_sync_requests")
+            
+            ref.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 var count = 0
                 for (snap in snapshot.children) {
@@ -309,13 +319,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             override fun onCancelled(error: DatabaseError) {}
         })
     }
+}
 
     override fun onCleared() {
         super.onCleared()
         stopListening()
     }
 
-    // 🚀 Refresh trigger for Callouts (Can be observed by Activity)
+    // ≡ƒÜÇ Refresh trigger for Callouts (Can be observed by Activity)
     private val _refreshTrigger = MutableLiveData<Long>()
     val refreshTrigger: LiveData<Long> = _refreshTrigger
 
@@ -324,7 +335,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _refreshTrigger.value = time
     }
     
-    // 🚀 QA Fix: Global Ghost Mode Sync!
+    // ≡ƒÜÇ QA Fix: Global Ghost Mode Sync!
     fun toggleGhostMode(prefs: android.content.SharedPreferences) {
         val h = prefs.getBoolean("callout_hide_mode", false)
         prefs.edit().putBoolean("callout_hide_mode", !h).apply()

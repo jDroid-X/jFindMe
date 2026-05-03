@@ -65,8 +65,8 @@ object MultiMarkerEngine {
         val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
         for (ul in locations) {
-            val deviceId = ul.userId ?: continue
-            if (deviceId == myUid) continue // 🚀 QA Fix: Prevent Duplicate Owner Aura (V9.0)
+            val deviceId = ul.getResolvedUserId()
+            if (deviceId.isEmpty() || deviceId == myUid) continue // 🚀 QA Fix: Prevent Duplicate Owner Aura (V9.0)
             
             allowedUUIDs.add(deviceId)
             if (markerCount >= 100) break // 🚀 Stress Test Limit: 100 concurrent 3D nodes

@@ -42,8 +42,10 @@
         let currentVrm = null;
         let clock = new THREE.Clock();
         let activeAnim = "IDLE";
+        let autoRotate = false;
 
         window.loadModel = function(url) {
+            console.log("3D_ENGINE: Intent -> Load Node: " + url);
             if (currentVrm) { scene.remove(currentVrm.scene); }
             const loader = new THREE.GLTFLoader();
             loader.register((parser) => new THREE_VRM.VRMLoaderPlugin(parser));
@@ -52,11 +54,37 @@
                 scene.add(vrm.scene);
                 vrm.scene.rotation.y = Math.PI; 
                 currentVrm = vrm;
+                
+                // 🦋 Enterprise Sync: Signal completion to Android Native
+                if (window.AndroidBridge) { window.AndroidBridge.onModelLoaded(); }
+            }, 
+            (progress) => {}, 
+            (error) => {
+                if (window.AndroidBridge) { window.AndroidBridge.onModelError(error.message); }
             });
         };
 
         window.playAnimation = function(anim) {
             activeAnim = anim;
+        };
+
+        window.setLighting = function(mode) {
+            if (mode === 'DAY') {
+                light.color.set(0xffffff);
+                scene.background = null;
+            } else {
+                light.color.set(0x5555AA);
+                scene.background = new THREE.Color(0x050510);
+            }
+        };
+
+        window.toggleAutoRotate = function() {
+            autoRotate = !autoRotate;
+        };
+
+        window.resetCamera = function() {
+            camera.position.set(0, 1.2, -2.5);
+            camera.lookAt(0, 1.0, 0);
         };
 
         // 🧠 Enterprise Engine: Modular Avatar System (Material Proxy)
@@ -115,6 +143,9 @@
                         }
                     }
                 }
+            }
+            if (autoRotate && currentVrm) {
+                currentVrm.scene.rotation.y += 0.01;
             }
             renderer.render(scene, camera);
         }

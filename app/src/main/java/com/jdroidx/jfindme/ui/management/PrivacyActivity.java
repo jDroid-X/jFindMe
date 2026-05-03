@@ -46,6 +46,9 @@ public class PrivacyActivity extends BaseActivityJava {
         subtitle.setPadding(0, scale(10), 0, 0);
         header.addView(subtitle);
 
+        // 🚀 ANALYTICAL HUB: Architecture Status Bar (Transparency Pillar)
+        header.addView(buildArchitectureStatusBar());
+
         mainRoot.addView(header);
 
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
@@ -204,5 +207,46 @@ public class PrivacyActivity extends BaseActivityJava {
     @Override
     protected void setupLogic() {
         SystemLogger.INSTANCE.i(TAG, "Privacy Shield Activated (L7).");
+    }
+
+    private View buildArchitectureStatusBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(20, 15, 20, 15);
+        bar.setBackgroundColor(Color.argb(80, Color.red(getPrimaryColor()), Color.green(getPrimaryColor()), Color.blue(getPrimaryColor()))); 
+        
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_lock_silent_mode, "Secure", "Analytical Tiering: 5-Tier Normalized Architecture active."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_save, "Local", "Identity Hub: Data retrieval anchored in Tier 1 Local Profiles."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_popup_sync, "Matrix", "Analytical Sync: Cloud and Local parity maintained via tiered nodes."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_recent_history, "Silicon", "Hardware Lock: Tier 2 Silicon Fingerprints verified and archived."));
+        bar.addView(createArchitectureIcon(android.R.drawable.checkbox_on_background, "Mesh", "Relationship Mesh: Tier 3 Graph Traversal active for peer discovery."));
+
+        return bar;
+    }
+
+    private View createArchitectureIcon(int resId, String label, String toastMsg) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(25, 5, 25, 5);
+        box.setClickable(true);
+        box.setOnClickListener(v -> android.widget.Toast.makeText(this, toastMsg, android.widget.Toast.LENGTH_SHORT).show());
+        
+        android.widget.ImageView iv = new android.widget.ImageView(this);
+        iv.setImageResource(resId);
+        iv.setColorFilter(getGradientOverlayText());
+        int iSize = scale(60); 
+        box.addView(iv, new LinearLayout.LayoutParams(iSize, iSize));
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(9);
+        tv.setTextColor(getGradientOverlayText());
+        tv.setAlpha(0.6f);
+        tv.setGravity(Gravity.CENTER);
+        box.addView(tv);
+
+        return box;
     }
 }

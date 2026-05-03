@@ -13,3 +13,13 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Custom Ignores
+/.kotlin/
+/.agents/
+/.kit/
+/NetworkGateway_Restored*.txt
+/watchdog_dog.png
+/app/release/
+*.log
+/jFindMeWeb/node_modules/

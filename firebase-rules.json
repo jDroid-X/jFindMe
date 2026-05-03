@@ -1,32 +1,11 @@
 {
   "rules": {
-    "locations": {
-      ".read": "auth != null",
-      "$userId": {
-        ".write": "auth != null && $userId == auth.uid",
-        "batteryLevel": {
-          ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 100"
-        },
-        "timestamp": {
-          ".validate": "newData.val() <= now + 300000"
-        },
-        "isPoked": {
-          ".write": "auth != null"
-        },
-        "pokedBy": {
-          ".write": "auth != null"
-        }
-      }
-    },
-    "users": {
-      "$userId": {
+    "devices": {
+      ".indexOn": ["Identity/auth_uid"],
+      "$agentId": {
         ".read": "auth != null",
-        ".write": "auth != null && $userId == auth.uid"
+        ".write": "auth != null"
       }
-    },
-    "geofences": {
-      ".read": "auth != null",
-      ".write": "auth != null"
     }
   }
 }

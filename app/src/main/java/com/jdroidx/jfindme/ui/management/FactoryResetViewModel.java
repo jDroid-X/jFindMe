@@ -28,56 +28,97 @@ public class FactoryResetViewModel extends AndroidViewModel {
 
     public void loadLocalMatrix() {
         isLoading.postValue(true);
-        List<TableNode> nodes = new ArrayList<>();
-        String[] tables = db.getAllTables();
-        for (String t : tables) {
-            nodes.add(new TableNode(t, db.getRecordCount(t), db.getPagedData(t, 3, 0, null)));
-        }
-        tableMatrix.postValue(nodes);
-        isLoading.postValue(false);
+        new Thread(() -> {
+            try {
+                List<TableNode> nodes = new ArrayList<>();
+                String[] tables = db.getAllTables();
+                for (String t : tables) {
+                    syncStatus.postValue("Scanning Table Cluster: " + t.toUpperCase());
+                    // 🚀 AUDIT: Simulating Forensic Latency for Visibility (300ms)
+                    Thread.sleep(300);
+                    nodes.add(new TableNode(t, db.getRecordCount(t), db.getPagedData(t, 3, 0, null)));
+                }
+                tableMatrix.postValue(nodes);
+                syncStatus.postValue("SYNC_COMPLETE");
+            } catch (Exception e) {
+                syncStatus.postValue("SCAN_FAILED: " + e.getMessage());
+            } finally {
+                isLoading.postValue(false);
+            }
+        }).start();
     }
 
     public void startCloudRecovery() {
         isLoading.postValue(true);
         syncStatus.postValue("INITIALIZING GLOBAL FORENSIC RECOVERY...");
         
-        String safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        if (safeUid == null) {
+        String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        if (authUid == null) {
             syncStatus.postValue("RECOVERY_FAILED: NO_AUTH");
             isLoading.postValue(false);
             return;
         }
 
-        // 🚀 MASTER FORENSIC RETRIEVAL: Force-syncing key identity dossiers from the cloud
-        FirebaseDatabase.getInstance().getReference("users").child(safeUid)
-            .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
-                @Override
-                public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
-                    if (snapshot.exists()) {
-                        syncStatus.postValue("PARSING IDENTITY MATRICES...");
-                        Map<String, Object> map = (Map<String, Object>) snapshot.getValue();
-                        if (map != null) {
-                            // Recover Profile
-                            Map<String, String> profile = new HashMap<>();
-                            for (Map.Entry<String, Object> e : map.entrySet()) {
-                                if (!(e.getValue() instanceof Map)) profile.put(e.getKey(), String.valueOf(e.getValue()));
-                            }
-                            db.commitForensicDossier(safeUid, profile);
-                        }
-                        syncStatus.postValue("RECOVERY_COMPLETE: DATA_RESTORED");
-                        loadLocalMatrix();
-                    } else {
-                        syncStatus.postValue("RECOVERY_OFFLINE: NO_CLOUD_DATA");
-                    }
-                    isLoading.postValue(false);
-                }
+        // 🧬 V69.8: UNIVERSAL IDENTITY RESOLUTION (Local-First -> Cloud Fallback)
+        com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(authUid, agentId -> {
+            if (agentId == null) {
+                syncStatus.postValue("RECOVERY_OFFLINE: IDENTITY_NOT_FOUND");
+                isLoading.postValue(false);
+                return null;
+            }
 
-                @Override
-                public void onCancelled(com.google.firebase.database.DatabaseError error) {
-                    syncStatus.postValue("RECOVERY_FAILED: " + error.getMessage());
-                    isLoading.postValue(false);
-                }
-            });
+            syncStatus.postValue("RESOLVED AGENT ID: " + agentId);
+            
+            // 🚀 MASTER FORENSIC RETRIEVAL: Querying the L7 Unified Device Node
+            FirebaseDatabase.getInstance().getReference("devices").child(agentId)
+                .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
+                    @Override
+                    public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
+                        if (snapshot.exists()) {
+                            syncStatus.postValue("PARSING CLOUD DOSSIER...");
+                            
+                            // Map Profile Tier
+                            Map<String, String> profile = new HashMap<>();
+                            com.google.firebase.database.DataSnapshot profSnap = snapshot.child("profile");
+                            if (profSnap.exists()) {
+                                for (com.google.firebase.database.DataSnapshot child : profSnap.getChildren()) {
+                                    profile.put(child.getKey(), String.valueOf(child.getValue()));
+                                }
+                            }
+
+                            // Map Identity Tier
+                            Map<String, String> identity = new HashMap<>();
+                            com.google.firebase.database.DataSnapshot idSnap = snapshot.child("Identity");
+                            if (idSnap.exists()) {
+                                for (com.google.firebase.database.DataSnapshot child : idSnap.getChildren()) {
+                                    identity.put(child.getKey(), String.valueOf(child.getValue()));
+                                }
+                            }
+                            
+                            // Merge into a single forensic map for the handshake
+                            profile.putAll(identity);
+
+                            String rawHw = android.provider.Settings.Secure.getString(getApplication().getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+                            String hardwareUid = "HW_" + (rawHw != null ? rawHw.toUpperCase() : "NODE");
+
+                            db.commitHandshakeDossier(authUid, profile, "NODE", profile.get("name"), agentId, hardwareUid, "RECOVERY_SYNC", "CLOUD");
+                            
+                            syncStatus.postValue("RECOVERY_COMPLETE: DATA_RESTORED");
+                            loadLocalMatrix();
+                        } else {
+                            syncStatus.postValue("RECOVERY_OFFLINE: NO_CLOUD_NODE");
+                        }
+                        isLoading.postValue(false);
+                    }
+
+                    @Override
+                    public void onCancelled(com.google.firebase.database.DatabaseError error) {
+                        syncStatus.postValue("RECOVERY_FAILED: " + error.getMessage());
+                        isLoading.postValue(false);
+                    }
+                });
+            return null;
+        });
     }
 
     public void executeMasterPurge() {

@@ -54,6 +54,8 @@ public class ListItemTable {
         registry.put("ROW_DEVICE",   new ListRecord("ROW_DEVICE",   "Mobile Node", "Status: Active", android.R.drawable.ic_menu_mylocation, "Device identity record", 8f, 0.5f, true, "LIGHT", 0));
         registry.put("ROW_BATTERY",  new ListRecord("ROW_BATTERY",  "Telemetry Ping", "Level: Optimal", android.R.drawable.ic_lock_power_off, "Battery optimization stage", 4f, 0.2f, true, "LIGHT", 0));
         registry.put("ROW_STORAGE",  new ListRecord("ROW_STORAGE",  "Storage Recap", "Local History Override", android.R.drawable.ic_menu_save, "Diagnostic storage terminal", 8f, 0.5f, true, "LIGHT", 0));
+        registry.put("ROSTER_ITEM_MASTER", new ListRecord("ROSTER_ITEM_MASTER", "Guardian Node", "Admin Rights Active", com.jdroidx.jfindme.R.drawable.ic_user_profile, "Master identity registry", 10f, 0.6f, true, "LIGHT", 0));
+        registry.put("ROSTER_ITEM_CHILD",  new ListRecord("ROSTER_ITEM_CHILD",  "Managed Node",  "Tracking Enabled", com.jdroidx.jfindme.R.drawable.ic_user_profile, "Subordinate node registry", 10f, 0.3f, true, "LIGHT", 0));
     }
 
     public static View createRow(BaseActivityJava activity, String tableKey, String main, String sub) {

@@ -25,7 +25,7 @@ class UiConfigViewModel(application: Application) : AndroidViewModel(application
     private val _iconScale = MutableLiveData<Int>()
     val iconScale: LiveData<Int> = _iconScale
 
-    // 🚀 ENTERPRISE MATRIX WATERFALL: Surfacing internal static registries for UI Observation
+    // ≡ƒÜÇ ENTERPRISE MATRIX WATERFALL: Surfacing internal static registries for UI Observation
     val dashboardTiles = MutableLiveData(DashboardTileTable.getRegistry())
     val enterpriseCards = MutableLiveData(EnterpriseCardTable.getRegistry())
     val iconMatrix = MutableLiveData(IconTable.getRegistry())

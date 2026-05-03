@@ -9,6 +9,7 @@ import com.jdroidx.jfindme.engine.alert.AlertManager
 import com.jdroidx.jfindme.utils.SystemLogger
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.auth.FirebaseAuth
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * GeofenceBroadcastReceiver: Handles background geofencing events.
@@ -43,10 +44,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 // 🚀 mission-critical identity retrieval: sync with global L7 registry
                 val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                 val userName = prefs.getString("user_nickname", "Agent") ?: "Agent"
+                val myUid = FirebaseAuth.getInstance().uid ?: "NULL_IDENTITY"
                 
-                // 🛑 CRITICAL SECURITY FILTER: Liberal Identity Handshake (V49.2) - Ensure node name matches even with role suffixes
-                if (assignedTo != "ALL CONNECTED DEVICES" && !userName.contains(assignedTo) && !assignedTo.contains(userName)) {
-                    SystemLogger.i(TAG, "GEOFENCE_SUPPRESSED: Device '$userName' intersected zone but is NOT the targeted Subject ($assignedTo)!")
+                // 🛑 CRITICAL SECURITY FILTER: Multi-Point Identity Handshake (V50.0)
+                // We now check against UID for absolute forensic certainty, bypassing nickname volatility.
+                if (assignedTo != "ALL CONNECTED DEVICES" && assignedTo != myUid) {
+                    SystemLogger.i(TAG, "GEOFENCE_SUPPRESSED: Device '$userName' ($myUid) intersected zone but is NOT the targeted Subject UID ($assignedTo)!")
                     continue
                 }
 
@@ -73,7 +76,6 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 }
 
                 // 🚀 REMOTE MISSION MONITORING: Push to Cloud Matrix (V49.5)
-                val myUid = FirebaseAuth.getInstance().uid
                 if (groupId != null && !groupId.startsWith("LOCAL_SANDBOX") && myUid != null) {
                     
                     val cloudPacket = mapOf(
@@ -85,7 +87,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     )
                     
                     // 🛰️ DISPATCH: Instantaneous handshake to Admin's Notification Screen
-                    FirebaseDatabase.getInstance().getReference("groups").child(groupId)
+                    FirebaseComm.groupsRef.child(groupId)
                         .child("notifications").push().setValue(cloudPacket)
                 }
 
@@ -93,9 +95,18 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 val notificationMessage = "Mission Alert: You have $transitionName the $zoneName Safe Zone."
                 AlertManager.showGeofenceNotification(context, notificationMessage)
 
-                // 🚀 MASTER-CHILD CLUSTER SYNC: Local Analytic Archival (V42)
+                // 🚀 MASTER-CHILD CLUSTER SYNC: Local Analytic Archival (V42: Hardened Referential Integrity)
                 val activeUid = prefs.getString("user_uid", "OWNER_001") ?: "OWNER_001"
-                db.saveGeofenceLog(activeUid, userName, zoneName, zoneName, transitionName)
+                
+                // 🛑 REFERENTIAL INTEGRITY GUARD: Ensure the local ledger has the anchors before firing log
+                val uiExists = db.doesUserExist(activeUid)
+                val zoneExists = db.doesSafeZoneExist(geofence.requestId)
+                
+                if (uiExists && zoneExists) {
+                    db.saveGeofenceLog(activeUid, userName, geofence.requestId, zoneName, transitionName)
+                } else {
+                    SystemLogger.w(TAG, "LOG_SUPPRESSED: Referential Integrity failure (UI:$uiExists, Zone:$zoneExists) - Skipping local SQLite archival.")
+                }
             }
         } else {
             SystemLogger.e(TAG, "Invalid Geofence Transition: $geofenceTransition")

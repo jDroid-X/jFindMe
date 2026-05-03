@@ -21,7 +21,7 @@ import com.jdroidx.jfindme.ui.base.AngelLoad;
 import java.util.Map;
 
 /**
- * 👑 GLOBAL UI ARCHITECT: Waterfall MVVM Implementation (L6)
+ * ≡ƒææ GLOBAL UI ARCHITECT: Waterfall MVVM Implementation (L6)
  * Diagnostics & Management Hub for the Enterprise UI Matrix.
  */
 public class UiConfigActivity extends BaseActivityJava {
@@ -100,7 +100,7 @@ public class UiConfigActivity extends BaseActivityJava {
         // --- LAYER 0.2: UNIFIED PADDING MATRIX (LIVE DIAGNOSTICS) ---
         renderUnifiedPaddingMatrix();
 
-        // 🚀 QA Fix: Dynamic Diagnostic Routing (Shadow Depth vs. Forensic Edge)
+        // ≡ƒÜÇ QA Fix: Dynamic Diagnostic Routing (Shadow Depth vs. Forensic Edge)
         boolean bordersEnabled = prefs.getBoolean("borders_enabled", true);
         if (!bordersEnabled) {
             // --- LAYER 0.3: SHADOW ELEVATION MATRIX (DEPTH STATS) ---
@@ -225,7 +225,7 @@ public class UiConfigActivity extends BaseActivityJava {
             tile.setFocusable(true);
             tile.setClickable(true);
 
-            // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+            // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
             tile.setOnKeyListener((v, keyCode, event) -> {
                 if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                     (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -274,7 +274,7 @@ public class UiConfigActivity extends BaseActivityJava {
                 });
             });
 
-            // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+            // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
             tile.setOnKeyListener((v, keyCode, event) -> {
                 if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                     (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -338,7 +338,7 @@ public class UiConfigActivity extends BaseActivityJava {
             row.setGravity(Gravity.CENTER_VERTICAL);
             
             if (isActive) {
-                // 🚀 L7 High-Visibility Selection: Apply Gradient for 'Selected' item
+                // ≡ƒÜÇ L7 High-Visibility Selection: Apply Gradient for 'Selected' item
                 android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
                 gd.setColors(new int[]{ Color.parseColor("#15000000"), getGradientEnd() });
                 gd.setAlpha(40);
@@ -385,14 +385,14 @@ public class UiConfigActivity extends BaseActivityJava {
         legend.setPadding(0, 15, 0, 15);
         
         TextView headLegend = new TextView(this);
-        headLegend.setText("● HEAD: Scaling for Branding & Headers");
+        headLegend.setText("ΓùÅ HEAD: Scaling for Branding & Headers");
         headLegend.setTextColor(getGradientStart());
         headLegend.setTextSize(9f);
         headLegend.setPadding(20, 0, 20, 0);
         legend.addView(headLegend);
         
         TextView bodyLegend = new TextView(this);
-        bodyLegend.setText("● BODY: Scaling for Lists & Text Content");
+        bodyLegend.setText("ΓùÅ BODY: Scaling for Lists & Text Content");
         bodyLegend.setTextColor(getTextColor());
         bodyLegend.setTextSize(9f);
         bodyLegend.setAlpha(0.6f);
@@ -565,7 +565,7 @@ public class UiConfigActivity extends BaseActivityJava {
         container.setOrientation(LinearLayout.VERTICAL);
         UiArchitect.applyCard(this, container, "CARD_STANDARD");
         
-        // --- 🚀 BORDER TOGGLE (L7 FORENSIC EDGE) ---
+        // --- ≡ƒÜÇ BORDER TOGGLE (L7 FORENSIC EDGE) ---
         CheckBox cb = new CheckBox(this);
         cb.setText("ENABLE DYNAMIC BORDERS (L7 EDGE)");
         cb.setTextColor(getTextColor());
@@ -606,7 +606,7 @@ public class UiConfigActivity extends BaseActivityJava {
         boolean isOverrideEnabled = prefs.getBoolean("radius_override_enabled", false);
         int currentMode = prefs.getInt("radius_mode", 1); // Default to MODERN
 
-        // --- 🚀 GEOMETRY OVERRIDE TOGGLE ---
+        // --- ≡ƒÜÇ GEOMETRY OVERRIDE TOGGLE ---
         CheckBox cb = new CheckBox(this);
         cb.setText("OVERRIDE SYSTEM GEOMETRY (DYNAMIC Tiers)");
         cb.setTextColor(getTextColor());
@@ -710,7 +710,7 @@ public class UiConfigActivity extends BaseActivityJava {
 
         for (String[] row : scalingData) {
             TextView rule = new TextView(this);
-            rule.setText("• " + row[0]);
+            rule.setText("ΓÇó " + row[0]);
             rule.setPadding(30, 20, 30, 20);
             rule.setTextSize(12.5f);
             
@@ -830,12 +830,12 @@ public class UiConfigActivity extends BaseActivityJava {
                 String msg = "APPLYING [" + themeNames[themeIndex].toUpperCase() + "] AESTHETIC...";
                 AngelLoad.engage(this, msg, () -> {
                     viewModel.updateTheme(themeIndex);
-                    // 🚀 QA Fix: Stay on Screen! Instant repaint of the current hub.
+                    // ≡ƒÜÇ QA Fix: Stay on Screen! Instant repaint of the current hub.
                     safeRecreate();
                 });
             });
 
-            // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+            // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
             themeItem.setOnKeyListener((v, keyCode, event) -> {
                 if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                     (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -1168,7 +1168,7 @@ public class UiConfigActivity extends BaseActivityJava {
         boolean first = true;
         for (String key : registry.keySet()) {
             TextView item = new TextView(this);
-            item.setText("• " + key);
+            item.setText("ΓÇó " + key);
             item.setTextColor(getGradientStart());
             UiArchitect.applyText(this, item, "TEXT_LABEL");
             item.setPadding(20, 15, 20, 0);

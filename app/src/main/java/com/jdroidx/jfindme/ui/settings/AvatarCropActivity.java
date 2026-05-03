@@ -48,6 +48,9 @@ public class AvatarCropActivity extends BaseActivityJava {
         saveBtn.setBackgroundColor(getGradientStart());
         saveBtn.setTextColor(Color.WHITE);
         saveBtn.setTypeface(null, Typeface.BOLD);
+        saveBtn.setCompoundDrawablesWithIntrinsicBounds(com.jdroidx.jfindme.R.drawable.ic_crop, 0, 0, 0);
+        saveBtn.setCompoundDrawablePadding(30);
+        saveBtn.setPadding(60, 0, 60, 0);
         
         FrameLayout.LayoutParams btnLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
         btnLp.gravity = Gravity.BOTTOM;
@@ -60,6 +63,9 @@ public class AvatarCropActivity extends BaseActivityJava {
         rotateBtn.setBackgroundColor(Color.parseColor("#424242")); // iOS Dark Mode Hue
         rotateBtn.setTextColor(Color.WHITE);
         rotateBtn.setTypeface(null, Typeface.BOLD);
+        rotateBtn.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_rotate, 0, 0, 0);
+        rotateBtn.setCompoundDrawablePadding(30);
+        rotateBtn.setPadding(60, 0, 60, 0);
         
         FrameLayout.LayoutParams rotLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 150);
         rotLp.gravity = Gravity.BOTTOM;

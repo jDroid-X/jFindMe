@@ -1,6 +1,7 @@
 package com.jdroidx.jfindme.ui.management;
 
 import android.app.AlertDialog;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
@@ -170,6 +171,23 @@ public class FactoryResetActivity extends BaseActivityJava {
         if (node.count > 0) {
             HorizontalScrollView hScroll = new HorizontalScrollView(this);
             TableLayout table = new TableLayout(this);
+            
+            // 🚀 QA Fix: Master Table Header Restoration
+            if (!node.sample.isEmpty()) {
+                TableRow header = new TableRow(this);
+                header.setBackgroundColor(Color.parseColor("#15000000")); // Sharp tacticle tint
+                for (String key : node.sample.get(0).keySet()) {
+                    TextView tv = new TextView(this);
+                    tv.setText(key.toUpperCase());
+                    tv.setPadding(scale(20), scale(15), scale(20), scale(15));
+                    tv.setTextColor(getGradientStart());
+                    tv.setTypeface(null, Typeface.BOLD);
+                    UiArchitect.applyText(this, tv, "TEXT_MINI");
+                    header.addView(tv);
+                }
+                table.addView(header);
+            }
+
             for (Map<String, String> row : node.sample) {
                 TableRow tr = new TableRow(this);
                 for (String val : row.values()) {

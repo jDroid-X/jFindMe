@@ -101,9 +101,10 @@ public class DatabaseManagementActivity extends BaseActivityJava {
     }
 
     private String getTableFriendlyLabel(String tName) {
-        if (tName.equals("profile_table")) return "Identity Dossier";
+        // V54 exact table names from DatabaseHelper constants
+        if (tName.equals("PROFILE_TABLE")) return "Identity Dossier";
         if (tName.equals("device_table")) return "Hardware Identity Ledger";
-        if (tName.equals("roster_table")) return "P2P Network Matrix";
+        if (tName.equals("MASTER_ROSTER")) return "P2P Network Matrix";
         if (tName.equals("org_table")) return "Enterprise Dossier";
         if (tName.equals("history_table")) return "Forensic Archive";
         if (tName.equals("SafeZone_Table")) return "Boundary Matrix";
@@ -114,6 +115,9 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         if (tName.equals("geofenc_sync_queue_table")) return "Sync Queue";
         if (tName.equals("SafeZoneGroup_Table")) return "Zone Clusters";
         if (tName.equals("GeofenceLog_Table")) return "Geofence Transitions";
+        if (tName.equals("groups_table")) return "Group Hub";
+        if (tName.equals("group_members_table")) return "Group Members Bridge";
+        if (tName.equals("sys_log")) return "WatchDog Audit Log";
         return tName.replace("_table", "").toUpperCase();
     }
 
@@ -138,9 +142,10 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         int gearSize = scale(100);
         row.addView(gear, new LinearLayout.LayoutParams(gearSize, gearSize));
         gear.setOnClickListener(v -> {
-            android.content.Intent structure = new android.content.Intent(this, ForensicStructureActivity.class);
+            android.content.Intent structure = new android.content.Intent(this, ForensicVaultExplorerActivity.class);
             structure.putExtra("TABLE_NAME", tName);
             structure.putExtra("TABLE_LABEL", tLabel);
+            structure.putExtra("VIEW_MODE", "LIST"); // 🚀 Trigger LIST Mode
             startActivity(structure);
         });
 

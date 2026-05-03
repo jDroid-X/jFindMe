@@ -58,7 +58,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         root.addView(header);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setClipChildren(false); // 🚀 QA Depth Fix: Prevent shadow clipping
+        scroll.setClipChildren(false); // ≡ƒÜÇ QA Depth Fix: Prevent shadow clipping
         scroll.setClipToPadding(false);
 
         LinearLayout content = new LinearLayout(this);
@@ -77,7 +77,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         renderAuditMatrix(content, "BUTTONS");
         LinearLayout btnList = new LinearLayout(this);
         btnList.setOrientation(LinearLayout.VERTICAL);
-        btnList.setClipChildren(false); // 🚀 Enable shadow bleed for individual items
+        btnList.setClipChildren(false); // ≡ƒÜÇ Enable shadow bleed for individual items
         
         java.util.Map<String, ActionButtonTable.ActionRecord> buttons = ActionButtonTable.getRegistry();
         for (String key : buttons.keySet()) {
@@ -97,7 +97,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         LinearLayout pillPanel = new LinearLayout(this);
         pillPanel.setOrientation(LinearLayout.HORIZONTAL);
         pillPanel.setGravity(Gravity.CENTER_VERTICAL);
-        pillPanel.setClipChildren(false); // 🚀 Allow pill shadows to bleed
+        pillPanel.setClipChildren(false); // ≡ƒÜÇ Allow pill shadows to bleed
         pillPanel.setPadding(35, 35, 35, 35);
         
         String[] pillTypes = {"STATUS_ACTIVE", "STATUS_ALERT", "STATUS_OFFLINE", "STATUS_SECURE", "STATUS_BETA"};
@@ -114,8 +114,8 @@ public class UiGalleryActivity extends BaseActivityJava {
         renderSectionHeader(content, "DASHBOARD TILES (DASHBOARD_TILE_TABLE)");
         renderAuditMatrix(content, "TILES");
         android.widget.GridLayout tileGrid = new android.widget.GridLayout(this);
-        tileGrid.setColumnCount(4); // 🚀 QA Density Boost: Switching from 2x2 to 4x4 matrix
-        tileGrid.setClipChildren(false); // 🚀 Allow tile shadows to bleed
+        tileGrid.setColumnCount(4); // ≡ƒÜÇ QA Density Boost: Switching from 2x2 to 4x4 matrix
+        tileGrid.setClipChildren(false); // ≡ƒÜÇ Allow tile shadows to bleed
         
         java.util.Map<String, DashboardTileTable.TileRecord> tiles = DashboardTileTable.getRegistry();
         int tilePad = getResponsivePaddingQuota() / 2;
@@ -226,7 +226,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         for (String key : icons.keySet()) {
             android.widget.ImageView iv = new android.widget.ImageView(this);
             iv.setImageResource(icons.get(key).resourceId);
-            iv.setColorFilter(getGradientMid()); // 🚀 QA Chrominance Sync (Vibrant Mid Color)
+            iv.setColorFilter(getGradientMid()); // ≡ƒÜÇ QA Chrominance Sync (Vibrant Mid Color)
             iv.setAlpha(1.0f); // Ensure zero transparency leak
             int isz = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
             android.widget.GridLayout.LayoutParams ilp = new android.widget.GridLayout.LayoutParams();
@@ -255,15 +255,15 @@ public class UiGalleryActivity extends BaseActivityJava {
         LinearLayout spinnerPanel = new LinearLayout(this);
         spinnerPanel.setOrientation(LinearLayout.VERTICAL);
         UiArchitect.applyCard(this, spinnerPanel, "CARD_STANDARD");
-        // 🚀 QA Fix: Migrating to 'AutoCompleteTextView' for real-time node filtering (Text Mode)
+        // ≡ƒÜÇ QA Fix: Migrating to 'AutoCompleteTextView' for real-time node filtering (Text Mode)
         android.widget.AutoCompleteTextView sampleSpinner = new android.widget.AutoCompleteTextView(this);
         sampleSpinner.setHint("Country Node Selector...");
-        sampleSpinner.setHintTextColor(getGradientStart()); // 🧱 Synchronized with Border Chrominance
+        sampleSpinner.setHintTextColor(getGradientStart()); // ≡ƒº▒ Synchronized with Border Chrominance
         sampleSpinner.setTextColor(getTextColor());
         java.util.ArrayList<String> items = new java.util.ArrayList<>(java.util.Arrays.asList("Select Country", "United States", "India", "United Kingdom", "Canada", "Australia"));
         android.widget.ArrayAdapter<String> adapter = createEnterpriseDropdownAdapter(items);
         sampleSpinner.setAdapter(adapter);
-        sampleSpinner.setThreshold(1); // 🚀 Immediate Filtering
+        sampleSpinner.setThreshold(1); // ≡ƒÜÇ Immediate Filtering
         sampleSpinner.setDropDownBackgroundDrawable(createPopupBackground());
         
         LinearLayout spinRow = new LinearLayout(this);
@@ -374,7 +374,7 @@ public class UiGalleryActivity extends BaseActivityJava {
     }
 
     // ============================================================================================
-    // 🚀 FORENSIC ARCHITECT TOOLS: DYNAMIC OVERRIDE & AUDIT
+    // ≡ƒÜÇ FORENSIC ARCHITECT TOOLS: DYNAMIC OVERRIDE & AUDIT
     // ============================================================================================
 
     private void renderStageControlCenter(LinearLayout container) {
@@ -450,10 +450,10 @@ public class UiGalleryActivity extends BaseActivityJava {
         
         // Waterfall grouping of properties
         String auditText = "AUDIT: [" + stage.name() + "]\n" +
-                  "• Text Scale: " + record.bodyTextScale + "x / Header: " + record.headerTextScale + "x\n" +
-                  "• Icon Scale: " + record.iconScale + "x\n" +
-                  "• Padding Scale: " + record.paddingScale + "x\n" +
-                  "• Elevation Scale: " + record.elevationScale + "x";
+                  "ΓÇó Text Scale: " + record.bodyTextScale + "x / Header: " + record.headerTextScale + "x\n" +
+                  "ΓÇó Icon Scale: " + record.iconScale + "x\n" +
+                  "ΓÇó Padding Scale: " + record.paddingScale + "x\n" +
+                  "ΓÇó Elevation Scale: " + record.elevationScale + "x";
 
         TextView tv = new TextView(this);
         tv.setText(auditText);

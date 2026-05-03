@@ -34,7 +34,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private PersonDetailsViewModel viewModel;
     
     // UI Elements
-    private EditText etFullName, etPhone, etDob, etAddress, etEmergencyNote, etOrgName, etDeptName;
+    private EditText etFullName, etPhone, etEmailId, etDob, etAddress, etEmergencyNote, etOrgName, etDeptName;
     private AutoCompleteTextView etGender, etCountry, etState, etCity;
     private EditText etPincode;
     private EditText etSafeZoneName, etSafeZoneRadius;
@@ -180,6 +180,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         etDeptName = createFormField("Department", "Sub-Sector / Team", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_directions, false, true);
 
         etPhone = createFormField("Mobile Number", "Enterprise contact link...", InputType.TYPE_CLASS_PHONE, android.R.drawable.ic_menu_call, true, true);
+        etEmailId = createFormField("Email Identity", "Forensic unique key...", InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, android.R.drawable.ic_dialog_email, true, true);
         etDob = createFormField("BirthDay", "DD/MM/YYYY Protocol", InputType.TYPE_CLASS_DATETIME, android.R.drawable.ic_menu_today, true, true);
         
         // 🚀 QA Fix: Master Dropdown Matrix (Adaptive Waterfall MVVM)
@@ -275,9 +276,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
             
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
-            View syncBtn = createIconButton("REQUEST DEVICE SYNC", android.R.drawable.ic_popup_sync, v -> {
-                com.google.firebase.database.FirebaseDatabase.getInstance().getReference()
-                    .child("users").child(targetUid).child("force_cloud_sync_trigger")
+            View syncBtn = createIconButton("REQUEST DEVICE SYNC", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid)
+                    .child("force_cloud_sync_trigger")
                     .setValue(System.currentTimeMillis());
                 android.widget.Toast.makeText(this, "Sync Pull Request sent to Target Device network edge...", android.widget.Toast.LENGTH_LONG).show();
             });
@@ -285,17 +286,17 @@ public class PersonDetailsActivity extends BaseActivityJava {
         } else {
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
-            View saveDossierBtn = createIconButton("Save Profile", android.R.drawable.ic_menu_save, true, v -> saveCitizenData());
+            View saveDossierBtn = createIconButton("Save Profile", com.jdroidx.jfindme.R.drawable.ic_edit, true, v -> saveCitizenData());
             formBox.addView(saveDossierBtn, btnLp);
             
-            com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(targetUid).child("force_cloud_sync_trigger")
+            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).child("force_cloud_sync_trigger")
                 .addValueEventListener(new com.google.firebase.database.ValueEventListener() {
                     @Override
                     public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
                         if (snapshot.exists()) {
                             saveCitizenData();
                             android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
-                            com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(targetUid).child("force_cloud_sync_trigger").removeValue();
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).child("force_cloud_sync_trigger").removeValue();
                         }
                     }
                     @Override public void onCancelled(com.google.firebase.database.DatabaseError e) {}
@@ -305,7 +306,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         LinearLayout.LayoutParams stdLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         stdLp.setMargins(0, 0, 0, formPad);
 
-        View cloudInspectBtn = createIconButton("Cloud Data Portal", android.R.drawable.ic_menu_upload, v -> showCloudPrivacyPayload());
+        View cloudInspectBtn = createIconButton("Cloud Data Portal", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> showCloudPrivacyPayload());
         formBox.addView(cloudInspectBtn, stdLp);
         
         formBox.addView(createIconButton("VIEW ARCHIVED CHANGE LOG", android.R.drawable.ic_menu_recent_history, v -> {
@@ -339,9 +340,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         if (roster != null) {
             for (java.util.Map<String, Object> node : roster) {
-                String rTitle = (String) node.get("role_title");
-                String rName = (String) node.get("display_name");
-                String rUid = (String) node.get("uid");
+                String rTitle = (String) node.get("role_type");
+                String rName = (String) node.get("id_full_name");
+                String rUid = (String) node.get("uid_1");
                 if (rTitle == null || rName == null || rUid == null) continue;
                 
                 if (rTitle.contains("SPOUSE")) pairedSpouses.put(rUid, rName);
@@ -392,7 +393,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     .setTitle("Initialize " + roleName + " Scope")
                     .setMessage("Entering physical pairing loop. The QR Scanner will now open specifically locking targets as a [" + intentRole + "].")
                     .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
-                        android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.GroupActivity.class);
+                        android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class);
+                        i.putExtra("REQUESTED_TAB", 2);
                         i.putExtra("requested_network_role", intentRole);
                         startActivity(i);
                     })
@@ -443,7 +445,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                             java.util.Map<String, Object> cp = new java.util.HashMap<>();
                             cp.put("role_family", famRole);
                             cp.put("role_friend", frRole);
-                            com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(myGrp).child("citizen_dossiers").child(nodeUid).updateChildren(cp);
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(nodeUid).updateChildren(cp);
                         }
                         android.widget.Toast.makeText(this, "Network Array Re-Mapped! Hit Save.", android.widget.Toast.LENGTH_SHORT).show();
                     }).show();
@@ -479,7 +481,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     .setTitle("Device Pairing Sequence")
                     .setMessage("This will launch the QR Handshake Scanner to tag a " + targetRole + " device to the network. Proceed?")
                     .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
-                        android.content.Intent intent = new android.content.Intent(this, GroupActivity.class);
+                        android.content.Intent intent = new android.content.Intent(this, FamilyFriendsActivity.class);
+                        intent.putExtra("REQUESTED_TAB", 2);
                         intent.putExtra("requested_network_role", targetRole);
                         startActivity(intent);
                         buttonView.setChecked(false); // Resets tick to allow multiple loops
@@ -551,7 +554,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         
         android.widget.ImageView editBtn = new android.widget.ImageView(this);
-        editBtn.setImageResource(android.R.drawable.ic_menu_edit);
+        editBtn.setImageResource(com.jdroidx.jfindme.R.drawable.ic_edit);
         editBtn.setColorFilter(getGradientStart()); // Fixed to Gradient Start for section level contrast
         int iSize = getResponsiveIconQuota();
         editBtn.setPadding(10, 10, 10, 10);
@@ -658,8 +661,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         // 🚀 LIVE OBSERVATION PROTOCOL: UI reacts natively to Data Source (Offline SQL & Cloud)
         viewModel.getDossierLiveData().observe(this, data -> {
             if (data == null) return;
-            etFullName.setText(data.get("fullName"));
+            etFullName.setText(data.get("full_name"));
             etPhone.setText(data.get("phone"));
+            etEmailId.setText(data.get("email_id"));
             etDob.setText(data.get("dob"));
             etGender.setText(data.get("gender"));
             etAddress.setText(data.get("address"));
@@ -855,10 +859,11 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         // 🚀 QA Fix: Fetch current data from ViewModel if UI field is removed
         String currentName = (viewModel.getDossierLiveData().getValue() != null) ? 
-                             viewModel.getDossierLiveData().getValue().get("fullName") : "";
-        payload.put("fullName", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
+                             viewModel.getDossierLiveData().getValue().get("full_name") : "";
+        payload.put("full_name", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
         
         payload.put("phone", etPhone.getText().toString());
+        payload.put("email_id", etEmailId.getText().toString());
         payload.put("dob", etDob.getText().toString());
         payload.put("gender", etGender.getText().toString());
         payload.put("address", etAddress.getText().toString());

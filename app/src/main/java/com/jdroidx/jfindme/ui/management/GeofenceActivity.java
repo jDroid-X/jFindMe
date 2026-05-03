@@ -28,6 +28,8 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.jdroidx.jfindme.engine.location.GeofenceHelper;
@@ -354,20 +356,39 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         actionRow.setPadding(0, scale(25), 0, 0);
 
         btnConfirm = createIconButton("DEPLOY", android.R.drawable.ic_menu_send, true, v -> {
-            String name = edtZoneName.getText().toString().trim();
-            String radiusStr = edtRadius.getText().toString().trim();
-            int s = parseTo24H(edtStart.getText().toString());
-            int e = parseTo24H(edtEnd.getText().toString());
-            
-            StringBuilder dBuilder = new StringBuilder();
-            for(int i=0; i<7; i++) if(dayChecks[i].isChecked()) dBuilder.append(i).append(",");
-            String dStr = dBuilder.length() > 0 ? dBuilder.substring(0, dBuilder.length()-1) : "";
+            try {
+                // 🚀 L7 MISSION GUARD: Multi-Gate Validations
+                if (edtZoneName == null || edtRadius == null || edtStart == null || edtEnd == null) {
+                    Toast.makeText(this, "Mission Interface initializing... Try again.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
 
-            LatLng draft = viewModel.getDraftCoordinateLocation().getValue();
-            double r = radiusStr.isEmpty() ? 100.0 : Double.parseDouble(radiusStr);
-            String assigned = android.text.TextUtils.join(", ", selectedNodes);
-            if (!name.isEmpty() && draft != null) {
-                checkPermissionsAndAdd(name, assigned, draft.latitude, draft.longitude, r, s, e, dStr, editingZoneId);
+                String name = edtZoneName.getText().toString().trim();
+                String radiusStr = edtRadius.getText().toString().trim();
+                int s = parseTo24H(edtStart.getText().toString());
+                int e = parseTo24H(edtEnd.getText().toString());
+                
+                StringBuilder dBuilder = new StringBuilder();
+                if (dayChecks != null) {
+                    for(int i=0; i<7; i++) if(dayChecks[i] != null && dayChecks[i].isChecked()) dBuilder.append(i).append(",");
+                }
+                String dStr = dBuilder.length() > 0 ? dBuilder.substring(0, dBuilder.length()-1) : "0,1,2,3,4,5,6";
+
+                LatLng draft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
+                double r = radiusStr.isEmpty() ? 100.0 : Double.parseDouble(radiusStr);
+                
+                // 🚀 QA Fix: Zero-Gap Roster Persistence
+                if (selectedNodes.isEmpty()) selectedNodes.add("ALL CONNECTED DEVICES");
+                String assigned = android.text.TextUtils.join(", ", selectedNodes);
+                
+                if (!name.isEmpty() && draft != null) {
+                    checkPermissionsAndAdd(name, assigned, draft.latitude, draft.longitude, r, s, e, dStr, editingZoneId);
+                } else {
+                    Toast.makeText(this, "Enter Zone Name and Set Map Pin!", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception fatal) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("GeofenceActivity", "DEPLOY_FATAL_UI", fatal);
+                Toast.makeText(this, "Mission Sync Error: " + fatal.getMessage(), Toast.LENGTH_LONG).show();
             }
         });
         View btnAbort = createIconButton("ABORT", android.R.drawable.ic_menu_close_clear_cancel, v -> closeMapEditorState());
@@ -570,19 +591,36 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         this.googleMap.getUiSettings().setZoomControlsEnabled(true);
         this.googleMap.setOnMapLongClickListener(latLng -> viewModel.setDraftPin(latLng));
         
-        // 🚀 Intelligent Centering Bridge
-        viewModel.resolveActiveProfileAddress();
-        viewModel.getProfileAddress().observe(this, addr -> {
-            if (addr != null && !addr.equals("Unknown Location")) {
-                viewModel.executeOSGeocodingQuery(addr);
-            } else {
-                LatLng pune = new LatLng(18.5204, 73.8567);
-                this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(pune, 12f));
-            }
-        });
+        // 🚀 L7 MISSION ACCELERATOR: Prioritize Live GPS Telemetry for Initial Centering
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            googleMap.setMyLocationEnabled(true);
+            LocationServices.getFusedLocationProviderClient(this).getLastLocation().addOnSuccessListener(this, location -> {
+                if (location != null) {
+                    LatLng current = new LatLng(location.getLatitude(), location.getLongitude());
+                    googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(current, 15f));
+                } else {
+                    resolveInitialForensicPosition();
+                }
+            });
+        } else {
+            resolveInitialForensicPosition();
+        }
 
         LatLng restored = viewModel.getDraftCoordinateLocation().getValue();
         if (restored != null) { renderMapDraftRings(restored); this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(restored, 16f)); }
+    }
+
+    private void resolveInitialForensicPosition() {
+        // 🚀 Intelligent Centering Bridge: Fallback to Profile/Default
+        viewModel.resolveActiveProfileAddress();
+        viewModel.getProfileAddress().observe(this, addr -> {
+            if (addr != null && !addr.equals("Unknown Location") && !addr.isEmpty()) {
+                viewModel.executeOSGeocodingQuery(addr);
+            } else {
+                LatLng defaultPos = new LatLng(18.5204, 73.8567); // Safe baseline (Pune)
+                if (googleMap != null) googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultPos, 12f));
+            }
+        });
     }
 
     private void renderMapDraftRings(LatLng pos) {
@@ -603,7 +641,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         } else {
             com.jdroidx.jfindme.utils.AngelLoader.show(this);
             viewModel.submitCloudCoordinateSync(n, a, lat, lng, r, s, e, days, existingId);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> com.jdroidx.jfindme.utils.AngelLoader.hide(this), 3000);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                closeMapEditorState(); // 🚀 QA Fix: Force navigation back to the forensic list after sync completes
+            }, 3000);
         }
     }
 
@@ -1180,20 +1221,20 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private boolean isEditorActive = false;
 
     @Override
-    protected void onSaveCurrentState() {
+    protected void onSaveCurrentState(android.os.Bundle outState) {
         // Capture live state before layout teardown
         isEditorActive = (mapStateContainer != null && mapStateContainer.getVisibility() == View.VISIBLE);
     }
 
     @Override
-    protected void onUiRebuilt() {
+    protected void onUiRebuilt(android.os.Bundle savedState) {
         // Restore visibility after orientation matrix re-calculation
         if (isEditorActive) {
             openMapEditorState();
         }
         
         // 🛰️ Map Fragment Re-Injection: Forced handshake after layout re-pivot
-        SupportMapFragment mapFragment = SupportMapFragment.newInstance();
+        com.google.android.gms.maps.SupportMapFragment mapFragment = com.google.android.gms.maps.SupportMapFragment.newInstance();
         getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit();
         mapFragment.getMapAsync(this);
     }
@@ -1203,9 +1244,15 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == GEOFENCE_PERMISSION_CODE && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            com.jdroidx.jfindme.utils.AngelLoader.show(this);
-            viewModel.submitCloudCoordinateSync(pendingZoneName, pendingAssignedName, pendingLat, pendingLng, pendingRadius != null ? pendingRadius : 100.0);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> com.jdroidx.jfindme.utils.AngelLoader.hide(this), 3000);
+            if (pendingZoneName != null && pendingLat != null && pendingLng != null) {
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                viewModel.submitCloudCoordinateSync(pendingZoneName, pendingAssignedName, 
+                    pendingLat, pendingLng, pendingRadius != null ? pendingRadius : 100.0);
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    closeMapEditorState(); // 🚀 QA Fix: Force navigation back after permission acquisition sync
+                }, 3000);
+            }
         }
     }
 

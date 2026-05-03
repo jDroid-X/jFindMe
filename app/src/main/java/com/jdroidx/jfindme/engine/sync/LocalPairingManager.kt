@@ -16,8 +16,7 @@ object LocalPairingManager {
     private const val TAG = "LocalPairingManager"
     private const val STRATEGY_ID = "com.jdroidx.jfindme.P2P_SYNC"
 
-    private val groupsEndpoint = FirebaseDatabase.getInstance().reference.child("groups")
-    private val usersEndpoint = FirebaseDatabase.getInstance().reference.child("users")
+    private val relationshipsEndpoint = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef
 
     private var activeHostEndpointId: String? = null
 
@@ -127,11 +126,10 @@ object LocalPairingManager {
      * Final architectural bridge. Takes physical offline nodes and mounts them into the Unified Cloud Tracker.
      */
     fun finalizeLocalMerge(hostDeviceId: String, childDeviceId: String, onMergeComplete: (Boolean) -> Unit) {
-        // 🚀 QA STRICK RULE: "no download of device pairing with other mobile... scan one device one device pair"
-        // Force offline Nearby connections to adhere to the strict 1-to-1 P2P friend_matrix architecture!
-        usersEndpoint.child(hostDeviceId).child("friend_matrix").child(childDeviceId).setValue(true).addOnSuccessListener {
-            usersEndpoint.child(childDeviceId).child("friend_matrix").child(hostDeviceId).setValue("HOST_LOCAL")
-            SystemLogger.i("LocalPairingManager", "Strict Local P2P Matrix Binding Complete. Logging Audit Ledger...")
+        // 🚀 QA STRICK RULE: Strictly 1-to-1 P2P friend_matrix architecture!
+        relationshipsEndpoint.child(hostDeviceId).child(childDeviceId).setValue(true).addOnSuccessListener {
+            relationshipsEndpoint.child(childDeviceId).child(hostDeviceId).setValue("HOST_LOCAL")
+            SystemLogger.i("LocalPairingManager", "Strict Local Tier 3 Mesh Binding Complete.")
             
             // 🚀 AUDIT LEDGER: Log Local P2P Node Status
             val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(com.jdroidx.jfindme.JFindMeApplication.getContext())

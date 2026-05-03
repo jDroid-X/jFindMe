@@ -36,7 +36,7 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
             val myUid = FirebaseAuth.getInstance().uid ?: ""
             
             // Remove markers for users no longer in the list
-            val incomingIds = userLocations.map { it.userId }
+            val incomingIds = userLocations.map { it.getResolvedUserId() }
             val toRemove = markers.keys.filter { it !in incomingIds || it == myUid }
             toRemove.forEach {
                 markers[it]?.remove()
@@ -48,14 +48,15 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
             val processedPlacements = mutableListOf<LatLng>()
             
             // Anchor the Primary Mobile Local User as the absolute center geometry
-            val primaryUser = userLocations.find { it.userId == myUid }
+            val primaryUser = userLocations.find { it.getResolvedUserId() == myUid }
             if (primaryUser != null) {
                 processedPlacements.add(LatLng(primaryUser.latitude, primaryUser.longitude))
             }
 
             userLocations.take(50).forEach { location ->
                 // Skip the local user to avoid duplicating the 'YOU' avatar marker managed by MapActivity
-                if (location.userId == myUid || location.userId.isEmpty()) return@forEach
+                val rUserId = location.getResolvedUserId()
+                if (rUserId == myUid || rUserId.isEmpty()) return@forEach
 
                 var targetLat = location.latitude
                 var targetLng = location.longitude
@@ -81,7 +82,7 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
                 val finalLatLng = LatLng(targetLat, targetLng)
                 processedPlacements.add(finalLatLng)
 
-                val marker = markers[location.userId]
+                val marker = markers[rUserId]
                 
                 val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
                 val hideMode = prefs.getBoolean("callout_hide_mode", false)
@@ -99,7 +100,7 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
                 }
                 
                 // 🧠 Map Engine Rewrite: Pass remote tracking coordinates into the Custom Burn-In generator
-                val safeDisplayName = if (location.userName.isNotBlank()) location.userName else "User-${location.userId.takeLast(4).uppercase()}"
+                val safeDisplayName = if (location.userName.isNotBlank()) location.userName else "User-${rUserId.takeLast(4).uppercase()}"
                 val customPin = com.jdroidx.jfindme.utils.AvatarCalloutGenerator.generate(context, safeDisplayName, remoteAvatarBmp, showName)
 
                 if (marker == null) {
@@ -110,7 +111,7 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
                             .anchor(0.5f, 0.5f)
                             .icon(customPin)
                     )
-                    newMarker?.let { markers[location.userId] = it }
+                    newMarker?.let { markers[rUserId] = it }
                 } else {
                     marker.setIcon(customPin)
                     animateMarker(marker, finalLatLng, location.bearing)

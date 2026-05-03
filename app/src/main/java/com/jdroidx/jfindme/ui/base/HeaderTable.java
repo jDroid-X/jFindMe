@@ -47,7 +47,7 @@ public class HeaderTable {
 
     static {
         registry.put("HEADER_MAIN", new HeaderRecord("HEADER_MAIN", "Enterprise Hub", 25f, 0.8f, true, "Application Title Header", true, "RELOAD", Color.BLUE, "DEEP"));
-        registry.put("HEADER_AUTH", new HeaderRecord("HEADER_AUTH", "Secure Gateway", 15f, 0.4f, true, "Identity Validation Portal", true, "NONE", Color.BLACK, "SLIM"));
+        registry.put("HEADER_AUTH", new HeaderRecord("HEADER_AUTH", "jButterFly Secure Gateway", 15f, 0.4f, true, "Identity Validation Portal", true, "NONE", Color.BLACK, "SLIM"));
         registry.put("HEADER_MAP",  new HeaderRecord("HEADER_MAP",  "Live Matrix", 25f, 0.6f, true, "Live Tracking Dashboard", true, "CENTER", Color.BLUE, "DEEP"));
     }
 

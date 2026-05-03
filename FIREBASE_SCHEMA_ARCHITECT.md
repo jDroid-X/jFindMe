@@ -1,215 +1,216 @@
-# Enterprise Database Architecture: jFindMe Forensic Suite
+# Enterprise Database Architecture: jFindMe V2 Manager
+## Architecture Design & Schema Specification (Cloud Matrix)
 
-## Architecture Design & Schema Specification (Firebase Realtime Database)
+**Version:** 2.0.0 (Enterprise Admin)  
+**Status:** DESIGN_LOCKED  
+**Principles:** Real-time Parity, Dynamic Schema Discovery, Forensic Auditing.
 
-**Version:** 1.0.0 (Forensic Integrity)  
-**Status:** ARCHITECT_REVIEWED  
-**Principles:** Single Source of Truth (SSOT), Normalized Schemas, Role-Based Access Control (RBAC).
+Act as a Senior Full-Stack Software Architect and Firebase Specialist with deep expertise in building secure, scalable, enterprise-grade web applications.
 
----
+You are responsible for designing and developing a web-based admin control panel that interacts with Firebase (Firestore/Realtime DB).
 
-## 1. QA Architect Audit Scenarios
+Your approach must include:
+- Clean architecture (modular, scalable, maintainable)
+- Production-level code quality (no placeholders or pseudo logic)
+- Secure Firebase integration (Auth + Rules)
+- Optimized performance for large datasets
+- Excellent UI/UX following modern SaaS dashboard standards
 
-Before implementation, the following scenarios must be validated to ensure forensic parity and system stability.
+You must think like:
+- A backend engineer (data structure, API efficiency)
+- A frontend engineer (responsive UI, state management)
+- A security expert (authentication, authorization, data protection)
+- A DevOps engineer (deployment, environment setup)
+- A QA engineer (edge cases, validation, error handling)
+
+Always:
+- Avoid assumptions about schema (make it dynamic)
+- Prevent data corruption and unauthorized writes
+- Ensure real-time sync consistency
+- Handle large-scale data efficiently
+- Write reusable, modular components
+
+Output must be:
+- Fully working code (not partial snippets)
+- Proper folder structure
+- Dependency-safe (no unresolved references)
+- Clearly documented---
+
+Follow strict engineering discipline:
+
+- Do NOT generate incomplete code
+- Do NOT skip dependencies or imports
+- Do NOT assume static schema
+- Do NOT block UI with synchronous operations
+- ALWAYS validate before writing to Firebase
+- ALWAYS handle errors gracefully
+- ALWAYS ensure data consistency between UI and Firebase
+
+## 1. Enterprise Management Scenarios
 
 | Scenario ID | Sub-Scenario | Validation Logic | Audit Reason |
 | :--- | :--- | :--- | :--- |
-| **AUD-ID-01** | Multi-Device Ownership | DID `D1` and `D2` map to `UID_A`. | Ensures one user can manage multiple forensic targets without ID collisions. |
-| **AUD-GR-02** | Group Isolation | `Device_C` (Group 2) reads `Device_A` (Group 1). | **MUST FAIL.** Verification of bridge table security is critical for privacy. |
-| **AUD-TX-03** | Data Duplication | Personal Name in `locations` node. | **MUST FAIL.** Prevents stale data and sync overhead. |
-| **AUD-UX-04** | Form Accessibility | Tab/Enter logic in Pairing Screen. | `Enter` triggers "Request Join". `Tab` cycles focus through input fields. |
+| **ENT-CRUD-01** | Inline Bulk Delete | Multi-select IDs `[A, B, C]` → Atomic Delete via Admin SDK. | Data efficiency and rapid management. |
+| **ENT-AUD-02** | Activity Tracking | User `Admin_X` updates `Location_Y`. | Mandatory forensic audit trail. |
+| **ENT-SYNC-03** | Optimistic UI | Local UI updates before Cloud Ack. | Ensures 0ms perceived latency for the operator. |
+| **ENT-SEC-04** | RBAC Enforcement | `Viewer_Role` attempts "Delete" action. | **MUST FAIL.** Role-based security is non-negotiable. |
 
 ---
 
-## 2. Core Schema Map (JSON Structure)
+## 2. Enterprise Schema Additions (JSON)
 
-### 2.1 Master Data (Low Frequency)
-
-Stored under isolated paths to reduce read bandwidth during tracking.
-
+### 2.5 Audit Logs (The Forensic Ledger)
+Records every mutation performed via the Admin Dashboard.
 ```json
 {
-  "users": {
-    "$userId": {
-      "display_name": "Agent 007",
-      "email": "agent@jfindme.com",
-      "profile_pic": "url_to_storage",
-      "created_at": 1712560000000,
-      "account_status": "ACTIVE"
-    }
-  },
-  "devices": {
-    "$deviceId": {
-      "user_id": "$userId",
-      "alias": "Field HQ - Pixel 8",
-      "platform": "Android",
-      "os_version": "14",
-      "last_seen": 1712570000000
+  "system_audit": {
+    "$logId": {
+      "timestamp": 1712575000000,
+      "admin_uid": "$uid",
+      "action": "UPDATE_LOCATION",
+      "target_path": "locations/$deviceId",
+      "previous_state": "{...}",
+      "new_state": "{...}",
+      "ip_address": "127.0.0.1"
     }
   }
 }
 ```
 
-### 2.2 Relationship Data (The Bridge)
-
-Handles pairing and visibility between distinct hardware entities.
-
+### 2.6 System Config & Settings
+Global parameters for managing the dashboard behavior.
 ```json
 {
-  "groups": {
-    "$groupId": {
-      "name": "Alpha Squad",
-      "admin_did": "$deviceId",
-      "invite_code": "JFM-4582",
-      "created_at": 1712560000000
-    }
-  },
-  "group_members": {
-    "$groupId": {
-      "$deviceId": {
-        "joined_at": 1712565000000,
-        "role": "MEMBER"
-      }
-    }
-  }
-}
-```
-
-### 2.3 Transactional Data (High Frequency)
-
-High-density nodes optimized for shallow queries.
-
-```json
-{
-  "locations": {
-    "$deviceId": {
-      "lat": 34.0522,
-      "lng": -118.2437,
-      "accuracy": 10.5,
-      "speed": 1.2,
-      "bearing": 90,
-      "altitude": 140,
-      "ts": 1712575000000,
-      "status": "MOVING"
-    }
-  },
-  "pairing_requests": {
-    "$requestId": {
-      "from_did": "$deviceIdA",
-      "to_did": "$deviceIdB",
-      "status": "PENDING",
-      "ts": 1712574000000
-    }
-  }
-}
-```
-
-### 2.4 History Data (Forensic Archival)
-
-Time-series storage separated from live tracking to ensure `locations` node stays lightweight.
-
-```json
-{
-  "location_history": {
-    "$deviceId": {
-      "$pushKey": {
-        "lat": 34.0522,
-        "lng": -118.2437,
-        "ts": 1712570000000
-      }
-    }
+  "system_settings": {
+    "maintenance_mode": false,
+    "sync_interval_ms": 1000,
+    "allowed_admin_emails": ["admin@jfindme.com"],
+    "dashboard_theme": "DARK"
   }
 }
 ```
 
 ---
 
-## 3. Firebase Security Rules (Architect Grade)
+## 3. UI/UX Sequence (Enterprise Standard)
 
-Strict isolation enforced at the server level. Only devices sharing a `groupId` in `group_members` can access each other's data.
+- **Search & Filter Protocol**:
+  1. `Tab` -> Global Search Box.
+  2. `Type` -> Debounced search (300ms) triggers across all field indices.
+  3. `Enter` -> Opens the first matching record in detailed view.
 
-```json
-{
-  "rules": {
-    "users": {
-      "$uid": {
-        ".read": "auth.uid == $uid",
-        ".write": "auth.uid == $uid"
-      }
-    },
-    "devices": {
-      "$did": {
-        ".read": "auth != null",
-        ".write": "data.child('user_id').val() == auth.uid || newData.child('user_id').val() == auth.uid"
-      }
-    },
-    "group_members": {
-      "$gid": {
-        ".read": "root.child('group_members').child($gid).child(root.child('devices').child(auth.uid).child('active_did').val()).exists()",
-        ".write": "auth != null"
-      }
-    },
-    "locations": {
-      "$did": {
-        ".read": "root.child('group_members').child(query.groupId).child(auth.deviceId).exists()",
-        ".write": "$did == auth.deviceId",
-        ".validate": "newData.hasChildren(['lat', 'lng', 'ts'])"
-      }
-    }
-  }
-}
-```
+- **Bulk Modification**:
+  1. `Space` -> Toggle row selection.
+  2. `Enter` -> Trigger Bulk Edit Modal for selected nodes.
 
 ---
 
-## 4. HOW EVERYTHING CONNECTS
-
-Firebase Auth (Identity Authority)
-   ↓
-**users** (Master: Identity Metadata)
-   ↓
-**devices** (Master: Hardware Ownership)
-   ↓
-**groups** (Bridge: The Trust Anchor)
-   ↓
-**group_members** (Registry: Peer Visibility)
-   ↓
-**locations** (Transaction: High-Frequency Live Data)
-   ↓
-**Local Drive Backup (SQLite/Internal DB: Redundancy & Forensic Persistence)**
+## 4. Performance Guardrails (SLA)
+1. **Lazy Loading**: Collections exceeding 100 records must use shallow query limits (`limitToFirst(50)`).
+2. **Virtual Scrolling**: Mandatory for the data grid to maintain 60FPS during scroll.
+3. **Optimistic States**: UI must show a "Pending" (⏳) indicator immediately, transitioning to "Synced" (✅) only after Firebase acknowledgment.
 
 ---
 
-## 5. VALIDATION FLOW (CRITICAL)
+## 5. REPLACING PREVIOUS SCHEMA REFERENCES
+*This document supersedes V1.0. All development must now adhere to the V2.0 Enterprise standard.*
+Create a modern, responsive, enterprise-level web-based admin dashboard for managing Firebase database (Firestore and/or Realtime Database).
 
-1. **Authentication**: User logs in → Firebase Auth verifies UID.
-2. **Mapping**: `userId` is mapped to the unique persistent `deviceId`.
-3. **Bridge Verification**: Device joins a group and registers in `group_members`.
-4. **Local Redundancy**: **Every Cloud Write MUST be mirrored to the Local SQLite/internal database** to ensure data continuity during network outages.
-5. **Secure Propagation**: ONLY devices identified in the same `group_members` node can read each other's location streams.
-6. **Audit Trail**: Local Drive Backup acts as the source of truth for forensic reconciliation if cloud data is purged or unavailable.
+🎯 Objective:
+Build a full-featured database control panel that allows an authenticated admin user to:
+- Fetch and display all collections/tables dynamically from Firebase
+- View records in structured table format
+- Perform CRUD operations (Create, Read, Update, Delete)
+- Sync all changes back to Firebase in real-time
 
----
+🧱 Core Features:
 
-## 6. UI/UX Sequence (Tab & Enter Rule)
+1. Authentication & Security
+- Implement Firebase Authentication (Email/Password + optional Google login)
+- Restrict access to admin users only (role-based access control)
+- Use Firebase security rules for backend validation
+- Show session timeout and logout functionality
 
-To ensure operational efficiency across all device types:
+2. Database Explorer (Main Feature)
+- Dynamically load all collections (Firestore) or nodes (Realtime DB)
+- Left sidebar navigation listing all tables/collections
+- On selection → load data in a structured data grid
+- Support nested JSON structure visualization (expand/collapse rows)
 
-- **Pairing Dialog**:
-  1. `Tab` [Input: Invite Code]
-  2. `Enter` [Action: Verify Code]
-  3. `Tab` [Input: Alias]
-  4. `Enter` [Action: Send Pairing Request] (Confirmation Alert pop-up)
+3. Data Table UI
+- Use a spreadsheet-like interface (editable cells)
+- Columns auto-detected from data schema
+- Support:
+  - Inline editing
+  - Sorting
+  - Filtering
+  - Pagination
+  - Search across fields
+- Highlight modified rows before saving
 
-- **Navigation Flow**:
-  - Global hotkeys (if hardware keyboard present) map to Enter for primary actions (SOS, Ping).
+4. CRUD Operations
+- Add new records with dynamic form generation
+- Edit existing records inline or via modal form
+- Delete records with confirmation dialog
+- Bulk operations (multi-select delete/update)
 
----
+5. Sync & State Management
+- Real-time sync with Firebase using listeners
+- Show status indicators:
+  - Synced ✅
+  - Pending ⏳
+  - Error ❌
+- Implement optimistic UI updates
 
-## Final Status: PASS
+6. Audit & Logs
+- Maintain activity logs for:
+  - Who changed what and when
+- Show logs in a separate tab
+- Optional: export logs to CSV
 
-- **Minimal**: No redundant user fields in locations.
-- **Scalable**: Flat structure allows independent scaling of history vs live data.
-- **Secure**: Single bridge point (`group_members`) prevents unauthorized tracking.
-- **Real-time**: Shallow `locations` node ensures low latency UI updates.
-- **Resilient**: Mandatory Local Drive Backup rule ensures absolute data persistence.
+7. UI/UX Design
+- Clean Material Design or modern SaaS dashboard style
+- Dark mode + Light mode toggle
+- Responsive (desktop, tablet, mobile)
+- Use cards, tables, and modals
+- Smooth animations and loading skeletons
+
+8. Error Handling & Validation
+- Validate input fields before updating Firebase
+- Show clear error messages
+- Prevent invalid schema writes
+
+9. Performance Optimization
+- Lazy loading for large datasets
+- Virtual scrolling for tables
+- Debounced search queries
+- Efficient Firebase query usage
+
+10. Tech Stack
+- Frontend: React.js (preferred) or Vue.js
+- State Management: Redux / Zustand / Context API
+- UI Library: Material UI / Ant Design / Tailwind CSS
+- Backend: Firebase SDK (Firestore or Realtime DB)
+- Hosting: Firebase Hosting
+
+📦 Additional Enhancements:
+- Export data to CSV/Excel
+- Import bulk data (CSV/JSON upload)
+- Role-based permissions (Admin, Editor, Viewer)
+- Dashboard analytics (record counts, activity stats)
+- API integration for external sync
+
+🚫 Constraints / Don’ts:
+- Do not hardcode database schema
+- Do not expose Firebase credentials publicly
+- Avoid blocking UI during data operations
+- Avoid unoptimized large queries
+
+🎨 Output Requirements:
+- Generate complete working code structure
+- Include reusable components
+- Follow clean architecture and modular design
+- Include comments and documentation
+- Ensure no unresolved dependencies or build errors
+
+Goal: Deliver a production-ready Firebase Admin Panel similar to a lightweight CMS or database GUI tool (like Firebase Console but customizable and extensible).

@@ -14,6 +14,8 @@ import android.os.Looper
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.data.remote.OfflineSyncManager
+import android.content.SharedPreferences
+import java.lang.StringBuilder
 
 /**
  * LocationRepository manages real-time location data flow, offline synchronization,
@@ -33,15 +35,48 @@ class LocationRepository(internal val context: Context) {
             val myGroup = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("active_group", "") ?: ""
             val allowedList = validUids.split(",").map { it.trim() }
             val friendList = friendUids.split(",").map { it.trim() }
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
             val locations = mutableListOf<UserLocation>()
             
             snapshot.children.forEach { child ->
                 child.getValue(UserLocation::class.java)?.let { loc ->
+                    val resolvedId = loc.getResolvedUserId()
                     val isMember = (loc.active_group == myGroup && myGroup.isNotEmpty())
-                    val isLinked = allowedList.contains(loc.userId)
-                    val isFriend = friendList.contains(loc.userId)
+                    val isLinked = allowedList.contains(resolvedId)
+                    val isFriend = friendList.contains(resolvedId)
 
-                    if (loc.userId == myUid || isMember || isLinked || isFriend) {
+                    if (resolvedId == myUid || isMember || isLinked || isFriend) {
+                        // 🚀 V65 CLOUD-FIRST RESOLUTION: Prioritize Live Network Identity over Stale Cache
+                        var profile: Map<String, String>? = null
+                        try {
+                            profile = db.getLocalDossier(resolvedId)
+                        } catch (e: Exception) {
+                            com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Cache Access Blocked", e)
+                        }
+                        
+                        val cloudName = loc.userName
+                        
+                        if (profile != null) {
+                            loc.role_family = profile["role_family"] ?: "None"
+                            loc.role_friend = profile["role_friend"] ?: "None"
+                            if (cloudName.isEmpty()) {
+                                // V56: Unified from full_name to id_full_name
+                                loc.userName = profile["id_full_name"] ?: profile["full_name"] ?: "Asset Node"
+                            }
+                        } else if (cloudName.isEmpty()) {
+                            loc.userName = "Asset Node"
+                        }
+                        
+                        // 🧬 FORENSIC BACKFILL: If the Cloud name exists but is missing locally, populate the Ledger!
+                        if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name")) {
+                             try {
+                                 val uid2 = profile?.get("uid_2") 
+                                 db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "🟢 LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id)
+                             } catch (e: Exception) {
+                                 com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Backfill Blocked", e)
+                             }
+                        }
+
                         locations.add(loc)
                     }
                 }
@@ -50,7 +85,7 @@ class LocationRepository(internal val context: Context) {
         }
 
         override fun onCancelled(error: DatabaseError) {
-            // Log error
+            SystemLogger.e("LocationRepository", "Cloud Stream Aborted: ${error.message}")
         }
     }
 
@@ -58,43 +93,43 @@ class LocationRepository(internal val context: Context) {
         FirebaseComm.locationsRef.addValueEventListener(locationListener)
         
         // 🚀 QA Fix: Global Security Synchronizer! Automatically maintains explicit connection array in the background.
-        val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(myUid).child("active_group")
-            .addValueEventListener(object : ValueEventListener {
-                override fun onDataChange(snap: DataSnapshot) {
-                    val myGroup = snap.getValue(String::class.java)
-                    if (myGroup.isNullOrEmpty()) return
-                    
-                    // 🚀 QA Fix: Sync the active group to Prefs for the Location Filter!
-                    prefs.edit().putString("active_group", myGroup).apply()
-                    
-                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").orderByChild("active_group").equalTo(myGroup)
-                        .addValueEventListener(object : ValueEventListener {
-                            override fun onDataChange(groupSnap: DataSnapshot) {
-                                val csv = java.lang.StringBuilder(myUid).append(",")
-                                groupSnap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
-                                prefs.edit().putString("linked_devices_csv", csv.toString()).apply()
-                            }
-                            override fun onCancelled(err: DatabaseError) {}
-                        })
-                }
-                override fun onCancelled(err: DatabaseError) {}
-            })
+        val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+
+        FirebaseComm.resolveHardwareIdentity(myAuthUid) { agentId ->
+            val finalId = agentId ?: "LEGACY_NODE"
             
-        // 🚀 QA Fix: Also synchronize the strict 1-to-1 friend_matrix pairings!
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(myUid).child("friend_matrix")
-            .addValueEventListener(object : ValueEventListener {
-                override fun onDataChange(snap: DataSnapshot) {
-                    // We append to the existing CSV locally. 
-                    // To prevent overwriting active_group, we fetch current, but must be careful of timing.
-                    // Instead of complex locking, we just maintain a dedicated preference for isolated devices.
-                    val csv = java.lang.StringBuilder()
-                    snap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
-                    prefs.edit().putString("friend_matrix_csv", csv.toString()).apply()
-                }
-                override fun onCancelled(err: DatabaseError) {}
-            })
+            FirebaseComm.devicesRef.child(finalId).child("profile").child("active_group")
+                .addValueEventListener(object : ValueEventListener {
+                    override fun onDataChange(snap: DataSnapshot) {
+                        val myGroup = snap.getValue(String::class.java)
+                        if (myGroup.isNullOrEmpty()) return
+                        
+                        prefs.edit().putString("active_group", myGroup).apply()
+                        
+                        FirebaseComm.devicesRef.orderByChild("profile/active_group").equalTo(myGroup)
+                            .addValueEventListener(object : ValueEventListener {
+                                override fun onDataChange(groupSnap: DataSnapshot) {
+                                    val csv = StringBuilder(finalId).append(",")
+                                    groupSnap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
+                                    prefs.edit().putString("linked_devices_csv", csv.toString()).apply()
+                                }
+                                override fun onCancelled(err: DatabaseError) {}
+                            })
+                    }
+                    override fun onCancelled(err: DatabaseError) {}
+                })
+                
+            FirebaseComm.devicesRef.child(finalId).child("profile").child("friend_matrix")
+                .addValueEventListener(object : ValueEventListener {
+                    override fun onDataChange(snap: DataSnapshot) {
+                        val csv = StringBuilder()
+                        snap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
+                        prefs.edit().putString("friend_matrix_csv", csv.toString()).apply()
+                    }
+                    override fun onCancelled(err: DatabaseError) {}
+                })
+        }
     }
 
     fun stopListening() {
@@ -104,16 +139,10 @@ class LocationRepository(internal val context: Context) {
     /**
      * Strategic Update: Integration with OfflineSyncManager (Production Hardening)
      */
-    /**
-     * Strategic Update: Integration with OfflineSyncManager (Production Hardening)
-     */
     fun updateMyLocation(userLocation: UserLocation) {
-        // 🚀 QA Fix: Resolve Physical Address before Forensic Commit
         val geocoder = Geocoder(context, Locale.getDefault())
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         
-        // 🧱 QA Hardening: Use a stable Background Thread for all API versions to prevent 
-        // NoClassDefFoundError on devices below API 33 (Tiramisu).
+        // 🧱 QA Hardening: Use a stable Background Thread for all API versions
         Thread {
             var humanAddress: String? = null
             try {
@@ -123,10 +152,9 @@ class LocationRepository(internal val context: Context) {
                     humanAddress = addresses[0].getAddressLine(0)
                 }
             } catch (e: Exception) {
-                com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: ${e.message}")
+                SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: ${e.message}")
             }
             
-            // 🚀 QA Fix: Finalize push in the BACKGROUND thread as per L7 Waterfall standards
             finalizeLocationPush(userLocation, humanAddress)
         }.start()
         
@@ -135,22 +163,23 @@ class LocationRepository(internal val context: Context) {
 
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val rel = if (userLocation.role_family != "None") "FAMILY (${userLocation.role_family})"
-                  else if (userLocation.role_friend != "None") "FRIEND (${userLocation.role_friend})"
-                  else "UNLINKED"
+
+        // 🧬 V58.7 Parity: Update the model with the geocoded address before cloud push
+        val enrichedLocation = userLocation.copy(address = finalAddress)
 
         db.saveHistoryPoint(
-            userLocation.userId,
-            userLocation.userName,
-            rel,
-            userLocation.latitude,
-            userLocation.longitude,
-            userLocation.speed,
-            userLocation.batteryLevel.toInt(),
-            userLocation.isSosActive,
+            enrichedLocation.getResolvedUserId(),
+            enrichedLocation.getResolvedDeviceId(),
+            enrichedLocation.latitude,
+            enrichedLocation.longitude,
+            enrichedLocation.speed,
+            enrichedLocation.batteryLevel.toInt(),
+            enrichedLocation.isSosActive,
             finalAddress,
-            userLocation.timestamp
+            enrichedLocation.getResolvedTimestamp()
         )
+        
+        updateUserLocation(enrichedLocation)
     }
 
     fun updateUserLocation(userLocation: UserLocation) {
@@ -159,17 +188,20 @@ class LocationRepository(internal val context: Context) {
 
     /**
      * History Engine: Fetches points for a specific date range.
+     * Hardened to handle both legacy numeric and forensic inverted keys.
      */
     fun fetchHistory(userId: String, startTs: Long, endTs: Long, callback: (List<UserLocation>) -> Unit) {
-        FirebaseComm.historyRef.child(userId)
+        // 🧬 Forensic Normalization: Inverted keys are used for high-velocity timeline sorting
+        val startKey = FirebaseComm.getInvertedForensicKey(endTs) // End becomes Start in inverted space
+        val endKey = FirebaseComm.getInvertedForensicKey(startTs)  // Start becomes End in inverted space
+
+        FirebaseComm.eventsRef.child(userId)
             .orderByKey()
-            .startAt(startTs.toString())
-            .endAt(endTs.toString())
+            .startAt(startKey)
+            .endAt(endKey)
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val points = mutableListOf<UserLocation>()
-                    // 🚀 QA Fix: Offload Batch-Write to Background Thread! 
-                    // 1,000+ writes on the Main Thread (Firebase Default) will cause ANR/Crash.
                     Thread {
                         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                         snapshot.children.forEach { child ->
@@ -178,19 +210,17 @@ class LocationRepository(internal val context: Context) {
                                 
                                 db.saveHistoryPoint(
                                     userId,
-                                    point.userName,
-                                    "CLOUD_SYNC",
+                                    point.getResolvedDeviceId(),
                                     point.latitude,
                                     point.longitude,
                                     point.speed,
                                     point.batteryLevel.toInt(),
                                     point.isSosActive,
                                     null,
-                                    point.timestamp
+                                    point.getResolvedTimestamp()
                                 )
                             }
                         }
-                        // Post final result to the callback (which might be tied to UI)
                         Handler(Looper.getMainLooper()).post { callback(points) }
                     }.start()
                 }

@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 🛰️ LIVE MAP DASHBOARD (L7 Enterprise Architect)
+ * ≡ƒ¢░∩╕Å LIVE MAP DASHBOARD (L7 Enterprise Architect)
  * Objective: Centralized Tactical Command Center for real-time target monitoring.
  * Features: High-fidelity markers, glassmorphic status tiles, and proximity analytics.
  */
@@ -49,8 +49,8 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         SystemLogger.i(TAG, "LiveMapDashboard [onCreate] executing...");
+        viewModel = new androidx.lifecycle.ViewModelProvider(this).get(MapViewModel.class);
         super.onCreate(savedInstanceState);
-        viewModel = new ViewModelProvider(this).get(MapViewModel.class);
     }
 
     @Override
@@ -66,7 +66,7 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
         FrameLayout mainArea = new FrameLayout(this);
         mainArea.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
-        // 🚀 QA Recalibration: 20px Baseline Quota
+        // ≡ƒÜÇ QA Recalibration: 20px Baseline Quota
         int q = scale(20); 
 
         // Full Map Engine
@@ -201,7 +201,7 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
         // Cleanup stale markers
         markerMap.entrySet().removeIf(entry -> {
             boolean exists = false;
-            for (UserLocation l : locations) if (l.getUserId().equals(entry.getKey())) exists = true;
+            for (UserLocation l : locations) if (l.getResolvedUserId().equals(entry.getKey())) exists = true;
             if (!exists) entry.getValue().remove();
             return !exists;
         });
@@ -216,7 +216,7 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
         
         UiArchitect.applyCard(this, tile, "CARD_STANDARD");
         
-        boolean isSelected = loc.getUserId().equals(selectedTargetId);
+        boolean isSelected = loc.getResolvedUserId().equals(selectedTargetId);
         if (isSelected) {
             tile.setBackground(com.jdroidx.jfindme.ui.base.ThemeManager.createGlassDrawable(getGradientStart(), 0.3f, 25)); // 50% Radius reduction
         } else {
@@ -264,7 +264,7 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
                     .position(pos)
                     .title(loc.getUserName())
                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
-            markerMap.put(loc.getUserId(), marker);
+            markerMap.put(loc.getResolvedUserId(), marker);
         } else {
             animateMarker(marker, pos);
         }
@@ -287,7 +287,7 @@ public class LiveMapDashboardActivity extends BaseActivityJava implements OnMapR
     }
 
     private void focusOnTarget(UserLocation loc) {
-        selectedTargetId = loc.getUserId();
+        selectedTargetId = loc.getResolvedUserId();
         if (googleMap != null) {
             googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(loc.getLatitude(), loc.getLongitude()), 16.5f));
         }

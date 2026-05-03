@@ -11,6 +11,8 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.content.Context;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
@@ -23,6 +25,31 @@ public class AvatarEditorActivity extends BaseActivityJava {
     private final String TAG = "AvatarEditorActivity";
     private android.webkit.WebView renderingStageWindow;
     private LinearLayout inventoryOptionsGrid;
+    private android.widget.EditText nameEntryField;
+    private boolean isModelLoading = false;
+    private ProfileViewModel profileViewModel;
+
+    // 🦋 Premium Enterprise Bridge: Links WebGL 3D Context to Android Native UI
+    public class AvatarBridge {
+        @android.webkit.JavascriptInterface
+        public void onModelLoaded() {
+            runOnUiThread(() -> {
+                SystemLogger.i(TAG, "🦋 3D Matrix Rebuilt: Hiding AngelLoader.");
+                isModelLoading = false;
+                com.jdroidx.jfindme.utils.AngelLoader.hide(AvatarEditorActivity.this);
+            });
+        }
+        
+        @android.webkit.JavascriptInterface
+        public void onModelError(String error) {
+            runOnUiThread(() -> {
+                SystemLogger.e(TAG, "3D Rendering Error: " + error);
+                isModelLoading = false;
+                com.jdroidx.jfindme.utils.AngelLoader.hide(AvatarEditorActivity.this);
+                android.widget.Toast.makeText(AvatarEditorActivity.this, "RENDERING ENGINE FAILURE: " + error, android.widget.Toast.LENGTH_SHORT).show();
+            });
+        }
+    }
 
     @Override
     protected View createLayout() {
@@ -39,17 +66,47 @@ public class AvatarEditorActivity extends BaseActivityJava {
         topRow.setOrientation(LinearLayout.HORIZONTAL);
         topRow.setGravity(Gravity.CENTER_VERTICAL);
         
-        TextView title = new TextView(this);
-        title.setText("AVATAR WORKSPACE");
-        title.setTextColor(getGradientOverlayText());
-        title.setTextSize(24);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        topRow.addView(title);
+        // 🚀 Identity Editor: Direct Nickname Modification
+        nameEntryField = new android.widget.EditText(this);
+        String currentNick = prefs.getString("user_nickname", "CITIZEN_007");
+        nameEntryField.setText(currentNick);
+        nameEntryField.setTextColor(getGradientOverlayText());
+        nameEntryField.setTextSize(24);
+        nameEntryField.setTypeface(null, Typeface.BOLD);
+        nameEntryField.setBackground(null);
+        nameEntryField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        nameEntryField.setSingleLine(true);
+        nameEntryField.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        
+        nameEntryField.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                saveCustomizationPayload();
+                return true;
+            }
+            return false;
+        });
+
+        nameEntryField.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                String val = nameEntryField.getText().toString().trim();
+                if (!val.isEmpty()) {
+                    com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE.queueCustomizationUpdate("display_name", val);
+                    prefs.edit().putString("user_nickname", val).apply();
+                }
+            }
+        });
+
+        topRow.addView(nameEntryField);
+        
+        ImageView editIcon = new ImageView(this);
+        editIcon.setImageResource(com.jdroidx.jfindme.R.drawable.ic_edit);
+        editIcon.setColorFilter(getGradientOverlayText());
+        topRow.addView(editIcon, new LinearLayout.LayoutParams(scale(60), scale(60)));
+        
         header.addView(topRow);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Marketplace & Genetic Blueprint Engine");
+        subtitle.setText("Identity Mirror & Genetic Blueprint Engine");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
@@ -61,7 +118,10 @@ public class AvatarEditorActivity extends BaseActivityJava {
         // --- 2. 3D Avatar Preview Environment ---
         root.addView(buildPreviewStage());
 
-        // --- 3. Animation Controls (Important UX Addition) ---
+        // --- 3. Tactical Utilities (Environment & Camera) ---
+        root.addView(buildTacticalUtilities());
+
+        // --- 4. Animation Controls ---
         root.addView(buildAnimationToggles());
 
         // --- 4. Main Editor Workspace ---
@@ -99,11 +159,29 @@ public class AvatarEditorActivity extends BaseActivityJava {
         resetBtn.setText("✗ RESET     ");
         resetBtn.setTextColor(getTextColor());
         resetBtn.setTypeface(null, Typeface.BOLD);
+        resetBtn.setFocusable(true);
+        resetBtn.setFocusableInTouchMode(true);
+        resetBtn.setOnKeyListener((v, keyCode, event) -> {
+            if ((keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER) && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                resetBtn.performClick();
+                return true;
+            }
+            return false;
+        });
         
         TextView applyBtn = new TextView(this);
         applyBtn.setText("     ✓ APPLY");
         applyBtn.setTextColor(getGradientOverlayText());
         applyBtn.setTypeface(null, Typeface.BOLD);
+        applyBtn.setFocusable(true);
+        applyBtn.setFocusableInTouchMode(true);
+        applyBtn.setOnKeyListener((v, keyCode, event) -> {
+            if ((keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER) && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                applyBtn.performClick();
+                return true;
+            }
+            return false;
+        });
         
         // Apply (Primary Glowing Gradient)
         android.graphics.drawable.GradientDrawable applyBg = new android.graphics.drawable.GradientDrawable(
@@ -161,6 +239,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         renderingStageWindow.getSettings().setAllowUniversalAccessFromFileURLs(true);
         renderingStageWindow.setBackgroundColor(Color.TRANSPARENT);
         renderingStageWindow.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        renderingStageWindow.addJavascriptInterface(new AvatarBridge(), "AndroidBridge");
         
         try {
             java.io.InputStream is = getAssets().open("web/vrm_viewer.html");
@@ -175,19 +254,66 @@ public class AvatarEditorActivity extends BaseActivityJava {
             @Override
             public android.webkit.WebResourceResponse shouldInterceptRequest(android.webkit.WebView view, android.webkit.WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                if (url.startsWith("https://jfindme.local/")) {
-                    try {
-                        String assetPath = url.replace("https://jfindme.local/", "");
-                        String mime = assetPath.endsWith(".vrm") ? "application/octet-stream" : "text/plain";
-                        return new android.webkit.WebResourceResponse(mime, "UTF-8", getAssets().open(assetPath));
-                    } catch (Exception e) {}
+                if (url.contains("jfindme.local")) {
+                    String path = request.getUrl().getPath();
+                    if (path != null && !path.isEmpty()) {
+                        if (path.startsWith("/")) path = path.substring(1);
+                        
+                        try {
+                            path = java.net.URLDecoder.decode(path, "UTF-8");
+                        } catch (Exception e) {}
+
+                        try {
+                            String mime = "application/octet-stream";
+                            if (path.endsWith(".html")) mime = "text/html";
+                            else if (path.endsWith(".js")) mime = "application/javascript";
+                            else if (path.endsWith(".vrm") || path.endsWith(".glb")) mime = "model/gltf-binary";
+                            else if (path.endsWith(".ico")) mime = "image/x-icon";
+                            else if (path.endsWith(".png")) mime = "image/png";
+                            else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) mime = "image/jpeg";
+                            
+                            SystemLogger.i(TAG, "🔍 TACTICAL ASSET RECOVERY: Intercepting -> " + path);
+                            // 🚀 TACTICAL ASSET RECOVERY: Direct stream extraction from APK assets
+                            return new android.webkit.WebResourceResponse(mime, null, getAssets().open(path));
+                        } catch (java.io.IOException e) {
+                            SystemLogger.e(TAG, "🚨 FORENSIC ASSET FAILURE: Path '" + path + "' not located in APK assets.");
+                            
+                            // 🧠 Diagnostic Matrix: Deep-link validation to identify physical path drifts
+                            try {
+                                String parent = path.contains("/") ? path.substring(0, path.lastIndexOf("/")) : "";
+                                String[] contents = getAssets().list(parent);
+                                SystemLogger.d(TAG, "📂 REGISTRY SNAPSHOT ['" + parent + "']: " + (contents == null ? "NULL" : java.util.Arrays.toString(contents)));
+                                
+                                // Root Audit if subdirectory lookup fails
+                                if (parent.length() > 0) {
+                                    String[] root = getAssets().list("");
+                                    SystemLogger.d(TAG, "📂 ROOT REGISTRY AUDIT: " + (root == null ? "NULL" : java.util.Arrays.toString(root)));
+                                }
+                            } catch (Exception ignored) {}
+
+                            // 🛑 CRITICAL FIX: Return a clean 404 plain-text response to stop HTML parsing errors in THREE.js
+                            return new android.webkit.WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", null, 
+                                new java.io.ByteArrayInputStream("FORENSIC_ERROR: Asset not found in binary payload.".getBytes()));
+                        }
+                    }
                 }
                 return super.shouldInterceptRequest(view, request);
             }
 
+            @Override
             public void onPageFinished(android.webkit.WebView view, String url) {
+                super.onPageFinished(view, url);
+                isModelLoading = true;
+                com.jdroidx.jfindme.utils.AngelLoader.show(AvatarEditorActivity.this);
+                com.jdroidx.jfindme.utils.AngelLoader.setStatus(AvatarEditorActivity.this, "Initializing Identity Mirror...");
+
                 String jsPath = "https://jfindme.local/" + (currentMeshString.startsWith("models") ? currentMeshString : "models/" + currentMeshString);
                 renderingStageWindow.evaluateJavascript("window.loadModel('" + jsPath + "');", null);
+                
+                // 🚀 QA Fix: Force-hide loader if the initial page load completes without triggering JS Bridge
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    if (!isModelLoading) com.jdroidx.jfindme.utils.AngelLoader.hide(AvatarEditorActivity.this);
+                }, 1000);
             }
         });
         
@@ -221,6 +347,77 @@ public class AvatarEditorActivity extends BaseActivityJava {
         stage.addView(hint, hintParams);
 
         return stage;
+    }
+
+    private View buildTacticalUtilities() {
+        HorizontalScrollView hScroll = new HorizontalScrollView(this);
+        hScroll.setHorizontalScrollBarEnabled(false);
+        applySolidCardGeometry(hScroll, Color.parseColor("#1A000000"), 0f); // Subtle glass separator
+
+        LinearLayout toolRow = new LinearLayout(this);
+        toolRow.setOrientation(LinearLayout.HORIZONTAL);
+        toolRow.setPadding(30, 20, 30, 20);
+        toolRow.setGravity(Gravity.CENTER);
+
+        // -- 💡 LIGHTING TOGGLE --
+        toolRow.addView(createUtilityChip("💡 LIGHT ON", v -> {
+            renderingStageWindow.evaluateJavascript("window.setLighting('DAY');", null);
+            Toast.makeText(this, "Simulating Solar Intensity", Toast.LENGTH_SHORT).show();
+        }));
+        
+        toolRow.addView(createUtilityChip("🌙 NIGHT", v -> {
+            renderingStageWindow.evaluateJavascript("window.setLighting('NIGHT');", null);
+            Toast.makeText(this, "Applying Midnight Shaders", Toast.LENGTH_SHORT).show();
+        }));
+        
+        // -- 📸 SNAP IDENTITY --
+        toolRow.addView(createUtilityChip("📸 SNAP IDENT", v -> {
+            Toast.makeText(this, "Capturing 3D Identity Node...", Toast.LENGTH_SHORT).show();
+            // Logic for taking a screenshot/snapping the avatar state can be added here
+        }));
+
+        // -- 🔄 AUTO-ROTATE --
+        toolRow.addView(createUtilityChip("🔄 AUTO-SPIN", v -> {
+            renderingStageWindow.evaluateJavascript("window.toggleAutoRotate();", null);
+        }));
+
+        // -- 🛠️ RELOAD ENGINE --
+        toolRow.addView(createUtilityChip("🛠️ RELOAD ENGINE", v -> {
+            com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            renderingStageWindow.reload();
+            Toast.makeText(this, "Re-initializing 3D Matrix...", Toast.LENGTH_SHORT).show();
+        }));
+
+        // -- 🔍 RESET VIEW --
+        toolRow.addView(createUtilityChip("🎯 RESET CAM", v -> {
+            renderingStageWindow.evaluateJavascript("window.resetCamera();", null);
+        }));
+
+        hScroll.addView(toolRow);
+        return hScroll;
+    }
+
+    private View createUtilityChip(String text, View.OnClickListener listener) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextColor(getTextColor());
+        chip.setTextSize(9f);
+        chip.setTypeface(null, Typeface.BOLD);
+        chip.setPadding(40, 15, 40, 15);
+        chip.setGravity(Gravity.CENTER);
+        
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(getCardColor());
+        bg.setCornerRadius(100f);
+        bg.setStroke(2, getGradientStart());
+        chip.setBackground(bg);
+        
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(10, 0, 10, 0);
+        chip.setLayoutParams(lp);
+        chip.setOnClickListener(listener);
+        applyAccessibility(chip, text);
+        return chip;
     }
 
     private View buildAnimationToggles() {
@@ -312,22 +509,21 @@ public class AvatarEditorActivity extends BaseActivityJava {
 
         if (category.equalsIgnoreCase("AVATARS")) {
             boolean foundMesh = false;
-            String[] searchPaths = {"models", "models/body", "models/hair", "models/outfit", "models/shoes", "models/accessories"};
+            String[] searchPaths = {"models"};
             
             for (String path : searchPaths) {
                 try {
                     String[] files = getAssets().list(path);
-                    if (files != null && files.length > 0) {
+                    if (files != null) {
                         for (String f : files) {
-                            if (f.endsWith(".vrm") || f.endsWith(".png") || f.endsWith(".jpg")) {
-                                String fullPath = path + "/" + f;
-                                inventoryOptionsGrid.addView(createInventoryCard("AVATARS", f, 0, null, fullPath));
+                            if (f.endsWith(".vrm")) {
                                 foundMesh = true;
+                                inventoryOptionsGrid.addView(createInventoryCard("AVATARS", f, 0, null, path + "/" + f));
                             }
                         }
                     }
                 } catch (java.io.IOException e) {
-                    SystemLogger.INSTANCE.w(TAG, "Search Path Not Found: " + path);
+                    SystemLogger.w(TAG, "Search Path Not Found: " + path);
                 }
             }
             
@@ -381,7 +577,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
             // It's a root Avatar VRM File
             int dynamicIdx = Math.abs(itemName.hashCode()) % 22 + 1;
             int resId = getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", getPackageName());
-            thumb.setImageResource(resId != 0 ? resId : android.R.drawable.ic_menu_gallery);
+            thumb.setImageResource(resId != 0 ? resId : com.jdroidx.jfindme.R.drawable.ic_image_upload);
             thumb.setLayoutParams(new LinearLayout.LayoutParams(100, 100));
         }
         row.addView(thumb);
@@ -421,6 +617,13 @@ public class AvatarEditorActivity extends BaseActivityJava {
             if (coinCost > 0) {
                 android.widget.Toast.makeText(this, "INSUFFICIENT GEMS TO UNLOCK!", android.widget.Toast.LENGTH_SHORT).show();
             } else {
+                // 🚀 QA Premium Loader Process: Activate the Butterfly Guardian
+                if (!isModelLoading) {
+                    isModelLoading = true;
+                    com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                    com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Reconfiguring 3D Mesh...");
+                }
+
                 android.widget.Toast.makeText(this, "Equipping: " + itemName, android.widget.Toast.LENGTH_SHORT).show();
                 
                 // 🧠 MODULE 4 INTEGRATION: Dynamic Mesh Switching vs Property Manipulation
@@ -441,23 +644,83 @@ public class AvatarEditorActivity extends BaseActivityJava {
                     String absoluteVRM = "https://jfindme.local/" + relativeUri;
                     renderingStageWindow.evaluateJavascript("window.loadModel('" + absoluteVRM + "');", null);
                     
-                    android.widget.Toast.makeText(this, "Master Mesh Root Extracted Successfully!", android.widget.Toast.LENGTH_SHORT).show();
                     com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE.queueCustomizationUpdate("avatar_root", itemName);
                 }
             }
+        });
+
+        // 🧱 QA Fix: Force One-Touch Deployment & Enter Key Logic (L7 Standard)
+        applyAccessibility(row, cleanName);
+        row.setFocusable(true);
+        row.setFocusableInTouchMode(true);
+        row.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                row.performClick();
+                return true;
+            }
+            return false;
         });
         
         return row;
     }
 
     private void saveCustomizationPayload() {
-        android.widget.Toast.makeText(this, "Finalizing Customization Payload. Broadcasting to Multi-User DB.", android.widget.Toast.LENGTH_LONG).show();
-        finish();
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+        // Enforce final name sync and hide keyboard
+        String finalName = nameEntryField.getText().toString().trim();
+        nameEntryField.clearFocus();
+        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(nameEntryField.getWindowToken(), 0);
+        
+        // Validation Guard (Enterprise Standard)
+        if (finalName.isEmpty() || finalName.length() < 2) {
+            android.widget.Toast.makeText(this, "INVALID IDENTITY: Name too short.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Broadcasting Identity Matrix...");
+
+        // 🚀 ATOMIC RIPPLE: Execute the 8-Pillar Sync via ProfileViewModel
+        profileViewModel.verifyAndSaveProfile(
+            this,
+            finalName, 
+            prefs.getString("user_phone", ""),
+            prefs.getString("user_dob", ""),
+            0, 
+            prefs.getString("user_gender", "Other"),
+            false,
+            prefs.getString("user_pincode", ""),
+            prefs.getString("user_country", ""),
+            prefs.getString("user_state", ""),
+            prefs.getString("user_city", ""),
+            "None", "None", 
+            prefs.getString("user_address", ""),
+            prefs.getString("user_emergency_note", ""),
+            prefs.getString("org_name", ""),
+            prefs.getString("department", ""),
+            getSharedPreferences("system_registry", MODE_PRIVATE) 
+        );
     }
 
     @Override
     protected void setupLogic() {
-        SystemLogger.INSTANCE.i(TAG, "Avatar Customizer Workspace Booted.");
+        profileViewModel = new androidx.lifecycle.ViewModelProvider(this).get(ProfileViewModel.class);
+        
+        // 🚀 REACTIVE OBSERVER: Listen for the high-fidelity commit ACK
+        profileViewModel.getSaveSuccess().observe(this, success -> {
+            if (Boolean.TRUE.equals(success)) {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                android.widget.Toast.makeText(this, "🛡️ Identity Synchronized Successfully.", android.widget.Toast.LENGTH_LONG).show();
+                profileViewModel.resetSaveState();
+                finish();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            } else if (Boolean.FALSE.equals(success)) {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                android.widget.Toast.makeText(this, "🚨 SYNC FAILURE: Cloud Matrix unstable.", android.widget.Toast.LENGTH_SHORT).show();
+                profileViewModel.resetSaveState();
+            }
+        });
+
+        SystemLogger.i(TAG, "Avatar Customizer Workspace Booted.");
     }
 }

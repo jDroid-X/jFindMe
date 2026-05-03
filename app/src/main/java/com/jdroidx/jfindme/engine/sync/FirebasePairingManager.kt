@@ -10,6 +10,8 @@ import com.google.firebase.database.ValueEventListener
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.google.firebase.database.DatabaseReference
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * 📡 OPTION A — Firebase Pairing (Remote)
@@ -19,188 +21,191 @@ import com.jdroidx.jfindme.utils.SystemLogger
 object FirebasePairingManager {
     private const val TAG = "FirebasePairingManager"
 
-    private val db = FirebaseDatabase.getInstance().reference
-    private val pairingRequestsEndpoint = db.child("pairing_requests")
-    private val groupsEndpoint = db.child("groups")
-    private val usersEndpoint = db.child("users")
+    private val identitiesEndpoint = FirebaseComm.devicesRef
+    private val profilesEndpoint = FirebaseComm.devicesRef
+    private val devicesEndpoint = FirebaseComm.devicesRef
+    private val groupsEndpoint = FirebaseComm.groupsRef           // Tier 3: Communities
+    private val relationshipsEndpoint = FirebaseComm.relationshipsRef // Tier 3: P2P Links
+    private val pairingRequestsEndpoint = FirebaseComm.pairingRef // Handshake bridge
 
     // The Active Host Listener Reference (Kept in memory for garbage collection during Activity pause)
     private var activeHostListener: ValueEventListener? = null
     var activePairingCode: String? = null
 
-    /**
-     * Parent Device Phase 1: Establish Secure Pending Request Node with Checkbox Logic Integration!
-     */
     fun startHostPairingSession(context: android.content.Context, assignedRoles: String, onCodeGenerated: (Bitmap?, String) -> Unit, onChildRequestReceived: (String, String) -> Unit) {
-        val hostUid = getDeviceId()
-        val inviteCode = generateSecureToken()
-        activePairingCode = inviteCode
+        val hostHardwareId = getDeviceId(context)
+        
+        // 🧬 V59.7: Resolve the Forensic Agent ID before starting the session
+        FirebaseComm.resolveHardwareIdentityByHardwareId(hostHardwareId) { hostAgentId ->
+            val finalHostId = hostAgentId ?: hostHardwareId
+            val inviteCode = generateSecureToken()
+            activePairingCode = inviteCode
+            
+            val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val myDos = dbHelper.getLocalDossier(finalHostId)
+            val hostName = myDos?.get("id_full_name") ?: "Host Admin"
 
-        // 🚀 Forensic Metadata retrieval for Handshake Exchange
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val myDos = dbHelper.getLocalDossier("OWNER_001")
-        val hostName = myDos?.get("full_name") ?: "Host Admin"
+            val payload = mapOf(
+                "parentDeviceId" to finalHostId,
+                "host_name" to hostName,
+                "childDeviceId" to "",
+                "status" to "waiting",
+                "assignedRoles" to assignedRoles 
+            )
 
-        val payload = mapOf(
-            "parentDeviceId" to hostUid,
-            "host_name" to hostName,
-            "childDeviceId" to "",
-            "status" to "waiting",
-            "assignedRoles" to assignedRoles 
-        )
+            pairingRequestsEndpoint.child(inviteCode).setValue(payload).addOnSuccessListener {
+                val qr = constructQrGraphic(inviteCode)
+                onCodeGenerated(qr, inviteCode)
 
-        pairingRequestsEndpoint.child(inviteCode).setValue(payload).addOnSuccessListener {
-            val qr = constructQrGraphic(inviteCode)
-            onCodeGenerated(qr, inviteCode)
+                activeHostListener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val status = snapshot.child("status").getValue(String::class.java)
+                        val childId = snapshot.child("childDeviceId").getValue(String::class.java)
+                        val childName = snapshot.child("child_name").getValue(String::class.java) ?: "Target"
 
-            activeHostListener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val status = snapshot.child("status").getValue(String::class.java)
-                    val childId = snapshot.child("childDeviceId").getValue(String::class.java)
-                    val childName = snapshot.child("child_name").getValue(String::class.java) ?: "Target"
-
-                    if (status == "pending" && !childId.isNullOrEmpty()) {
-                        SystemLogger.i(TAG, "Child Handshake Intercepted: $childId ($childName)")
-                        onChildRequestReceived(childId, childName)
+                        if (status == "pending" && !childId.isNullOrEmpty()) {
+                            SystemLogger.i(TAG, "Child Handshake Intercepted: $childId ($childName)")
+                            onChildRequestReceived(childId, childName)
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {
+                        SystemLogger.e(TAG, "Host listener collapsed", error.toException())
                     }
                 }
-                override fun onCancelled(error: DatabaseError) {
-                    SystemLogger.e(TAG, "Host listener collapsed", error.toException())
-                }
+                pairingRequestsEndpoint.child(inviteCode).addValueEventListener(activeHostListener!!)
+            }.addOnFailureListener {
+                onCodeGenerated(null, "")
             }
-            pairingRequestsEndpoint.child(inviteCode).addValueEventListener(activeHostListener!!)
-        }.addOnFailureListener {
-            onCodeGenerated(null, "")
         }
     }
 
-    /**
-     * Child Device Phase 1: Injects UUID and Preliminary Role into the Host's waiting Node.
-     */
     fun requestJoinGroup(context: android.content.Context, inviteCode: String, selectedRole: String, onStatusUpdate: (Boolean, String) -> Unit) {
-        val childUid = getDeviceId()
+        val childHardwareId = getDeviceId(context)
         
-        // 🚀 Forensic Metadata retrieval for Handshake Exchange
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val myDos = dbHelper.getLocalDossier("OWNER_001")
-        val childName = myDos?.get("full_name") ?: "Guest"
+        // 🧬 V59.7: Resolve the Forensic Agent ID before requesting the join
+        FirebaseComm.resolveHardwareIdentityByHardwareId(childHardwareId) { childAgentId ->
+            val finalChildId = childAgentId ?: childHardwareId
+            
+            val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val myDos = dbHelper.getLocalDossier(finalChildId)
+            val childName = myDos?.get("id_full_name") ?: "Guest"
 
-        pairingRequestsEndpoint.child(inviteCode).get().addOnSuccessListener { snapshot ->
-            if (snapshot.exists()) {
-                val status = snapshot.child("status").getValue(String::class.java)
-                val assignedChild = snapshot.child("childDeviceId").getValue(String::class.java) ?: ""
+            pairingRequestsEndpoint.child(inviteCode).get().addOnSuccessListener { snapshot ->
+                if (snapshot.exists()) {
+                    val status = snapshot.child("status").getValue(String::class.java)
+                    val assignedChild = snapshot.child("childDeviceId").getValue(String::class.java) ?: ""
 
-                if (status == "waiting") {
-                    pairingRequestsEndpoint.child(inviteCode).updateChildren(
-                        mapOf(
-                            "childDeviceId" to childUid,
-                            "child_name" to childName,
-                            "child_role_preliminary" to selectedRole,
-                            "status" to "pending",
-                            "qr_code" to inviteCode
+                    if (status == "waiting") {
+                        pairingRequestsEndpoint.child(inviteCode).updateChildren(
+                            mapOf(
+                                "childDeviceId" to finalChildId,
+                                "child_name" to childName,
+                                "child_role_preliminary" to selectedRole,
+                                "status" to "pending",
+                                "qr_code" to inviteCode
+                            )
                         )
-                    )
-                } else if (assignedChild != childUid && status != "waiting") {
-                     onStatusUpdate(false, "Code is already actively pairing with another device.")
-                     return@addOnSuccessListener
-                }
+                    } else if (assignedChild != finalChildId && status != "waiting") {
+                         onStatusUpdate(false, "Code is already actively pairing with another device.")
+                         return@addOnSuccessListener
+                    }
 
-                listenForAcceptance(context, inviteCode, onStatusUpdate)
-            } else {
-                onStatusUpdate(false, "Invalid Code.")
+                    listenForAcceptance(context, inviteCode, onStatusUpdate)
+                } else {
+                    onStatusUpdate(false, "Invalid Code.")
+                }
+            }.addOnFailureListener {
+                onStatusUpdate(false, "Network Frame Error.")
             }
-        }.addOnFailureListener {
-            onStatusUpdate(false, "Network Frame Error.")
         }
     }
 
-    /**
-     * Parent Device Phase 2: Host clicked 'Accept' physically.
-     * Settles the grouping immediately per the new handshake protocol.
-     */
     fun approveHandshake(context: android.content.Context, inviteCode: String, childId: String, hostRole: String, childRole: String, onComplete: (Boolean) -> Unit) {
-        val hostId = getDeviceId()
+        val hostHardwareId = getDeviceId(context)
         val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         
-        // 🦋 Premium Cinematic Transition (masking forensic data swap)
         com.jdroidx.jfindme.utils.AngelLoader.show(context as android.app.Activity)
-        com.jdroidx.jfindme.utils.AngelLoader.setStatus(context, "Finalizing Forensic Handshake...")
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(context, "Finalizing Analytical Handshake...")
 
         pairingRequestsEndpoint.child(inviteCode).get().addOnSuccessListener { handshakeSnap ->
             val childName = handshakeSnap.child("child_name").getValue(String::class.java) ?: "Target"
             val hostName = handshakeSnap.child("host_name").getValue(String::class.java) ?: "Admin"
             
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                usersEndpoint.child(hostId).get().addOnSuccessListener { hostSnap ->
-                    val hostGroup = hostSnap.child("active_group").getValue(String::class.java) ?: "GRP_${System.currentTimeMillis()}"
-                    val currentCsv = hostSnap.child("valid_linked_uids").getValue(String::class.java) ?: ""
+                // 🧬 V59.7: Resolve identities before final handshake
+                FirebaseComm.resolveHardwareIdentityByHardwareId(hostHardwareId) { hostAgentId ->
+                    val finalHostId = hostAgentId ?: hostHardwareId
+                    FirebaseComm.resolveHardwareIdentityByHardwareId(childId) { childAgentId ->
+                        val finalChildId = childAgentId ?: childId
 
-                    // 1. Update Host's Group and Whitelist
-                    if (hostSnap.child("active_group").value == null) usersEndpoint.child(hostId).child("active_group").setValue(hostGroup)
-                    val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-                    if (!approvedIds.contains(childId)) approvedIds.add(childId)
-                    usersEndpoint.child(hostId).child("valid_linked_uids").setValue(approvedIds.joinToString(","))
-                    usersEndpoint.child(hostId).child("friend_matrix").child(childId).setValue(true)
+                        identitiesEndpoint.child(finalHostId).child("identity").get().addOnSuccessListener { hostIdentitySnap ->
+                            val hostGroup = hostIdentitySnap.child("active_group").getValue(String::class.java) ?: "GRP_${System.currentTimeMillis()}"
+                            val now = System.currentTimeMillis()
+                            val updates = mutableMapOf<String, Any?>()
 
-                    // 2. Update Child's Roles and Group
-                    val cRef = usersEndpoint.child(childId)
-                    val isFriend = childRole.equals("Friends", ignoreCase = true)
-                    cRef.child("role_family").setValue(if (isFriend) "None" else childRole)
-                    cRef.child("role_friend").setValue(if (isFriend) "Friends" else "None")
-                    cRef.child("active_group").setValue(hostGroup)
-                    cRef.child("friend_matrix").child(hostId).setValue("HOST")
+                            // 1. TIER 3: Relationship Bridge
+                            updates["${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroup/members/$finalHostId/role"] = "ADMIN"
+                            updates["${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroup/members/$finalHostId/ts_updated"] = now
+                            updates["${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroup/members/$finalChildId/role"] = childRole
+                            updates["${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroup/members/$finalChildId/ts_joined"] = now
 
-                    // 🚀 P2P FORRENSIC PERSISTENCE: Mirror to Local Roster on Host
-                    // Using "device_profile_name" logic as requested for display name
-                    dbHelper.saveRosterNode(childId, childName, if(isFriend) "Friends" else childRole, "Handshake Established", 
-                        isAdmin = false, isFriend = isFriend, ownerName = hostName, ownerDeviceId = hostId, connectedDeviceId = childId, qrCode = inviteCode)
-                    
-                    // 🚀 AUDIT LEDGER: Log the Paring Relationship History
-                    dbHelper.logDevicePairing(hostId, hostName, childId, childName, if(isFriend) "Friends" else childRole)
+                            // 2. TIER 2: Device Registry Anchor
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalHostId/$hostHardwareId/last_sync"] = FirebaseComm.getForensicTimestamp(now)
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalChildId/$childId/last_sync"] = FirebaseComm.getForensicTimestamp(now)
 
-                    // 3. Update Global Group Node
-                    groupsEndpoint.child(hostGroup).child("members").child(hostId).setValue(true)
-                    groupsEndpoint.child(hostGroup).child("members").child(childId).setValue(true)
-                    groupsEndpoint.child(hostGroup).child("citizen_dossiers").child(childId).updateChildren(
-                        mapOf("role_family" to (if(isFriend) "None" else childRole), "role_friend" to (if(isFriend) "Friends" else "None"))
-                    )
+                            // 3. TIER 1: Identity Alignment
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalHostId/identity/active_group"] = hostGroup
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalChildId/identity/active_group"] = hostGroup
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalHostId/profile/active_group"] = hostGroup
+                            updates["${FirebaseComm.NODE_DEVICES}/$finalChildId/profile/active_group"] = hostGroup
 
-                    // 4. Release Handshake Lock
-                    pairingRequestsEndpoint.child(inviteCode).updateChildren(mapOf(
-                        "status" to "approved", "host_id" to hostId, "final_host_role" to hostRole, "final_child_role" to childRole
-                    )).addOnSuccessListener {
-                        com.jdroidx.jfindme.utils.AngelLoader.hide(context)
-                        onComplete(true)
-                        clearSession(inviteCode)
+                            // 4. Release Handshake Lock
+                            updates["${FirebaseComm.NODE_PAIRING}/$inviteCode/status"] = "approved"
+                            updates["${FirebaseComm.NODE_PAIRING}/$inviteCode/host_id"] = finalHostId
+                            updates["${FirebaseComm.NODE_PAIRING}/$inviteCode/final_host_role"] = hostRole
+                            updates["${FirebaseComm.NODE_PAIRING}/$inviteCode/final_child_role"] = childRole
+
+                            FirebaseDatabase.getInstance().reference.updateChildren(updates).addOnSuccessListener {
+                                val vRoster = android.content.ContentValues().apply {
+                                    put(com.jdroidx.jfindme.data.local.DatabaseHelper.COL_UID_1, finalChildId)
+                                    put("id_full_name", childName)
+                                    put("role_type", childRole)
+                                    put("st_session_state", "Analytical Sync Success")
+                                    put("is_admin", 0)
+                                    put("is_friend", if(childRole == "Friends") 1 else 0)
+                                    put("owner_name", hostName)
+                                    put("qr_code_ref", inviteCode)
+                                }
+                                dbHelper.saveRosterNode(vRoster)
+                                dbHelper.logDevicePairing(finalHostId, hostName, null, finalChildId, childName, null, childRole, hostGroup)
+
+                                com.jdroidx.jfindme.utils.AngelLoader.hide(context)
+                                onComplete(true)
+                                clearSession(inviteCode)
+                            }.addOnFailureListener { 
+                                com.jdroidx.jfindme.utils.AngelLoader.hide(context)
+                                onComplete(false) 
+                            }
+                        }.addOnFailureListener {
+                            com.jdroidx.jfindme.utils.AngelLoader.hide(context)
+                            onComplete(false)
+                        }
                     }
-                }.addOnFailureListener { com.jdroidx.jfindme.utils.AngelLoader.hide(context); onComplete(false) }
+                }
             }, 5000)
+        }.addOnFailureListener {
+            com.jdroidx.jfindme.utils.AngelLoader.hide(context)
+            onComplete(false)
         }
     }
 
-    // 🚀 ONE-TAP FINALIZATION: The confirmHandshake phase has been removed to streamline the P2P handshake.
-    // The Host's approval now immediately settles the sync for both nodes.
-    
-    private fun forgeRemotePersistentGroup(hostUid: String, childId: String, inviteCode: String) {
-        // Obsolete Engine: Kept purely for architectural backwards compatibility if called elsewhere.
-        // P2P friend_matrix has legally overridden active_group topology for new pairs!
-        SystemLogger.i(TAG, "Legacy forgeRemotePersistentGroup called but bypassed mapped to friend_matrix safely.")
-    }
-
-    /**
-     * Parent Device: Rejects safely and wipes Node preventing loop exploits.
-     */
     fun rejectHandshake(inviteCode: String) {
         pairingRequestsEndpoint.child(inviteCode).child("status").setValue("rejected")
         clearSession(inviteCode)
     }
 
-    /**
-     * Child Device Phase 2: Listener waiting on Parent's physical GUI click.
-     * Continuously monitors the Handshake Node for role-proposals or rejection.
-     */
     private fun listenForAcceptance(context: android.content.Context, inviteCode: String, onStatusUpdate: (Boolean, String) -> Unit) {
-        val childId = getDeviceId()
+        val childId = getDeviceId(context)
         var lastNotifiedStatus: String? = null
 
         pairingRequestsEndpoint.child(inviteCode).addValueEventListener(object : ValueEventListener {
@@ -214,19 +219,13 @@ object FirebasePairingManager {
                 val status = snapshot.child("status").getValue(String::class.java)
                 val assignedChild = snapshot.child("childDeviceId").getValue(String::class.java) ?: ""
 
-                // Security: Ensure this listener only reacts to the child identity assigned to this node
                 if (assignedChild.isNotEmpty() && assignedChild != childId) return 
-
-                // 🚀 STATE HYSTERESIS: Prevent redundant UI triggers on B (Target)
                 if (status == lastNotifiedStatus) return
                 lastNotifiedStatus = status
 
                 when (status) {
-                    "pending" -> {
-                        onStatusUpdate(true, "PENDING_HANDSHAKE") // Host hasn't clicked 'Approve' yet
-                    }
+                    "pending" -> onStatusUpdate(true, "PENDING_HANDSHAKE")
                     "approved" -> {
-                        // 🦋 Child-Side Cinematic Transition (masking data receipt)
                         com.jdroidx.jfindme.utils.AngelLoader.show(context as android.app.Activity)
                         com.jdroidx.jfindme.utils.AngelLoader.setStatus(context, "Receiving Forensic Metadata...")
 
@@ -238,17 +237,22 @@ object FirebasePairingManager {
 
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             if (hostId.isNotEmpty()) {
-                                // Mirror Host node to Child's local Roster SSOT with full forensic metadata
-                                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveRosterNode(
-                                    hostId, hostName, "Guardian", "P2P SYNC COMPLETED", isAdmin = true, isFriend = isFriend,
-                                    ownerName = hostName, ownerDeviceId = hostId, connectedDeviceId = childId, qrCode = qrCode
-                                )
+                                val vRoster = android.content.ContentValues().apply {
+                                    put(com.jdroidx.jfindme.data.local.DatabaseHelper.COL_UID_1, hostId)
+                                    put("id_full_name", hostName)
+                                    put("role_type", "Guardian")
+                                    put("st_session_state", "P2P SYNC COMPLETED")
+                                    put("is_admin", 1)
+                                    put("is_friend", if(isFriend) 1 else 0)
+                                    put("owner_name", hostName)
+                                    put("qr_code_ref", qrCode)
+                                }
+                                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveRosterNode(vRoster)
                                 
-                                // 🚀 Update local dossier with roles
                                 val myDosMap = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).getLocalDossier("OWNER_001")
                                 if (myDosMap != null) {
-                                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).commitForensicDossier(
-                                        "OWNER_001", myDosMap, finalChildRole, hostName, hostId, childId, qrCode
+                                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).commitAnalyticalDossier(
+                                        "OWNER_001", myDosMap, finalChildRole
                                     )
                                 }
                             }
@@ -274,28 +278,15 @@ object FirebasePairingManager {
             pairingRequestsEndpoint.child(code).removeEventListener(activeHostListener!!)
             activeHostListener = null
         }
-        // 🧠 QA Fix: A delay is strictly required here before wiping the node!
-        // Otherwise, the Firebase cache deletes the Handshake Node before the target Child's ValueEventListener 
-        // has enough time to read the 'status' = 'approved' feedback loop!
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             pairingRequestsEndpoint.child(code).removeValue()
         }, 3500)
-        
         activePairingCode = null
     }
 
-    // QA In-Memory Cache: Locks the randomly generated test ID for the duration of the App process!
-    private var cachedMockUid: String? = null
-
-    // QA Bug Fix: Persistent Unique Identifiers required to stop "U_MOCK" Collisions on unauthenticated target devices.
-    fun getDeviceId(): String {
-        val authUid = FirebaseAuth.getInstance().currentUser?.uid
-        if (authUid != null) return authUid
-
-        if (cachedMockUid == null) {
-            cachedMockUid = "DEV_${java.util.UUID.randomUUID().toString().substring(0, 8)}"
-        }
-        return cachedMockUid!!
+    fun getDeviceId(context: android.content.Context): String {
+        val hwId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "FALLBACK_HW"
+        return "HW_" + hwId.uppercase()
     }
 
     private fun generateSecureToken(): String {
@@ -317,4 +308,3 @@ object FirebasePairingManager {
         } catch (e: Exception) { null }
     }
 }
-

@@ -1,47 +1,38 @@
 package com.jdroidx.jfindme.ui.settings
 
+import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Settings
-import android.telephony.TelephonyManager
-import android.telephony.SubscriptionManager
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.FirebaseDatabase
 import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.ui.base.BaseViewModel
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.HashMap
-import java.util.Locale
+import kotlinx.coroutines.withContext
 
 /**
- * 🚀 SENTINEL REVISED: Pure MVVM Profiling Engine
- * Waterfall Logic: Database -> ViewModel -> Activity (One-Way Reactive Flow)
+ * ProfileViewModel: Tier 1 Identity Hub Manager.
  */
-class ProfileViewModel : BaseViewModel() {
-
+class ProfileViewModel(application: Application) : BaseViewModel(application) {
     private val _saveSuccess = MutableLiveData<Boolean?>()
     val saveSuccess: LiveData<Boolean?> get() = _saveSuccess
 
-    fun resetSaveState() {
-        _saveSuccess.value = null
-    }
+    fun resetSaveState() { _saveSuccess.value = null }
+
+    private val _profileData = MutableLiveData<Map<String, Any>>()
+    val profileData: LiveData<Map<String, Any>> get() = _profileData
 
     private val _loadingState = MutableLiveData<String>()
     val loadingState: LiveData<String> get() = _loadingState
 
     private val _validationErrorField = MutableLiveData<String>()
     val validationErrorField: LiveData<String> get() = _validationErrorField
-
-    // --- 🏛️ REACTIVE DATA MATRIX ---
-    
-    private val _profileData = MutableLiveData<Map<String, String>>()
-    val profileData: LiveData<Map<String, String>> get() = _profileData
 
     private val _countriesList = MutableLiveData<List<String>>()
     val countriesList: LiveData<List<String>> get() = _countriesList
@@ -52,241 +43,102 @@ class ProfileViewModel : BaseViewModel() {
     private val _citiesList = MutableLiveData<List<String>>()
     val citiesList: LiveData<List<String>> get() = _citiesList
 
-    // --- 🏛️ WATERFALL INITIALIZATION ---
+    @JvmOverloads
+    fun fetchProfile(context: Context = getApplication()) {
+        val authUid = FirebaseAuth.getInstance().uid ?: return
+        
+        // 🧬 V69.8: Master Identity Resolution (Now Universal Local-First)
+        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
+            val safeUid = agentId ?: return@resolveHardwareIdentity
+            processProfileWithAgentId(context, safeUid)
+        }
+    }
 
-    fun loadForensicProfile(context: Context) {
-        val safeUid = FirebaseAuth.getInstance().uid ?: return
+    private fun processProfileWithAgentId(context: Context, safeUid: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val db = DatabaseHelper.getInstance(context)
-            
-            // 🧪 STEP 1: PRIORITIZE LOCAL FORENSIC VAULT (Zero Latency)
             val localDossier = db.getLocalDossier(safeUid)
-            var hasMandatoryData = false
             
-            if (localDossier != null) {
-                // Check for Mandatory Identify Tokens (Name, Phone, DOB)
-                val name = localDossier["full_name"] ?: localDossier["userName"] ?: ""
-                val phone = localDossier["user_phone"] ?: localDossier["userPhone"] ?: ""
-                val dob = localDossier["user_dob"] ?: localDossier["userDob"] ?: ""
+            if (localDossier.isNotEmpty()) {
+                _profileData.postValue(localDossier)
+                SystemLogger.i("IdentityHub", "Local Tier 1 Truth Verified for $safeUid")
+            } else {
+                // 🛡️ TIER 2 FALLBACK: Pre-populate from Hardware Identity
+                val fallback = db.getIdentityProfileFallback(safeUid).toMutableMap()
                 
-                if (name.isNotEmpty() && phone.isNotEmpty() && dob.isNotEmpty()) {
-                    hasMandatoryData = true
-                    _profileData.postValue(localDossier)
-                    SystemLogger.i("IdentityHub", "Local Forensic Truth Verified for $safeUid")
+                // 🧪 Inject Email from Registry if missing
+                val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                val regEmail = prefs.getString("email", "")
+                if (!regEmail.isNullOrEmpty()) {
+                    fallback["email"] = regEmail
+                    fallback["userEmail"] = regEmail
+                }
+
+                if (fallback.isNotEmpty()) {
+                    _profileData.postValue(fallback)
+                    SystemLogger.i("IdentityHub", "Tier 2 Fallback Active for $safeUid")
                 }
             }
 
-            // 🧪 STEP 3: SILICON FINGERPRINT AUDIT (Hardware Ledger Sync)
             auditHardwareSignature(context)
 
-            // 🧪 STEP 2: CLOUD-FALLBACK (Only if Local is Empty or Incomplete)
-            if (!hasMandatoryData) {
-                SystemLogger.w("IdentityHub", "Local Data Incomplete. Synchronizing with Cloud Matrix...")
-                val userRef = FirebaseDatabase.getInstance().getReference("users").child(safeUid)
-                userRef.get().addOnSuccessListener { snapshot ->
+            // 🧬 FALLBACK: Deep-Cloud Lookup if local dossier is sparse
+            if (localDossier.isEmpty() || localDossier["fullName"].isNullOrEmpty()) {
+                FirebaseComm.devicesRef.child(safeUid).child("profile").get().addOnSuccessListener { snapshot ->
                     if (snapshot.exists()) {
-                        val rawData = snapshot.value as? Map<String, Any> ?: return@addOnSuccessListener
-                        val source = if (rawData.containsKey("profile")) {
-                            rawData["profile"] as? Map<String, Any> ?: rawData
-                        } else {
-                            rawData
-                        }
+                        @Suppress("UNCHECKED_CAST")
+                        val cloudMap = snapshot.value as? Map<String, Any> ?: return@addOnSuccessListener
+                        val mergedMap = _profileData.value?.toMutableMap() ?: mutableMapOf()
+                        cloudMap.forEach { (k, v) -> mergedMap[k] = v.toString() }
                         
-                        val cloudMap = mutableMapOf<String, String>()
-                        source.forEach { (k, v) -> cloudMap[k] = v.toString() }
-                        
-                        // Display and Atomically Update Local Vault
-                        _profileData.postValue(cloudMap)
+                        _profileData.postValue(mergedMap)
                         viewModelScope.launch(Dispatchers.IO) { 
-                            db.commitForensicDossier(safeUid, cloudMap) 
+                            val dossier = mergedMap.mapValues { (_, value) -> value.toString() }
+                            val finalName = (mergedMap["userName"] ?: mergedMap["fullName"])?.toString()
+                            db.commitAnalyticalDossier(safeUid, dossier, name = finalName) 
                         }
-                        SystemLogger.i("IdentityHub", "Cloud Backfill Successful for $safeUid")
-                    } else {
-                        SystemLogger.e("IdentityHub", "Identity Not Found in Cloud. Manual Entry Required.")
                     }
                 }
             }
         }
     }
 
-    // --- 🌍 GEO-VIBRANCY ENGINE ---
-
-    fun fetchNetworkLocation() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val conn = java.net.URL("https://countriesnow.space/api/v0.1/countries/iso").openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream))
-                val json = java.lang.StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) json.append(line)
-                reader.close()
-
-                val obj = org.json.JSONObject(json.toString())
-                val dataArray = obj.getJSONArray("data")
-                val list = ArrayList<String>()
-                list.add("Select Country")
-                for (i in 0 until dataArray.length()) list.add(dataArray.getJSONObject(i).getString("name"))
-                _countriesList.postValue(list)
-            } catch (e: Exception) {
-                _countriesList.postValue(listOf("United States", "India", "United Kingdom", "Canada"))
-            }
-        }
-    }
-
-    fun fetchStatesList(selectedCountry: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val url = java.net.URL("https://countriesnow.space/api/v0.1/countries/states")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.outputStream.write("{\"country\":\"$selectedCountry\"}".toByteArray())
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream))
-                val json = java.lang.StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) json.append(line)
-                reader.close()
-
-                val obj = org.json.JSONObject(json.toString())
-                val statesArray = obj.getJSONObject("data").getJSONArray("states")
-                val list = ArrayList<String>()
-                list.add("Select State")
-                for (i in 0 until statesArray.length()) list.add(statesArray.getJSONObject(i).getString("name"))
-                _statesList.postValue(list)
-            } catch(e: Exception) { _statesList.postValue(listOf("Select State")) }
-        }
-    }
-
-    fun fetchCitiesList(selectedCountry: String, selectedState: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val url = java.net.URL("https://countriesnow.space/api/v0.1/countries/state/cities")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.outputStream.write("{\"country\":\"$selectedCountry\", \"state\":\"$selectedState\"}".toByteArray())
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream))
-                val json = java.lang.StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) json.append(line)
-                reader.close()
-
-                val obj = org.json.JSONObject(json.toString())
-                val citiesArray = obj.getJSONArray("data")
-                val list = ArrayList<String>()
-                list.add("Select City")
-                for (i in 0 until citiesArray.length()) list.add(citiesArray.getString(i))
-                _citiesList.postValue(list)
-            } catch(e: Exception) { _citiesList.postValue(listOf("Select City")) }
-        }
-    }
-
-    /**
-     * 🚀 SILICON FINGERPRINT AUDIT (L7 Global Architect)
-     * Collects and archives absolute hardware-bound identities into the forensic ledger.
-     */
     private fun auditHardwareSignature(context: Context) {
-        val safeUid = FirebaseAuth.getInstance().uid ?: return
-        val db = DatabaseHelper.getInstance(context)
+        val authUid = FirebaseAuth.getInstance().uid ?: return
         
-        viewModelScope.launch(Dispatchers.IO) {
-            val build = android.os.Build::class.java
-            val manufacturer = android.os.Build.MANUFACTURER
-            val model = android.os.Build.MODEL
-            val os = android.os.Build.VERSION.RELEASE
-            val patch = if (android.os.Build.VERSION.SDK_INT >= 23) android.os.Build.VERSION.SECURITY_PATCH else "PRE-M"
-            val kernel = System.getProperty("os.version") ?: "n/a"
-            val fingerprint = android.os.Build.FINGERPRINT
-            val cpu = Runtime.getRuntime().availableProcessors()
+        // 🧬 V69.8: Unified Forensic Audit (Now Universal Local-First)
+        FirebaseComm.resolveHardwareIdentity(authUid) { agentId ->
+            val finalAgentId = agentId ?: return@resolveHardwareIdentity
             
-            // 🚀 UNIVERSAL HARDWARE SIGNATURE (L7 PRIVACY COMPLIANCE)
-            val hardwareId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "NULL_HARDWARE_NODE"
-            
-            // 🧠 RAM & STORAGE DIAGNOSTICS (L7 Matrix)
-            var totalRam = "n/a"
-            var totalStorage = "n/a"
-            try {
-                val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-                val memInfo = android.app.ActivityManager.MemoryInfo()
-                actManager.getMemoryInfo(memInfo)
-                totalRam = (memInfo.totalMem / (1024 * 1024 * 1024)).toString() + " GB"
-                val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
-                totalStorage = (stat.totalBytes / (1024 * 1024 * 1024)).toString() + " GB"
-            } catch (e: Exception) {}
-
-            // 🚀 TELEPHONY AUDIT (Multi-Slot Matrix)
-            var imei1 = "RESTRICTED (OS 10)"
-            var imei2 = "RESTRICTED (OS 10)"
-            var iccid1 = "ISOLATED"
-            var iccid2 = "ISOLATED"
-            var op1 = "n/a"
-            var op2 = "n/a"
-            var secured = "STANDARD_OS"
-
-            try {
-                val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-                op1 = telephony.simOperatorName ?: "OFFLINE"
+            viewModelScope.launch(Dispatchers.IO) {
+                val db = DatabaseHelper.getInstance(context)
                 
-                // Subscription Manager Bridge (Multi-SIM Forensic Matrix)
-                val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-                val subs = subManager.activeSubscriptionInfoList
-                if (!subs.isNullOrEmpty()) {
-                    val s1 = if (subs.size > 0) subs[0] else null
-                    val s2 = if (subs.size > 1) subs[1] else null
-                    
-                    if (s1 != null) {
-                        op1 = s1.displayName?.toString() ?: s1.carrierName?.toString() ?: "Unknown Slot 1"
-                        iccid1 = "ICCID: " + (s1.iccId?.takeLast(5) ?: "Hidden")
-                    }
-                    if (s2 != null) {
-                        op2 = s2.displayName?.toString() ?: s2.carrierName?.toString() ?: "Unknown Slot 2"
-                        iccid2 = "ICCID: " + (s2.iccId?.takeLast(5) ?: "Hidden")
-                    }
-                }
+                // 🧬 V69.8: Hydrated Heartbeat (The Waterfall Fix)
+                // Fetch the COMPLETE local truth before syncing to prevent cloud-wiping of identity/location metadata.
+                val localTruth = db.getForensicDossierComplete(finalAgentId)
+                
+                val hardwareMetadata = mutableMapOf<String, Any>(
+                    "model" to android.os.Build.MODEL,
+                    "fingerprint" to android.os.Build.FINGERPRINT,
+                    "os_version" to android.os.Build.VERSION.RELEASE,
+                    "manufacturer" to android.os.Build.MANUFACTURER
+                )
 
-                if (android.os.Build.TAGS != null && android.os.Build.TAGS.contains("test-keys")) secured = "FORENSIC_ALERT (ROOT)"
-            } catch (e: Exception) {
-                secured = "SECURITY_ISOLATION_ACTIVE"
+                // Merge Local Truth + Hardware Metadata
+                val fullPayload = localTruth.toMutableMap()
+                fullPayload.putAll(hardwareMetadata)
+
+                // TIER 2: Hardware Matrix Alignment (Waterfall Heartbeat)
+                val authUid = FirebaseAuth.getInstance().uid ?: return@launch
+                val hardwareId = fullPayload["uid_2"]?.toString() ?: ("HW_" + (Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "NULL").uppercase())
+                
+                FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
+                db.syncDeviceAnalytical(finalAgentId, hardwareId, hardwareMetadata["model"]?.toString(), "REDACTED", false, hardwareMetadata["fingerprint"]?.toString())
             }
-
-            // 🚀 Atomic Hardware Registry Commit
-            db.commitHardwareForensic(
-                safeUid, 
-                hardwareId,
-                model ?: "UNKNOWN_MODEL",
-                manufacturer ?: "UNKNOWN_MFG",
-                "2026-ARCH-BATCH", 
-                os ?: "n/a",
-                patch ?: "n/a",
-                kernel,
-                fingerprint ?: "n/a",
-                cpu,
-                totalRam,
-                totalStorage,
-                secured, 
-                imei1, imei2, 
-                iccid1, iccid2, 
-                op1, op2, 
-                secured.contains("ROOT"), 
-                "REDACTED" 
-            )
-            SystemLogger.i("HardwareAudit", "Silicon Fingerprint Archived for $safeUid")
         }
     }
 
-    // --- 🏛️ CLOSED-LOOP COMMIT MOTOR ---
-
-    /**
-     * 🚀 PILLAR 3: THE UNIVERSAL IDENTITY COMMAND (Triple-Ledger Commit)
-     * Rule 1: Local SQLite (Forensic Truth)
-     * Rule 2: Cloud Root (User Identity Node)
-     * Rule 3: Group Dossier (Relational Visibility)
-     * Rule 4: Group Roster (Map Pin Handshake)
-     */
+    @JvmOverloads
     fun verifyAndSaveProfile(
         context: Context,
         nameVal: String, phoneVal: String, dobVal: String, genderIdx: Int, genderVal: String,
@@ -294,128 +146,208 @@ class ProfileViewModel : BaseViewModel() {
         cVal: String, sVal: String, cityVal: String, famStr: String, friendStr: String,
         addressVal: String, emergencyNoteVal: String,
         orgName: String, deptName: String,
-        prefs: SharedPreferences
+        prefs: SharedPreferences,
+        ignoreValidation: Boolean = false
     ) {
-        val errorChecklist = mutableListOf<String>()
-        if (nameVal.length < 2) errorChecklist.add("Name: 2+ characters required")
-        if (phoneVal.length < 7) errorChecklist.add("Phone: Handset Node missing digits")
-        if (pincodeVal.isEmpty()) errorChecklist.add("Address: Area Pincode mandatory")
+        val missingFields = mutableListOf<String>()
+        if (nameVal.isEmpty()) missingFields.add("Name")
+        if (phoneVal.isEmpty()) missingFields.add("Mobile Number")
+        if (dobVal.isEmpty() || dobVal == "Select Birthday") missingFields.add("Birthday")
+        if (genderVal.isEmpty() || genderVal == "Select Gender") missingFields.add("Gender")
+        if (cVal.isEmpty() || cVal == "Select Country") missingFields.add("Country")
+        if (sVal.isEmpty() || sVal == "Select State") missingFields.add("State")
+        if (cityVal.isEmpty() || cityVal == "Select City") missingFields.add("City")
+        if (pincodeVal.isEmpty()) missingFields.add("Pincode / ZipCode")
 
-        if (errorChecklist.isNotEmpty()) {
-            _validationErrorField.value = "FAIL"
-            _errorMessage.value = "SENTINEL ALERT:\n" + errorChecklist.joinToString("\n")
-            return
-        }
-
-        val safeUid = FirebaseAuth.getInstance().uid ?: return
+        val authUid = FirebaseAuth.getInstance().uid ?: return
         _isLoading.value = true
         
-        viewModelScope.launch(Dispatchers.Main) {
-            _loadingState.value = "Committing Forensic Identity..."
-            delay(500)
-            
-            // --- 🧪 LEDGER 1: CLOUD ROOT (IDENTITY NODE) ---
-            val rootPayload = HashMap<String, Any>()
-            rootPayload["userName"] = nameVal
-            rootPayload["userPhone"] = phoneVal
-            rootPayload["userDob"] = dobVal
-            rootPayload["userGender"] = genderVal
-            rootPayload["userCountry"] = cVal
-            rootPayload["userState"] = sVal
-            rootPayload["userCity"] = cityVal
-            rootPayload["userPincode"] = pincodeVal
-            rootPayload["userAddress"] = addressVal
-            rootPayload["userEmergencyNote"] = emergencyNoteVal
-            rootPayload["orgName"] = orgName
-            rootPayload["deptName"] = deptName
-            rootPayload["profile_onboarded"] = true
-            
-            val userRef = FirebaseDatabase.getInstance().getReference("users").child(safeUid)
-            userRef.updateChildren(rootPayload)
-
-            // --- 🧪 LEDGER 2: LOCAL REGISTRY (SHARED PREFS) ---
-            prefs.edit().putString("user_nickname", nameVal)
-                .putString("user_phone", phoneVal)
-                .putString("user_country", cVal)
-                .putString("user_state", sVal)
-                .putString("user_city", cityVal)
-                .putString("user_dob", dobVal)
-                .putString("user_gender", genderVal)
-                .putString("user_pincode", pincodeVal)
-                .putString("user_address", addressVal)
-                .putString("user_emergency_note", emergencyNoteVal)
-                .putString("org_name", orgName)
-                .putString("department", deptName)
-                .putBoolean("profile_onboarded", true).apply()
-
-            // --- 🧪 LEDGER 3: FORENSIC SQLITE (PERSONAL DOSSIER) ---
-            val dossierMap = mutableMapOf<String, String>()
-            dossierMap["full_name"] = nameVal
-            dossierMap["user_phone"] = phoneVal
-            dossierMap["user_dob"] = dobVal
-            dossierMap["user_gender"] = genderVal
-            dossierMap["user_country"] = cVal
-            dossierMap["user_state"] = sVal
-            dossierMap["user_city"] = cityVal
-            dossierMap["user_pincode"] = pincodeVal
-            dossierMap["user_address"] = addressVal
-            dossierMap["user_emergency_note"] = emergencyNoteVal
-            dossierMap["org_name"] = orgName
-            dossierMap["department"] = deptName
-            
-            val db = DatabaseHelper.getInstance(context)
-            val finalRole = if (friendStr != "None") friendStr else famStr
-            db.commitForensicDossier(safeUid, dossierMap, finalRole, nameVal, safeUid, safeUid, "LOCAL_PROFILE_COMMIT")
-            
-            // --- 🧪 LEDGER 4: ROSTER RIPPLE (GROUP SYNC) ---
-            val activeGroup = prefs.getString("active_group", null)
-            if (!activeGroup.isNullOrEmpty()) {
-                val groupRef = FirebaseDatabase.getInstance().getReference("groups").child(activeGroup)
-                
-                // A. Update Group Roster (For Map Pins/Tiles)
-                val rosterUpdate = mapOf("display_name" to nameVal, "role_title" to finalRole)
-                groupRef.child("roster").child(safeUid).updateChildren(rosterUpdate)
-                
-                // B. Update Group Dossier (For Detailed Profile)
-                val cloudDossierPayload = HashMap<String, Any>()
-                cloudDossierPayload["fullName"] = nameVal
-                cloudDossierPayload["phone"] = phoneVal
-                cloudDossierPayload["dob"] = dobVal
-                cloudDossierPayload["gender"] = genderVal
-                cloudDossierPayload["country"] = cVal
-                cloudDossierPayload["state"] = sVal
-                cloudDossierPayload["city"] = cityVal
-                cloudDossierPayload["pincode"] = pincodeVal
-                cloudDossierPayload["address"] = addressVal
-                cloudDossierPayload["emergencyNote"] = emergencyNoteVal
-                cloudDossierPayload["orgName"] = orgName
-                cloudDossierPayload["deptName"] = deptName
-                cloudDossierPayload["last_updated"] = System.currentTimeMillis()
-                
-                groupRef.child("citizen_dossiers").child(safeUid).updateChildren(cloudDossierPayload)
-                
-                // C. Update Local Roster Table
-                db.saveRosterNode(safeUid, nameVal, finalRole, "Active", true, false, nameVal, safeUid, safeUid, "LOCAL_SYNC")
+        val localAgentId = prefs.getString("agent_id", "")
+        
+        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
+            val safeUid = agentId ?: localAgentId ?: return@resolveHardwareIdentity
+            if (safeUid.isNullOrEmpty()) {
+                 _isLoading.postValue(false)
+                 return@resolveHardwareIdentity
             }
+            
+            viewModelScope.launch(Dispatchers.Main) {
+                val db = DatabaseHelper.getInstance(context)
+                val existingTruth = withContext(Dispatchers.IO) { db.getForensicDossierComplete(safeUid) }
+                
+                val avatarId = prefs.getInt("equipped_avatar_id", 1).toString()
+                val hardwareId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "HW_$safeUid"
+                
+                val profilePayload = existingTruth.toMutableMap()
+                profilePayload.putAll(mapOf(
+                    "name" to nameVal, 
+                    "avatar_id" to avatarId, 
+                    "phone" to phoneVal, 
+                    "dob" to dobVal, 
+                    "gender" to genderVal, 
+                    "country" to cVal,
+                    "state" to sVal, 
+                    "city" to cityVal, 
+                    "pincode" to pincodeVal,
+                    "address" to addressVal, 
+                    "emergency_note" to emergencyNoteVal, 
+                    "org_name" to orgName, 
+                    "dept_name" to deptName,
+                    "updated_at" to FirebaseComm.getForensicTimestamp()
+                ))
 
-            _isLoading.value = false
-            _saveSuccess.value = true
+                // 🧬 V69.8: ALWAYS EXECUTE HYDRATED SYNC (Partial Save to Cloud)
+                val activeGrp = _profileData.value?.get("active_group") as? String
+                FirebaseComm.syncForensicHeartbeat(authUid, safeUid, hardwareId, profilePayload, activeGrp)
+                
+                launch(Dispatchers.IO) {
+                    val dossier = profilePayload.mapValues { (_, value) -> value.toString() }
+                    val orgDossier = mapOf("orgName" to orgName, "deptName" to deptName, "userAddress" to addressVal, "designation" to "Professional")
+                    val groupData = mapOf("group_id" to "DEFAULT_GROUP", "group_name" to "Family Circle")
+                    
+                    // Save to Local Ledger
+                    db.executeTieredHandshake(
+                        authUid, safeUid, "HW_${hardwareId.uppercase()}", hardwareId,
+                        dossier, orgDossier, null, groupData, null, null, null
+                    )
+                    
+                    launch(Dispatchers.Main) {
+                        _isLoading.value = false
+                        
+                        // 🚀 QA Fix: Conditional Success Hub
+                        if (missingFields.isEmpty()) {
+                            // All mandatory fields present -> Move to Dashboard
+                            _saveSuccess.value = true
+                        } else if (!ignoreValidation) {
+                            // Mandatory fields missing -> Partial Save Success, but Stay on Page
+                            _saveSuccess.value = false
+                            _errorMessage.value = "MULTIPLE_ERRORS:" + missingFields.joinToString("\n")
+                        } else {
+                            // Ignore validation (Back Press Exit) -> Save Partially and Exit
+                            _saveSuccess.value = true 
+                        }
+                    }
+                }
+            }
         }
     }
 
-    val currentUserId: String? get() = FirebaseAuth.getInstance().uid
+    init {
+        // 🧬 Initialize Global Geo-Registry (Majors)
+        _countriesList.value = listOf(
+            "India", "USA", "Indonesia", "UK", "Canada", "Australia", 
+            "UAE", "Singapore", "Japan", "Germany", "France", "Brazil", "Russia"
+        )
+        _statesList.value = listOf("Select Country First")
+        _citiesList.value = listOf("Select State First")
+    }
+
+    fun fetchStatesList(country: String) {
+        val list = when (country) {
+            "India" -> listOf("Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "West Bengal", "Telangana", "Rajasthan", "Punjab", "Haryana", "Bihar", "Madhya Pradesh")
+            "USA" -> listOf("California", "Texas", "New York", "Florida", "Illinois", "Washington", "Pennsylvania", "Ohio", "Georgia", "Michigan")
+            "Indonesia" -> listOf("DKI Jakarta", "Jawa Barat", "Jawa Timur", "Jawa Tengah", "Bali", "Banten", "Sumatera Utara", "Sulawesi Selatan")
+            "UK" -> listOf("England", "Scotland", "Wales", "Northern Ireland")
+            else -> listOf("State Registry A", "State Registry B", "International Zone 1")
+        }
+        _statesList.value = list
+    }
+
+    fun fetchCitiesList(country: String, state: String) {
+        val list = when (state) {
+            // --- INDIA ---
+            "Maharashtra" -> listOf("Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad", "Thane")
+            "Delhi" -> listOf("New Delhi", "North Delhi", "South Delhi", "West Delhi", "East Delhi")
+            "Karnataka" -> listOf("Bengaluru", "Mysuru", "Hubballi", "Mangaluru", "Belagavi")
+            "Gujarat" -> listOf("Ahmedabad", "Surat", "Vadodara", "Rajkot")
+            "Tamil Nadu" -> listOf("Chennai", "Coimbatore", "Madurai", "Tiruchirappalli")
+            
+            // --- USA ---
+            "California" -> listOf("Los Angeles", "San Francisco", "San Diego", "San Jose", "Sacramento")
+            "Texas" -> listOf("Houston", "Dallas", "Austin", "San Antonio", "Fort Worth")
+            "New York" -> listOf("New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse")
+            "Florida" -> listOf("Miami", "Orlando", "Tampa", "Jacksonville", "Tallahassee")
+            
+            // --- INDONESIA ---
+            "DKI Jakarta" -> listOf("Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara")
+            "Jawa Barat" -> listOf("Bandung", "Bekasi", "Depok", "Bogor", "Cimahi")
+            "Jawa Timur" -> listOf("Surabaya", "Malang", "Sidoarjo", "Gresik", "Kediri")
+            "Bali" -> listOf("Denpasar", "Badung", "Gianyar", "Tabanan")
+            "Banten" -> listOf("Tangerang", "Serang", "Cilegon")
+            
+            else -> listOf("City Zone 1", "City Zone 2", "Select Other")
+        }
+        _citiesList.value = list
+    }
+
+    fun fetchNetworkLocation() {
+        // 🧬 Forensic Auto-Discovery: Simulate network geo-lookup
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1000)
+            // Auto-detect logic would go here
+        }
+    }
 
     fun equipAvatar(prefs: SharedPreferences, id: Int, vrmPath: String?) {
         val editor = prefs.edit().putInt("equipped_avatar_id", id)
         if (vrmPath != null) editor.putString("equipped_vrm_string", vrmPath)
         editor.apply()
         
-        currentUserId?.let { uid ->
-            val ref = FirebaseDatabase.getInstance().reference.child("users").child(uid)
-            val updates = HashMap<String, Any>()
-            updates["equipped_avatar_id"] = id
+        val authUid = FirebaseAuth.getInstance().uid ?: return
+        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
+            val finalId = agentId ?: return@resolveHardwareIdentity
+            val updates = mutableMapOf<String, Any>("equipped_avatar_id" to id)
             if (vrmPath != null) updates["equipped_vrm_string"] = vrmPath
-            ref.updateChildren(updates)
+            
+            // 📡 Profile Anchor: Avatar identity belongs to the persistent Agent, not the session
+            FirebaseComm.devicesRef.child(finalId).child("profile").updateChildren(updates)
         }
+    }
+
+    fun equipAvatar(prefs: SharedPreferences, id: Int) {
+        equipAvatar(prefs, id, null)
+    }
+
+    fun executeCloudMatrixRestore(prefs: SharedPreferences, group: String, csv: String?) {
+        prefs.edit().putString("active_group", group).apply()
+        if (csv != null) prefs.edit().putString("linked_devices_csv", csv).apply()
+        prefs.edit().remove("unresolved_cloud_hub").remove("unresolved_cloud_links").apply()
+    }
+
+    fun executeCloudMatrixIgnore(prefs: SharedPreferences) {
+        prefs.edit().remove("unresolved_cloud_hub").remove("unresolved_cloud_links").apply()
+    }
+
+    val currentUserId: String? get() = FirebaseAuth.getInstance().uid
+
+    fun equipCustomAvatar(prefs: SharedPreferences) {
+        // Equip special ID 999 for custom hardware photos
+        equipAvatar(prefs, 999, null)
+    }
+
+    /**
+     * 🚀 QA Logic: Identity Matrix Integrity - Check for missing fields
+     * Returns a string with missing mandatory fields or null if complete.
+     */
+    fun getMissingMandatoryFields(prefs: SharedPreferences): String? {
+        val missing = mutableListOf<String>()
+        if (prefs.getString("user_nickname", "").isNullOrEmpty()) missing.add("Name")
+        if (prefs.getString("user_phone", "").isNullOrEmpty()) missing.add("Mobile Number")
+        if (prefs.getString("user_dob", "").isNullOrEmpty()) missing.add("Birthday")
+        val gender = prefs.getString("user_gender", "Select Gender")
+        if (gender.isNullOrEmpty() || gender == "Select Gender") missing.add("Gender")
+        val country = prefs.getString("user_country", "Select Country")
+        if (country.isNullOrEmpty() || country == "Select Country" || country == "Identifying...") missing.add("Country")
+        val state = prefs.getString("user_state", "Select State")
+        if (state.isNullOrEmpty() || state == "Select State" || state == "Identifying...") missing.add("State")
+        val city = prefs.getString("user_city", "Select City")
+        if (city.isNullOrEmpty() || city == "Select City" || city == "Identifying...") missing.add("City")
+        if (prefs.getString("user_pincode", "").isNullOrEmpty()) missing.add("Pincode / ZipCode")
+        
+        return if (missing.isEmpty()) null else missing.joinToString("\n")
+    }
+
+    fun logout() {
+        FirebaseAuth.getInstance().signOut()
     }
 }

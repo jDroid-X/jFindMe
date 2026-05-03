@@ -64,13 +64,14 @@ class OfflineSyncManager(private val context: Context) {
     fun syncLocation(location: UserLocation) {
         // 🔒 ACL FIREWALL ENFORCEMENT: (V11.2)
         // Before uploading, verify if the current user has granted 'Live Sync' permission in their Local Dossier.
-        if (!isTrackingAuthorized(location.userId)) {
-            SystemLogger.w(TAG, "Sync Blocked: ACL Live Tracking permission is currently DENIED for Node: ${location.userId}")
+        val rUserId = location.getResolvedUserId()
+        if (!isTrackingAuthorized(rUserId)) {
+            SystemLogger.w(TAG, "Sync Blocked: ACL Live Tracking permission is currently DENIED for Node: $rUserId")
             return
         }
 
         if (isNetworkAvailable) {
-            FirebaseComm.updateMyLocation(location)
+            FirebaseComm.syncAnalyticalEvent(location.getResolvedUserId(), location)
         } else {
             if (syncQueue.size > 100) syncQueue.poll()
             syncQueue.offer(location)

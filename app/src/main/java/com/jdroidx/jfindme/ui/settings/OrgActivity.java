@@ -22,7 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 🚀 L7 REVISED: Enterprise Organization Suite
+ * ≡ƒÜÇ L7 REVISED: Enterprise Organization Suite
  * Closed-Loop Synchronization with Profile Identity and Cloud Matrix.
  */
 public class OrgActivity extends BaseActivityJava {
@@ -39,79 +39,138 @@ public class OrgActivity extends BaseActivityJava {
         mainRoot.setOrientation(LinearLayout.VERTICAL);
         mainRoot.setBackgroundColor(getPrimaryColor());
 
+        // 🚀 TIER 0: GEOMETRIC HEADER MATRIX
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         applyGlobalHeaderGeometry(header);
 
         TextView title = new TextView(this);
-        title.setText("ORGANIZATION STRUCTURE");
+        title.setText("PROFESSIONAL IDENTITY HUB");
         title.setTextColor(getGradientOverlayText());
         UiArchitect.applyText(this, title, "TEXT_HEADER");
+        title.setTypeface(null, Typeface.BOLD);
         header.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Professional Identity & Clearance Hub");
+        subtitle.setText("Forensic Organization Dossier | Authority: Enterprise");
         subtitle.setTextColor(getGradientOverlayText());
-        subtitle.setAlpha(0.8f);
+        subtitle.setAlpha(0.75f);
         UiArchitect.applyText(this, subtitle, "TEXT_SUB");
         header.addView(subtitle);
 
         mainRoot.addView(header);
 
         ScrollView scrollView = new ScrollView(this);
+        scrollView.setClipChildren(false);
+        scrollView.setClipToPadding(false);
+
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(q, q, q, q * 2);
+        content.setPadding(q * 2, q, q * 2, q * 4);
+        content.setClipChildren(false);
 
-        String[] fields = {
-            "org_name|🏢 ORGANIZATION NAME", "department|📂 DEPARTMENT", "employee_id|🔢 EMPLOYEE ID",
-            "designation|🎓 RANK", "supervisor|👮 SUPERVISOR", "shift_timing|🕒 SHIFT",
-            "work_location|🗺️ LOCATION", "badge_number|🔑 BADGE ID", "emergency_ext|☎️ EXTENSION",
-            "access_level|⚖️ CLEARANCE"
+        // 🔗 CLUSTER 1: EMPLOYMENT DOSSIER
+        renderSectionHeader(content, "IDENTITY & EMPLOYMENT DOSSIER");
+        LinearLayout identityCard = new LinearLayout(this);
+        identityCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, identityCard, "CARD_STANDARD");
+        identityCard.setPadding(35, 35, 35, 35);
+
+        String[] identityFields = {
+            "org_name|ORGANIZATION NAME", "department|DEPARTMENT", 
+            "employee_id|EMPLOYEE ID", "designation|RANK"
         };
+        renderFields(identityCard, identityFields);
+        content.addView(identityCard, getCardParams());
 
+        // 🔗 CLUSTER 2: LOGISTICS & OVERSIGHT
+        renderSectionHeader(content, "FORENSIC LOGISTICS & OVERSIGHT");
+        LinearLayout oversightCard = new LinearLayout(this);
+        oversightCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, oversightCard, "CARD_STANDARD");
+        oversightCard.setPadding(35, 35, 35, 35);
+
+        String[] oversightFields = {
+            "supervisor|SUPERVISOR", "shift_timing|SHIFT", "work_location|LOCATION"
+        };
+        renderFields(oversightCard, oversightFields);
+        content.addView(oversightCard, getCardParams());
+
+        // 🔗 CLUSTER 3: SECURITY & ACCESS PROTOCOLS
+        renderSectionHeader(content, "SECURITY & ACCESS PROTOCOLS");
+        LinearLayout accessCard = new LinearLayout(this);
+        accessCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, accessCard, "CARD_STANDARD");
+        accessCard.setPadding(35, 35, 35, 35);
+
+        String[] accessFields = {
+            "badge_number|BADGE ID", "emergency_ext|EXTENSION", "access_level|CLEARANCE"
+        };
+        renderFields(accessCard, accessFields);
+        content.addView(accessCard, getCardParams());
+
+        // 🚀 ACTION MATRIX
+        View saveBtn = createIconButton("COMMIT ANALYTICAL DOSSIER", android.R.drawable.ic_menu_save, true, v -> handleOrgSave());
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(140));
+        btnLp.setMargins(0, 40, 0, 100);
+        content.addView(saveBtn, btnLp);
+
+        scrollView.addView(content);
+        mainRoot.addView(scrollView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+
+        return mainRoot;
+    }
+
+    private void renderFields(LinearLayout container, String[] fields) {
         for (String field : fields) {
             String[] parts = field.split("\\|");
             
             TextView tvLabel = new TextView(this);
             tvLabel.setText(parts[1]);
             tvLabel.setTextColor(getGradientStart());
-            tvLabel.setTextSize(12);
-            tvLabel.setTypeface(null, Typeface.BOLD);
-            tvLabel.setPadding(10, 30, 0, 10);
-            content.addView(tvLabel);
+            UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
+            tvLabel.setTextSize(10f);
+            tvLabel.setPadding(10, 25, 0, 10);
+            container.addView(tvLabel);
 
             EditText et = new EditText(this);
-            et.setHint("Awaiting input...");
+            et.setHint("Awaiting node input...");
+            et.setHintTextColor(Color.argb(60, 128, 128, 128));
+            et.setTextColor(getTextColor());
             et.setBackgroundColor(Color.TRANSPARENT);
+            et.setTextSize(14f);
             fieldMap.put(parts[0], et);
             
-            // 🚀 QA Fix: Wrap in L7 Enterprise Capsule
-            content.addView(wrapInL7Capsule(et));
+            container.addView(wrapInEnterpriseCapsule(et));
         }
-
-        View saveBtn = createIconButton("COMMIT PROFESSIONAL DOSSIER", android.R.drawable.ic_menu_save, true, v -> handleOrgSave());
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160);
-        btnLp.setMargins(0, 60, 0, 100);
-        saveBtn.setLayoutParams(btnLp);
-        content.addView(saveBtn);
-
-        scrollView.addView(content);
-        mainRoot.addView(scrollView);
-
-        return mainRoot;
     }
 
-    private View wrapInL7Capsule(View inner) {
+    private void renderSectionHeader(LinearLayout container, String title) {
+        TextView header = new TextView(this);
+        header.setText(title);
+        header.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, header, "TEXT_MINI");
+        header.setAlpha(0.6f);
+        header.setPadding(10, 45, 0, 15);
+        container.addView(header);
+    }
+
+    private LinearLayout.LayoutParams getCardParams() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, 30);
+        return lp;
+    }
+
+    private View wrapInEnterpriseCapsule(View inner) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(35, 20, 35, 20);
+        row.setPadding(40, 15, 40, 15);
         
         android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-        fieldBg.setColor(Color.parseColor("#1A000000")); // Glassmorphism Tint
-        fieldBg.setStroke(3, getGradientStart()); 
-        fieldBg.setCornerRadius(60f);
+        fieldBg.setColor(Color.argb(15, 150, 150, 150)); // Glass Tint
+        fieldBg.setStroke(2, getGradientStart()); 
+        fieldBg.setCornerRadius(scaleRadius(12));
         row.setBackground(fieldBg);
         
         inner.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
@@ -128,19 +187,17 @@ public class OrgActivity extends BaseActivityJava {
         String safeUid = FirebaseAuth.getInstance().getUid();
         if (safeUid == null) return;
 
-        android.database.sqlite.SQLiteDatabase sdb = db.getReadableDatabase();
-        // 🚀 QA Fix: Strict UID Filtering (Forensic Identity Logic)
-        android.database.Cursor cursor = sdb.query("org_table", null, "uid=? AND end_datetime = 253402300799000", new String[]{safeUid}, null, null, null);
-        if (cursor.moveToFirst()) {
+        // 🚀 V61 Forensic Sync: Use the centralized Dossier Retrieval bridge
+        java.util.Map<String, String> dossier = db.getLocalDossier(safeUid);
+        if (dossier != null && !dossier.isEmpty()) {
             for (String key : fieldMap.keySet()) {
-                int idx = cursor.getColumnIndex(key);
-                if (idx != -1) {
+                String val = dossier.get(key);
+                if (val != null) {
                     EditText et = fieldMap.get(key);
-                    if (et != null) et.setText(cursor.getString(idx));
+                    if (et != null) et.setText(val);
                 }
             }
         }
-        cursor.close();
     }
 
     private void handleOrgSave() {
@@ -162,10 +219,10 @@ public class OrgActivity extends BaseActivityJava {
         v.put("uid", safeUid);
 
         try {
-            // 🚀 Phase 1: Local Forensic Commit
+            // ≡ƒÜÇ Phase 1: Local Forensic Commit
             db.saveOrgDossier(v);
             
-            // 🚀 Phase 2: Waterfall Cloud Sync (Absolute Parity)
+            // ≡ƒÜÇ Phase 2: Waterfall Cloud Sync (Absolute Parity)
             FirebaseDatabase.getInstance().getReference("users").child(safeUid).child("org").updateChildren(cloudMap);
             
             Toast.makeText(this, "Organization Timeline Secured Locally & Cloud.", Toast.LENGTH_SHORT).show();

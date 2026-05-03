@@ -30,7 +30,7 @@ public class SettingsActivity extends BaseActivityJava {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(getPrimaryColor());
 
-        // 🚀 Header Matrix: Restored as per Control Hub Screenshot
+        // ≡ƒÜÇ Header Matrix: Restored as per Control Hub Screenshot
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         applyGlobalHeaderGeometry(header); 
@@ -46,6 +46,20 @@ public class SettingsActivity extends BaseActivityJava {
         title.setTypeface(null, Typeface.BOLD);
         title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         titleRow.addView(title);
+
+        // 🧬 V62.8: Master Theme Switcher Correction
+        android.widget.ImageView themeToggle = new android.widget.ImageView(this);
+        themeToggle.setImageResource(getResolvedThemeId() == 1 ? android.R.drawable.ic_menu_day : android.R.drawable.ic_menu_recent_history); 
+        themeToggle.setColorFilter(getGradientOverlayText());
+        int tPad = scale(15);
+        themeToggle.setPadding(tPad, tPad, tPad, tPad);
+        themeToggle.setOnClickListener(v -> {
+            int current = prefs.getInt("theme_id", 0);
+            prefs.edit().putInt("theme_id", (current + 1) % 8).apply();
+            safeRecreate(); // 🛡️ Stability Patch: Bypasses OEM Lifecycle crashes
+        });
+        titleRow.addView(themeToggle, new LinearLayout.LayoutParams(scale(80), scale(80)));
+
         header.addView(titleRow);
         
         TextView subtitle = new TextView(this);
@@ -79,98 +93,10 @@ public class SettingsActivity extends BaseActivityJava {
             }
         }), btnLp);
         content.addView(themeCard, getCardParams());
-        
-        // --- LAYER 1.5: 🔋 BATTERY OPTIMIZATION COMMAND HUB ---
-        content.addView(createSectionHeader("BATTERY OPTIMIZATION & PING INTELLIGENCE"));
-
-        final long currentPulseValue = prefs.getLong("pref_tracking_interval", 60000L);
-        final java.util.List<android.widget.Switch> batterySwitches = new java.util.ArrayList<>();
-
-        String[] pingNames = {"60s PING (ECO)", "30s PING (BALANCED)", "15s PING (ACTIVE)", "7s PING (HIGH FREQ)", "1s PING (MAX INTENSITY)"};
-        String[] consumptionStats = {"-2%/day", "-4%/day", "-8%/day", "-15%/day", "-25%/day"};
-        final long[] pingValues = {60000L, 30000L, 15000L, 7000L, 1000L};
-
-        LinearLayout batteryList = new LinearLayout(this);
-        batteryList.setOrientation(LinearLayout.VERTICAL);
-        UiArchitect.applyCard(this, batteryList, "CARD_STANDARD");
-
-        for (int i = 0; i < pingValues.length; i++) {
-            final int pos = i;
-            final long val = pingValues[i];
-
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(30, 40, 30, 40);
-
-            // Icon: Battery Matrix
-            android.widget.ImageView bIcon = new android.widget.ImageView(this);
-            bIcon.setImageResource(android.R.drawable.ic_lock_idle_low_battery);
-            bIcon.setColorFilter(getGradientStart());
-            int iconSz = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
-            row.addView(bIcon, new LinearLayout.LayoutParams(iconSz, iconSz));
-
-            // Text Detail Group
-            LinearLayout textGrp = new LinearLayout(this);
-            textGrp.setOrientation(LinearLayout.VERTICAL);
-            textGrp.setPadding(30, 0, 0, 0);
-            textGrp.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
-
-            TextView nameTv = new TextView(this);
-            nameTv.setText(pingNames[i]);
-            nameTv.setTextColor(getTextColor());
-            nameTv.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TITLE"));
-            nameTv.setTypeface(null, Typeface.BOLD);
-            textGrp.addView(nameTv);
-
-            TextView statsTv = new TextView(this);
-            statsTv.setText("Consumption: " + consumptionStats[i] + " | Status: DISCONNECTED");
-            statsTv.setTextColor(getSecondaryTextColor());
-            statsTv.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
-            textGrp.addView(statsTv);
-            row.addView(textGrp);
-
-            // Toggle Switch
-            android.widget.Switch bSwitch = new android.widget.Switch(this);
-            bSwitch.setChecked(currentPulseValue == val);
-            if (currentPulseValue == val) statsTv.setText("Consumption: " + consumptionStats[i] + " | Status: ACTIVE");
-            
-            batterySwitches.add(bSwitch);
-            bSwitch.setOnCheckedChangeListener((v, isChecked) -> {
-                if (isChecked) {
-                    prefs.edit().putLong("pref_tracking_interval", val).apply();
-                    for (android.widget.Switch s : batterySwitches) {
-                        if (s != bSwitch) s.setChecked(false);
-                    }
-                    statsTv.setText("Consumption: " + consumptionStats[pos] + " | Status: ACTIVE");
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
-                    android.widget.Toast.makeText(this, "Telemetry Node Adjusted: " + val + "ms Pulse Active.", android.widget.Toast.LENGTH_SHORT).show();
-                } else {
-                    statsTv.setText("Consumption: " + consumptionStats[pos] + " | Status: DISCONNECTED");
-                }
-            });
-
-            bSwitch.setOnKeyListener((v, keyCode, event) -> {
-                if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
-                    (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
-                    bSwitch.toggle();
-                    return true;
-                }
-                return false;
-            });
-            row.addView(bSwitch);
-
-            batteryList.addView(row);
-            
-            if (i < pingValues.length - 1) {
-                View div = new View(this);
-                div.setBackgroundColor(Color.argb(20, 150, 150, 150));
-                batteryList.addView(div, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 2));
-            }
-        }
-
-
-        content.addView(batteryList, getCardParams());
+        // --- LAYER 1.5: 🔋 BATTERY & PING INTELLIGENCE ENTRY ---
+        content.addView(createSectionHeader("🔋 BATTERY OPTIMIZATION & PING INTELLIGENCE"));
+        View batteryLauncher = createIconButton("🔋 BATTERY OPTIMIZATION & PING HUB", android.R.drawable.ic_lock_power_off, true, v -> showBatteryOptimizerDialog());
+        content.addView(batteryLauncher, btnLp);
 
         // --- LAYER 2: ADVANCED APP TELEMETRY ---
         content.addView(createSectionHeader("ADVANCED APP TELEMETRY"));
@@ -211,7 +137,9 @@ public class SettingsActivity extends BaseActivityJava {
             startActivity(new Intent(this, HelpSupportActivity.class));
         }), btnLp);
         secCard.addView(createIconButton("SYSTEM LOGS & AUDIT TRAIL", android.R.drawable.ic_menu_info_details, v -> {
-            startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));
+            android.content.Intent watchdog = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.WatchDogAuditActivity.class);
+            watchdog.putExtra("VIEW_MODE", "STATE");
+            startActivity(watchdog);
         }), btnLp);
         secCard.addView(createIconButton("FACTORY RESET CONSOLE", android.R.drawable.ic_menu_revert, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.FactoryResetActivity.class));
@@ -247,5 +175,138 @@ public class SettingsActivity extends BaseActivityJava {
     @Override
     protected void setupLogic() {
         SystemLogger.d(TAG, "Settings Hub Synchronized.");
+    }
+
+    private void showBatteryOptimizerDialog() {
+        android.app.Dialog dialog = new android.app.Dialog(this);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(getPrimaryColor());
+        int p = scale(40);
+        root.setPadding(p, p, p, p);
+        
+        // --- 🔋 HEADER ---
+        TextView title = new TextView(this);
+        title.setText("🔋 ENERGY & PING OPTIMIZER");
+        title.setTextColor(getGradientStart());
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
+        title.setPadding(0, 0, 0, 40);
+        root.addView(title);
+
+        // --- STEPPER SECTION ---
+        LinearLayout stepperCard = new LinearLayout(this);
+        stepperCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, stepperCard, "CARD_STANDARD");
+        stepperCard.setPadding(30, 30, 30, 30);
+
+        android.widget.Switch masterSwitch = new android.widget.Switch(this);
+        masterSwitch.setText("🔋 MANUAL OVERRIDE (90s+)   ");
+        masterSwitch.setTextColor(getTextColor());
+        masterSwitch.setChecked(prefs.getBoolean("pref_stepper_active", false));
+        stepperCard.addView(masterSwitch);
+
+        final LinearLayout stepperControls = new LinearLayout(this);
+        stepperControls.setGravity(Gravity.CENTER);
+        stepperControls.setAlpha(masterSwitch.isChecked() ? 1.0f : 0.4f);
+        
+        TextView valTv = new TextView(this);
+        long currentVal = prefs.getLong("pref_manual_pulse", 90000L) / 1000;
+        valTv.setText(currentVal + "s");
+        valTv.setTextColor(getTextColor());
+        valTv.setTextSize(24f);
+        valTv.setTypeface(null, Typeface.BOLD);
+        valTv.setPadding(40, 0, 40, 0);
+
+        // --- ➕ INCREMENT / ➖ DECREMENT VECTOR NODES ---
+        int tacticalSize = scale(110);
+        
+        android.widget.ImageView decBtn = new android.widget.ImageView(this);
+        decBtn.setImageResource(com.jdroidx.jfindme.R.drawable.ic_minus); // Forensic Minus Vector
+        decBtn.setColorFilter(getGradientOverlayText());
+        decBtn.setBackground(getSolidDrawable(getGradientStart(), scaleRadius(15)));
+        decBtn.setPadding(30, 30, 30, 30);
+        decBtn.setOnClickListener(v -> {
+            if (!masterSwitch.isChecked()) return;
+            long val = Long.parseLong(valTv.getText().toString().replace("s", ""));
+            if (val > 90) { 
+                val -= 10; valTv.setText(val + "s"); 
+                prefs.edit().putLong("pref_manual_pulse", val * 1000).apply();
+                prefs.edit().putLong("pref_tracking_interval", val * 1000).apply();
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+            }
+        });
+
+        android.widget.ImageView incBtn = new android.widget.ImageView(this);
+        incBtn.setImageResource(android.R.drawable.ic_input_add); // Native Android Plus Vector
+        incBtn.setColorFilter(getGradientOverlayText());
+        incBtn.setBackground(getSolidDrawable(getGradientStart(), scaleRadius(15)));
+        incBtn.setPadding(30, 30, 30, 30);
+        incBtn.setOnClickListener(v -> {
+            if (!masterSwitch.isChecked()) return;
+            long val = Long.parseLong(valTv.getText().toString().replace("s", ""));
+            val += 10; valTv.setText(val + "s"); 
+            prefs.edit().putLong("pref_manual_pulse", val * 1000).apply();
+            prefs.edit().putLong("pref_tracking_interval", val * 1000).apply();
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+        });
+
+        stepperControls.addView(decBtn, new LinearLayout.LayoutParams(tacticalSize, tacticalSize));
+        stepperControls.addView(valTv);
+        stepperControls.addView(incBtn, new LinearLayout.LayoutParams(tacticalSize, tacticalSize));
+        stepperCard.addView(stepperControls);
+        root.addView(stepperCard);
+
+        // --- PRESET SECTION ---
+        TextView presetTitle = new TextView(this);
+        presetTitle.setText("🔋 PRESET OPTIMIZATION NODES");
+        presetTitle.setTextColor(getSecondaryTextColor());
+        presetTitle.setPadding(0, 40, 0, 20);
+        root.addView(presetTitle);
+
+        LinearLayout presetCard = new LinearLayout(this);
+        presetCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, presetCard, "CARD_STANDARD");
+        
+        final long[] vals = {60000L, 30000L, 15000L, 7000L, 1000L};
+        final String[] names = {"ECO (60s)", "BALANCED (30s)", "ACTIVE (15s)", "HIGH (7s)", "EXREME (1s)"};
+        final java.util.List<android.widget.Switch> switches = new java.util.ArrayList<>();
+
+        for(int i=0; i<vals.length; i++){
+            final long v = vals[i];
+            android.widget.Switch sw = new android.widget.Switch(this);
+            sw.setText(names[i]);
+            sw.setTextColor(getTextColor());
+            sw.setPadding(20, 20, 20, 20);
+            sw.setChecked(!masterSwitch.isChecked() && prefs.getLong("pref_tracking_interval", 60000L) == v);
+            switches.add(sw);
+            sw.setOnClickListener(view -> {
+                if(masterSwitch.isChecked()) { sw.setChecked(false); return; }
+                for(android.widget.Switch s : switches) s.setChecked(false);
+                sw.setChecked(true);
+                prefs.edit().putLong("pref_tracking_interval", v).apply();
+            });
+            presetCard.addView(sw);
+        }
+        root.addView(presetCard);
+
+        masterSwitch.setOnCheckedChangeListener((b, isChecked) -> {
+            prefs.edit().putBoolean("pref_stepper_active", isChecked).apply();
+            stepperControls.setAlpha(isChecked ? 1.0f : 0.3f);
+            if(isChecked) {
+                for(android.widget.Switch s : switches) s.setChecked(false);
+                long val = Long.parseLong(valTv.getText().toString().replace("s", "")) * 1000;
+                prefs.edit().putLong("pref_tracking_interval", val).apply();
+            }
+        });
+
+        dialog.setContentView(root);
+        dialog.show();
+        
+        android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams();
+        lp.copyFrom(dialog.getWindow().getAttributes());
+        lp.width = (int)(getResources().getDisplayMetrics().widthPixels * 0.9);
+        dialog.getWindow().setAttributes(lp);
     }
 }

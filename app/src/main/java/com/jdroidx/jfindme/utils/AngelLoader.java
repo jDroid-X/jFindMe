@@ -103,6 +103,17 @@ public class AngelLoader {
         statusLp.gravity = Gravity.CENTER;
         statusLp.topMargin = (int) android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_DIP, 15, context.getResources().getDisplayMetrics()); // Graceful buffer
         contentGroup.addView(statusCard, statusLp);
+
+        // 🚀 V53 Telemetry: Version Matrix display below butterfly
+        android.widget.TextView verText = new android.widget.TextView(context);
+        verText.setText("Db: 53 | L7: v1.0.8 | Core: 2.4.1 | UI: M3");
+        verText.setTextColor(Color.parseColor("#80FFFFFF"));
+        verText.setTextSize(9f);
+        verText.setGravity(Gravity.CENTER);
+        android.widget.LinearLayout.LayoutParams verLp = new android.widget.LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        verLp.topMargin = (int) android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_DIP, 8, context.getResources().getDisplayMetrics());
+        contentGroup.addView(verText, verLp);
         
         overlay.addView(contentGroup);
         

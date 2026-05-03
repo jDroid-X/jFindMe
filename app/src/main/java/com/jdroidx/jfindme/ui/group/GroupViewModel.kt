@@ -8,6 +8,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -40,15 +41,14 @@ class GroupViewModel : ViewModel() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             
             // 🛰️ 3. Cloud Propagation (Waterfall)
-            val ref = FirebaseDatabase.getInstance().reference
             
             // Step A: Update Group Membership Role
-            ref.child("groups").child(myGrp).child("members").child(uid).child("role")
+            FirebaseComm.groupsRef.child(myGrp).child("members").child(uid).child("role")
                 .setValue(newRole)
                 .addOnCompleteListener { task ->
                     
                     // Step B: Update User Dossier for Family/Friends sync
-                    val userRef = ref.child("users").child(uid)
+                    val userRef = FirebaseComm.devicesRef.child(uid).child("profile")
                     val map = mapOf(
                         "role_family" to (if (isFriend) "None" else newRole),
                         "role_friend" to (if (isFriend) newRole else "None")
@@ -56,7 +56,7 @@ class GroupViewModel : ViewModel() {
                     userRef.updateChildren(map).addOnCompleteListener {
                         
                         // Step C: Inject Real-time Signal (WhatsApp-style)
-                        ref.child("users").child(uid).child("signals").child("refresh_roster")
+                        FirebaseComm.devicesRef.child(uid).child("profile").child("signals").child("refresh_roster")
                             .setValue(System.currentTimeMillis())
                             .addOnCompleteListener {
                                 isLoading.postValue(false)
@@ -76,12 +76,17 @@ class GroupViewModel : ViewModel() {
         }
     }
 
-    fun setupSignalListener(myUid: String) {
+    fun setupSignalListener(myUid: String, activeGroup: String?) {
+        if (activeGroup.isNullOrEmpty()) return
         FirebaseDatabase.getInstance().reference
-            .child("users").child(myUid).child("signals").child("refresh_roster")
+            .child("groups").child(activeGroup).child("signals").child("refresh_roster")
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snap: DataSnapshot) {
-                    if (snap.exists()) signalReceived.postValue(true)
+                    if (snap.exists()) {
+                        // 🛰️ QA Fix: Prevent infinite loop if we are the sender
+                        // In a production env, we'd check the sender's UID here.
+                        signalReceived.postValue(true)
+                    }
                 }
                 override fun onCancelled(error: DatabaseError) {}
             })

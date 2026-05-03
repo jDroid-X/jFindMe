@@ -16,8 +16,13 @@ import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.group.FamilyFriendsViewModel;
 import com.jdroidx.jfindme.ui.group.PersonDetailsActivity;
-import com.jdroidx.jfindme.ui.group.GroupActivity;
+
+
+
 import com.jdroidx.jfindme.ui.group.RosterNode;
+import com.journeyapps.barcodescanner.ScanContract;
+import com.journeyapps.barcodescanner.ScanOptions;
+import androidx.activity.result.ActivityResultLauncher;
 
 public class FamilyFriendsActivity extends BaseActivityJava {
 
@@ -27,12 +32,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     private LinearLayout rosterContainer;
     private ScrollView mainScrollView;
     private ImageView ownerAvatar;
+    private TextView tvOwnerName;
     
     // Tab Interaction Cache
-    private LinearLayout tabFamily;
-    private LinearLayout tabFriends;
     private TextView tvFamily, tvFriends;
-    private int activeTab = 0;
+    private LinearLayout tabFamily, tabFriends;
+    private int activeTab = 0; // 0=Family, 1=Friends
+    private FamilyFriendsViewModel viewModel;
     
     // 🚀 QA Fix: Global Cache Memory to preserve OS LiveData across Fragment/Tab Switches
     private java.util.List<RosterNode> currentRoster = new java.util.ArrayList<>();
@@ -100,9 +106,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tabFriends.addView(tvFriends);
 
         LinearLayout.LayoutParams tabLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        tabLp.setMargins(10, 0, 10, 0);
+        tabLp.setMargins(5, 0, 5, 0);
         
-        // 🚀 L7 Architecture Sync: Initialize with CARD_CAPSULE_BUTTON geometry
         UiArchitect.applyCardWithOverride(this, tabFamily, "CARD_CAPSULE_BUTTON");
         UiArchitect.applyCardWithOverride(this, tabFriends, "CARD_CAPSULE_BUTTON");
 
@@ -129,11 +134,58 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tabFamily.setOnClickListener(v -> renderFamilyTab());
         tabFriends.setOnClickListener(v -> renderFriendsTab());
 
-        // BOOT STATE
-        renderFamilyTab();
+        // BOOT STATE: Check for Intent Overrides (Direct Tab Mapping)
+        if (getIntent().hasExtra("REQUESTED_TAB")) {
+            int target = getIntent().getIntExtra("REQUESTED_TAB", 0);
+            if (target == 1) renderFriendsTab();
+            else renderFamilyTab();
+        } else {
+            renderFamilyTab();
+        }
+
+        // 🚀 RECOVERY NODE: Aggressive Cloud Restore (Final Pillar of the Social Merger)
+        TextView reclaimBtn = new TextView(this);
+        reclaimBtn.setText("RECLAIM CLOUD ROSTER");
+        reclaimBtn.setPadding(30, 20, 30, 20);
+        reclaimBtn.setGravity(Gravity.CENTER);
+        UiArchitect.applyCardWithOverride(this, reclaimBtn, "CARD_CAPSULE_BUTTON");
+        
+        reclaimBtn.setOnClickListener(v -> {
+            com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Scanning Cloud Matrix...");
+            viewModel.forceAggressiveRecovery(this, success -> {
+                runOnUiThread(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    if (success) {
+                        android.widget.Toast.makeText(this, "ROSTER RESTORED SUCCESSFULLY", android.widget.Toast.LENGTH_LONG).show();
+                        viewModel.initializeCloudSync(this); // Force refresh LiveData
+                    } else {
+                        android.app.AlertDialog diag = new android.app.AlertDialog.Builder(this)
+                            .setTitle("RECOVERY SCAN COMPLETE")
+                            .setMessage("Zero matching nodes found in your active cloud group. If this is a new setup, please use the NETWORK GATEWAY to pair your first device.")
+                            .setPositiveButton("Open Gateway", (di, w) -> {
+                                startActivity(new Intent(this, NetworkGatewayActivity.class));
+                                finish();
+                            })
+                            .setNegativeButton("Dismiss", null)
+                            .show();
+                        applyDialogTheme(diag);
+                    }
+                });
+                return null;
+            });
+        });
+
+        LinearLayout reclaimWrapper = new LinearLayout(this);
+        reclaimWrapper.setPadding(masterPadding, 10, masterPadding, 30);
+        reclaimWrapper.addView(reclaimBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        mainRoot.addView(reclaimWrapper);
+
+        // 🚀 ANALYTICAL HUB: Architecture Status Bar (Transparency Pillar)
+        mainRoot.addView(buildArchitectureStatusBar());
 
         // 🚀 QA Fix: Global Navigation Integrity
-        String[] keys = {"NAV_NOTICE", "NAV_ALERT", "NAV_DEVICE", "NAV_ME"};
+        String[] keys = {"NAV_NOTICE", "NAV_DEVICE", "NAV_ME"};
         mainRoot.addView(UiArchitect.createBottomNav(this, keys, "NAV_ME"));
 
         return mainRoot;
@@ -190,8 +242,10 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         
         rosterContainer.addView(createSectionHeader("EXTENDED NETWORK (TRUSTED NODES)"));
         java.util.List<RosterNode> friends = new java.util.ArrayList<>();
-        for (RosterNode n : currentRoster) {
-            if (n.isFriend()) friends.add(n);
+        if (currentRoster != null) {
+            for (RosterNode n : currentRoster) {
+                if (n.isFriend()) friends.add(n);
+            }
         }
         renderTreeBranch(friends, "FRIEND");
     }
@@ -207,7 +261,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         }
         for (RosterNode n : nodes) {
             String label = n.getDisplayName().toUpperCase();
-            rosterContainer.addView(createRoleCard(label, "🟢 LIVE TARGET TRACKED", branchType.equals("GUARDIAN"), n.getUid()));
+            rosterContainer.addView(createRoleCard(label, "🟢 LIVE TARGET TRACKED", branchType.equals("GUARDIAN"), n.getUid(), n.getAvatarId()));
         }
     }
 
@@ -220,12 +274,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tv.setPadding(10, getResponsivePaddingQuota(), 0, getResponsivePaddingQuota() / 2);
         return tv;
     }
-
-    private View createRoleCard(String roleTitle, String statusText, boolean isAdministrator) {
-        return createRoleCard(roleTitle, statusText, isAdministrator, null);
-    }
     
-    private View createRoleCard(String roleTitle, String statusText, boolean isAdministrator, String targetUid) {
+    private View createRoleCard(String roleTitle, String statusText, boolean isAdministrator, String targetUid, String avatarId) {
         LinearLayout logCard = new LinearLayout(this);
         logCard.setOrientation(LinearLayout.HORIZONTAL);
         logCard.setGravity(Gravity.CENTER_VERTICAL);
@@ -239,10 +289,9 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         int logPad = getResponsivePaddingQuota() + 5;
         logCard.setPadding(logPad, logPad / 2, logPad, logPad / 2); 
         
-        // Avatar Emulation
+        // 🚀 Identity Identity Bridge: Use AvatarLoader to pick the customized identity
         ImageView avatar = new ImageView(this);
-        avatar.setImageResource(targetUid != null ? android.R.drawable.ic_menu_gallery : android.R.drawable.ic_menu_camera);
-        avatar.setColorFilter(targetUid != null ? Color.WHITE : Color.GRAY); 
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, avatarId);
         
         // Draw the Circle Overlay dynamically
         android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
@@ -257,6 +306,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         } else {
             c.setStroke(4, Color.DKGRAY); // Offline State
         }
+        avatar.setBackground(c);
         
         // --- INTERACTIVE FOREGROUND RE-MAPPING ---
         android.util.TypedValue outValueBorderless = new android.util.TypedValue();
@@ -314,11 +364,9 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         pairAction.setClickable(true);
         pairAction.setBackgroundResource(outValueBorderless.resourceId);
         
-        // Critical Intent: Passes the target Role into the old Scanner Gateway!
+        // 🚀 GATEWAY TRANSITION: Switch to the external Gateway Hub for QR/Handshake pairing!
         pairAction.setOnClickListener(v -> {
-            Intent intent = new Intent(FamilyFriendsActivity.this, GroupActivity.class);
-            intent.putExtra("requested_network_role", roleTitle); 
-            startActivity(intent);
+            startActivity(new Intent(this, NetworkGatewayActivity.class));
         });
 
         // 🚀 QA Fix: Only render [+] Button if the slot is empty!
@@ -405,35 +453,50 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         localDb.updateCitizenRole(uid, famRole, frRole, frRole.contains("Friend"));
         
-        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        
+        // 🚀 V57 TIERED UPDATES: Target Tier 1 (Identities & Profiles)
+        com.google.firebase.database.DatabaseReference profRef = com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(uid);
+        
+        java.util.Map<String, Object> cp = new java.util.HashMap<>();
+        cp.put("role_family", famRole);
+        cp.put("role_friend", frRole);
+        cp.put("ts_modified", System.currentTimeMillis());
+
+        // 📚 Step 1: Update Tier 1 Profile
+        profRef.updateChildren(cp);
+        
+        // 🛰️ Step 2: Update Tier 3 Relationship (if applicable)
         if (myGrp != null) {
-            java.util.Map<String, Object> cp = new java.util.HashMap<>();
-            cp.put("role_family", famRole);
-            cp.put("role_friend", frRole);
-            
-            com.google.firebase.database.DatabaseReference root = com.google.firebase.database.FirebaseDatabase.getInstance().getReference();
-            
-            // 📚 Step 1: Update Group Dossier
-            root.child("groups").child(myGrp).child("citizen_dossiers").child(uid).updateChildren(cp);
-            
-            // 🛰️ Step 2: Update User Dossier (Primary Identity Source)
-            root.child("users").child(uid).updateChildren(cp);
-            
-            // 🚀 Step 3: Trigger Network Refresh Signal
-            root.child("users").child(uid).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(uid).child("role").setValue(role);
         }
-        android.widget.Toast.makeText(this, "Network Array Re-Mapped! Role Verified.", android.widget.Toast.LENGTH_SHORT).show();
+        
+        // 🚀 Step 3: Trigger Network Refresh Signal (Dossier Sync)
+        profRef.child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+        
+        android.widget.Toast.makeText(this, "Network Array Re-Mapped! Tier 1 Identity Sync Completed.", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (ownerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
+        
+        if (tvOwnerName != null) {
+            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+            String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
+            if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
+            
+            android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+            String nameStr = myDos != null ? myDos.get("id_full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+            tvOwnerName.setText("👤 Owner: " + nameStr);
+        }
     }
 
     @Override
     protected void setupLogic() {
-        FamilyFriendsViewModel viewModel = new androidx.lifecycle.ViewModelProvider(this).get(FamilyFriendsViewModel.class);
+        viewModel = new androidx.lifecycle.ViewModelProvider(this).get(FamilyFriendsViewModel.class);
         viewModel.initializeCloudSync(this);
         
         viewModel.getRosterLiveData().observe(this, nodes -> {
@@ -443,7 +506,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             // Sync current active tab
             if (activeTab == 0) {
                 renderFamilyTab();
-            } else {
+            } else if (activeTab == 1) {
                 renderFriendsTab();
             }
         });
@@ -472,24 +535,23 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         textBlock.setOrientation(LinearLayout.VERTICAL);
         textBlock.setPadding(scale(40), 0, 0, 0);
         
-        // --- 1. OWNER NAME ---
+        // --- 1. OWNER NAME (Forensic Redirection Fix) ---
+        android.content.SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String finalAgentId = jPrefs.getString("agent_id", "AGENT_ERROR");
+        
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
-        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
+        java.util.Map<String, String> myDos = db.getLocalDossier(finalAgentId);
         
-        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-        String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        String nameStr = myDos != null ? myDos.get("id_full_name") : jPrefs.getString("user_nickname", "User Identity");
         
-        TextView myName = new TextView(this);
-        myName.setText("👤 Owner: " + nameStr);
-        myName.setTextColor(getTextColor());
-        myName.setTextSize(scaleText(15));
-        myName.setTypeface(null, Typeface.BOLD);
-        textBlock.addView(myName);
+        tvOwnerName = new TextView(this);
+        tvOwnerName.setText("👤 Owner: " + nameStr);
+        tvOwnerName.setTextColor(getTextColor());
+        tvOwnerName.setTextSize(scaleText(15));
+        tvOwnerName.setTypeface(null, Typeface.BOLD);
+        textBlock.addView(tvOwnerName);
         
         // Fetch Persistent UIDs
-        android.content.SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
         String hardwareId = jPrefs.getString("hardware_device_id", null);
         if (hardwareId == null) {
             hardwareId = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -500,9 +562,6 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             deviceId = "UID-" + java.util.UUID.randomUUID().toString().substring(0, 7).toUpperCase();
             jPrefs.edit().putString("device_uid", deviceId).apply();
         }
-
-        String safeUid = (myUid != null) ? myUid : "MOCK_U123";
-        String upperFirebaseId = safeUid.toUpperCase();
 
         // --- 2. DEVICE UID ---
         TextView tvDeviceUid = new TextView(this);
@@ -518,15 +577,15 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         tvHardwareUid.setTextSize(10);
         textBlock.addView(tvHardwareUid);
 
-        // --- 4. NETWORK ID ---
+        // --- 4. NETWORK ID (Forensic Fix: Use Agent ID instead of Auth UID) ---
         TextView tvNetworkId = new TextView(this);
-        tvNetworkId.setText("🌐 Network ID: - " + upperFirebaseId);
+        tvNetworkId.setText("🌐 Network ID: - " + finalAgentId);
         tvNetworkId.setTextColor(getSecondaryTextColor());
         tvNetworkId.setTextSize(9);
         textBlock.addView(tvNetworkId);
         
         // 🛡️ ARCHITECTURAL SILENCE: Check local persistence for Hub status
-        String localActiveGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        String localActiveGroup = jPrefs.getString("active_group", null);
         if (localActiveGroup != null) {
             TextView tvStatus = new TextView(this);
             tvStatus.setText("LOCKED TO HUB: " + localActiveGroup);
@@ -539,6 +598,47 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         
         row.addView(textBlock);
         return row;
+    }
+
+    private View buildArchitectureStatusBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(20, 15, 20, 15);
+        bar.setBackgroundColor(Color.argb(80, Color.red(getPrimaryColor()), Color.green(getPrimaryColor()), Color.blue(getPrimaryColor()))); 
+        
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_lock_silent_mode, "Secure", "Analytical Tiering: 5-Tier Normalized Architecture active."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_save, "Local", "Identity Hub: Data retrieval anchored in Tier 1 Local Profiles."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_popup_sync, "Matrix", "Analytical Sync: Cloud and Local parity maintained via tiered nodes."));
+        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_recent_history, "Silicon", "Hardware Lock: Tier 2 Silicon Fingerprints verified and archived."));
+        bar.addView(createArchitectureIcon(android.R.drawable.checkbox_on_background, "Mesh", "Relationship Mesh: Tier 3 Graph Traversal active for peer discovery."));
+
+        return bar;
+    }
+
+    private View createArchitectureIcon(int resId, String label, String toastMsg) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(25, 5, 25, 5);
+        box.setClickable(true);
+        box.setOnClickListener(v -> android.widget.Toast.makeText(this, toastMsg, android.widget.Toast.LENGTH_SHORT).show());
+        
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(resId);
+        iv.setColorFilter(getGradientStart());
+        int iSize = scale(60); 
+        box.addView(iv, new LinearLayout.LayoutParams(iSize, iSize));
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(9);
+        tv.setTextColor(getTextColor());
+        tv.setAlpha(0.6f);
+        tv.setGravity(Gravity.CENTER);
+        box.addView(tv);
+
+        return box;
     }
 }
 

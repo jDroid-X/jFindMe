@@ -56,6 +56,11 @@ public class BottomNavTable {
         registry.put("NAV_ALERT",  new NavRecord("NAV_ALERT",  "Alert",   android.R.drawable.ic_dialog_email, "System Alerts", true, Color.YELLOW, 25f, "LIGHT", "OPEN_ALERT", true));
         registry.put("NAV_DEVICE", new NavRecord("NAV_DEVICE", "Map",     android.R.drawable.ic_menu_mapmode, "Active Nodes", true, Color.BLUE, 25f, "HEAVY", "OPEN_MAP", true));
         registry.put("NAV_ME",     new NavRecord("NAV_ME",     "Profile", android.R.drawable.ic_menu_myplaces, "Identity Hub", true, Color.MAGENTA, 25f, "LIGHT", "OPEN_PROFILE", true));
+
+        // --- 🛰️ L7 Profile Hub Navigation (Synchronized) ---
+        registry.put("NAV_PINGS",   new NavRecord("NAV_PINGS",   "Pings",    android.R.drawable.ic_lock_idle_alarm, "Notifications Hub", true, Color.GRAY, 25f, "LIGHT", "OPEN_NOTIF", true));
+        registry.put("NAV_MAP",     new NavRecord("NAV_MAP",     "Map Hub",  android.R.drawable.ic_menu_mapmode, "Geospatial View", true, Color.BLUE, 25f, "HEAVY", "OPEN_MAP", true));
+        registry.put("NAV_PROFILE", new NavRecord("NAV_PROFILE", "Profile",  android.R.drawable.ic_menu_myplaces, "Identity Matrix", true, Color.MAGENTA, 25f, "LIGHT", "OPEN_PROFILE", true));
     }
 
     public static View createNav(BaseActivityJava activity, String[] tableKeys, String activeKey) {

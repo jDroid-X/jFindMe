@@ -25,7 +25,7 @@ import com.jdroidx.jfindme.ui.base.UiArchitect;
  * Rules: 100% Java Programmatic, 7 Themes, No Button Widgets.
  * Integration: Python Data Engine (SpatialProcessor).
  */
-public abstract class BaseActivityJava extends AppCompatActivity {
+public abstract class BaseActivityJava extends AppCompatActivity implements SharedPreferences.OnSharedPreferenceChangeListener {
 
     protected SharedPreferences prefs;
     protected int currentThemeId;
@@ -44,6 +44,9 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         currentUiHash = prefs.getLong("ui_config_hash", 0);
         currentStage = UiArchitect.getStage(this).ordinal();
         isLandscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        
+        // 🚀 Register Master Registry Listener for real-time synchronization
+        prefs.registerOnSharedPreferenceChangeListener(this);
         
         super.onCreate(savedInstanceState);
         
@@ -103,7 +106,9 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         setupLogic();
         if (savedInstanceState != null) {
-            onUiRebuilt();
+            onUiRebuilt(savedInstanceState);
+        } else {
+            onUiRebuilt(null);
         }
         SystemLogger.i(getClass().getSimpleName(), "Native Utility Activity Resumed.");
     }
@@ -111,13 +116,13 @@ public abstract class BaseActivityJava extends AppCompatActivity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        onSaveCurrentState();
+        onSaveCurrentState(outState);
         outState.putBoolean("BASE_IS_LANDSCAPE", isLandscape);
     }
     
     // contract methods for subclasses
-    protected void onSaveCurrentState() {}
-    protected void onUiRebuilt() {}
+    protected void onSaveCurrentState(Bundle outState) {}
+    protected void onUiRebuilt(Bundle savedState) {}
     
     private void startRegistryAudit() {
         if (registryCheckRunnable != null) return;
@@ -134,15 +139,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
                     int currentStageVal = currentStageEnum.ordinal();
                     
                     if (currentThemeId != latestInstalledTheme || currentUiHash != latestUiHash || (latestStage != -1 && currentStage != latestStage)) {
-                        if (System.currentTimeMillis() - lastRecreateTime > 2000) {
-                            lastRecreateTime = System.currentTimeMillis();
-                            currentThemeId = latestInstalledTheme;
-                            currentUiHash = latestUiHash;
-                            if (latestStage != -1) currentStage = latestStage;
-                            
-                            SystemLogger.i("BaseActivityJava", "Registry Mismatch. Rebooting UI Hub.");
-                            safeRecreate();
-                        }
+                        SystemLogger.i("BaseActivityJava", "Registry Mismatch Detected via Audit. Triggering Sync.");
+                        safeRecreate();
                     }
                 } catch (Exception e) {
                     SystemLogger.e("BaseActivityJava", "Audit Error", e);
@@ -172,6 +170,22 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         super.onStop();
         stopRegistryAudit();
     }
+
+    @Override
+    protected void onDestroy() {
+        if (prefs != null) {
+            prefs.unregisterOnSharedPreferenceChangeListener(this);
+        }
+        super.onDestroy();
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if ("theme_id".equals(key) || "ui_config_hash".equals(key) || "stage_override".equals(key)) {
+            SystemLogger.i("BaseActivityJava", "Master Registry Signal: " + key + " changed. Executing Hot-Sync.");
+            safeRecreate();
+        }
+    }
     
     @Override
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
@@ -180,7 +194,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         
         // 🚀 L7 Architecture Sync: Manual UI Re-Injection
         // Rebuilds the geometry hub without destroying the Activity state or memory registry.
-        onSaveCurrentState(); 
+        Bundle bridge = new Bundle();
+        onSaveCurrentState(bridge); 
         View originalRoot = createLayout();
         if (originalRoot != null) {
             android.widget.FrameLayout masterWrap = new android.widget.FrameLayout(this);
@@ -191,7 +206,8 @@ public abstract class BaseActivityJava extends AppCompatActivity {
             reInjectHelpIcon(masterWrap);
             
             setContentView(masterWrap);
-            onUiRebuilt(); 
+            setupLogic();
+            onUiRebuilt(bridge); 
         }
     }
 
@@ -243,13 +259,18 @@ public abstract class BaseActivityJava extends AppCompatActivity {
         String actName = getClass().getSimpleName().replace("Activity", "");
         String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
         if (actName.contains("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
-        if (actName.equals("Group")) helpText = "CRITICAL RECOVERY (After Reinstall):\nBecause re-installations are strictly sandboxed as 'Fresh Slates' for security, you MUST tap [RESTORE LOST ROSTER ASSETS] before anything else. This forces an aggressive backend scan to locate your legacy devices and violently yank them back into your current secure Hub.\n\nFRESH PAIRING SEQUENCE:\n1. Open Option A (Remote) or Option B (Local).\n2. Tap [GENERATE UNIQUE TOKEN].\n3. The Target Device scans this token.\n4. An Approval Alert instantly interrupts your screen.\n5. Select the Target's exact Network Tier (Spouse/Child) and tap APPROVE to finalize the cryptographic handshake!";
+        if (actName.equals("FamilyFriends")) helpText = "🛰️ UNIVERSAL SOCIAL HUB (L7 Architect)\n\n" +
+                                                                              "1. MONITORED ROSTER (TABS): View real-time tracking telemetry for Family and Friends.\n\n" +
+                                                                              "2. GATEWAY HUB: Tap [+] to trigger the QR Handshake. Align the target's pairing code to finalize the relational bridge.\n\n" +
+                                                                              "3. CLOUD RECOVERY: Tap [RECLAIM CLOUD ROSTER] below to perform an aggressive backend sweep and restore your existing network after a reinstall.\n\n" +
+                                                                              "4. IDENTITY MIRROR: Your current dossier (Avatar + Name) is automatically mirrored across all connected nodes in milliseconds.";
         if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
         if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
         if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database (Default: 7 Days, USER Override supported).";
         if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
         if (actName.equals("History")) helpText = "• Step 1: Storage Limit - Tap the '7 DAYS' value box to manually override how long history logs remain on your physical device.\n• Step 2: Time Selection - Select a forensic window (e.g., 4h, 12h, 24h) to render tracking trails on the map engine.\n• Step 3: Replay Controls - Tap START to physically replay the target's path with real-time speed/battery telemetry.\n• Step 4: Diagnostic Metrics - '0.0 km/h' indicates as Static/Dwell event. 'N/A' indicates missing forensic sensor telemetry at the time of the ping.";
         if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
+        if (actName.equals("WatchDogAudit")) helpText = "• MISSION: Real-time silicon monitoring & forensic fault detection.\n\n• STEP 1: MONITORING - Observe the live heartbeat of the application. Red nodes indicate critical security or sync failures.\n\n• STEP 2: FILTERING - Use the level rack (INFO, WARN, ERR) to isolate specific diagnostic threads.\n\n• STEP 3: EXPORTING - Tap 'COPY' to export the 7-day master audit trail for forensic review.\n\n• STEP 4: PROMOTION - Critical errors are automatically promoted to the Alert Dashboard with high-priority sirens.";
         if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
         if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Access individual member dossiers from the roster.\n• Step 2: Configure the Privacy & ACL Matrix (Live Sync, Biometrics).\n\n" +
                                                                              "PRIVACY PERMISSIONS (PROS vs CONS):\n\n" +
@@ -265,9 +286,20 @@ public abstract class BaseActivityJava extends AppCompatActivity {
 
     // 🦋 Master QA Enterprise Fix: Completely Bypasses Chinese OEM 'BinderProxy' crashes natively!
     protected void safeRecreate() {
+        // 🚀 QA Fix: Master Synchronicity Guard (Prevents recreation loops)
+        long now = System.currentTimeMillis();
+        if (now - lastRecreateTime < 1000) return; 
+        lastRecreateTime = now;
+
         // 🚀 QA Fix: Input Channel Protection (Ensures window is ready for handover)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             if (isFinishing() || isDestroyed()) return;
+            
+            // Sync current instance fields before death to prevent audit re-firing in new instance
+            currentThemeId = prefs.getInt("theme_id", currentThemeId);
+            currentUiHash = prefs.getLong("ui_config_hash", currentUiHash);
+            currentStage = prefs.getInt("stage_override", currentStage);
+
             android.content.Intent hardwareMirror = getIntent();
             hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
             finish();
@@ -455,6 +487,20 @@ public abstract class BaseActivityJava extends AppCompatActivity {
      */
     public void applyLinearGradient(View view, float cornerRadius) {
         UiArchitect.applyCard(this, view, "CARD_HEADER");
+    }
+
+    /**
+     * 🚀 PILLAR 4: TACTICAL ICONOGRAPHY GEOMETRY
+     * Applies a solid background with a high-contrast stroke and precise corner radius.
+     */
+    public void applyStrokeGeometry(View view, int solidColor, int strokeColor, float radius, int strokeWidth) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(solidColor);
+        gd.setCornerRadius(radius);
+        gd.setStroke(strokeWidth, strokeColor);
+        view.setBackground(gd);
+        view.setClipToOutline(true);
+        view.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
     }
 
     // 🚀 INTERCEPT: Dynamically applies Custom Header Geometries globally across the Application Matrix

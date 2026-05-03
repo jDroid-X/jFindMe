@@ -1,3 +1,7 @@
+/**
+ * Auto-Login Architecture: Enterprise Forensic Entry Node
+ * Waterfall Method: Secured Splash Logic & Identity Auditing
+ */
 package com.jdroidx.jfindme.ui.base;
 
 import android.animation.ObjectAnimator;
@@ -25,6 +29,8 @@ import com.jdroidx.jfindme.ui.map.MapActivity;
 public class SplashActivity extends Activity {
 
     private final String TAG = "SplashActivity";
+    private final android.os.Handler transitionHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable transitionRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,7 +45,7 @@ public class SplashActivity extends Activity {
         if (rawId != 0) {
             com.airbnb.lottie.LottieAnimationView lottieLoader = new com.airbnb.lottie.LottieAnimationView(this);
             lottieLoader.setAnimation(rawId);
-            lottieLoader.setRepeatCount(com.airbnb.lottie.LottieDrawable.INFINITE);
+            lottieLoader.setRepeatCount(0); // 🚀 L7 Optimization: Single Pass for Splash Symmetry
             lottieLoader.playAnimation(); // Smooth 60FPS Waving Wings!
             
             // 🚀 MASTER SCALING INTERCEPTOR: Single Source of Truth
@@ -62,25 +68,35 @@ public class SplashActivity extends Activity {
         setContentView(root);
 
         // Android Main Thread Handler locking the Splash UI natively
-        getWindow().getDecorView().postDelayed(() -> {
+        transitionRunnable = () -> {
+            if (isFinishing() || isDestroyed()) return;
             
             com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Splash screen transition triggered.");
-            // 🧠 QA Fix: Explicitly check Cloud Authentication State BEFORE routing to AuthActivity!
+            
+            // 🚀 V57 TIERED VALIDATION: Verify Hardware Fingerprint Integrity
+            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
             com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
             
-            // 🚀 Day Before Yesterday: Conditional Dashboard Routing Protocol
             if (user != null) {
-                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Authenticated Node Detected. Bypassing Gateway.");
-                startActivity(new Intent(SplashActivity.this, MapActivity.class));
+                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Identity Detected. Routing to Secure GateWay for Manual Handshake.");
+                startActivity(new Intent(SplashActivity.this, AuthActivity.class));
             } else {
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Unauthenticated Hardware. Routing to Auth Hub.");
                 startActivity(new Intent(SplashActivity.this, AuthActivity.class));
             }
             
             finish();
-            
-            // Push native transition animations smoothing the UI hop
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-        }, 5000); // 🦋 Butterfly Angel Guard: Extended to 5s cinematic bridge
+        };
+        
+        transitionHandler.postDelayed(transitionRunnable, 3500); 
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (transitionHandler != null && transitionRunnable != null) {
+            transitionHandler.removeCallbacks(transitionRunnable);
+        }
+        super.onDestroy();
     }
 }

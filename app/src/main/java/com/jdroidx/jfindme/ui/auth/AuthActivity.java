@@ -1,539 +1,494 @@
 package com.jdroidx.jfindme.ui.auth;
 
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.lifecycle.ViewModelProvider;
+import com.jdroidx.jfindme.R;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.map.MapActivity;
-import com.jdroidx.jfindme.ui.group.GroupActivity;
 import com.jdroidx.jfindme.utils.SystemLogger;
-import android.view.KeyEvent;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.airbnb.lottie.LottieAnimationView;
+import com.airbnb.lottie.LottieDrawable;
 
 /**
- * Main -> UI Engine -> AuthScreen -> AuthActivity
- * Level 5: Redone for Enterprise Sync & Multi-Device Pairing.
- * Supports: Traditional Login, Theme Switching, and Fast Pairing Link.
+ * 🏛️ AuthActivity: ButterFly Secure GateWay (L7 Enterprise Stable)
+ * RESTORED: Matches 11:53 PM Production Snapshot.
+ * Features: Butterfly Header, jButterFly Auth Card, Multi-Action Grid.
  */
 public class AuthActivity extends BaseActivityJava {
 
     private AuthViewModel viewModel;
-    private final String TAG = "AuthActivity";
-    private EditText etEmail, etPass, etNickname;
-    private String cachedNick = "", cachedEmail = "", cachedPass = ""; 
-    private android.app.AlertDialog onboardingDialog;
-
-
+    private final String TAG = "AuthActivity_Secure";
+    private EditText etNick, etEmail, etPass;
+    private EditText etLat, etLng, etAddr;
+    private TextView tvLocationBaseline;
+    private AtomicBoolean isFinalizing = new AtomicBoolean(false);
 
     @Override
     protected View createLayout() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(getPrimaryColor());
-
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(isLandscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        
-        if (isLandscape) {
-            content.addView(createImagePane(), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.4f));
-            content.addView(createLoginPane(), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0.6f));
-        } else {
-            // 🚀 L7 Architecture Sync: Branding on Top for Portrait!
-            content.addView(createImagePane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            content.addView(createLoginPane(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
-        }
-        root.addView(content);
-
-        return root;
-    }
-
-    private View createImagePane() {
-        LinearLayout pane = new LinearLayout(this);
-        pane.setGravity(Gravity.CENTER);
-        pane.setOrientation(LinearLayout.VERTICAL);
-        int vPad = isLandscape ? scale(40) : scale(100); 
-        pane.setPadding(0, vPad, 0, vPad);
-        applyLinearGradient(pane, 0f); // Securely renders the Active Hero Gradient across the Launch Header!
-
-        ImageView logo = new ImageView(this);
-        int butterflyId = getResources().getIdentifier("butterfly", "drawable", getPackageName());
-        if (butterflyId != 0) {
-            logo.setImageResource(butterflyId);
-        } else {
-            logo.setImageResource(android.R.drawable.ic_dialog_map);
-            logo.setColorFilter(getGradientOverlayText());
-        }
-        
-        int heroSize = isLandscape ? scale(180) : scale(250); 
-        pane.addView(logo, new LinearLayout.LayoutParams(heroSize, heroSize));
-        
-        // 🚀 L7 Animation: Waving Wings Protocol (ScaleX Oscillation)
-        android.animation.ObjectAnimator wings = android.animation.ObjectAnimator.ofFloat(logo, "scaleX", 1f, 0.7f);
-        wings.setDuration(1200); // Rhythmic enterprise tempo
-        wings.setRepeatMode(android.animation.ValueAnimator.REVERSE);
-        wings.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-        wings.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
-        wings.start();
-        
-        TextView welcome = new TextView(this);
-        welcome.setText("ButterFly\nSecure\nGateWay"); // 3 Words | 3 Rows
-        welcome.setGravity(Gravity.CENTER);
-        welcome.setTextColor(getGradientOverlayText());
-        welcome.setTextSize(isLandscape ? scaleText(18) : scaleText(24)); 
-        welcome.setTypeface(null, android.graphics.Typeface.BOLD);
-        welcome.setPadding(0, isLandscape ? scale(20) : scale(40), 0, 0);
-        pane.addView(welcome);
-        
-        return pane;
-    }
-
-    private View createLoginPane() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setClipChildren(false); 
-        scroll.setClipToPadding(false);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(getPrimaryColor()); // 🚀 QA Fix: Master Theme Sync Override
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+
+        // --- 🦋 HEADER: ButterFly Secure GateWay ---
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setGravity(Gravity.CENTER);
         
-        LinearLayout wrapper = new LinearLayout(this);
-        wrapper.setOrientation(LinearLayout.VERTICAL);
-        wrapper.setClipChildren(false);
-        wrapper.setClipToPadding(false);
-        
-        int topPad = isLandscape ? scale(20) : scale(30);
-        wrapper.setPadding(getResponsivePaddingQuota(), topPad, getResponsivePaddingQuota(), scale(100));
- 
-        // --- THE MASTER LOGIN CARD ---
+        android.graphics.drawable.GradientDrawable headBg = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{getGradientStart(), getGradientEnd()}
+        );
+        header.setBackground(headBg);
+        header.setPadding(0, scale(60), 0, scale(40));
+
+        // Butterfly Animation Engine
+        LottieAnimationView lottie = new LottieAnimationView(this);
+        int rawId = getResources().getIdentifier("butterfly_angel", "raw", getPackageName());
+        if (rawId != 0) {
+            lottie.setAnimation(rawId);
+            lottie.setRepeatCount(LottieDrawable.INFINITE);
+            lottie.playAnimation();
+        } else {
+            lottie.setImageResource(android.R.drawable.ic_menu_compass); // Standard Fallback
+        }
+        int lSize = scale(220);
+        header.addView(lottie, new LinearLayout.LayoutParams(lSize, (int)(lSize * 0.7f)));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("ButterFly\nSecure\nGateWay");
+        tvTitle.setTextColor(getGradientOverlayText());
+        tvTitle.setTextSize(scaleText(22f, true));
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        tvTitle.setGravity(Gravity.CENTER);
+        tvTitle.setLineSpacing(0, 0.9f);
+        header.addView(tvTitle);
+        root.addView(header);
+
+        // --- 🏛️ AUTH CARD: jButterFly Authentication ---
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setClipChildren(false);
-        card.setClipToPadding(false);
+        int cPad = getResponsivePaddingQuota();
+        card.setPadding(cPad, cPad, cPad, cPad);
         
-        int cardPadv = scale(60);
-        card.setPadding(getResponsivePaddingQuota(), cardPadv, getResponsivePaddingQuota(), cardPadv);
-        
-        // 🚀 L7 Architecture Sync: Borderless Corporate Card Hub
-        android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
-        cardBg.setColor(getCardColor());
-        cardBg.setCornerRadius(scaleRadius(24)); 
-        card.setBackground(cardBg);
-        card.setElevation(15f); 
-        card.setTranslationZ(20f); 
-        card.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
-        card.setClipToOutline(true); // 🚀 QA Fix: Master Shadow Activation!
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.setMargins(cPad, -scale(30), cPad, cPad); // Overlap header slightly for premium look
+        card.setLayoutParams(cardLp);
+        UiArchitect.applyCard(this, card, "CARD_STANDARD");
+        card.setBackground(getSolidDrawable(Color.WHITE, 40f));
 
-        TextView title = new TextView(this);
-        title.setText("jButterFly Authentication");
-        title.setTextColor(getTextColor());
-        title.setTextSize(scaleText(22));
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setPadding(scale(10), 0, 0, scale(10));
-        card.addView(title);
-        
-        TextView subTitle = new TextView(this);
-        subTitle.setText("Secure gateway access for active agents.");
-        subTitle.setTextColor(getSecondaryTextColor());
-        subTitle.setTextSize(scaleText(12));
-        subTitle.setPadding(scale(10), 0, 0, scale(50));
-        card.addView(subTitle);
+        TextView tvCardTitle = new TextView(this);
+        tvCardTitle.setText("jButterFly Authentication");
+        tvCardTitle.setTextColor(getTextColor());
+        tvCardTitle.setTextSize(scaleText(18f, true));
+        tvCardTitle.setTypeface(null, Typeface.BOLD);
+        card.addView(tvCardTitle);
 
-        etNickname = UiArchitect.createInputField(this, "FIELD_IDENTITY");
-        card.addView(etNickname);
+        TextView tvCardSub = new TextView(this);
+        tvCardSub.setText("Secure gateway access for active agents.");
+        tvCardSub.setTextColor(getSecondaryTextColor());
+        tvCardSub.setTextSize(scaleText(12f));
+        tvCardSub.setPadding(0, 0, 0, scale(20));
+        card.addView(tvCardSub);
 
-        etEmail = UiArchitect.createInputField(this, "FIELD_EMAIL");
+        // --- INPUT MATRIX ---
+        etNick = createField("Identity Alias", android.R.drawable.ic_menu_myplaces, false);
+        card.addView(etNick);
+
+        etEmail = createField("Enterprise Email", android.R.drawable.ic_dialog_email, false);
         card.addView(etEmail);
 
-        etPass = UiArchitect.createInputField(this, "FIELD_PASSWORD");
-        
-        // Eye Toggle Implementation
-        etPass.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_lock_idle_lock, 0, android.R.drawable.ic_menu_view, 0);
-        etPass.setOnTouchListener((v, event) -> {
-            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
-                if (event.getRawX() >= (etPass.getRight() - etPass.getCompoundDrawables()[2].getBounds().width() - 80)) {
-                    int currentType = etPass.getInputType();
-                    if (currentType == (android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)) {
-                        etPass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-                        etPass.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_lock_idle_lock, 0, android.R.drawable.ic_secure, 0);
-                    } else {
-                        etPass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                        etPass.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_lock_idle_lock, 0, android.R.drawable.ic_menu_view, 0);
-                    }
-                    etPass.setSelection(etPass.getText().length());
-                    return true;
-                }
-            }
-            return false;
-        });
-        
-        etPass.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
-                String email = etEmail.getText().toString().trim();
-                String pass = etPass.getText().toString().trim();
-                if (!email.isEmpty() && !pass.isEmpty()) {
-                    viewModel.login(email, pass, etNickname.getText().toString().trim());
-                }
-                return true;
-            }
-            return false;
-        });
+        etPass = createField("Secure Password", android.R.drawable.ic_lock_idle_lock, true);
         card.addView(etPass);
 
-        // --- PRIMARY CTA ---
-        // 🧪 UI Calibrator: Downscale text for 100% visibility in L7 Matrix
-        View authBtn = createIconButton("AUTHENTICATE SYSTEM", android.R.drawable.ic_menu_send, v -> {
-            String nick = etNickname.getText().toString().trim();
+        // 🧬 V63.6: Resurrected L7 Geolocation Matrix (Baseline Theme Sync)
+        LinearLayout geoRow = new LinearLayout(this);
+        geoRow.setOrientation(LinearLayout.HORIZONTAL);
+        
+        etLat = createField("Latitude", android.R.drawable.ic_menu_compass, false);
+        etLng = createField("Longitude", android.R.drawable.ic_menu_compass, false);
+        
+        // 🚀 L7 Calibration: Explicit side-by-side weight distribution
+        LinearLayout.LayoutParams geoChildLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        etLat.setLayoutParams(geoChildLp);
+        etLng.setLayoutParams(geoChildLp);
+        
+        geoRow.addView(etLat);
+        View geoSpacerNode = new View(this); 
+        geoRow.addView(geoSpacerNode, new LinearLayout.LayoutParams(scale(15), 1));
+        geoRow.addView(etLng);
+        
+        // 🧬 Forensic Margin Fix: Standardized L7 Baseline
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.setMargins(0, 0, 0, scale(20)); // RESTORED BASELINE MARGIN
+        geoRow.setLayoutParams(rowLp);
+        card.addView(geoRow);
+
+        etAddr = createField("Current Node Address", android.R.drawable.ic_menu_mapmode, false);
+        card.addView(etAddr);
+
+        tvLocationBaseline = new TextView(this);
+        tvLocationBaseline.setText("📍 Current Node: Waiting for GNSS...");
+        tvLocationBaseline.setTextColor(getSecondaryTextColor());
+        tvLocationBaseline.setTextSize(scaleText(11f));
+        tvLocationBaseline.setPadding(scale(20), 0, 0, scale(20));
+        card.addView(tvLocationBaseline);
+
+        // --- MAIN ACTION: AUTHENTICATE SYSTEM ---
+        View btnAuth = createMainButton("AUTHENTICATE SYSTEM", v -> {
+            String nick = etNick.getText().toString().trim();
             String email = etEmail.getText().toString().trim();
             String pass = etPass.getText().toString().trim();
-            
-            if (nick.length() < 2) {
-                etNickname.setError("Valid Alias Required (Min 2 chars)");
-                Toast.makeText(this, "Auth Failed: Missing Identity Alias", Toast.LENGTH_SHORT).show();
+            if (nick.isEmpty() || email.isEmpty() || pass.isEmpty()) {
+                showAutoSetupDialog();
                 return;
             }
-            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                etEmail.setError("Invalid Email Format");
-                Toast.makeText(this, "Auth Failed: Malformed Security Protocol", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (pass.length() < 6) {
-                etPass.setError("6+ characters required");
-                Toast.makeText(this, "Auth Failed: Weak Authentication Matrix", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            
-            // 🚀 Finalizing Secure Handshake...
+            double lat = 0.0;
+            double lng = 0.0;
+            try {
+                lat = Double.parseDouble(etLat.getText().toString());
+                lng = Double.parseDouble(etLng.getText().toString());
+            } catch (Exception e) {}
+            String addr = etAddr.getText().toString();
+
             com.jdroidx.jfindme.utils.AngelLoader.show(this);
-            viewModel.login(email, pass, nick);
+            viewModel.login(email, pass, nick, true, lat, lng, addr);
         });
+        card.addView(btnAuth);
 
-        // 🧱 Force Tactical Scaling Hub
-        if (authBtn instanceof android.view.ViewGroup) {
-             android.view.ViewGroup vg = (android.view.ViewGroup) authBtn;
-             for (int i = 0; i < vg.getChildCount(); i++) {
-                 android.view.View child = vg.getChildAt(i);
-                 if (child instanceof android.widget.TextView) {
-                     ((android.widget.TextView) child).setTextSize(scaleText(12)); 
-                     child.setPadding(0, 0, 0, 0); // Purge excessive padding
-                 }
-             }
-        }
+        // --- BOTTOM ROW: Action Trio ---
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, scale(20), 0, 0);
         
-        android.graphics.drawable.GradientDrawable authBg = new android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-            new int[]{getGradientStart(), getGradientEnd()} 
-        );
-        authBg.setCornerRadius(scaleRadius(16)); // Standard L7 Geometry
-        authBtn.setBackground(authBg);
-        authBtn.setElevation(8f); 
-        
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(120));
-        btnParams.setMargins(0, scale(30), 0, scale(20));
-        authBtn.setLayoutParams(btnParams);
-        card.addView(authBtn);
-
-        // --- ENTERPRISE FOOTER ARRAY (Secondary Actions) ---
-        LinearLayout footerArray = new LinearLayout(this);
-        footerArray.setOrientation(LinearLayout.HORIZONTAL);
-        footerArray.setGravity(Gravity.CENTER);
-        footerArray.setWeightSum(3.0f);
-        footerArray.setPadding(0, 20, 0, 0);
-
-        // Utility: Factory for simple text action buttons
-        class ActionBuilder {
-            TextView build(String txt, View.OnClickListener listener) {
-                TextView tv = new TextView(AuthActivity.this);
-                tv.setText(txt);
-                tv.setTextColor(getGradientOverlayText()); // 🚀 QA Fix: Force bright contrast over colorful matrix!
-                tv.setTextSize(11);
-                tv.setTypeface(null, android.graphics.Typeface.BOLD);
-                tv.setGravity(Gravity.CENTER);
-                tv.setPadding(5, 30, 5, 30);
-                
-                android.graphics.drawable.GradientDrawable itemBg = new android.graphics.drawable.GradientDrawable(
-                    android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-                    new int[]{getGradientStart(), getGradientEnd()} 
-                );
-                itemBg.setCornerRadius(16f);
-                tv.setBackground(itemBg);
-                tv.setElevation(8f);
-                
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-                lp.setMargins(10, 0, 10, 0); // Isolate geometry as highly independent buttons
-                tv.setLayoutParams(lp);
-                
-                tv.setOnClickListener(listener);
-                tv.setFocusable(true);
-                tv.setOnKeyListener((v, keyCode, event) -> {
-                    if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
-                        (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
-                        v.performClick();
-                        return true;
-                    }
-                    return false;
-                });
-                applyAccessibility(tv, null);
-                return tv;
-            }
-        }
-        ActionBuilder builder = new ActionBuilder();
-
-        footerArray.addView(builder.build("AUTO SETUP", v -> performAutoSetup()));
-
-        footerArray.addView(builder.build("SYNC DEVICE", v -> {
-            if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() == null) {
-                String email = etEmail.getText().toString().trim();
-                String pass = etPass.getText().toString().trim();
-                
-                if (email.isEmpty() || pass.isEmpty()) {
-                    new AlertDialog.Builder(this)
-                        .setTitle("Authentication Required")
-                        .setMessage("You must explicitly Authorise your User ID via the Login Gateway first before linking to external hardware.")
-                        .setPositiveButton("UNDERSTOOD", null)
-                        .show();
-                } else {
-                    viewModel.login(email, pass, etNickname.getText().toString().trim());
-                }
+        row.addView(createSmallButton("AUTO SETUP", v -> performAutoSetup()));
+        row.addView(createSmallButton("SYNC DEVICE", v -> {
+            String nick = etNick.getText().toString().trim();
+            String email = etEmail.getText().toString().trim();
+            if (nick.isEmpty() || email.isEmpty()) {
+                showAutoSetupDialog();
             } else {
-                // 🚀 QA Fix: Implicit Guard! Even if logged in permanently via Cache, absolutely verify their physical Profile Array before granting Gateway Access!
-                boolean isReturningVeteran = prefs.getBoolean("profile_onboarded", false);
-                if (!isReturningVeteran) {
-                    Toast.makeText(this, "Profile Missing! Rerouting to Identity Setup...", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
-                } else {
-                    startActivity(new Intent(this, GroupActivity.class));
-                }
+                viewModel.triggerManualStart(); // 🚀 Force Sync/Start
+                startActivity(new Intent(this, com.jdroidx.jfindme.ui.group.NetworkGatewayActivity.class));
             }
         }));
 
-        footerArray.addView(builder.build("UI THEME", v -> {
-            currentThemeId = (currentThemeId + 1) % 9; 
-            prefs.edit().putInt("theme_id", currentThemeId).apply();
-            startActivity(new android.content.Intent(this, AuthActivity.class));
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-            finish();
+        // 🧬 V63.2: L7 Full Library Cycle - Safe Recreate Integration
+        row.addView(createSmallButton("UI THEME", v -> {
+            int current = prefs.getInt("theme_id", 0);
+            prefs.edit().putInt("theme_id", (current + 1) % 8).apply();
+            safeRecreate(); // 🛡️ Forensic Stability Patch: Bypasses BinderProxy crash
         }));
 
-        card.addView(footerArray);
-        wrapper.addView(card);
-        scroll.addView(wrapper);
+        card.addView(row);
+        root.addView(card);
+
+        scroll.addView(root);
         return scroll;
     }
 
-
-
-    private EditText createField(String hint, int iconRes) {
+    private EditText createField(String hint, int iconRes, boolean isPassword) {
         EditText et = new EditText(this);
         et.setHint(hint);
-        et.setHintTextColor(getSecondaryTextColor()); // Bound exclusively to DB Values!
+        et.setHintTextColor(Color.LTGRAY);
         et.setTextColor(getTextColor());
-        et.setPadding(40, 40, 40, 40);
-        et.setGravity(Gravity.CENTER_VERTICAL); // Align text flush with icon
-        et.setCompoundDrawablePadding(20); // Cushion between icon and text vector
-        et.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0); // Native Icon Implementation
-
-        // 🚀 Dynamic Thematic Boxing Overlay
-        android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-        fieldBg.setColor(Color.parseColor("#15000000")); // Ultra-soft transparent 8% overlay. Safely darkens White Theme boxes / brightens Dark boxes!
-        fieldBg.setStroke(3, getGradientStart()); // Native Component Stroke matches specific app Theme (Pink, Blue, Red, etc)!
-        fieldBg.setCornerRadius(16f);
-        et.setBackground(fieldBg);
+        et.setPadding(35, 30, 35, 30);
+        et.setCompoundDrawablePadding(25);
+        et.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, isPassword ? android.R.drawable.ic_menu_view : 0, 0);
         
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            et.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(getGradientStart()));
+        }
+
+        if (isPassword) {
+            et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        }
+
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor("#F0F0F0"));
+        bg.setStroke(3, Color.parseColor("#E0E0E0"));
+        bg.setCornerRadius(20f);
+        et.setBackground(bg);
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        int margin = scale(15);
-        lp.setMargins(0, margin, 0, margin);
+        lp.setMargins(0, 0, 0, scale(15));
         et.setLayoutParams(lp);
         return et;
     }
 
+    private View createMainButton(String text, View.OnClickListener listener) {
+        return createEnterpriseButton(text, 18f, 140, true, listener);
+    }
+
+    private View createSmallButton(String text, View.OnClickListener listener) {
+        return createEnterpriseButton(text, 14f, 110, false, listener);
+    }
+
+    /**
+     * 🚀 Master Unified Button Factory (L7 Architect Matrix)
+     * Consolidates redundant GradientDrawable and LayoutParams logic.
+     */
+    private View createEnterpriseButton(String text, float tSize, int hQuo, boolean isMain, View.OnClickListener listener) {
+        TextView btn = new TextView(this);
+        btn.setText(text);
+        btn.setTextColor(Color.WHITE);
+        btn.setGravity(Gravity.CENTER);
+        btn.setTypeface(null, Typeface.BOLD);
+        btn.setTextSize(scaleText(tSize));
+        btn.setPadding(isMain ? 30 : 10, 0, isMain ? 30 : 10, 0);
+        btn.setOnClickListener(listener);
+
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+            isMain ? new int[]{getGradientStart(), getGradientEnd()} : new int[]{getGradientMid(), getGradientEnd()}
+        );
+        gd.setCornerRadius(isMain ? 20f : 15f);
+        btn.setBackground(gd);
+        if (isMain) btn.setElevation(15f);
+
+        int bHeight = scale(hQuo);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(isMain ? ViewGroup.LayoutParams.MATCH_PARENT : 0, bHeight, isMain ? 0 : 1.0f);
+        lp.setMargins(isMain ? 0 : 5, isMain ? scale(20) : 0, isMain ? 0 : 5, 0);
+        btn.setLayoutParams(lp);
+
+        if (isMain) {
+            btn.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_media_play, 0, 0, 0);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                btn.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(getGradientOverlayText()));
+            }
+        }
+
+        return btn;
+    }
+
     private void performAutoSetup() {
         String hwId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-        if (hwId == null || hwId.length() < 4) hwId = "AGENT_NODE_L7";
+        if (hwId == null || hwId.length() < 8) hwId = "AGENT_MASTER_NODE_L7";
+        String sig = (hwId.length() >= 8) ? (hwId.substring(0, 4) + hwId.substring(hwId.length() - 4)).toLowerCase() : hwId.toLowerCase();
         
-        // 🚀 Legacy Re-Indexing: Extracting FIRST 4 digits as per original protocol
-        String shortHw = hwId.substring(0, 4).toLowerCase();
+        if (etNick != null) etNick.setText("Agent_" + sig.toUpperCase());
+        if (etEmail != null) etEmail.setText("node_" + sig + "@jfindme.net");
+        if (etPass != null) etPass.setText("PassCode" + sig + "!");
         
-        // 🚀 Legacy Identity Restoration
-        etNickname.setText("Agent_" + shortHw.toUpperCase());
-        etEmail.setText("node_" + shortHw + "@jfindme.net");
-        etPass.setText("PassCode" + shortHw + "!");
-        
-        Toast.makeText(this, "Enterprise Encrypted Identity Array Injected", Toast.LENGTH_SHORT).show();
+        // 🚀 QA Fix: Resolve Geographic Anchor for Registration Field
+        try {
+            android.location.LocationManager lm = (android.location.LocationManager) getSystemService(android.content.Context.LOCATION_SERVICE);
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION}, 100);
+                return;
+            }
+            
+            // 🧬 Multi-Provider Probe Sequence (V66.2 Optimization)
+            android.location.Location last = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER);
+            if (last == null) last = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER);
+            if (last == null) last = lm.getLastKnownLocation(android.location.LocationManager.PASSIVE_PROVIDER);
+            
+            if (last != null) {
+                updateGeoMatrix(last);
+            } else {
+                // 📡 Active Burst: Request fresh update if last known is null (Cold Start)
+                SystemLogger.i(TAG, "Cold Start: Requesting fresh GNSS/Network baseline.");
+                if (lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)) {
+                    lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, loc -> updateGeoMatrix(loc), null);
+                } else if (lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
+                    lm.requestSingleUpdate(android.location.LocationManager.GPS_PROVIDER, loc -> updateGeoMatrix(loc), null);
+                }
+            }
+        } catch (Exception e) {
+            if (tvLocationBaseline != null) tvLocationBaseline.setText("📍 Location Sync Denied");
+            SystemLogger.e(TAG, "Auto-Setup Location Probe Failure", e);
+        }
+
+        SystemLogger.i(TAG, "Forensic Auto-Setup Executed. Identity Matrix Synced.");
+        Toast.makeText(this, "IDENTITY MATRIX SYNCED", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showAutoSetupDialog() {
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setTitle("AUTHENTICATION INTERCEPT")
+            .setMessage("Forensic credentials not detected. Would you like to execute AUTO SETUP to instantly sync default local node details?")
+            .setPositiveButton("AUTO SETUP", (d, w) -> performAutoSetup())
+            .setNegativeButton("CANCEL", null)
+            .show();
+        applyDialogTheme(dialog);
+    }
+
+    @Override
+    protected void onSaveCurrentState(Bundle outState) {
+        if (etNick != null) outState.putString("SAVED_NICK", etNick.getText().toString());
+        if (etEmail != null) outState.putString("SAVED_EMAIL", etEmail.getText().toString());
+        if (etPass != null) outState.putString("SAVED_PASS", etPass.getText().toString());
+    }
+
+    @Override
+    protected void onUiRebuilt(Bundle savedState) {
+        if (savedState != null) {
+            String nick = savedState.getString("SAVED_NICK", "");
+            String email = savedState.getString("SAVED_EMAIL", "");
+            String pass = savedState.getString("SAVED_PASS", "");
+            if (etNick != null) etNick.setText(nick);
+            if (etEmail != null) etEmail.setText(email);
+            if (etPass != null) etPass.setText(pass);
+        }
     }
 
     @Override
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
-        
-        // 🚀 QA Fix: Master Onboarding Interceptor (Selective Re-Integration)
-        // If the Identity cache is empty (Fresh Start/First Installation), guide the agent toward the Encrypted Matrix immediately!
-        // 🚀 QA Fix: Global Identity Check
-        // If the fields are already populated (Portrait -> Landscape sync), do NOT overlap the dialog!
-        if (etNickname.getText().toString().isEmpty() && etEmail.getText().toString().isEmpty() && 
-            prefs.getString("user_nickname", "").isEmpty()) {
-            
-            if (onboardingDialog != null && onboardingDialog.isShowing()) {
-                onboardingDialog.dismiss();
-            }
-            
-            onboardingDialog = new android.app.AlertDialog.Builder(this)
-                .setTitle("🚀 SECURE ONBOARDING")
-                .setMessage("No Identity Node detected for this hardware. Please use 'AUTO SETUP' for a quick, Encrypted login.")
-                .setPositiveButton("AUTO SETUP", (d, w) -> {
-                    performAutoSetup();
-                    onboardingDialog = null;
-                })
-                .setNegativeButton("EXIT", (d, w) -> {
-                    finish();
-                })
-                .setCancelable(false)
-                .show();
-        }
-        
 
+        // 🧬 V63.5: Reactive Geolocation Auto-Sync (Display as per current location)
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION}, 100);
+                } else {
+                    probeLocation();
+                }
+            } catch (Exception e) {
+                SystemLogger.e(TAG, "Forensic Location Probe Failed", e);
+            }
+        }, 2000); // 2.0s Debounce for GNSS stability on fresh install
 
         viewModel.getUser().observe(this, user -> {
-            if (user != null) {
-                // 🚀 QA Fix: Ported Ephemeral Toast to a Persistent Enterprise Handshake Alert!
-                finalizeLogin(user, user.getUid());
+            if (user != null && !isFinalizing.get()) {
+                // 💡 UI Update: Show a "START ENGINE" cue if already logged in
+                SystemLogger.i(TAG, "Identity Detected. Awaiting Manual Start Trigger.");
+            }
+        });
+
+        viewModel.isManualStartTriggered().observe(this, triggered -> {
+            if (Boolean.TRUE.equals(triggered) && !isFinalizing.get()) {
+                com.google.firebase.auth.FirebaseUser user = viewModel.getUser().getValue();
+                if (user != null) {
+                    finalizeLogin(user, user.getUid());
+                }
             }
         });
 
         viewModel.isLoading().observe(this, loading -> {
             if (isDestroyed() || isFinishing()) return;
-            if (loading) {
-                com.jdroidx.jfindme.utils.AngelLoader.show(this);
-            } else {
-                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
-            }
+            if (loading) com.jdroidx.jfindme.utils.AngelLoader.show(this);
+            else com.jdroidx.jfindme.utils.AngelLoader.hide(this);
         });
 
         viewModel.getErrorMessage().observe(this, error -> {
             if (isDestroyed() || isFinishing()) return;
             if (error != null) {
-                Toast.makeText(this, "AUTH FAILURE: " + error, Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "AUTHENTICATION FAILURE: " + error, Toast.LENGTH_LONG).show();
                 viewModel.clearError();
             }
         });
     }
 
-    private void finalizeLogin(com.google.firebase.auth.FirebaseUser user, String uid) {
-        if (isDestroyed() || isFinishing()) return;
-        
-        final String name = etNickname.getText().toString().trim();
-        SystemLogger.INSTANCE.i(TAG, "User Authenticated. Hardware Locked: " + uid);
-        
-        prefs.edit().putBoolean("is_fresh_install_p2p_wipe", false).apply();
-        prefs.edit().putBoolean("route_to_sync", false).apply();
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 100 && grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            probeLocation();
+        }
+    }
 
-        com.jdroidx.jfindme.utils.AngelLoader.show(this);
-        com.google.firebase.database.FirebaseDatabase.getInstance()
-            .getReference("users").child(uid).get()
-            .addOnCompleteListener(task -> {
-                if (isDestroyed() || isFinishing()) return;
-                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+    private void probeLocation() {
+        try {
+            android.location.LocationManager lm = (android.location.LocationManager) getSystemService(android.content.Context.LOCATION_SERVICE);
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                android.location.Location last = lm.getLastKnownLocation(android.location.LocationManager.PASSIVE_PROVIDER);
+                if (last == null) last = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER);
+                if (last == null) last = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER);
                 
-                // 🚀 Sync Protocol: Use the local nickname (Agent_XXXX) unless it's empty, in which case we fallback to Cloud!
-                String finalInjectedName = name.isEmpty() ? "Resident Node" : name;
-                String finalInjectedEmail = etEmail.getText().toString().trim();
-                String cloudGroup = null, linkedCsv = null, cloudPin = "";
-                
-                if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
-                    com.google.firebase.database.DataSnapshot snap = task.getResult();
-                    cloudGroup = snap.child("active_group").getValue(String.class);
-                    linkedCsv = snap.child("valid_linked_uids").getValue(String.class);
-                    cloudPin = snap.child("userPincode").getValue(String.class);
-                    if (cloudPin == null) cloudPin = "";
-
-                    // If we locally selected the generic 'Resident Node', check for a custom Cloud name!
-                    if (finalInjectedName.equals("Resident Node")) {
-                        String fetchedName = snap.child("userName").getValue(String.class);
-                        if (fetchedName != null && !fetchedName.isEmpty()) finalInjectedName = fetchedName;
-                    }
-                    
-                    // Email Backfill if empty locally
-                    if (finalInjectedEmail.isEmpty()) {
-                        String fetchedEmail = snap.child("userEmail").getValue(String.class);
-                        if (fetchedEmail != null) finalInjectedEmail = fetchedEmail;
-                    }
+                if (last != null) {
+                    updateGeoMatrix(last);
+                } else {
+                    // Force a single update if no last known location is available
+                    lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, loc -> updateGeoMatrix(loc), null);
                 }
-                
-                prefs.edit().putString("user_nickname", finalInjectedName).apply();
-                prefs.edit().putString("email", finalInjectedEmail).apply();
-                prefs.edit().putString("user_pincode", cloudPin).apply();
-
-                if (cloudGroup != null) prefs.edit().putString("active_group", cloudGroup).apply();
-                if (linkedCsv != null) prefs.edit().putString("linked_devices_csv", linkedCsv).apply();
-
-                // 🚀 CLOSED-LOOP INTEGRATION: Commit to Forensic Ledger (SQLite)
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(AuthActivity.this);
-                Map<String, String> dossier = new java.util.HashMap<>();
-                dossier.put("full_name", finalInjectedName);
-                dossier.put("user_pincode", cloudPin);
-                dossier.put("userEmail", finalInjectedEmail);
-                db.commitForensicDossier(uid, dossier, "Subject", finalInjectedName, uid, uid, "AUTH_HANDSHAKE");
-                
-                final String targetPin = cloudPin;
-                SystemLogger.INSTANCE.i(TAG, "Authorization Success. Routing Flow: PIN=" + targetPin);
-                Toast.makeText(this, "Session Verified. Finalizing Dossier...", Toast.LENGTH_SHORT).show();
-                
-                // 🧱 QA Fix: Post-Transition Buffer (150ms)
-                getWindow().getDecorView().postDelayed(() -> {
-                    if (!isDestroyed() && !isFinishing()) {
-                        if (targetPin.isEmpty()) {
-                            // Fresh Install or Incomplete Profile
-                            startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
-                        } else {
-                            // Established Agent -> Map Central
-                            startActivity(new Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class));
-                        }
-                        finish();
-                    }
-                }, 150);
-            });
+            }
+        } catch (Exception e) {
+            SystemLogger.e(TAG, "Proactive Probe Failed", e);
+        }
     }
 
-    @Override
-    protected void onSaveCurrentState() {
-        if (etNickname != null) cachedNick = etNickname.getText().toString();
-        if (etEmail != null) cachedEmail = etEmail.getText().toString();
-        if (etPass != null) cachedPass = etPass.getText().toString();
-    }
-
-    @Override
-    protected void onUiRebuilt() {
-        if (etNickname != null) etNickname.setText(cachedNick);
-        if (etEmail != null) etEmail.setText(cachedEmail);
-        if (etPass != null) etPass.setText(cachedPass);
+    private void finalizeLogin(com.google.firebase.auth.FirebaseUser user, String uid) {
+        if (isFinalizing.getAndSet(true)) return;
         
-        // 🚀 L7 Optimization: Re-Calibrate Keyboard focus if needed
-        if (!cachedNick.isEmpty() && etPass != null) {
-            etPass.requestFocus();
-        }
+        // 🚀 QA Fix: Reset Nudge Bypass on Login Finalization
+        getSharedPreferences("system_registry", MODE_PRIVATE).edit().putBoolean("profile_bypass_nudge", false).apply();
+        
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "AUTHENTICATING NODE...");
+        
+        SystemLogger.i(TAG, "Auth Handshake Finalized. Launching Portal...");
+        prefs.edit().putString("auth_uid", uid).apply();
+
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (!isDestroyed() && !isFinishing()) {
+                // 🚀 QA Fix: Identity Matrix Integrity Gate
+                // Check if profile is complete OR if the user chose to 'Save Later' (Bypass Nudge)
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                String agentId = getSharedPreferences("system_registry", MODE_PRIVATE).getString("agent_id", "");
+                boolean bypassNudge = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_bypass_nudge", false);
+                
+                if (!bypassNudge && (agentId.isEmpty() || !db.isProfileComplete(agentId))) {
+                    SystemLogger.w(TAG, "Incomplete Profile Detected. Redirecting to Identity Hub.");
+                    startActivity(new Intent(AuthActivity.this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+                } else {
+                    SystemLogger.i(TAG, "Profile Verified or Bypassed. Granting Dashboard Access.");
+                    startActivity(new Intent(AuthActivity.this, com.jdroidx.jfindme.ui.map.MapActivity.class));
+                }
+                finish();
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+            }
+        }, 800);
     }
 
-    @Override
-    protected void onStop() {
-        if (onboardingDialog != null && onboardingDialog.isShowing()) {
-            onboardingDialog.dismiss();
-        }
-        super.onStop();
-    }
+    /**
+     * 🛰️ V63.5: Multi-Stage Geolocation Resolution Engine
+     * Populates Latitude, Longitude, and Address based on the active Node Fix.
+     */
+    private void updateGeoMatrix(android.location.Location loc) {
+        if (loc == null || isDestroyed() || isFinishing()) return;
+        
+        String latStr = String.format(java.util.Locale.US, "%.6f", loc.getLatitude());
+        String lngStr = String.format(java.util.Locale.US, "%.6f", loc.getLongitude());
+        
+        if (etLat != null) etLat.setText(latStr);
+        if (etLng != null) etLng.setText(lngStr);
+        
+        String locStr = String.format(java.util.Locale.US, "📍 Node Fixed: %s, %s", latStr, lngStr);
+        if (tvLocationBaseline != null) tvLocationBaseline.setText(locStr);
 
-    @Override
-    protected void onDestroy() {
-        if (onboardingDialog != null && onboardingDialog.isShowing()) {
-            onboardingDialog.dismiss();
+        // 🧬 Reverse Geocode: Resolve physical address for etAddr
+        if (android.location.Geocoder.isPresent()) {
+            new Thread(() -> {
+                try {
+                    android.location.Geocoder geo = new android.location.Geocoder(this);
+                    java.util.List<android.location.Address> addrs = geo.getFromLocation(loc.getLatitude(), loc.getLongitude(), 1);
+                    if (addrs != null && !addrs.isEmpty()) {
+                        String fullAddr = addrs.get(0).getAddressLine(0);
+                        String city = addrs.get(0).getLocality();
+                        runOnUiThread(() -> {
+                            if (etAddr != null) etAddr.setText(fullAddr);
+                            if (tvLocationBaseline != null) tvLocationBaseline.setText(locStr + " [" + city + "]");
+                        });
+                    }
+                } catch (Exception ignored) {}
+            }).start();
         }
-        com.jdroidx.jfindme.utils.AngelLoader.hide(this); // Force hide global loader
-        super.onDestroy();
     }
 }

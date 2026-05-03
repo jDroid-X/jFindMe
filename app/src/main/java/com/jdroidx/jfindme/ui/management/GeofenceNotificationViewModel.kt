@@ -74,12 +74,12 @@ class GeofenceNotificationViewModel(application: Application) : AndroidViewModel
         val logs = db.getGeofenceLogs(targetAvatar, zoneId)
         val list = logs.map { map ->
             GeofenceNotification(
-                id = map["log_id"] as? String ?: "",
-                avatarName = map["avatar_name"] as? String ?: "Unknown",
-                status = map["status"] as? String ?: "OUT",
-                timestamp = map["timestamp"] as? Long ?: 0L,
-                zoneName = map["zone_name"] as? String ?: "Unknown",
-                readableTime = map["readable_time"] as? String ?: ""
+                id = map["log_id"].toString(),
+                avatarName = map["id_full_name"]?.toString() ?: "Unknown",
+                status = map["status"]?.toString() ?: "OUT",
+                timestamp = (map["ts_start"] as? Long) ?: 0L,
+                zoneName = map["zone_name"]?.toString() ?: "Unknown",
+                readableTime = map["readable_time"]?.toString() ?: ""
             )
         }
         _notifications.postValue(list)

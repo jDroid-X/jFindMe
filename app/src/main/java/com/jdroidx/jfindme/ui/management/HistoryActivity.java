@@ -80,7 +80,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private int selectedTimeIndex = 0;
     private List<Map<String, Object>> currentSessions = new ArrayList<>();
     
-    // 🧱 QA Guard: Registry of already scavenged forensic windows in this app session
+    // ≡ƒº▒ QA Guard: Registry of already scavenged forensic windows in this app session
     private java.util.Set<String> warmedVaults = new java.util.HashSet<>();
     private boolean minLoadTimerExpired = true;
 
@@ -163,7 +163,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         UiArchitect.applyText(this, tvDays, "TEXT_MINI");
         pillBox.addView(tvDays);
 
-        // 🚀 QA Fix: Global UI Architecture Sync! Use the official ListItem engine.
+        // ≡ƒÜÇ QA Fix: Global UI Architecture Sync! Use the official ListItem engine.
         View storageCap = com.jdroidx.jfindme.ui.base.ListItemTable.createRow(
             this, 
             "ROW_STORAGE", 
@@ -172,7 +172,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             pillBox
         );
         
-        // 🧱 L7 Aesthetic Sync: Disable row-wide click to prevent 'Double-Tap' focus lag on nested EditText
+        // ≡ƒº▒ L7 Aesthetic Sync: Disable row-wide click to prevent 'Double-Tap' focus lag on nested EditText
         storageCap.setFocusable(false);
         storageCap.setClickable(false);
         
@@ -255,7 +255,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         targetSelectorWrap.setOrientation(LinearLayout.HORIZONTAL);
         targetSelectorWrap.setGravity(Gravity.CENTER_VERTICAL);
         
-        // 🧱 L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
+        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, targetSelectorWrap, "CARD_STANDARD", 1.2f);
         targetSelectorWrap.setOnClickListener(v -> showTargetSelector());
         
@@ -327,7 +327,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         content.addView(createSectionHeader("DETAILED LOCATION LOGS"));
         logsContainer = new LinearLayout(this);
         logsContainer.setOrientation(LinearLayout.VERTICAL);
-        // 🚀 QA Fix: Force Clipping Disable to enable floating shadows on all data segments
+        // ≡ƒÜÇ QA Fix: Force Clipping Disable to enable floating shadows on all data segments
         logsContainer.setClipToPadding(false);
         logsContainer.setClipChildren(false);
         content.addView(logsContainer);
@@ -354,9 +354,9 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         btn.setOrientation(LinearLayout.HORIZONTAL);
         btn.setGravity(Gravity.CENTER);
         
-        // 🧱 L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
+        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, btn, "CARD_STANDARD", 1.2f);
-        // 🧩 Note: We rely on applyCard's themed background to preserve outline provider
+        // ≡ƒº⌐ Note: We rely on applyCard's themed background to preserve outline provider
         
         int p = scale(25);
         btn.setPadding(p, p, p, p);
@@ -384,9 +384,9 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
         
-        // 🧱 L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
+        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, tile, "CARD_STANDARD", 1.0f);
-        // 🧩 Note: Preserving card geometry base for shadow fidelity
+        // ≡ƒº⌐ Note: Preserving card geometry base for shadow fidelity
 
         int p = scale(25);
         tile.setPadding(p, p, p, p);
@@ -457,20 +457,20 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
     private void loadHistoryData(long durationMs) {
         if (currentTargetUid == null || currentTargetUid.equals(FirebaseAuth.getInstance().getUid())) {
-            // 🚀 QA Rule: Battery Guard (Rule 5)
+            // ≡ƒÜÇ QA Rule: Battery Guard (Rule 5)
             // Block self-tracking fetch. 
             if (tvStatus != null) tvStatus.setText("SELECT A TARGET TO START FETCH");
             return;
         }
         
-        // 🚀 QA Rule: Redundancy Guard (The 'Warm' Registry)
+        // ≡ƒÜÇ QA Rule: Redundancy Guard (The 'Warm' Registry)
         String lockKey = currentTargetUid + "_" + durationMs;
         if (warmedVaults.contains(lockKey)) {
             viewModel.loadHistorySessions(this, currentTargetUid, durationMs);
             return;
         }
 
-        // 🦋 QA Fix: The Guardian Angel Loading Matrix (3s Mandatory Guard)
+        // ≡ƒªï QA Fix: The Guardian Angel Loading Matrix (3s Mandatory Guard)
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Retrieving the History Data");
         minLoadTimerExpired = false;
@@ -506,7 +506,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     }
 
     @Override
-    protected void onUiRebuilt() {
+    protected void onUiRebuilt(android.os.Bundle savedState) {
         updateTrackLabel();
         updateTimeTileStyles(selectedTimeIndex);
         updateHistoryTable(currentSessions);
@@ -649,7 +649,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                 tvStatus.setText(loading ? "SYNCING CLOUD DATA..." : "READY FOR SYNC");
             }
             
-            // 🦋 QA Fix: Post-Commit Butterfly Dismissal (Dynamic Guard)
+            // ≡ƒªï QA Fix: Post-Commit Butterfly Dismissal (Dynamic Guard)
             // Rule: Hide only if the 3S Mandatory Timer AND the Cloud Sync are both finished.
             if (!loading && minLoadTimerExpired) {
                 new android.os.Handler().postDelayed(() -> {
@@ -660,7 +660,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
         viewModel.fetchTrackingTargets(this);
         
-        // --- 🚀 Intent Linkage Protocol (V40 Standard) ---
+        // --- ≡ƒÜÇ Intent Linkage Protocol (V40 Standard) ---
         currentTargetUid = getIntent().getStringExtra("TARGET_UID");
         currentTargetName = getIntent().getStringExtra("TARGET_NAME");
         
@@ -670,7 +670,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             updateTimeTileStyles(0);
         } else {
             updateTrackLabel();
-            if (tvStatus != null) tvStatus.setText("READY FOR SYNC • SELECT TARGET");
+            if (tvStatus != null) tvStatus.setText("READY FOR SYNC ΓÇó SELECT TARGET");
         }
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
@@ -745,10 +745,10 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private View createSessionTile(Map<String, Object> session) {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
-        // 🧱 L7 Aesthetic Sync: Applying High-Contrast shadow to log segments
+        // ≡ƒº▒ L7 Aesthetic Sync: Applying High-Contrast shadow to log segments
         UiArchitect.applyCardWithOverride(this, outer, "CARD_STANDARD", 1.2f);
         
-        // 🚀 Baseline Synchronization: Margin between tiles set to 45px Universal Gap
+        // ≡ƒÜÇ Baseline Synchronization: Margin between tiles set to 45px Universal Gap
         int margin = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.getUniversalGap(com.jdroidx.jfindme.ui.base.UiArchitect.getStage(this));
         
         LinearLayout.LayoutParams outerLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -761,7 +761,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         int p = scale(25);
         row1.setPadding(p, p, p, 0); // Reduced bottom padding
 
-        // Session Label (⏱️ Inline Character Logic for 100% Forensic Parity)
+        // Session Label (ΓÅ▒∩╕Å Inline Character Logic for 100% Forensic Parity)
         TextView tvLabel = new TextView(this);
         Object pingObj = session.get("ping_count");
         int pings = (pingObj instanceof Integer) ? (Integer) pingObj : 0;
@@ -775,7 +775,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         String dateStr = new java.text.SimpleDateFormat("MMM dd, yyyy | hh:mm:ss a", java.util.Locale.getDefault()).format(new java.util.Date(from));
         String toStr = new java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(new java.util.Date(to));
         
-        tvLabel.setText("⏱️ SESSION (" + pings + " PINGS) • " + dateStr + " TO " + toStr);
+        tvLabel.setText("ΓÅ▒∩╕Å SESSION (" + pings + " PINGS) ΓÇó " + dateStr + " TO " + toStr);
         tvLabel.setTextColor(android.graphics.Color.parseColor("#A34121")); // Brown-Orange
         tvLabel.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tvLabel, "TEXT_MINI");
@@ -805,13 +805,13 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         rowStats.setOrientation(LinearLayout.HORIZONTAL);
         rowStats.setPadding(p + scale(65), 0, p, p);
         
-        // 🧱 QA Hardening: Null-Safety for Forensic Stats (Anti-Rebound)
+        // ≡ƒº▒ QA Hardening: Null-Safety for Forensic Stats (Anti-Rebound)
         String speed = session.get("speed") != null ? session.get("speed").toString() : "0";
         String battery = session.get("battery") != null ? session.get("battery").toString() : "--";
         
-        rowStats.addView(createMiniStat("🚗", speed + " km/h"));
-        rowStats.addView(createMiniStat("🔋", battery + "%"));
-        rowStats.addView(createMiniStat("📍", pings + " Pings"));
+        rowStats.addView(createMiniStat("≡ƒÜù", speed + " km/h"));
+        rowStats.addView(createMiniStat("≡ƒöï", battery + "%"));
+        rowStats.addView(createMiniStat("≡ƒôì", pings + " Pings"));
         
         outer.addView(rowStats);
 
@@ -820,7 +820,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                 LatLng pos = new LatLng((double)session.get("lat"), (double)session.get("lng"));
                 googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos, 16f));
                 
-                // --- 🚀 QA Fix: Force Avatar Display on Node Inspection ---
+                // --- ≡ƒÜÇ QA Fix: Force Avatar Display on Node Inspection ---
                 if (replayAvatar != null) replayAvatar.remove();
                 
                 String addr = session.get("address").toString();
@@ -862,7 +862,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             LatLng first = new LatLng(historyPoints.get(0).getLatitude(), historyPoints.get(0).getLongitude());
             googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(first, 15f));
         } else {
-            // 🚀 QA Rule: Contextual Anchor (Owner Location)
+            // ≡ƒÜÇ QA Rule: Contextual Anchor (Owner Location)
             new Thread(() -> {
                 com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
                 String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();

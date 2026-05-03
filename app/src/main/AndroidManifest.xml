@@ -67,6 +67,7 @@
 
         <activity
             android:name=".ui.base.SplashActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -95,12 +96,12 @@
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <!-- Master UI Settings Controller -->
         <activity android:name=".ui.settings.UiConfigActivity" />
-        <activity android:name=".ui.settings.UiGalleryActivity" />
         <activity android:name=".ui.settings.AboutActivity" />
         <activity android:name=".ui.settings.SystemUpdateActivity" />
         <activity android:name=".ui.settings.HelpSupportActivity" />
-        <activity android:name=".ui.group.GroupActivity" />
         <activity android:name=".ui.group.FamilyFriendsActivity" />
+        <activity android:name=".ui.group.GroupActivity" />
+        <activity android:name=".ui.group.NetworkGatewayActivity" />
         <activity android:name=".ui.group.PersonDetailsActivity" />
         <activity 
             android:name=".ui.settings.ProfileActivity"
@@ -110,16 +111,16 @@
         <activity android:name=".ui.settings.AvatarCropActivity" />
         <activity android:name=".ui.management.GeofenceNotificationActivity" />
         <activity android:name=".ui.management.HistoryActivity" />
+        <activity android:name=".ui.management.ForensicVaultExplorerActivity" android:screenOrientation="unspecified" />
         <activity android:name=".ui.management.GeofenceActivity" />
         <activity android:name=".ui.management.PrivacyActivity" />
         <activity android:name=".ui.management.HealthActivity" />
         <activity android:name=".ui.management.NotifActivity" />
-        <activity android:name=".ui.management.SystemLogActivity" />
+        <activity android:name=".ui.management.WatchDogAuditActivity" />
         <activity android:name=".ui.management.FactoryResetActivity" />
         <activity android:name="com.jdroidx.jfindme.ui.management.DatabaseManagementActivity" />
         <activity android:name="com.jdroidx.jfindme.ui.management.FirebaseCloudMatrixActivity" />
-        <activity android:name="com.jdroidx.jfindme.ui.management.ForensicVaultExplorerActivity" />
-        <activity android:name="com.jdroidx.jfindme.ui.management.ForensicStructureActivity" />
+        <activity android:name=".ui.settings.UiGalleryActivity" />
         
         <!-- 🦋 JBUTTERFLY ENTERPRISE NODES (Level 7) -->
         

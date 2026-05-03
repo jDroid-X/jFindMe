@@ -27,6 +27,9 @@ public class SystemUpdateActivity extends BaseActivityJava {
     private EditText emailField;
     private EditText driveLinkField;
     private android.widget.CheckBox silentUpdateCheck;
+    private TextView tvLastUpdate;
+    private TextView tvUpdateAvailable;
+    private TextView tvIsUpdatedStatus;
 
     @Override
     protected void setupLogic() {
@@ -77,6 +80,19 @@ public class SystemUpdateActivity extends BaseActivityJava {
                 triggerBinaryUpdate();
                 viewModel.resetActionState();
             }
+        });
+
+        // Forensic Update Observers
+        viewModel.getLastUpdateInfo().observe(this, info -> {
+            if (tvLastUpdate != null) tvLastUpdate.setText(info);
+        });
+
+        viewModel.getUpdateAvailableInfo().observe(this, info -> {
+            if (tvUpdateAvailable != null) tvUpdateAvailable.setText(info);
+        });
+
+        viewModel.getUpdateStatusInfo().observe(this, info -> {
+            if (tvIsUpdatedStatus != null) tvIsUpdatedStatus.setText(info);
         });
     }
 
@@ -141,8 +157,8 @@ public class SystemUpdateActivity extends BaseActivityJava {
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setWeightSum(3.0f);
 
-        View btnInstall = createSmallButton("INSTALL", android.R.drawable.ic_menu_save, true, v -> viewModel.executeInstall());
-        View btnUpdate = createSmallButton("UPDATE", android.R.drawable.ic_menu_edit, true, v -> viewModel.executeUpdate());
+        View btnInstall = createSmallButton("INSTALL", android.R.drawable.ic_menu_save, true, v -> viewModel.executeInstall(this));
+        View btnUpdate = createSmallButton("UPDATE", com.jdroidx.jfindme.R.drawable.ic_edit, true, v -> viewModel.executeUpdate(this));
         View btnCancel = createSmallButton("CANCEL", android.R.drawable.ic_menu_close_clear_cancel, false, v -> finish());
 
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -192,7 +208,31 @@ public class SystemUpdateActivity extends BaseActivityJava {
         lp.setMargins(0, scale(15), 0, scale(10));
         row.setLayoutParams(lp);
         
-        return row;
+        // Wrap everything in a vertically aligned container for strict Waterfall consistency
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+
+        tvLastUpdate = new TextView(this);
+        tvLastUpdate.setPadding(scale(10), scale(10), 0, scale(5));
+        tvLastUpdate.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
+        UiArchitect.applyText(this, tvLastUpdate, "TEXT_MINI");
+        wrapper.addView(tvLastUpdate);
+
+        wrapper.addView(row);
+
+        tvUpdateAvailable = new TextView(this);
+        tvUpdateAvailable.setPadding(scale(10), scale(5), 0, scale(2));
+        tvUpdateAvailable.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
+        UiArchitect.applyText(this, tvUpdateAvailable, "TEXT_MINI");
+        wrapper.addView(tvUpdateAvailable);
+
+        tvIsUpdatedStatus = new TextView(this);
+        tvIsUpdatedStatus.setPadding(scale(10), 0, 0, scale(10));
+        tvIsUpdatedStatus.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
+        UiArchitect.applyText(this, tvIsUpdatedStatus, "TEXT_MINI");
+        wrapper.addView(tvIsUpdatedStatus);
+        
+        return wrapper;
     }
 
     private View createSmallButton(String text, int iconRes, boolean isPrimary, View.OnClickListener listener) {
@@ -221,7 +261,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setGravity(Gravity.CENTER);
-        footer.setPadding(0, scale(60), 0, 0);
+        footer.setPadding(0, scale(40), 0, scale(40)); // Adjusted for more content
 
         int lottieId = getResources().getIdentifier("butterfly_angel", "raw", getPackageName());
         if (lottieId != 0) {
@@ -229,7 +269,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
             lottie.setAnimation(lottieId);
             lottie.setRepeatCount(LottieDrawable.INFINITE);
             lottie.playAnimation();
-            int bSize = scale(200);
+            int bSize = scale(180); // Scaled slightly for better balance
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(bSize, bSize);
             lp.gravity = Gravity.CENTER_HORIZONTAL;
             footer.addView(lottie, lp);
@@ -238,18 +278,30 @@ public class SystemUpdateActivity extends BaseActivityJava {
         TextView name = new TextView(this);
         name.setText("jFindMe Tracking Engine");
         name.setTextColor(getTextColor());
+        name.setGravity(Gravity.CENTER_HORIZONTAL);
         UiArchitect.applyText(this, name, "TEXT_BODY");
         name.setAlpha(0.9f);
-        footer.addView(name);
+        footer.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView ver = new TextView(this);
-        ver.setText("ENTERPRISE BUILD: V1.0.0");
-        ver.setTextColor(getSecondaryTextColor());
-        UiArchitect.applyText(this, ver, "TEXT_MINI");
-        ver.setAlpha(0.6f);
-        footer.addView(ver);
+        // Enterprise Version Stack (Hardened Horizontal Alignment)
+        LinearLayout.LayoutParams verLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        footer.addView(createVersionLine("ENTERPRISE BUILD: V1.0.0 (SECURE)"), verLp);
+        footer.addView(createVersionLine("DATABASE VERSION: SYNC V4.02.21"), verLp);
+        footer.addView(createVersionLine("L7 ARCHITECTURE: CORE V7.2.4"), verLp);
+        footer.addView(createVersionLine("TRACKING ENGINE: BETA 18.1.0"), verLp);
 
         return footer;
+    }
+
+    private View createVersionLine(String text) {
+        TextView ver = new TextView(this);
+        ver.setText(text);
+        ver.setTextColor(getSecondaryTextColor());
+        ver.setGravity(Gravity.CENTER_HORIZONTAL);
+        UiArchitect.applyText(this, ver, "TEXT_MINI");
+        ver.setAlpha(0.6f);
+        ver.setPadding(0, scale(2), 0, 0); // Subtle inter-line spacing
+        return ver;
     }
 
     private TextView createLabel(String text) {

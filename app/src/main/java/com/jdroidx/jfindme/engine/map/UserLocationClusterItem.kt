@@ -14,5 +14,5 @@ class UserLocationClusterItem(private val userLocation: UserLocation) : ClusterI
     override fun getSnippet(): String? = null
     override fun getZIndex(): Float? = null
     
-    fun getUserId(): String = userLocation.userId
+    fun getUserId(): String = userLocation.getResolvedUserId()
 }

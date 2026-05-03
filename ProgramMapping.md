@@ -13,6 +13,9 @@
 | | **Map Engine (Ktx)** | `MapController` | `MarkerClusterer` | `MarkerInterpolator` | High-Perf Rendering & Smoothing |
 | | **Data Engine (Py)** | `SpatialProcessor` | `GeohashEngine` | `CleanEngine` | Python-based DB & Geo Queries |
 | | **System Layer** | `SystemLogger` | `AlertManager` | `SecurityEngine` | Enterprise Safety & Logging |
+| **jFindMe Web** | **Admin Portal** | `DbManager` | `JsonEditor` | `AuditConsole` | Forensic DB CRUD & Management |
+| | | `UserAuditor`| `LiveTracker` | `ReportGen` | User Investigation & Tracking |
+
 
 ## Current Sprint Objectives (Waterfall Execution):
 1. **Redo activities**: Ensure all UI Cluster activities follow strict programmatic rules.

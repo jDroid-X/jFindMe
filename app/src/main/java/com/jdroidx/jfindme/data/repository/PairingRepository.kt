@@ -16,24 +16,28 @@ class PairingRepository {
 
     private val TAG = "PairingRepository"
     private val sessionsRef = FirebaseComm.database.getReference("pairing_sessions")
-    private val devicesRef = FirebaseComm.database.getReference("devices")
+    private val hubRef = FirebaseComm.devicesRef
 
     /**
-     * Step 1: Register Device Identity
+     * Step 1: Register Device Identity (V59.5 Secured)
+     * Refactored: Uses Agent ID (uid1) as Root Node and Forensic Timestamp.
      */
-    fun registerDevice(userId: String, isPrimary: Boolean, onComplete: (String) -> Unit) {
-        val deviceId = UUID.randomUUID().toString().take(8)
-        val device = DeviceRegistry(
-            deviceId = deviceId,
-            userId = userId,
-            deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
-            isPrimary = isPrimary,
-            lastActive = System.currentTimeMillis()
+    fun registerDevice(agentId: String, isPrimary: Boolean, onComplete: (String) -> Unit) {
+        val hardwareId = "HW_" + UUID.randomUUID().toString().take(8).uppercase()
+        val device = mapOf(
+            "deviceId" to hardwareId,
+            "agentId" to agentId,
+            "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
+            "isPrimary" to isPrimary,
+            "lastActive" to FirebaseComm.getForensicTimestamp(),
+            "os_version" to Build.VERSION.RELEASE
         )
-        devicesRef.child(userId).child(deviceId).setValue(device)
+        
+        // 🧬 V59.5: Anchor to Agent Hub, NOT Auth UID
+        hubRef.child(agentId).child(hardwareId).setValue(device)
             .addOnSuccessListener {
-                SystemLogger.i(TAG, "Device registered: $deviceId")
-                onComplete(deviceId)
+                SystemLogger.i(TAG, "Forensic Device Registered under Agent Hub: $agentId")
+                onComplete(hardwareId)
             }
     }
 
@@ -105,12 +109,6 @@ class PairingRepository {
         })
     }
 
-    fun linkDeviceToGroup(userId: String, groupId: String) {
-        FirebaseComm.usersRef.child(userId).child("groupId").setValue(groupId)
-            .addOnSuccessListener {
-                SystemLogger.i(TAG, "Device linked to group: $groupId")
-            }
-    }
     
     // 🚀 NEW SECURE MVVM ARCHITECTURE - SCENARIO HANDSHAKES
     
@@ -118,61 +116,47 @@ class PairingRepository {
         private val db = FirebaseDatabase.getInstance().reference
 
         @JvmStatic
-        fun executeGenesisNode(uid: String, onSuccess: (String) -> Unit) {
-            val newGroupId = db.child("groups").push().key ?: return
-            
-            val updates = hashMapOf<String, Any>(
-                "users/$uid/active_group" to newGroupId,
-                "groups/$newGroupId/members/$uid" to true
-            )
-            
-            db.updateChildren(updates).addOnSuccessListener {
-                SystemLogger.i("PairingRepo", "Genesis Node mathematically constructed: $newGroupId")
-                onSuccess(newGroupId)
+        fun executeFamilyHandshake(hostAgentId: String, hostGroupId: String, targetAgentId: String, roleFam: String, onSuccess: () -> Unit) {
+            if (!FirebaseComm.isAgentIdValid(hostAgentId) || !FirebaseComm.isAgentIdValid(targetAgentId)) {
+                SystemLogger.e("PairingRepo", "BLOCKED: Handshake with invalid Agent IDs: $hostAgentId -> $targetAgentId")
+                return
             }
-        }
-
-        @JvmStatic
-        fun executeFamilyHandshake(hostUid: String, hostGroupId: String, targetUid: String, roleFam: String, onSuccess: () -> Unit) {
-            // 🚀 QA Fix: Master "One Scan One Device" enforcement!
-            // First, physically extract the Host's existing authorized hardware CSV map.
-            db.child("users").child(hostUid).child("valid_linked_uids").get().addOnSuccessListener { snapshot ->
+            
+            // 🚀 V59.7: Master Forensic Handshake (Anchored to Hub Agent)
+            db.child(FirebaseComm.NODE_DEVICES).child(hostAgentId).child("identity").child("valid_linked_agents").get().addOnSuccessListener { snapshot ->
                 val currentCsv = snapshot.getValue(String::class.java) ?: ""
                 val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
                 
-                // Add the newly scanned hardware node explicitly to the Host's UI whitelist!
-                if (!approvedIds.contains(targetUid)) {
-                    approvedIds.add(targetUid)
+                if (!approvedIds.contains(targetAgentId)) {
+                    approvedIds.add(targetAgentId)
                 }
                 val newSecureCsv = approvedIds.joinToString(",")
 
                 val updates = hashMapOf<String, Any>(
-                    "users/$targetUid/active_group" to hostGroupId,
-                    "users/$hostUid/valid_linked_uids" to newSecureCsv, // 🔒 Injects scanner whitelist natively into the payload
-                    "groups/$hostGroupId/members/$targetUid" to true,
-                    "groups/$hostGroupId/citizen_dossiers/$targetUid/role_family" to roleFam,
-                    "groups/$hostGroupId/citizen_dossiers/$targetUid/role_friend" to "None"
+                    "${FirebaseComm.NODE_DEVICES}/$targetAgentId/identity/active_group" to hostGroupId,
+                    "${FirebaseComm.NODE_DEVICES}/$hostAgentId/identity/valid_linked_agents" to newSecureCsv,
+                    
+                    // V61.0: Canonical Relational Bridge (Legacy Peer-to-Peer)
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/members/$targetAgentId" to mapOf(
+                        "role" to roleFam,
+                        "ts_linked" to FirebaseComm.getForensicTimestamp()
+                    ),
+                    
+                    // 🚀 V61.0: MASTER GROUPS NODE (Hierarchical Hub)
+                    "${FirebaseComm.NODE_GROUPS}/$hostAgentId/Family/$targetAgentId/identity" to mapOf(
+                        "name" to "Target Agent ($targetAgentId)", // Placeholder, will be overriden by Target's sync
+                        "ts_authorized" to FirebaseComm.getForensicTimestamp()
+                    ),
+                    "${FirebaseComm.NODE_GROUPS}/$hostAgentId/Family/$targetAgentId/pairing" to mapOf(
+                        "relationship_type" to roleFam,
+                        "group_id" to hostGroupId
+                    )
                 )
                 
                 db.updateChildren(updates).addOnSuccessListener {
-                    SystemLogger.w("PairingRepo", "Target Absorbed into Core Family Array. Scanner Whitelist Updated: $targetUid -> $roleFam")
+                    SystemLogger.w("PairingRepo", "V61.0 Handshake: Target Agent Matrix Constructed under $hostAgentId")
                     onSuccess()
                 }
-            }
-        }
-
-        @JvmStatic
-        fun executeFriendHandshake(hostUid: String, targetUid: String, onSuccess: () -> Unit) {
-            // Peer-to-peer insulation. Friends do NOT share the explicit active_group.
-            // Instead, they are pushed into a dedicated "friend_matrix" node.
-            val updates = hashMapOf<String, Any>(
-                "users/$hostUid/friend_matrix/$targetUid" to true,
-                "users/$targetUid/friend_matrix/$hostUid" to true
-            )
-            
-            db.updateChildren(updates).addOnSuccessListener {
-                SystemLogger.w("PairingRepo", "Peer-to-Peer Insulated Link Completed.")
-                onSuccess()
             }
         }
     }
