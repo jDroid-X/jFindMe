@@ -19,6 +19,7 @@ import android.widget.ImageView;
 
 import com.jdroidx.jfindme.ui.auth.AuthActivity;
 import com.jdroidx.jfindme.ui.map.MapActivity;
+import com.jdroidx.jfindme.ui.settings.ProfileActivity;
 
 /**
  * Enterprise Application Entry Node: Native Custom Splash Screen
@@ -78,8 +79,21 @@ public class SplashActivity extends Activity {
             com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
             
             if (user != null) {
-                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Identity Detected. Routing to Secure GateWay for Manual Handshake.");
-                startActivity(new Intent(SplashActivity.this, AuthActivity.class));
+                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Identity Detected. Verifying Forensic Integrity.");
+                
+                // 🚀 QA Fix: Anchor resolution to SSOT (DatabaseHelper) instead of volatile SharedPreferences
+                String agentId = db.resolveAgentIdLocally(user.getUid());
+                if (agentId == null) agentId = ""; // Fallback for fresh installation
+                
+                boolean bypassNudge = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_bypass_nudge", false);
+                
+                if (!bypassNudge && (agentId.isEmpty() || !db.isProfileComplete(agentId))) {
+                    com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Incomplete Profile Detected. Redirecting to Identity Hub.");
+                    startActivity(new Intent(SplashActivity.this, ProfileActivity.class));
+                } else {
+                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Session Verified. Granting Dashboard Access.");
+                    startActivity(new Intent(SplashActivity.this, MapActivity.class));
+                }
             } else {
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Unauthenticated Hardware. Routing to Auth Hub.");
                 startActivity(new Intent(SplashActivity.this, AuthActivity.class));

@@ -127,9 +127,9 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
         
         // ≡ƒÜÇ PILLAR 2: Validated P2P Matrix
         offlineNodes.forEach { row ->
-            val uid = row["uid"] as? String ?: ""
-            val name = row["display_name"] as? String ?: "Target ($uid)"
-            val role = row["role_title"] as? String ?: "PEER"
+            val uid = row["uid_1"] as? String ?: ""
+            val name = row["fullName"] as? String ?: "Target ($uid)"
+            val role = row["role_type"] as? String ?: "PEER"
             
             if (uid.isNotEmpty() && uid != myUid && !uid.contains("OWNER")) {
                 targets.add(TrackingTarget("$name ($role)", uid))

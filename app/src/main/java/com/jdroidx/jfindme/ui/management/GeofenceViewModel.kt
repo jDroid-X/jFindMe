@@ -14,7 +14,7 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.auth.FirebaseAuth
 import com.jdroidx.jfindme.data.local.DatabaseHelper
-import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -384,11 +384,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                             val role = snap.child("role_title").getValue(String::class.java) ?: "FAMILY"
                             
                             val v = ContentValues().apply {
-                                put("uid", peerUid)
-                                put("display_name", name)
-                                put("role_title", role)
-                                put("status_text", "CONNECTED")
-                                put("readable_time", dbDelegate.getReadableNow())
+                                put("uid_1", peerUid)
+                                put("fullName", name)
+                                put("role_type", role)
+                                put("st_session_state", "CONNECTED")
                             }
                             dbDelegate.saveRosterNode(v)
                         }
@@ -405,8 +404,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             val roster = dbDelegate.getOfflineRoster()
             val mapping = mutableMapOf<String, String>()
             for (node in roster) {
-                val name = node["display_name"]?.toString()
-                val role = node["role_title"]?.toString()
+                val name = node["fullName"]?.toString()
+                val role = node["role_type"]?.toString()
                 if (name != null) mapping[name] = role ?: "PEER"
             }
             _rosterMapping.postValue(mapping)
@@ -521,7 +520,15 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         "status" to "PENDING_ACCEPTANCE",
                         "timestamp" to System.currentTimeMillis()
                     )
-                    FirebaseDatabase.getInstance().getReference("users").child(targetUid).child("geofence_sync_requests").push().setValue(syncRequest)
+                    FirebaseComm.resolveHardwareIdentity(targetUid) { agentId ->
+                        val finalTargetId = agentId ?: targetUid
+                        FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                            .child(finalTargetId)
+                            .child("Identity")
+                            .child("geofence_sync_requests")
+                            .push()
+                            .setValue(syncRequest)
+                    }
                 }
             }
         }
@@ -570,10 +577,19 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             "timestamp" to System.currentTimeMillis()
         )
         
-        FirebaseDatabase.getInstance().getReference("users").child(targetUid)
-            .child("geofence_sync_requests").push().setValue(syncRequest)
+        FirebaseComm.resolveHardwareIdentity(targetUid) { agentId ->
+            val finalTargetId = agentId ?: targetUid
+            FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                .child(finalTargetId)
+                .child("Identity")
+                .child("geofence_sync_requests")
+                .push()
+                .setValue(syncRequest)
+        }
             
         // 💾 CLOSED-LOOP MASTER ARCHIVAL (L7 Standard): Update the local Master Tables
+        val jPrefs = getApplication<android.app.Application>().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
+        val finalAgentId = jPrefs.getString("agent_id", FirebaseAuth.getInstance().getUid());
         val db = DatabaseHelper.getInstance(getApplication())
         val now = System.currentTimeMillis()
         
@@ -581,7 +597,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         db.syncSafeZoneGroup("ACTIVE_MISSION", targetUid, 0, 100, "ALL", 1, 1, "MISSION_DEPLOYED")
         
         // 2. Update Pairing Log (Confirm Handshake in the TABLE_PAIRING)
-        db.logDevicePairing(FirebaseAuth.getInstance().uid ?: "ADMIN", "MISSION_COMMANDER", "DEVICE_A",
+        db.logDevicePairing(finalAgentId ?: "ADMIN", "MISSION_COMMANDER", "DEVICE_A",
                            targetUid, targetName, "DEVICE_B", "GUARDIAN", activeId)
 
         // 3. Log Forensic Deployment (History Archive)

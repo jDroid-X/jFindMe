@@ -81,6 +81,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     // Scanner State Route
     private boolean isScanningLocal = false;
 
+    // Persisted References for Cloud Sync refresh
+    private String safeUid = "MOCK_U123";
+    private String forensicAgentId = "OWNER_001";
+    private LinearLayout branchList;
+    private TextView activeSyncHeader;
+
     // QR Code Scanner Result Payload
     private final ActivityResultLauncher<ScanOptions> barcodeLauncher = registerForActivityResult(new ScanContract(),
             result -> {
@@ -197,6 +203,18 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         identityCard.setOrientation(LinearLayout.VERTICAL);
         com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, identityCard, "CARD_STANDARD");
         identityCard.addView(buildIdentityBlock());
+        
+        // 🛰️ Group Activity Tile (Hub Identification)
+        LinearLayout groupCard = new LinearLayout(this);
+        groupCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, groupCard, "CARD_STANDARD");
+        
+        LinearLayout.LayoutParams groupLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        groupLp.setMargins(0, 0, 0, 40);
+        groupCard.setLayoutParams(groupLp);
+        
+        groupCard.addView(buildGroupTile());
+        root.addView(groupCard, groupLp);
         
         int quota = getResponsivePaddingQuota();
         int topGap = getResponsiveHeaderTopQuota();
@@ -316,8 +334,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         
         DatabaseHelper db = DatabaseHelper.getInstance(this);
         Map<String, String> myDos = db.getLocalDossier(finalAgentId);
-        
-        String nameStr = myDos != null ? myDos.get("id_full_name") : jPrefs.getString("user_nickname", "User Identity");
+        String nameStr = (myDos != null && myDos.get("fullName") != null) ? myDos.get("fullName") : jPrefs.getString("user_nickname", "User Identity");
         
         TextView myName = new TextView(this);
         myName.setText("👤 Owner: " + nameStr);
@@ -371,34 +388,72 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         return row;
     }
 
+    private View buildGroupTile() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 30, 40, 30);
+
+        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String groupId = jPrefs.getString("active_group", "NONE");
+        
+        Map<String, String> groupDetails = DatabaseHelper.getInstance(this).getGroupDetails(groupId);
+        String groupName = (groupDetails != null) ? groupDetails.get("name") : "SECURE_HUB";
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("GROUP ACTIVITY TILE");
+        tvTitle.setTextColor(getGradientStart());
+        tvTitle.setTextSize(12);
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        container.addView(tvTitle);
+
+        TextView tvName = new TextView(this);
+        tvName.setText(groupName);
+        tvName.setTextColor(getTextColor());
+        tvName.setTextSize(22);
+        tvName.setTypeface(null, Typeface.BOLD);
+        tvName.setPadding(0, 10, 0, 5);
+        container.addView(tvName);
+
+        TextView tvId = new TextView(this);
+        tvId.setText("HUB ID: " + groupId);
+        tvId.setTextColor(getSecondaryTextColor());
+        tvId.setTextSize(10);
+        container.addView(tvId);
+
+        return container;
+    }
+
     private View buildActiveRosterList() {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         
-        TextView header = (TextView) createSectionHeader("DEVICES IN YOUR PAIRING GROUP: CALCULATING...");
-        container.addView(header);
+        activeSyncHeader = (TextView) createSectionHeader("DEVICES IN YOUR PAIRING GROUP: CALCULATING...");
+        container.addView(activeSyncHeader);
 
         String myUid = FirebaseAuth.getInstance().getUid();
-        String safeUid = (myUid != null) ? myUid : "MOCK_U123";
+        safeUid = (myUid != null) ? myUid : "MOCK_U123";
         
         DatabaseHelper db = DatabaseHelper.getInstance(this);
-        Map<String, String> myDos = db.getLocalDossier(safeUid);
-        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
-        String myName = myDos != null ? myDos.get("id_full_name") : "YOU";
+        // 🧬 V69.9: Standardized Auth-to-Agent Resolution
+        Map<String, String> myDos = db.getIdentityByAuthUid(safeUid);
+        forensicAgentId = (myDos != null && myDos.containsKey("uid_1")) ? myDos.get("uid_1") : "AGENT_RESOLVING";
         
-        LinearLayout branchList = new LinearLayout(this);
+        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String myName = (myDos != null && myDos.get("fullName") != null) ? myDos.get("fullName") : jPrefs.getString("user_nickname", "User Identity");
+        
+        branchList = new LinearLayout(this);
         branchList.setOrientation(LinearLayout.VERTICAL);
         branchList.setVisibility(View.VISIBLE); 
         
-        LinearLayout rootNode = buildTreeNode(safeUid, myName + " (Primary Admin)", true, true, branchList, "OWNER");
+        LinearLayout rootNode = buildTreeNode(forensicAgentId, myName + " (Primary Admin)", true, true, branchList, "OWNER");
         container.addView(rootNode);
         container.addView(branchList);
 
         List<Map<String, Object>> localRoster = db.getOfflineRoster();
         if (localRoster.isEmpty()) {
-            header.setText("NO LOCAL TRACKING DATA FOUND.");
+            activeSyncHeader.setText("NO LOCAL TRACKING DATA FOUND.");
         } else {
-            renderLocalRoster(safeUid, branchList, header, localRoster);
+            renderLocalRoster(safeUid, branchList, activeSyncHeader, localRoster);
         }
 
         TextView refreshBtn = new TextView(this);
@@ -408,7 +463,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         refreshBtn.setPadding(40, 0, 0, 20);
         refreshBtn.setFocusable(true);
         refreshBtn.setClickable(true);
-        refreshBtn.setOnClickListener(v -> initiateCloudSync(safeUid, branchList, header));
+        refreshBtn.setOnClickListener(v -> initiateCloudSync(forensicAgentId, branchList, activeSyncHeader));
         
         refreshBtn.setOnKeyListener((v, k, e) -> {
             if (e.getAction() == KeyEvent.ACTION_UP && (k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_DPAD_CENTER)) {
@@ -433,16 +488,16 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 StringBuilder authorizedUids = new StringBuilder(safeUid).append(",");
                 
                 if (myGroupId == null || myGroupId.isEmpty()) {
-                    fetchFriendMatrix(safeUid, branchList, authorizedUids, header, 1);
+                    fetchFriendMatrix(safeUid, null, branchList, authorizedUids, header, 1);
                     com.jdroidx.jfindme.utils.AngelLoader.hide(NetworkGatewayActivity.this);
                     return;
                 }
 
-                com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef().orderByChild("identity/active_group").equalTo(myGroupId)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef().orderByChild("Identity/active_group").equalTo(myGroupId)
                     .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
                         @Override
                         public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
-                            fetchFriendMatrix(safeUid, branchList, authorizedUids, header, snapshot.getChildrenCount());
+                            fetchFriendMatrix(safeUid, myGroupId, branchList, authorizedUids, header, snapshot.getChildrenCount());
                             com.jdroidx.jfindme.utils.AngelLoader.hide(NetworkGatewayActivity.this);
                         }
                         @Override
@@ -460,15 +515,15 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         branchList.removeAllViews();
         int count = 0;
         
-        List<String> familyIds = new ArrayList<>();
-        List<String> friendIds = new ArrayList<>();
+        List<Map<String, Object>> familyIds = new ArrayList<>();
+        List<Map<String, Object>> friendIds = new ArrayList<>();
 
         DatabaseHelper db = DatabaseHelper.getInstance(this);
         
         branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
         Map<String, String> myDos = db.getLocalDossier(safeUid);
-        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
-        String myName = (myDos != null && myDos.containsKey("id_full_name")) ? myDos.get("id_full_name") : "YOU";
+        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String myName = (myDos != null && myDos.get("fullName") != null) ? myDos.get("fullName") : jPrefs.getString("user_nickname", "User Identity");
         branchList.addView(buildTreeNode(safeUid, myName, true, true, null, "OWNER"));
 
         for (Map<String, Object> node : roster) {
@@ -476,43 +531,52 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             if (rUid == null || rUid.equals(safeUid)) continue;
             
             Object frFlag = node.get("is_friend");
-            boolean isFriendNode = (frFlag instanceof Number) ? ((Number)frFlag).intValue() == 1 : false;
+            boolean isFriendNode = false;
+            if (frFlag instanceof Number) isFriendNode = ((Number)frFlag).intValue() == 1;
+            else if (frFlag instanceof Boolean) isFriendNode = (Boolean)frFlag;
             
-            if (isFriendNode) friendIds.add(rUid);
-            else familyIds.add(rUid);
+            if (isFriendNode) friendIds.add(node);
+            else familyIds.add(node);
             count++;
         }
 
         if (!familyIds.isEmpty()) {
             branchList.addView(createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")"));
-            for (String fid : familyIds) {
-                Map<String, String> fDos = db.getLocalDossier(fid);
-                String roleStr = "Member";
-                if (fDos != null) {
-                    String rType = fDos.get("role_type");
-                    if (rType != null && !rType.equals("None")) roleStr = rType;
-                }
-                branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
+            for (Map<String, Object> fNode : familyIds) {
+                String fid = (String) fNode.get("uid_1");
+                String name = (String) fNode.get("fullName");
+                String roleStr = (String) fNode.get("role_type");
+                if (roleStr == null) roleStr = "Member";
+                
+                branchList.addView(buildTreeNode(fid, name != null ? name : "Linked Asset", false, false, null, roleStr));
             }
         }
 
         if (!friendIds.isEmpty()) {
             branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
-            for (String frid : friendIds) {
-                branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
+            for (Map<String, Object> frNode : friendIds) {
+                String frid = (String) frNode.get("uid_1");
+                String name = (String) frNode.get("fullName");
+                String roleStr = (String) frNode.get("role_type");
+                if (roleStr == null) roleStr = "Friend";
+                
+                branchList.addView(buildTreeNode(frid, name != null ? name : "Friend", false, false, null, roleStr));
             }
         }
 
         header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (count + 1));
     }
     
-    private void fetchFriendMatrix(String safeUid, LinearLayout branchList, StringBuilder authorizedUids, TextView header, long currentCount) {
-        com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(safeUid)
-            .addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
+    private void fetchFriendMatrix(String safeUid, String myGroupId, LinearLayout branchList, StringBuilder authorizedUids, TextView header, long currentCount) {
+        com.google.firebase.database.DatabaseReference targetRef = (myGroupId != null) 
+            ? com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGroupId).child("members")
+            : com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(safeUid);
+
+        targetRef.addListenerForSingleValueEvent(new com.google.firebase.database.ValueEventListener() {
                 @Override
                 public void onDataChange(com.google.firebase.database.DataSnapshot fmSnap) {
-                    List<String> familyIds = new ArrayList<>();
-                    List<String> friendIds = new ArrayList<>();
+                    List<Map<String, Object>> familyIds = new ArrayList<>();
+                    List<Map<String, Object>> friendIds = new ArrayList<>();
                     
                     DatabaseHelper db = DatabaseHelper.getInstance(NetworkGatewayActivity.this);
                     int totalP2P = 0;
@@ -529,7 +593,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         }
                         
                         if (!exists) {
-                            db.saveRosterNode(memberId, "Relational Identity (" + memberId.substring(0, 5) + ")", "Member", "P2P Synchronized", false, false, "System Root", safeUid, memberId, "AUTO_SYNC");
+                            String displayName = "Relational Identity (" + (memberId.length() > 5 ? memberId.substring(0, 5) : memberId) + ")";
+                            db.saveRosterNode(memberId, displayName, "Member", "P2P Synchronized", false, false, "System Root", safeUid, memberId, "AUTO_SYNC");
                         }
                     }
 
@@ -545,20 +610,21 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                             totalP2P++;
                             
                             Object frFlag = node.get("is_friend");
-                            boolean isFriendNode = (frFlag instanceof Number) ? ((Number)frFlag).intValue() == 1 : false;
+                            boolean isFriendNode = false;
+                            if (frFlag instanceof Number) isFriendNode = ((Number)frFlag).intValue() == 1;
+                            else if (frFlag instanceof Boolean) isFriendNode = (Boolean)frFlag;
                             
-                            if (isFriendNode) friendIds.add(rUid);
-                            else familyIds.add(rUid);
+                            if (isFriendNode) friendIds.add(node);
+                            else familyIds.add(node);
                         }
                     }
                     
-                    header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (currentCount + totalP2P));
+                    header.setText("TOTAL ACTIVE DEVICES IN GROUP: " + (fmSnap.getChildrenCount() + 1));
                     branchList.removeAllViews();
 
                     Map<String, String> myDos = db.getLocalDossier(safeUid);
-                    if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
-                    String myGender = myDos != null ? myDos.get("id_gender") : "Male";
-                    String myName = (myDos != null && myDos.containsKey("id_full_name")) ? myDos.get("id_full_name") : "Network Admin";
+                    SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+                    String myName = (myDos != null && myDos.get("fullName") != null) ? myDos.get("fullName") : jPrefs.getString("user_nickname", "User Identity");
                     
                     branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
                     branchList.addView(buildTreeNode(safeUid, myName, true, true, null, "OWNER"));
@@ -567,37 +633,25 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         View familyHeader = createGroupHeading("FAMILY NETWORK (" + familyIds.size() + ")");
                         branchList.addView(familyHeader);
                         
-                        int childCount = 0;
-                        for (String fid : familyIds) {
-                            Map<String, String> fDos = db.getLocalDossier(fid);
-                            String roleStr = "Member";
-                            if (fDos != null) {
-                                String rType = fDos.get("role_type");
-                                String gender = fDos.get("id_gender");
-                                if (rType != null) {
-                                    if (rType.equals("Child")) {
-                                        childCount++;
-                                        String sonDaughter = (gender != null && gender.equalsIgnoreCase("Female")) ? "Daughter" : "Son";
-                                        roleStr = "Child #" + childCount + " (" + sonDaughter + ")";
-                                    } else if (rType.equals("Spouse")) {
-                                        if (gender != null && gender.equalsIgnoreCase(myGender)) {
-                                            roleStr = "Spouse";
-                                        } else {
-                                            roleStr = (gender != null && gender.equalsIgnoreCase("Female")) ? "Wife" : "Husband";
-                                        }
-                                    } else {
-                                        roleStr = rType;
-                                    }
-                                }
-                            }
-                            branchList.addView(buildTreeNode(fid, "Linked Asset", false, false, null, roleStr));
+                        for (Map<String, Object> fNode : familyIds) {
+                            String fid = (String) fNode.get("uid_1");
+                            String name = (String) fNode.get("fullName");
+                            String roleStr = (String) fNode.get("role_type");
+                            if (roleStr == null) roleStr = "Member";
+                            
+                            branchList.addView(buildTreeNode(fid, name != null ? name : "Linked Asset", false, false, null, roleStr));
                         }
                     }
 
                     if (!friendIds.isEmpty()) {
                         branchList.addView(createGroupHeading("FRIENDS NETWORK (" + friendIds.size() + ")"));
-                        for (String frid : friendIds) {
-                            branchList.addView(buildTreeNode(frid, "Friend", false, false, null, "Friend"));
+                        for (Map<String, Object> frNode : friendIds) {
+                            String frid = (String) frNode.get("uid_1");
+                            String name = (String) frNode.get("fullName");
+                            String roleStr = (String) frNode.get("role_type");
+                            if (roleStr == null) roleStr = "Friend";
+                            
+                            branchList.addView(buildTreeNode(frid, name != null ? name : "Friend", false, false, null, roleStr));
                         }
                     }
                 }
@@ -865,6 +919,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 localPairingPanel.setVisibility(View.VISIBLE);
             }), lp);
 
+        // 🧬 V70.1: Integrate Restore Action directly into selection matrix
+        container.addView(buildRestoreActionTile(), lp);
+
         return container;
     }
 
@@ -922,7 +979,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         container.addView(ivQrCode, qrLp);
         
         View btnGenerate = createActionTile("GENERATE UNIQUE TOKEN", android.R.drawable.ic_popup_sync, v -> {
-            executeHostSessionSpinup("AWAITING_ROLE");
+            // FIX #1: No role argument — role is negotiated AFTER child knocks, not at token creation.
+            executeHostSessionSpinup();
         });
         container.addView(btnGenerate);
 
@@ -1124,7 +1182,11 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         });
     }
 
-    private void executeHostSessionSpinup(String assignedRoles) {
+    /**
+     * FIX #1: Removed 'assignedRoles' parameter — role is assigned AFTER child knocks.
+     * The FirebasePairingManager.startHostPairingSession signature no longer accepts assignedRoles.
+     */
+    private void executeHostSessionSpinup() {
         if (tvCode != null) tvCode.setText("NEGOTIATING...");
         if (tvSyncStatus != null) {
             tvSyncStatus.setText("ALLOCATING CLOUD NODE...");
@@ -1132,7 +1194,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
         if (ivQrCode != null) ivQrCode.setVisibility(View.GONE);
 
-        FirebasePairingManager.INSTANCE.startHostPairingSession(this, assignedRoles, (qrBitmap, code) -> {
+        FirebasePairingManager.INSTANCE.startHostPairingSession(this, (qrBitmap, code) -> {
             runOnUiThread(() -> {
                 if (code != null && !code.isEmpty()) {
                     if (tvCode != null) tvCode.setText(code);
@@ -1150,8 +1212,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 }
             });
             return kotlin.Unit.INSTANCE;
-        }, (childDeviceId, childName) -> {
-            runOnUiThread(() -> promptApprovalDialog(childDeviceId, childName, false));
+        }, (childDeviceId, childName, childRole) -> {
+            runOnUiThread(() -> renderHostApprovalDialog(childDeviceId, childName, childRole, FirebasePairingManager.INSTANCE.getActivePairingCode()));
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -1184,11 +1246,20 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         final String activeCode = FirebasePairingManager.INSTANCE.getActivePairingCode();
         
         if (activeCode != null && !isLocalMerge) {
-            FirebaseDatabase.getInstance().getReference("pairing_requests").child(activeCode)
+            com.jdroidx.jfindme.data.remote.FirebaseComm.getPairingRef().child(activeCode)
                 .get().addOnSuccessListener(snap -> {
                     String prelimRole = snap.child("child_role_preliminary").getValue(String.class);
-                    if (prelimRole == null) prelimRole = "Friends";
-                    
+
+                    // FIX #2: Do NOT silently default to "Friends" if the role is null or blank.
+                    // The child's role write may not have propagated yet (race condition).
+                    // Alert the host to ask Device B to re-tap their role selection.
+                    if (prelimRole == null || prelimRole.isEmpty()) {
+                        runOnUiThread(() -> Toast.makeText(this,
+                            "\u26a0\ufe0f Child role not received yet. Ask Device B to re-submit their code.",
+                            Toast.LENGTH_LONG).show());
+                        return;
+                    }
+
                     final String finalRole = prelimRole;
                     runOnUiThread(() -> renderHostApprovalDialog(childId, childName, finalRole, activeCode));
                 });
@@ -1246,12 +1317,34 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
             card.setOnClickListener(v -> {
                 dialog.dismiss();
-                FirebasePairingManager.INSTANCE.approveHandshake(this, activeCode, childId, hostRole, childPrelimRole, success -> {
+                
+                // 🧬 V68.1: Reciprocal Role Matrix Resolution
+                String childRoleToSave = childPrelimRole; 
+                String hostRoleToSave = hostRole;
+
+                if (childPrelimRole.equals("Child")) {
+                    childRoleToSave = "Child";
+                    hostRoleToSave = hostRole; // Father, Mother, or Guardian
+                } else if (java.util.Arrays.asList("Father", "Mother", "Guardian").contains(childPrelimRole)) {
+                    childRoleToSave = childPrelimRole;
+                    hostRoleToSave = "Child";
+                } else if (childPrelimRole.equals("Spouse")) {
+                    childRoleToSave = "Spouse";
+                    hostRoleToSave = "Spouse";
+                }
+
+                boolean isFriend = hostRole.equals("Friends");
+                final String finalChildRole = childRoleToSave;
+                final String finalHostRole = hostRoleToSave;
+                final boolean finalIsFriend = isFriend;
+
+                FirebasePairingManager.INSTANCE.approveHandshake(this, activeCode, childId, finalHostRole, finalChildRole, success -> {
                     runOnUiThread(() -> {
                         if (success) {
                             Toast.makeText(this, "Handshake Completed! Assets Linked.", Toast.LENGTH_SHORT).show();
-                            boolean isFriend = childPrelimRole.equals("Friends");
-                            DatabaseHelper.getInstance(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
+                            boolean localUpdateSuccess = DatabaseHelper.getInstance(this).updateCitizenRole(childId, finalIsFriend ? "None" : finalChildRole, finalIsFriend ? "Friends" : "None", finalIsFriend);
+                            Toast.makeText(this, "Handshake Completed! Local Update: " + (localUpdateSuccess ? "PASS" : "FAIL"), Toast.LENGTH_SHORT).show();
+                            initiateCloudSync(safeUid, branchList, activeSyncHeader); // Force refresh
                         } else {
                             Toast.makeText(this, "Handshake Failed.", Toast.LENGTH_SHORT).show();
                         }
@@ -1332,7 +1425,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     }
 
     private void showRestoreOldGroupDialog() {
-        Toast.makeText(this, "Scanning History Database for Legacy Connections...", Toast.LENGTH_SHORT).show();
+        android.app.ProgressDialog pd = new android.app.ProgressDialog(this);
+        pd.setMessage("SCANNING FORENSIC CLOUD MATRIX...");
+        pd.setCancelable(false);
+        pd.show();
         
         final String agentId = getSharedPreferences("system_registry", MODE_PRIVATE).getString("agent_id", "AGENT_NOT_FOUND");
         final String safeAgentId = agentId;
@@ -1341,6 +1437,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             String myGrp = grpSnap.getValue(String.class);
             final String finalGrp = (myGrp == null) ? "" : myGrp;
             if (finalGrp.isEmpty()) {
+                pd.dismiss();
                 Toast.makeText(this, "Network Hub is empty. You must build a new Matrix.", Toast.LENGTH_LONG).show();
                 return;
             }
@@ -1365,6 +1462,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         }
                     }
                     
+                    pd.dismiss();
                     if (assetNames.isEmpty()) {
                         Toast.makeText(this, "No legacy assets detected in History Database.", Toast.LENGTH_SHORT).show();
                         return;
@@ -1427,6 +1525,67 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (optionGatewayPanel != null) optionGatewayPanel.setVisibility(View.VISIBLE);
         if (remotePairingPanel != null) remotePairingPanel.setVisibility(View.GONE);
         if (localPairingPanel != null) localPairingPanel.setVisibility(View.GONE);
+        
+        String launchMode = getIntent().getStringExtra("LAUNCH_MODE");
+        if ("RECOVERY".equals(launchMode)) {
+            // 🚀 QA Fix: Do NOT removeExtra here; setupLogic needs it to trigger sync
+            showRecoveryModeOverlay();
+            // Hide the panels to avoid confusion during recovery
+            if (optionGatewayPanel != null) optionGatewayPanel.setVisibility(View.GONE);
+        }
+    }
+
+    private void showRecoveryModeOverlay() {
+        ScrollView sv = new ScrollView(this);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 40, 40, 40);
+
+        TextView t1 = new TextView(this);
+        t1.setText("RECOVERY ASSISTANT");
+        t1.setTextColor(getGradientStart());
+        t1.setTextSize(20);
+        t1.setTypeface(null, Typeface.BOLD);
+        t1.setPadding(0, 0, 0, 20);
+        container.addView(t1);
+
+        TextView t2 = new TextView(this);
+        t2.setText("Your Cloud Roster scan returned zero assets. This usually happens if you are using a new account or your devices are not yet paired to this group.");
+        t2.setTextColor(getTextColor());
+        t2.setTextSize(14);
+        t2.setPadding(0, 0, 0, 40);
+        container.addView(t2);
+
+        // Targeted Action: Start Pairing
+        View btnPair = createActionTile("PAIR NEW DEVICE", android.R.drawable.ic_popup_sync, v -> {
+            optionGatewayPanel.setVisibility(View.GONE);
+            remotePairingPanel.setVisibility(View.VISIBLE);
+        });
+        container.addView(btnPair);
+
+        // Targeted Action: Force Re-Sync
+        View btnSync = createActionTile("FORCE CLOUD RE-SYNC", android.R.drawable.ic_popup_sync, v -> {
+            initiateCloudSync(safeUid, branchList, activeSyncHeader);
+        });
+        container.addView(btnSync);
+
+        // Targeted Action: Check Identity
+        View btnId = createActionTile("VIEW MY CLOUD IDENTITY", android.R.drawable.ic_menu_info_details, v -> {
+            SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+            String agentId = jPrefs.getString("agent_id", "N/A");
+            String group = jPrefs.getString("active_group", "NONE");
+            new AlertDialog.Builder(this)
+                .setTitle("Cloud Registry")
+                .setMessage("My ID: " + agentId + "\nActive Hub: " + group)
+                .setPositiveButton("OK", null)
+                .show();
+        });
+        container.addView(btnId);
+
+        new AlertDialog.Builder(this)
+            .setView(sv)
+            .setPositiveButton("DISMISS", null)
+            .show();
     }
 
     private View createSectionHeader(String text) {
@@ -1525,6 +1684,23 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 tvSyncStatus.setText(status);
             }
         });
+
+        // 🛰️ RECOVERY PROTOCOL: Auto-trigger sync if launched from Reclaim failure
+        String mode = getIntent().getStringExtra("LAUNCH_MODE");
+        if ("RECOVERY".equals(mode)) {
+            SystemLogger.INSTANCE.w(TAG, "RECOVERY MODE ACTIVE: Initiating Auto-Resolution...");
+            
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("🛰️ RECOVERY MODE ACTIVE")
+                .setMessage("We are performing an aggressive scan of the forensic cloud matrix to rebuild your safety roster. \n\nPlease stay on this screen while we sync your existing nodes...")
+                .setPositiveButton("UNDERSTOOD", null)
+                .show();
+
+            getIntent().removeExtra("LAUNCH_MODE"); // 🚀 Consume only AFTER sync trigger
+            new android.os.Handler().postDelayed(() -> {
+                initiateCloudSync(forensicAgentId, branchList, activeSyncHeader);
+            }, 1000);
+        }
     }
 
 }

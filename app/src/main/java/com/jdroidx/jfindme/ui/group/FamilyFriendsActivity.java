@@ -164,7 +164,9 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                             .setTitle("RECOVERY SCAN COMPLETE")
                             .setMessage("Zero matching nodes found in your active cloud group. If this is a new setup, please use the NETWORK GATEWAY to pair your first device.")
                             .setPositiveButton("Open Gateway", (di, w) -> {
-                                startActivity(new Intent(this, NetworkGatewayActivity.class));
+                                Intent gwIntent = new Intent(this, NetworkGatewayActivity.class);
+                                gwIntent.putExtra("LAUNCH_MODE", "RECOVERY");
+                                startActivity(gwIntent);
                                 finish();
                             })
                             .setNegativeButton("Dismiss", null)
@@ -484,12 +486,18 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         
         if (tvOwnerName != null) {
             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-            String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-            java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
-            if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
-            
             android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-            String nameStr = myDos != null ? myDos.get("id_full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+            String finalAgentId = prefs.getString("agent_id", null);
+            
+            java.util.Map<String, String> myDos = (finalAgentId != null) ? db.getLocalDossier(finalAgentId) : null;
+            String ownerName = (myDos != null) ? myDos.get("owner_name") : null;
+            String fullName = (myDos != null) ? myDos.get("fullName") : null;
+            
+            String nameStr = "User Identity";
+            if (ownerName != null && !ownerName.isEmpty()) nameStr = ownerName;
+            else if (fullName != null && !fullName.isEmpty()) nameStr = fullName;
+            else nameStr = prefs.getString("user_nickname", "User Identity");
+            
             tvOwnerName.setText("👤 Owner: " + nameStr);
         }
     }
@@ -541,8 +549,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         java.util.Map<String, String> myDos = db.getLocalDossier(finalAgentId);
+        String ownerName = (myDos != null) ? myDos.get("owner_name") : null;
+        String fullName = (myDos != null) ? myDos.get("fullName") : null;
         
-        String nameStr = myDos != null ? myDos.get("id_full_name") : jPrefs.getString("user_nickname", "User Identity");
+        String nameStr = "User Identity";
+        if (ownerName != null && !ownerName.isEmpty()) nameStr = ownerName;
+        else if (fullName != null && !fullName.isEmpty()) nameStr = fullName;
+        else nameStr = jPrefs.getString("user_nickname", "User Identity");
         
         tvOwnerName = new TextView(this);
         tvOwnerName.setText("👤 Owner: " + nameStr);

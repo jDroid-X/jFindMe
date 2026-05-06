@@ -99,7 +99,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         topRow.addView(nameEntryField);
         
         ImageView editIcon = new ImageView(this);
-        editIcon.setImageResource(com.jdroidx.jfindme.R.drawable.ic_edit);
+        editIcon.setImageResource(android.R.drawable.ic_menu_edit);
         editIcon.setColorFilter(getGradientOverlayText());
         topRow.addView(editIcon, new LinearLayout.LayoutParams(scale(60), scale(60)));
         

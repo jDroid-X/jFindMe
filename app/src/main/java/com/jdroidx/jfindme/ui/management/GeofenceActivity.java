@@ -84,6 +84,14 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private View btnConfirm; // 🚀 Action Terminal Controller
 
     @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        // 🚀 QA Fix: Initialize ViewModel BEFORE super.onCreate
+        // This prevents NullPointerException in createLayout which is triggered by super.onCreate (BaseActivityJava logic)
+        viewModel = new ViewModelProvider(this).get(GeofenceViewModel.class);
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         if (myAvatarField != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatarField);
@@ -1307,11 +1315,15 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // --- 1. OWNER NAME ---
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        java.util.Map<String, String> myDos = db.getLocalDossier(myUid != null ? myUid : "OWNER_001");
-        if (myDos == null) myDos = db.getLocalDossier("OWNER_001");
         
-        android.content.SharedPreferences prefs = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE);
-        String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
+        String agentId = (myUid != null) ? db.resolveAgentIdLocally(myUid) : null;
+        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : "OWNER_001");
+        
+        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String nameStr = (myDos != null && myDos.containsKey("fullName") && !myDos.get("fullName").isEmpty()) 
+                ? myDos.get("fullName") 
+                : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
         
         TextView myName = new TextView(this);
         myName.setText("👤 Owner: " + nameStr);
@@ -1359,7 +1371,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         textBlock.addView(tvNetworkId);
         
         // 🛡️ ARCHITECTURAL SILENCE: Check local persistence for Hub status
-        String localActiveGroup = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+        String localActiveGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
         if (localActiveGroup != null) {
             TextView tvStatus = new TextView(this);
             tvStatus.setText("LOCKED TO HUB: " + localActiveGroup);

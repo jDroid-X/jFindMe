@@ -32,6 +32,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _myLocation = MutableLiveData<Location>()
     val myLocation: LiveData<Location> = _myLocation
     
+    private val _userDossier = MutableLiveData<Map<String, String>>()
+    val userDossier: LiveData<Map<String, String>> = _userDossier
+    
     // ≡ƒÅ╖∩╕Å Filter State Matrix
     private var currentFilterMode = "ALL" // Default
     private val rawLocationCache = mutableListOf<UserLocation>()
@@ -62,6 +65,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             rawLocationCache.addAll(rawLocations)
             applyTacticalFilter()
         }
+        
+        loadLocalDossier()
+    }
+
+    private fun loadLocalDossier() {
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+        _userDossier.postValue(db.getLocalDossier(auth.uid ?: ""))
     }
 
     fun setFilterMode(mode: String) {
@@ -95,88 +105,88 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val safeUid = auth.uid ?: return
         val rootDb = com.google.firebase.database.FirebaseDatabase.getInstance().reference
         
-        rootDb.child("users").child(safeUid).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
-            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                val myGroupId = snapshot.child("active_group").getValue(String::class.java)
-                val linkCsvRaw = snapshot.child("valid_linked_uids").getValue(String::class.java) ?: ""
-                
-                // Construct Explicit One-Scan-One-Device Allowed List
-                val approvedUids = linkCsvRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                
-                val friendMatrix = snapshot.child("friend_matrix")
-                val explicitFriendUids = mutableSetOf<String>()
-                friendMatrix.children.forEach { explicitFriendUids.add(it.key ?: "") }
-                
-                if (myGroupId == null || myGroupId.isEmpty()) {
-                    familyMeshIds.clear()
-                    familyMeshIds.addAll(explicitFriendUids) // ≡ƒÜÇ QA Fix: P2P Friendship Stability (V9.8)
-                    val currentRaw = repository.userLocations.value ?: return
-                    val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
-                    _filteredLocations.postValue(authorized)
-                    return
-                }
-                
-                // 🚀 V66.7: Relational Bridge - Use Agent Hub, NOT Legacy users node
-                rootDb.child(FirebaseComm.NODE_DEVICES).orderByChild("profile/active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
-                    override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
-                        val newMesh = mutableSetOf<String>()
-                        newMesh.addAll(explicitFriendUids) // Preserving 1-to-1 pairings in the hybrid mesh!
-
-                        groupSnap.children.forEach { 
-                            val possibleNodeId = it.key ?: ""
-                            val thisNodeRole = it.child("role_family").getValue(String::class.java) ?: "None"
+                // 🚀 V67.2: Relational Bridge - Use Agent Hub, NOT Legacy users node
+                FirebaseComm.resolveHardwareIdentity(safeUid) { agentId ->
+                    val finalId = agentId ?: safeUid
+                    rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                        override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                            val myGroupId = snapshot.child("profile").child("active_group").getValue(String::class.java)
+                            val linkCsvRaw = snapshot.child("profile").child("valid_linked_uids").getValue(String::class.java) ?: ""
                             
-                            // ≡ƒ¢░∩╕Å MASTER TRUST HEURISTICS: 
-                            // 1. Explicitly scanned devices (approvedUids) / Friend Matrix
-                            // 2. Administrators/Parents (Father/Mother)
-                            // 3. Members of the SAME Group (Stability Fallback)
-                            if (approvedUids.contains(possibleNodeId) || possibleNodeId == safeUid || thisNodeRole == "Father" || thisNodeRole == "Mother") {
-                                newMesh.add(possibleNodeId)
-                            } else {
-                                // Default Stability: If you share a group, you should be visible to prevent blinking!
-                                newMesh.add(possibleNodeId)
+                            // Construct Explicit One-Scan-One-Device Allowed List
+                            val approvedUids = linkCsvRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            
+                            val friendMatrix = snapshot.child("profile").child("friend_matrix")
+                            val explicitFriendUids = mutableSetOf<String>()
+                            friendMatrix.children.forEach { explicitFriendUids.add(it.key ?: "") }
+                            
+                            if (myGroupId == null || myGroupId.isEmpty()) {
+                                familyMeshIds.clear()
+                                familyMeshIds.addAll(explicitFriendUids) // 🚀 QA Fix: P2P Friendship Stability (V9.8)
+                                val currentRaw = repository.userLocations.value ?: return
+                                val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+                                _filteredLocations.postValue(authorized)
+                                return
+                            }
+                            
+                            // 🚀 V67.2: Unified Forensic Hub Query
+                            rootDb.child(FirebaseComm.NODE_DEVICES).orderByChild("profile/active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                                override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
+                                    val newMesh = mutableSetOf<String>()
+                                    newMesh.addAll(explicitFriendUids) // Preserving 1-to-1 pairings in the hybrid mesh!
+
+                                    groupSnap.children.forEach { 
+                                        val possibleNodeId = it.key ?: ""
+                                        val thisNodeRole = it.child("profile").child("role_family").getValue(String::class.java) ?: "None"
+                                        
+                                        // 🛡️ MASTER TRUST HEURISTICS: 
+                                        if (approvedUids.contains(possibleNodeId) || possibleNodeId == safeUid || thisNodeRole == "Father" || thisNodeRole == "Mother") {
+                                            newMesh.add(possibleNodeId)
+                                        } else {
+                                            // Default Stability: If you share a group, you should be visible to prevent blinking!
+                                            newMesh.add(possibleNodeId)
+                                        }
+                                    }
+                                    
+                                    familyMeshIds.clear()
+                                    familyMeshIds.addAll(newMesh)
+                                    
+                                    // Retrigger the visual layer organically
+                                    val currentRaw = repository.userLocations.value ?: return
+                                    val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+                                    _filteredLocations.postValue(authorized)
+                                }
+                                override fun onCancelled(e: com.google.firebase.database.DatabaseError) {
+                                    SystemLogger.e(TAG, "Map HUD Sync Dropped", e.toException())
+                                }
+                            })
+
+                            // 🛡️ PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
+                            if (activeGroupAlertListener != null) rootDb.child(FirebaseComm.NODE_DEVICES).child(myGroupId).child("alerts").removeEventListener(activeGroupAlertListener!!)
+                            activeGroupAlertListener = object : com.google.firebase.database.ChildEventListener {
+                                override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {
+                                    val alertMessage = snapshot.getValue(String::class.java)
+                                    if (alertMessage != null) {
+                                        SystemLogger.w(TAG, "Intercepted Geofence Breach: $alertMessage")
+                                        _geofenceAlertTrigger.postValue(alertMessage)
+                                    }
+                                }
+                                override fun onChildChanged(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
+                                override fun onChildRemoved(snapshot: com.google.firebase.database.DataSnapshot) {}
+                                override fun onChildMoved(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
+                                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                            }
+                            
+                            // Only Administrators physically query and intercept the alerts generated!
+                            if (_currentUserRole.value == "ADMIN" || isAdmin()) {
+                                rootDb.child(FirebaseComm.NODE_DEVICES).child(myGroupId).child("alerts")
+                                    .limitToLast(3) // Keep RAM light, intercept newest 3
+                                    .addChildEventListener(activeGroupAlertListener!!)
                             }
                         }
-                        
-                        familyMeshIds.clear()
-                        familyMeshIds.addAll(newMesh)
-                        
-                        // Retrigger the visual layer organically
-                        val currentRaw = repository.userLocations.value ?: return
-                        val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
-                        _filteredLocations.postValue(authorized)
-                    }
-                    override fun onCancelled(e: com.google.firebase.database.DatabaseError) {
-                        SystemLogger.e(TAG, "Map HUD Sync Dropped", e.toException())
-                    }
-                })
-
-                // ≡ƒ¢æ PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
-                if (activeGroupAlertListener != null) rootDb.child("groups").child(myGroupId).child("alerts").removeEventListener(activeGroupAlertListener!!)
-                activeGroupAlertListener = object : com.google.firebase.database.ChildEventListener {
-                    override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {
-                        val alertMessage = snapshot.getValue(String::class.java)
-                        if (alertMessage != null) {
-                            SystemLogger.w(TAG, "Intercepted Geofence Breach: $alertMessage")
-                            _geofenceAlertTrigger.postValue(alertMessage)
-                        }
-                    }
-                    override fun onChildChanged(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
-                    override fun onChildRemoved(snapshot: com.google.firebase.database.DataSnapshot) {}
-                    override fun onChildMoved(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
-                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                        override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
+                    })
                 }
-                
-                // Only Administrators physically query and intercept the alerts generated!
-                if (_currentUserRole.value == "ADMIN" || isAdmin()) {
-                    rootDb.child("groups").child(myGroupId).child("alerts")
-                        .limitToLast(3) // Keep RAM light, intercept newest 3
-                        .addChildEventListener(activeGroupAlertListener!!)
-                }
-                
-            }
-            override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
-        })
         
         // 🚀 V66.7: P2P Strict Tracking Array Matrix! Ensure offline strictly paired 1-to-1 users ALSO load!
         FirebaseComm.getProfileRef(safeUid).child("friend_matrix").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
@@ -209,9 +219,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val userId = currentUser.uid
         
         // ≡ƒºá QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+        val dossier = db.getLocalDossier(userId)
+        val fullName = dossier["fullName"]
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val customName = prefs.getString("user_nickname", null)
-        val userName = customName ?: currentUser.displayName ?: currentUser.email ?: "User"
+        
+        val userName = if (!fullName.isNullOrBlank()) fullName else (customName ?: currentUser.displayName ?: currentUser.email ?: "User Identity")
         
         // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
         val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
@@ -227,7 +241,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
         val resolvedAvatarId = "avatar_custom_$dynamicIdx"
         
-        // 🚀 V66.7: Resolve Agent ID before broadcast to ensure Cloud Matrix Parity
+        // 🚀 V67.2: Resolve Agent ID before broadcast to ensure Cloud Matrix Parity
         FirebaseComm.resolveHardwareIdentity(userId) { agentId: String? ->
             val finalAgentId = agentId ?: userId
             
@@ -303,7 +317,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val rootDb = FirebaseDatabase.getInstance().reference
         FirebaseComm.resolveHardwareIdentity(safeUid) { agentId: String? ->
             val finalId = agentId ?: safeUid
-            val ref = rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).child("identity").child("geofence_sync_requests")
+            val ref = rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).child("Identity").child("geofence_sync_requests")
             
             ref.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {

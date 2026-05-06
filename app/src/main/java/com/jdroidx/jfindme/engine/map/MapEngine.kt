@@ -84,7 +84,7 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
 
                 val marker = markers[rUserId]
                 
-                val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+                val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                 val hideMode = prefs.getBoolean("callout_hide_mode", false)
                 val revealedAt = prefs.getLong("callout_revealed_at", 0L)
                 val showName = !hideMode || (System.currentTimeMillis() - revealedAt < 5000L)

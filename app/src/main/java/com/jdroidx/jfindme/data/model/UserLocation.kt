@@ -74,4 +74,22 @@ data class UserLocation(
             else -> System.currentTimeMillis()
         }
     }
+
+    @com.google.firebase.database.Exclude
+    fun toMap(): Map<String, Any?> {
+        return mapOf(
+            "userId" to userId,
+            "deviceId" to deviceId,
+            "latitude" to latitude,
+            "longitude" to longitude,
+            "geohash" to geohash,
+            "timestamp" to timestamp,
+            "bearing" to bearing,
+            "speed" to speed,
+            "sos" to isSosActive,
+            "battery" to batteryLevel,
+            "address" to address,
+            "active_group" to active_group
+        )
+    }
 }

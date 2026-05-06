@@ -22,7 +22,9 @@ import com.jdroidx.jfindme.utils.SystemLogger;
 public class ProfileActivity extends BaseActivityJava {
 
     private final String TAG = "ProfileActivity";
-    private static boolean onboardingDialogShown = false; 
+    private boolean onboardingDialogShown = false;
+    private final java.util.Map<String, String> initialValues = new java.util.HashMap<>();
+    private boolean isDataLoaded = false;
     private android.webkit.WebView activeProfileImgView; // 🧠 Upgraded to Real 3D GLTF Decoder
     private ProfileViewModel profileViewModel; // 🚀 Pure Native MVVM Pipeline Injection
     private boolean isSaveLaterAction = false; 
@@ -50,6 +52,11 @@ public class ProfileActivity extends BaseActivityJava {
     @Override
     protected void onResume() {
         super.onResume();
+        // 🚀 QA Fix: Force-fetch profile data to ensure visual parity after returning from sub-screens (Identity Handshake)
+        if (profileViewModel != null) {
+            profileViewModel.fetchProfile(this);
+        }
+        
         // 🧠 QA Fix: Immediately repaint the Profile Avatar physically the second the user returns from the Editor pipeline
         if (activeProfileImgView != null && prefs != null) {
             int activeId = prefs.getInt("equipped_avatar_id", 0);
@@ -401,7 +408,10 @@ public class ProfileActivity extends BaseActivityJava {
         identityRow.setWeightSum(2.0f);
         identityRow.addView(wrapEnterpriseHalfGrid(nameField, prefs.getInt("icon_profile_name", android.R.drawable.ic_menu_myplaces)));
         identityRow.addView(wrapEnterpriseHalfGrid(genderField, android.R.drawable.ic_menu_myplaces));
-        pForm.addView(identityRow);
+        
+        LinearLayout.LayoutParams identityLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        identityLp.setMargins(0, scale(10), 0, scale(10));
+        pForm.addView(identityRow, identityLp);
 
         // Row 2: Persistence Matrix (2x2)
         LinearLayout persistRow = new LinearLayout(this);
@@ -409,7 +419,10 @@ public class ProfileActivity extends BaseActivityJava {
         persistRow.setWeightSum(2.0f);
         persistRow.addView(wrapEnterpriseHalfGrid(phoneField, prefs.getInt("icon_profile_phone", android.R.drawable.ic_menu_call)));
         persistRow.addView(wrapEnterpriseHalfGrid(dobField, android.R.drawable.ic_menu_today));
-        pForm.addView(persistRow);
+        
+        LinearLayout.LayoutParams persistLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        persistLp.setMargins(0, scale(10), 0, scale(10));
+        pForm.addView(persistRow, persistLp);
 
         // Standard Address Field (Full)
         pForm.addView(wrapEnterpriseFullGrid(addressField, android.R.drawable.ic_menu_mapmode));
@@ -420,7 +433,9 @@ public class ProfileActivity extends BaseActivityJava {
         geoRow1.setWeightSum(2.0f);
         geoRow1.addView(wrapEnterpriseHalfGrid(countrySpinner, android.R.drawable.ic_menu_mapmode));
         geoRow1.addView(wrapEnterpriseHalfGrid(stateSpinner, android.R.drawable.ic_menu_mylocation));
-        pForm.addView(geoRow1);
+        LinearLayout.LayoutParams geo1Lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        geo1Lp.setMargins(0, scale(10), 0, scale(10));
+        pForm.addView(geoRow1, geo1Lp);
 
         // Row 4: Geo-Matrix 2 (2x2)
         LinearLayout geoRow2 = new LinearLayout(this);
@@ -428,7 +443,9 @@ public class ProfileActivity extends BaseActivityJava {
         geoRow2.setWeightSum(2.0f);
         geoRow2.addView(wrapEnterpriseHalfGrid(citySpinner, android.R.drawable.ic_dialog_map));
         geoRow2.addView(wrapEnterpriseHalfGrid(pincodeField, android.R.drawable.ic_menu_info_details));
-        pForm.addView(geoRow2);
+        LinearLayout.LayoutParams geo2Lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        geo2Lp.setMargins(0, scale(10), 0, scale(10));
+        pForm.addView(geoRow2, geo2Lp);
 
         // Emergency Protocol (Full)
         pForm.addView(wrapEnterpriseFullGrid(emergencyNoteField, android.R.drawable.ic_dialog_info));
@@ -451,7 +468,7 @@ public class ProfileActivity extends BaseActivityJava {
         row1.setOrientation(LinearLayout.HORIZONTAL);
         row1.setWeightSum(2.0f);
         
-        View dossierBtn = createIconButton("DETAIL PROFILE", prefs.getInt("icon_profile_dossier", android.R.drawable.ic_menu_info_details), true, v -> {
+        View dossierBtn = createIconButton("DETAIL PROFILE", android.R.drawable.ic_menu_edit, true, v -> {
             String safeUid = (profileViewModel != null) ? profileViewModel.getCurrentUserId() : null;
             if (safeUid != null) {
                 android.content.Intent dossierRoute = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
@@ -463,7 +480,7 @@ public class ProfileActivity extends BaseActivityJava {
             }
         });
 
-        View orgBtn = createIconButton("ORGANIZATION", android.R.drawable.ic_menu_agenda, true, v -> {
+        View orgBtn = createIconButton("ORGANIZATION", android.R.drawable.ic_menu_edit, true, v -> {
             try {
                 startActivity(new android.content.Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.OrgActivity")));
             } catch (Exception e) {
@@ -922,7 +939,7 @@ public class ProfileActivity extends BaseActivityJava {
         row.setBackground(fieldBg);
         
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.setMargins(0, 15, 0, 25); 
+        rowLp.setMargins(0, scale(10), 0, scale(10)); // 🚀 QA Fix: Standardized L7 Universal Gap Scaling
         row.setLayoutParams(rowLp);
 
         android.widget.ImageView icon = new android.widget.ImageView(this);
@@ -962,7 +979,7 @@ public class ProfileActivity extends BaseActivityJava {
         row.setBackground(fieldBg);
         
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        rowLp.setMargins(10, 15, 10, 15); 
+        rowLp.setMargins(scale(10), scale(10), scale(10), scale(10)); // 🚀 QA Fix: Standardized L7 Universal Gap Scaling
         row.setLayoutParams(rowLp);
 
         android.widget.ImageView icon = new android.widget.ImageView(this);
@@ -995,6 +1012,21 @@ public class ProfileActivity extends BaseActivityJava {
             public void handleOnBackPressed() {
                 // 🚀 QA Fix: Identity Matrix Integrity - HARD LOCK Back Navigation
                 syncFieldsToPrefs(); // Force sync current UI values to prefs for validation
+                
+                if (hasUnsavedChanges()) {
+                    new android.app.AlertDialog.Builder(ProfileActivity.this)
+                        .setTitle("⚠️ UNSAVED CHANGES")
+                        .setMessage("You have made changes to your identity profile. Would you like to update your cloud roster or discard these changes?")
+                        .setPositiveButton("UPDATE 🚀", (dialog, which) -> handleProfileSaveAction(false))
+                        .setNegativeButton("DISCARD 🕒", (dialog, which) -> {
+                            // Restore initial values visually if needed, or just exit
+                            finish();
+                        })
+                        .setNeutralButton("CANCEL", null)
+                        .show();
+                    return;
+                }
+
                 String missing = profileViewModel.getMissingMandatoryFields(prefs);
                 if (missing != null) {
                     new android.app.AlertDialog.Builder(ProfileActivity.this)
@@ -1104,6 +1136,12 @@ public class ProfileActivity extends BaseActivityJava {
             }
             
             editor.apply();
+
+            // 🚀 QA Fix: Capture Initial State for Change Detection
+            if (!isDataLoaded) {
+                captureInitialState();
+                isDataLoaded = true;
+            }
         });
         
         profileViewModel.fetchProfile(this);
@@ -1485,5 +1523,35 @@ public class ProfileActivity extends BaseActivityJava {
             .setView(detailsRoot)
             .setPositiveButton("OK", null)
             .show();
+    }
+    private void captureInitialState() {
+        initialValues.clear();
+        if (nameField != null) initialValues.put("name", nameField.getText().toString().trim());
+        if (phoneField != null) initialValues.put("phone", phoneField.getText().toString().trim());
+        if (dobField != null) initialValues.put("dob", dobField.getText().toString().trim());
+        if (genderField != null) initialValues.put("gender", genderField.getText().toString().trim());
+        if (pincodeField != null) initialValues.put("pincode", pincodeField.getText().toString().trim());
+        if (countrySpinner != null) initialValues.put("country", countrySpinner.getText().toString().trim());
+        if (stateSpinner != null) initialValues.put("state", stateSpinner.getText().toString().trim());
+        if (citySpinner != null) initialValues.put("city", citySpinner.getText().toString().trim());
+        if (addressField != null) initialValues.put("address", addressField.getText().toString().trim());
+        if (orgField != null) initialValues.put("org", orgField.getText().toString().trim());
+        if (deptField != null) initialValues.put("dept", deptField.getText().toString().trim());
+    }
+
+    private boolean hasUnsavedChanges() {
+        if (!isDataLoaded) return false;
+        if (nameField != null && !nameField.getText().toString().trim().equals(initialValues.getOrDefault("name", ""))) return true;
+        if (phoneField != null && !phoneField.getText().toString().trim().equals(initialValues.getOrDefault("phone", ""))) return true;
+        if (dobField != null && !dobField.getText().toString().trim().equals(initialValues.getOrDefault("dob", ""))) return true;
+        if (genderField != null && !genderField.getText().toString().trim().equals(initialValues.getOrDefault("gender", ""))) return true;
+        if (pincodeField != null && !pincodeField.getText().toString().trim().equals(initialValues.getOrDefault("pincode", ""))) return true;
+        if (countrySpinner != null && !countrySpinner.getText().toString().trim().equals(initialValues.getOrDefault("country", ""))) return true;
+        if (stateSpinner != null && !stateSpinner.getText().toString().trim().equals(initialValues.getOrDefault("state", ""))) return true;
+        if (citySpinner != null && !citySpinner.getText().toString().trim().equals(initialValues.getOrDefault("city", ""))) return true;
+        if (addressField != null && !addressField.getText().toString().trim().equals(initialValues.getOrDefault("address", ""))) return true;
+        if (orgField != null && !orgField.getText().toString().trim().equals(initialValues.getOrDefault("org", ""))) return true;
+        if (deptField != null && !deptField.getText().toString().trim().equals(initialValues.getOrDefault("dept", ""))) return true;
+        return false;
     }
 }

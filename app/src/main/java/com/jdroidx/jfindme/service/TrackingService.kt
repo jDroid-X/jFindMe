@@ -61,7 +61,7 @@ class TrackingService : Service() {
         val userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
 
         locationEngine = LocationEngine(this) { location ->
-            val p = getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE)
+            val p = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
             if (p.getBoolean("pref_service_halted", false)) {
                 SystemLogger.w(TAG, "Forensic Isolation Active: Background Telemetry Blocked.")
                 return@LocationEngine
@@ -141,7 +141,7 @@ class TrackingService : Service() {
     private fun startSilentBatteryValidation() {
         batteryPingJob?.cancel()
         batteryPingJob = CoroutineScope(Dispatchers.IO).launch {
-            val prefs = getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+            val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             while (isActive) {
                 val cycleMs = prefs.getLong("pref_tracking_interval", 60000L)
                 
@@ -185,9 +185,12 @@ class TrackingService : Service() {
 
     private fun setupBackgroundSyncListener() {
         val myUid = FirebaseAuth.getInstance().uid ?: return
-        val ref = FirebaseDatabase.getInstance().getReference("users").child(myUid).child("geofence_sync_requests")
-        
-        syncListener = object : ValueEventListener {
+        FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
+            val finalId = agentId ?: myUid
+            val ref = FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                .child(finalId).child("identity").child("geofence_sync_requests")
+            
+            syncListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 snapshot.children.forEach { snap ->
                     val status = snap.child("status").getValue(String::class.java)
@@ -205,9 +208,12 @@ class TrackingService : Service() {
         }
         ref.addValueEventListener(syncListener!!)
     }
+}
 
     private fun processBackgroundSync(reqId: String, name: String, group: String) {
-        val ref = FirebaseDatabase.getInstance().getReference("groups").child(group).child("geofences").child(name)
+        // 🚀 V67.2: Geofences are now part of the Forensic Hub node structure
+        val ref = FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+            .child(group).child("geofences").child(name)
         ref.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snap: DataSnapshot) {
                 if (snap.exists()) {
@@ -229,9 +235,13 @@ class TrackingService : Service() {
                     if (myUid != null) {
                         helper.addGeofence(name + "___" + myUid, lat, lng, rad.toFloat())
                         
-                        // 🛰️ CONFIRMATION: Update Cloud request status
-                        FirebaseDatabase.getInstance().getReference("users").child(myUid)
-                            .child("geofence_sync_requests").child(reqId).child("status").setValue("SYNC_CONFIRMED")
+                        // 🛰️ CONFIRMATION: Update Cloud request status in the Unified Hub
+                        FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
+                            val finalId = agentId ?: myUid
+                            FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                                .child(finalId).child("identity").child("geofence_sync_requests")
+                                .child(reqId).child("status").setValue("SYNC_CONFIRMED")
+                        }
                     }
                     
                     // 🔔 UX NOTIFICATION: Notify Pushpa of new protection
@@ -307,11 +317,15 @@ class TrackingService : Service() {
         }
         
         // 🛰️ MISSION CLEANUP: Stop background sync listener
-        syncListener?.let {
+        syncListener?.let { listener ->
             val myUid = FirebaseAuth.getInstance().uid
             if (myUid != null) {
-                FirebaseDatabase.getInstance().getReference("users").child(myUid)
-                    .child("geofence_sync_requests").removeEventListener(it)
+                FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
+                    val finalId = agentId ?: myUid
+                    FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                        .child(finalId).child("identity").child("geofence_sync_requests")
+                        .removeEventListener(listener)
+                }
             }
         }
     }

@@ -103,7 +103,7 @@ object MultiMarkerEngine {
         val map = activeGridMap ?: return
         val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val hideMode = prefs.getBoolean("callout_hide_mode", false)
         val revealedAt = prefs.getLong("callout_revealed_at", 0L)
         val showName = !hideMode || (System.currentTimeMillis() - revealedAt < 5000L)
@@ -221,7 +221,7 @@ object MultiMarkerEngine {
     }
 
     private fun cleanupDisconnectedDevices(context: Context, allowedUUIDs: List<String>) {
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         // 🚀 QA ARCHITECTURE: Three-Tier Recovery Target 2 (Ghost Mode) Defaults to True
         val ghostModePersistent = prefs.getBoolean("pref_ghost_mode_persistent", true)
 

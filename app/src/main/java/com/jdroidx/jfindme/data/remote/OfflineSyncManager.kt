@@ -93,7 +93,7 @@ class OfflineSyncManager(private val context: Context) {
         while (syncQueue.isNotEmpty() && isNetworkAvailable) {
             val location = syncQueue.poll()
             if (location != null) {
-                FirebaseComm.updateMyLocation(location)
+                FirebaseComm.syncAnalyticalEvent(location.getResolvedUserId(), location)
             }
         }
         persistQueue() // Clear persisted data after successful sync

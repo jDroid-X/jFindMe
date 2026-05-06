@@ -42,7 +42,7 @@ class PersonDetailsViewModel : ViewModel() {
         if (targetUid == myUid) {
             val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             val prefsMap = mutableMapOf<String, String>()
-            prefsMap["full_name"] = prefs.getString("user_nickname", "") ?: ""
+            prefsMap["fullName"] = prefs.getString("user_nickname", "") ?: ""
             prefsMap["phone"] = prefs.getString("user_phone", "") ?: ""
             prefsMap["email_id"] = prefs.getString("email", "") ?: ""
             prefsMap["dob"] = prefs.getString("user_dob", "") ?: ""
@@ -69,7 +69,8 @@ class PersonDetailsViewModel : ViewModel() {
         val localRaw = localDb.getLocalDossier(targetUid)
         if (localRaw != null) {
             val localMapped = mutableMapOf<String, String>()
-            localMapped["full_name"] = localRaw["id_full_name"] ?: ""
+            localMapped["fullName"] = localRaw["fullName"] ?: ""
+            localMapped["owner_name"] = localRaw["owner_name"] ?: ""
             localMapped["phone"] = localRaw["id_phone"] ?: ""
             localMapped["email_id"] = localRaw["id_email"] ?: ""
             localMapped["dob"] = localRaw["id_dob"] ?: ""
@@ -99,7 +100,7 @@ class PersonDetailsViewModel : ViewModel() {
         citizenRef.get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
                 val cloudMap = mutableMapOf<String, String>()
-                cloudMap["full_name"] = snapshot.child("full_name").getValue(String::class.java) ?: snapshot.child("fullName").getValue(String::class.java) ?: ""
+                cloudMap["fullName"] = snapshot.child("fullName").getValue(String::class.java) ?: snapshot.child("full_name").getValue(String::class.java) ?: ""
                 cloudMap["phone"] = snapshot.child("phone").getValue(String::class.java) ?: ""
                 cloudMap["email_id"] = snapshot.child("email_id").getValue(String::class.java) ?: snapshot.child("email").getValue(String::class.java) ?: ""
                 cloudMap["dob"] = snapshot.child("dob").getValue(String::class.java) ?: ""
@@ -273,15 +274,15 @@ class PersonDetailsViewModel : ViewModel() {
         localDb.commitHandshakeDossier(targetUid, crossValidatedPayload, sRole ?: "MEMBER", crossValidatedPayload["fullName"] ?: "Asset Node", targetUid, targetUid, "USER_EDIT", "LOCAL")
         
         // 🚀 Real-time Livemap Sync (Managed Target): Push identity override to the target's location node
-        val targetName = crossValidatedPayload["full_name"] ?: "Asset Node"
+        val targetName = crossValidatedPayload["fullName"] ?: "Asset Node"
         val targetAvatar = crossValidatedPayload["avatar_id"] ?: "avatar_custom_1"
         val locSync = mapOf("userName" to targetName, "avatar_id" to targetAvatar)
         FirebaseComm.locationsRef.child(targetUid).updateChildren(locSync)
         
         // Push to Group Roster if active
-        val myGrp = context.getSharedPreferences("jFindMe_Prefs", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+        val myGrp = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
         if (myGrp != null) {
-            val rosterUpdate = mapOf("display_name" to targetName, "avatar_id" to targetAvatar)
+            val rosterUpdate = mapOf("fullName" to targetName, "avatar_id" to targetAvatar)
             FirebaseComm.relationshipsRef.child(myGrp).child("roster").child(targetUid).updateChildren(rosterUpdate)
             // Send group signal
             FirebaseComm.relationshipsRef.child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
@@ -326,7 +327,7 @@ class PersonDetailsViewModel : ViewModel() {
             // If we are updating OUR OWN dossier, mirroring core fields to the main Profile node in the Hub!
             if (targetUid == myUid) {
                 val mirrorMap = mutableMapOf<String, Any>()
-                mirrorMap["full_name"] = payload["full_name"] ?: ""
+                mirrorMap["fullName"] = payload["fullName"] ?: ""
                 mirrorMap["id_dob"] = payload["dob"] ?: ""
                 mirrorMap["id_gender"] = payload["gender"] ?: ""
                 mirrorMap["id_country"] = payload["country"] ?: ""

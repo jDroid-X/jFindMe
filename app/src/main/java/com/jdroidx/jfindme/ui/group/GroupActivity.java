@@ -35,6 +35,7 @@ import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 import androidx.activity.result.ActivityResultLauncher;
 
 import com.google.firebase.database.FirebaseDatabase;
+import androidx.lifecycle.ViewModelProvider;
 
 /**
  * 🔗 UNIFIED ARCHITECTURE GATEWAY SCREEN
@@ -146,6 +147,14 @@ public class GroupActivity extends BaseActivityJava {
             dialog.show();
             applyDialogTheme(dialog);
         }
+    }
+
+    @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        // 🚀 QA Fix: Initialize ViewModel BEFORE super.onCreate
+        // This prevents NullPointerException in createLayout which is triggered by super.onCreate (BaseActivityJava logic)
+        viewModel = new ViewModelProvider(this).get(GroupViewModel.class);
+        super.onCreate(savedInstanceState);
     }
 
     @Override
@@ -348,8 +357,15 @@ public class GroupActivity extends BaseActivityJava {
         
         // --- 1. OWNER NAME ---
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-        java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
-        String nameStr = myDos != null ? myDos.get("full_name") : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        
+        // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
+        String agentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
+        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : "OWNER_001");
+        
+        String nameStr = (myDos != null && myDos.containsKey("fullName") && !myDos.get("fullName").isEmpty()) 
+                ? myDos.get("fullName") 
+                : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
         
         TextView myName = new TextView(this);
         myName.setText("👤 Owner: " + nameStr);
@@ -397,7 +413,7 @@ public class GroupActivity extends BaseActivityJava {
         textBlock.addView(tvNetworkId);
         
         // 🛡️ ARCHITECTURAL SILENCE: Check local persistence for Hub status
-        String localActiveGroup = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+        String localActiveGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
         if (localActiveGroup != null) {
             TextView tvStatus = new TextView(this);
             tvStatus.setText("LOCKED TO HUB: " + localActiveGroup);
@@ -731,7 +747,7 @@ public class GroupActivity extends BaseActivityJava {
                     .setTitle("Eject Target Node?")
                     .setMessage("WARNING: This will permanently purge (" + uid + ") from your Secure Tracking Matrix!")
                     .setPositiveButton("PURGE", (d, w) -> {
-                        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+                        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
                             com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(myGrp).child("members").child(uid).removeValue();
                             com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(uid).child("active_group").removeValue();
@@ -979,7 +995,8 @@ public class GroupActivity extends BaseActivityJava {
         
         // Action Button: Generate Token
         View btnGenerate = createActionTile("GENERATE UNIQUE TOKEN", android.R.drawable.ic_popup_sync, v -> {
-            executeHostSessionSpinup("AWAITING_ROLE");
+            // FIX #1: Role is negotiated AFTER child knocks — no role arg at token creation time.
+            executeHostSessionSpinup();
         });
         container.addView(btnGenerate);
 
@@ -1192,13 +1209,17 @@ public class GroupActivity extends BaseActivityJava {
 
     // 📡 --- ARCHITECTURE EVENT HANDLERS ---
 
-    private void executeHostSessionSpinup(String assignedRoles) {
+    /**
+     * FIX #2: Removed 'assignedRoles' parameter — role is assigned AFTER child knocks.
+     * Updated startHostPairingSession call to match the fixed 2-lambda Kotlin signature.
+     */
+    private void executeHostSessionSpinup() {
         tvCode.setText("NEGOTIATING...");
         tvSyncStatus.setText("ALLOCATING CLOUD NODE...");
         tvSyncStatus.setTextColor(Color.YELLOW);
         ivQrCode.setVisibility(View.GONE);
 
-        FirebasePairingManager.INSTANCE.startHostPairingSession(this, assignedRoles, (qrBitmap, code) -> {
+        FirebasePairingManager.INSTANCE.startHostPairingSession(this, (qrBitmap, code) -> {
             runOnUiThread(() -> {
                 if (code != null && !code.isEmpty()) {
                     tvCode.setText(code);
@@ -1214,9 +1235,10 @@ public class GroupActivity extends BaseActivityJava {
                 }
             });
             return kotlin.Unit.INSTANCE;
-        }, (childDeviceId, childName) -> {
+        }, (childDeviceId, childName, childRole) -> {
             // CRITICAL HANDSHAKE! Parent intercepted a child entering the code!
-            runOnUiThread(() -> promptApprovalDialog(childDeviceId, childName, false));
+            // childRole is already guaranteed non-null by FirebasePairingManager (FIX #4)
+            runOnUiThread(() -> renderHostApprovalDialog(childDeviceId, childName, childRole, FirebasePairingManager.INSTANCE.getActivePairingCode()));
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -1251,8 +1273,17 @@ public class GroupActivity extends BaseActivityJava {
             com.google.firebase.database.FirebaseDatabase.getInstance().getReference("pairing_requests").child(activeCode)
                 .get().addOnSuccessListener(snap -> {
                     String prelimRole = snap.child("child_role_preliminary").getValue(String.class);
-                    if (prelimRole == null) prelimRole = "Friends";
-                    
+
+                    // FIX #3: Do NOT silently default to "Friends" if the role is null or blank.
+                    // The child's role write may not have propagated yet (race condition).
+                    // Alert the host to ask Device B to re-submit their code.
+                    if (prelimRole == null || prelimRole.isEmpty()) {
+                        runOnUiThread(() -> Toast.makeText(this,
+                            "\u26a0\ufe0f Child role not received yet. Ask Device B to re-submit their code.",
+                            Toast.LENGTH_LONG).show());
+                        return;
+                    }
+
                     final String finalRole = prelimRole;
                     runOnUiThread(() -> renderHostApprovalDialog(childId, childName, finalRole, activeCode));
                 });
@@ -1310,12 +1341,36 @@ public class GroupActivity extends BaseActivityJava {
 
             card.setOnClickListener(v -> {
                 dialog.dismiss();
-                FirebasePairingManager.INSTANCE.approveHandshake(GroupActivity.this, activeCode, childId, hostRole, childPrelimRole, success -> {
+
+                // ✅ DEFECT 2 FIX: Reciprocal role matrix — mirrors NetworkGatewayActivity logic.
+                // Without this, both sides get saved as the same role (e.g., both "Father").
+                String childRoleToSave = childPrelimRole;
+                String hostRoleToSave  = hostRole;
+                if (childPrelimRole.equals("Child")) {
+                    childRoleToSave = "Child";
+                    hostRoleToSave  = hostRole; // Father, Mother, or Guardian
+                } else if (java.util.Arrays.asList("Father", "Mother", "Guardian").contains(childPrelimRole)) {
+                    childRoleToSave = childPrelimRole;
+                    hostRoleToSave  = "Child";
+                } else if (childPrelimRole.equals("Spouse")) {
+                    childRoleToSave = "Spouse";
+                    hostRoleToSave  = "Spouse";
+                }
+                final String finalChildRole = childRoleToSave;
+                final String finalHostRole  = hostRoleToSave;
+                final boolean isFriend      = finalChildRole.equals("Friends");
+
+                FirebasePairingManager.INSTANCE.approveHandshake(GroupActivity.this, activeCode, childId, finalHostRole, finalChildRole, success -> {
                     runOnUiThread(() -> {
                         if (success) {
                             Toast.makeText(this, "Handshake Completed! Assets Linked.", Toast.LENGTH_SHORT).show();
-                            boolean isFriend = childPrelimRole.equals("Friends");
-                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).updateCitizenRole(childId, isFriend ? "None" : childPrelimRole, isFriend ? "Friends" : "None", isFriend);
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                                .updateCitizenRole(childId,
+                                    isFriend ? "None" : finalChildRole,
+                                    isFriend ? "Friends" : "None",
+                                    isFriend);
+                            // ✅ DEFECT 3 FIX: Rebuild the roster UI immediately after successful pairing.
+                            rebuildActiveRosterList();
                         } else {
                             Toast.makeText(this, "Handshake Failed.", Toast.LENGTH_SHORT).show();
                         }
@@ -1415,7 +1470,7 @@ public class GroupActivity extends BaseActivityJava {
                                                 targetGroup = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("groups").push().getKey();
                                                 com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("users").child(safeUid).child("active_group").setValue(targetGroup);
                                                 com.google.firebase.database.FirebaseDatabase.getInstance().getReference().child("groups").child(targetGroup).child("members").child(safeUid).setValue(true);
-                                                getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
+                                                getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
                                             }
                                             
                                             int restoredCount = 0;
@@ -1555,7 +1610,7 @@ public class GroupActivity extends BaseActivityJava {
      * 🚀 Forensic Role Change: Delegated to ViewModel for Close-Loop MVVM Parity.
      */
     private void executeForensicRoleChange(String uid, String newRole, boolean isFriend) {
-        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", "GRP_78822");
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_78822");
         
         viewModel.updateForensicIdentity(this, uid, myGrp, newRole, isFriend, () -> {
             Toast.makeText(this, "Identity Matrix Finalized: " + newRole, Toast.LENGTH_SHORT).show();
@@ -1713,7 +1768,7 @@ public class GroupActivity extends BaseActivityJava {
                     java.util.Map<String, String> myDos = db.getLocalDossier("OWNER_001");
                     String myGender = myDos != null ? myDos.get("user_gender") : "Male";
 
-                    String myName = (myDos != null && myDos.containsKey("full_name")) ? myDos.get("full_name") : getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("user_nickname", "Network Admin");
+                    String myName = (myDos != null && myDos.containsKey("full_name")) ? myDos.get("full_name") : getSharedPreferences("system_registry", MODE_PRIVATE).getString("user_nickname", "Network Admin");
                     
                     // 🚀 NETWORK GATEWAY IDENTITY (SELF)
                     branchList.addView(createGroupHeading("NETWORK GATEWAY (PRIMARY OWNER)"));
@@ -1855,7 +1910,7 @@ public class GroupActivity extends BaseActivityJava {
 
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         if (myUid != null) {
-            String activeGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+            String activeGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
             viewModel.setupSignalListener(myUid, activeGrp);
             rebuildActiveRosterList();
         }

@@ -29,56 +29,56 @@ class LocationRepository(internal val context: Context) {
 
     private val locationListener = object : ValueEventListener {
         override fun onDataChange(snapshot: DataSnapshot) {
-            val validUids = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
-            val friendUids = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("friend_matrix_csv", "") ?: ""
+            val validUids = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
+            val friendUids = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("friend_matrix_csv", "") ?: ""
             val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: "null_u"
-            val myGroup = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE).getString("active_group", "") ?: ""
+            val myGroup = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("active_group", "") ?: ""
             val allowedList = validUids.split(",").map { it.trim() }
             val friendList = friendUids.split(",").map { it.trim() }
             val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
             val locations = mutableListOf<UserLocation>()
             
             snapshot.children.forEach { child ->
-                child.getValue(UserLocation::class.java)?.let { loc ->
-                    val resolvedId = loc.getResolvedUserId()
-                    val isMember = (loc.active_group == myGroup && myGroup.isNotEmpty())
-                    val isLinked = allowedList.contains(resolvedId)
-                    val isFriend = friendList.contains(resolvedId)
+                val agentId = child.key ?: return@forEach
+                val liveNode = child.child("device/live")
+                val rawLoc = liveNode.getValue(UserLocation::class.java) ?: return@forEach
+                val loc = rawLoc.copy(userId = agentId)
+                
+                val resolvedId = agentId
+                val isMember = (loc.active_group == myGroup && myGroup.isNotEmpty())
+                val isLinked = allowedList.contains(resolvedId)
+                val isFriend = friendList.contains(resolvedId)
 
-                    if (resolvedId == myUid || isMember || isLinked || isFriend) {
-                        // 🚀 V65 CLOUD-FIRST RESOLUTION: Prioritize Live Network Identity over Stale Cache
-                        var profile: Map<String, String>? = null
-                        try {
-                            profile = db.getLocalDossier(resolvedId)
-                        } catch (e: Exception) {
-                            com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Cache Access Blocked", e)
-                        }
-                        
-                        val cloudName = loc.userName
-                        
-                        if (profile != null) {
-                            loc.role_family = profile["role_family"] ?: "None"
-                            loc.role_friend = profile["role_friend"] ?: "None"
-                            if (cloudName.isEmpty()) {
-                                // V56: Unified from full_name to id_full_name
-                                loc.userName = profile["id_full_name"] ?: profile["full_name"] ?: "Asset Node"
-                            }
-                        } else if (cloudName.isEmpty()) {
-                            loc.userName = "Asset Node"
-                        }
-                        
-                        // 🧬 FORENSIC BACKFILL: If the Cloud name exists but is missing locally, populate the Ledger!
-                        if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name")) {
-                             try {
-                                 val uid2 = profile?.get("uid_2") 
-                                 db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "🟢 LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id)
-                             } catch (e: Exception) {
-                                 com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Backfill Blocked", e)
-                             }
-                        }
-
-                        locations.add(loc)
+                if (resolvedId == myUid || isMember || isLinked || isFriend) {
+                    var profile: Map<String, String>? = null
+                    try {
+                        profile = db.getLocalDossier(resolvedId)
+                    } catch (e: Exception) {
+                        com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Cache Access Blocked", e)
                     }
+                    
+                    val cloudName = loc.userName
+                    
+                    if (profile != null) {
+                        loc.role_family = profile["role_family"] ?: "None"
+                        loc.role_friend = profile["role_friend"] ?: "None"
+                        if (cloudName.isEmpty()) {
+                            loc.userName = profile["id_full_name"] ?: profile["full_name"] ?: "Asset Node"
+                        }
+                    } else if (cloudName.isEmpty()) {
+                        loc.userName = "Asset Node"
+                    }
+                    
+                    if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name")) {
+                        try {
+                            val uid2 = profile?.get("uid_2") 
+                            db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id)
+                        } catch (e: Exception) {
+                            com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Backfill Blocked", e)
+                        }
+                    }
+
+                    locations.add(loc)
                 }
             }
             _userLocations.postValue(locations)
@@ -90,20 +90,19 @@ class LocationRepository(internal val context: Context) {
     }
 
     fun startListening() {
-        FirebaseComm.locationsRef.addValueEventListener(locationListener)
-        
-        // 🚀 QA Fix: Global Security Synchronizer! Automatically maintains explicit connection array in the background.
         val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
 
         FirebaseComm.resolveHardwareIdentity(myAuthUid) { agentId ->
             val finalId = agentId ?: "LEGACY_NODE"
             
+            FirebaseComm.devicesRef.addValueEventListener(locationListener)
+            
             FirebaseComm.devicesRef.child(finalId).child("profile").child("active_group")
                 .addValueEventListener(object : ValueEventListener {
                     override fun onDataChange(snap: DataSnapshot) {
-                        val myGroup = snap.getValue(String::class.java)
-                        if (myGroup.isNullOrEmpty()) return
+                        val myGroup = snap.getValue(String::class.java) ?: ""
+                        if (myGroup.isEmpty()) return
                         
                         prefs.edit().putString("active_group", myGroup).apply()
                         
@@ -114,10 +113,14 @@ class LocationRepository(internal val context: Context) {
                                     groupSnap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
                                     prefs.edit().putString("linked_devices_csv", csv.toString()).apply()
                                 }
-                                override fun onCancelled(err: DatabaseError) {}
+                                override fun onCancelled(err: DatabaseError) {
+                                    SystemLogger.e("LocationRepository", "Active Group Sync Failed: ${err.message}")
+                                }
                             })
                     }
-                    override fun onCancelled(err: DatabaseError) {}
+                    override fun onCancelled(err: DatabaseError) {
+                        SystemLogger.e("LocationRepository", "Group Lookup Failed: ${err.message}")
+                    }
                 })
                 
             FirebaseComm.devicesRef.child(finalId).child("profile").child("friend_matrix")
@@ -127,22 +130,20 @@ class LocationRepository(internal val context: Context) {
                         snap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
                         prefs.edit().putString("friend_matrix_csv", csv.toString()).apply()
                     }
-                    override fun onCancelled(err: DatabaseError) {}
+                    override fun onCancelled(err: DatabaseError) {
+                        SystemLogger.e("LocationRepository", "Friend Matrix Sync Failed: ${err.message}")
+                    }
                 })
         }
     }
 
     fun stopListening() {
-        FirebaseComm.locationsRef.removeEventListener(locationListener)
+        FirebaseComm.devicesRef.removeEventListener(locationListener)
     }
 
-    /**
-     * Strategic Update: Integration with OfflineSyncManager (Production Hardening)
-     */
     fun updateMyLocation(userLocation: UserLocation) {
         val geocoder = Geocoder(context, Locale.getDefault())
         
-        // 🧱 QA Hardening: Use a stable Background Thread for all API versions
         Thread {
             var humanAddress: String? = null
             try {
@@ -163,8 +164,6 @@ class LocationRepository(internal val context: Context) {
 
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-
-        // 🧬 V58.7 Parity: Update the model with the geocoded address before cloud push
         val enrichedLocation = userLocation.copy(address = finalAddress)
 
         db.saveHistoryPoint(
@@ -183,19 +182,17 @@ class LocationRepository(internal val context: Context) {
     }
 
     fun updateUserLocation(userLocation: UserLocation) {
-        FirebaseComm.updateMyLocation(userLocation)
+        val rId = userLocation.getResolvedUserId()
+        if (rId.isNotEmpty()) {
+            FirebaseComm.syncAnalyticalEvent(rId, userLocation)
+        }
     }
 
-    /**
-     * History Engine: Fetches points for a specific date range.
-     * Hardened to handle both legacy numeric and forensic inverted keys.
-     */
     fun fetchHistory(userId: String, startTs: Long, endTs: Long, callback: (List<UserLocation>) -> Unit) {
-        // 🧬 Forensic Normalization: Inverted keys are used for high-velocity timeline sorting
-        val startKey = FirebaseComm.getInvertedForensicKey(endTs) // End becomes Start in inverted space
-        val endKey = FirebaseComm.getInvertedForensicKey(startTs)  // Start becomes End in inverted space
+        val startKey = FirebaseComm.getInvertedForensicKey(endTs)
+        val endKey = FirebaseComm.getInvertedForensicKey(startTs)
 
-        FirebaseComm.eventsRef.child(userId)
+        FirebaseComm.devicesRef.child(userId).child("history")
             .orderByKey()
             .startAt(startKey)
             .endAt(endKey)
@@ -231,4 +228,3 @@ class LocationRepository(internal val context: Context) {
             })
     }
 }
-

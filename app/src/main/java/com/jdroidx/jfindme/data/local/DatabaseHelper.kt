@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 70 // 🧬 V70: Global Forensic Creation Tracking (created_on)
+        const val DATABASE_VERSION = 71 // 🧬 V71: Fix missing created_on in location_event
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -267,6 +267,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             try { db.execSQL("ALTER TABLE user_profile ADD COLUMN email TEXT") } catch (ex: Exception) { }
         }
 
+        // 🚀 Self-Healing: Verify location_event has 'created_on' column (V71 Patch)
+        try {
+            db.rawQuery("SELECT created_on FROM location_event LIMIT 0", null).use { }
+        } catch (e: Exception) {
+            try { db.execSQL("ALTER TABLE location_event ADD COLUMN created_on TEXT") } catch (ex: Exception) { }
+        }
+
         // 🚀 V61.2 Self-Healing: Augment user_org_map with forensic markers
         val orgCols = mapOf(
             UserOrgMapTable.COL_EMPLOYEE_ID to "TEXT",
@@ -386,21 +393,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * 🧬 Tier 1: Identity Retrieval by Cloud Auth UID.
      */
     fun getIdentityByAuthUid(authUid: String): Map<String, String>? {
-        try {
-            val db = readableDatabase
-            val cursor = db.query(UserIdentityTable.TABLE_NAME, null, 
-                "${UserIdentityTable.COL_AUTH_UID}=?", arrayOf(authUid), null, null, null)
-            cursor.use {
-                if (it.moveToFirst()) {
-                    val map = mutableMapOf<String, String>()
-                    it.columnNames.forEach { col ->
-                        map[col] = it.getString(it.getColumnIndexOrThrow(col)) ?: ""
-                    }
-                    return map
-                }
-            }
-        } catch (e: Exception) { }
-        return null
+        val agentId = resolveAgentIdLocally(authUid) ?: return null
+        return getLocalDossier(agentId)
     }
 
     /**
@@ -471,11 +465,18 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         } catch (e: Exception) { false }
     }
 
-    fun updateCitizenRole(uid1: String, famRole: String, frRole: String, isFriend: Boolean) {
-        val db = writableDatabase
-        val iId = resolveInternalId(uid1)
-        if (iId != -1L) {
-            GroupMemberTable.upsert(db, "DEFAULT_GROUP", iId, famRole.takeIf { it != "None" } ?: frRole, System.currentTimeMillis())
+    fun updateCitizenRole(uid1: String, famRole: String, frRole: String, isFriend: Boolean): Boolean {
+        return try {
+            val db = writableDatabase
+            val iId = resolveInternalId(uid1)
+            if (iId != -1L) {
+                GroupMemberTable.upsert(db, "DEFAULT_GROUP", iId, famRole.takeIf { it != "None" } ?: frRole, System.currentTimeMillis())
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -646,6 +647,26 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 android.util.Log.i("DatabaseHelper", "V70 Migration: Global 'created_on' column deployed.")
             } catch (e: Exception) {
                 android.util.Log.e("DatabaseHelper", "V70 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 71) {
+            // 🧬 V71: Enforce created_on for location_event specifically if V70 missed it
+            db.beginTransaction()
+            try {
+                try {
+                    db.execSQL("ALTER TABLE location_event ADD COLUMN created_on TEXT")
+                    val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
+                    db.execSQL("UPDATE location_event SET created_on = '$now' WHERE created_on IS NULL")
+                } catch (e: Exception) {
+                    // Column already exists
+                }
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V71 Migration: location_event 'created_on' enforced.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V71 Migration Failure: ${e.message}")
             } finally {
                 db.endTransaction()
             }
@@ -864,13 +885,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             )
 
             // Write to V57 Relationships (GroupMember)
-            GroupMemberTable.addMember(db, "DEFAULT_GROUP", iId, role)
+            GroupMemberTable.upsert(db, "DEFAULT_GROUP", iId, role)
             
             // Write to Profile (Tier 1) for name/avatar parity (Dual-Write for V60 backwards compatibility)
             val rosterProfile = mapOf<String, String>(
                 "name" to name, 
                 "userName" to name, 
-                "avatar_id" to (avatarId ?: "1")
+                "avatar_id" to (avatarId ?: "1"),
+                "role_title" to role
             )
             UserProfileTable.upsert(db, iId, rosterProfile)
             
@@ -885,7 +907,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      */
     fun saveRosterNode(v: android.content.ContentValues) {
         val uid1 = v.getAsString(COL_UID_1) ?: "UNKNOWN"
-        val name = v.getAsString("id_full_name") ?: "Target"
+        val name = v.getAsString("fullName") ?: v.getAsString("id_full_name") ?: "Target"
         val role = v.getAsString("role_type") ?: "Member"
         val isAdmin = v.getAsInteger("is_admin") == 1
         val isFriend = v.getAsInteger("is_friend") == 1
@@ -1079,7 +1101,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val db = readableDatabase
             val sql = """
                 SELECT 
-                    u.${UserProfileTable.COL_NAME} as fullName,
+                    COALESCE(u.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as fullName,
+                    COALESCE(i.${UserIdentityTable.COL_OWNER_NAME}, u.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as owner_name,
                     u.${UserProfileTable.COL_EMAIL} as email,
                     u.${UserProfileTable.COL_PHONE} as phone,
                     u.${UserProfileTable.COL_DOB} as dob,
@@ -1088,7 +1111,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     u.${UserProfileTable.COL_STATE} as state,
                     u.${UserProfileTable.COL_CITY} as city,
                     u.${UserProfileTable.COL_PINCODE} as pincode,
-                    u.${UserProfileTable.COL_ADDRESS} as address,
+                    COALESCE(u.${UserProfileTable.COL_ADDRESS}, d.${DeviceTable.COL_ADDRESS}) as address,
                     u.${UserProfileTable.COL_AVATAR_ID} as avatar_id,
                     o.${OrganizationTable.COL_ORG_NAME} as org_name,
                     o.${OrganizationTable.COL_GEO_ADDRESS} as work_location,
@@ -1100,10 +1123,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     m.${UserOrgMapTable.COL_BADGE} as badge_number,
                     m.${UserOrgMapTable.COL_EXT} as emergency_ext,
                     m.${UserOrgMapTable.COL_CLEARANCE} as access_level
-                FROM ${UserProfileTable.TABLE_NAME} u
-                LEFT JOIN ${UserOrgMapTable.TABLE_NAME} m ON u.${UserProfileTable.COL_IDENTITY_ID} = m.${UserOrgMapTable.COL_IDENTITY_ID}
+                FROM ${UserIdentityTable.TABLE_NAME} i
+                LEFT JOIN ${UserProfileTable.TABLE_NAME} u ON i.${UserIdentityTable.COL_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
+                LEFT JOIN ${DeviceTable.TABLE_NAME} d ON i.${UserIdentityTable.COL_ID} = d.${DeviceTable.COL_IDENTITY_ID}
+                LEFT JOIN ${UserOrgMapTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${UserOrgMapTable.COL_IDENTITY_ID}
                 LEFT JOIN ${OrganizationTable.TABLE_NAME} o ON m.${UserOrgMapTable.COL_ORG_ID} = o.${OrganizationTable.COL_ORG_ID}
-                JOIN ${UserIdentityTable.TABLE_NAME} i ON u.${UserProfileTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
                 WHERE i.${UserIdentityTable.COL_UID_1} = ?
             """.trimIndent()
             
@@ -1133,16 +1157,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     i.${UserIdentityTable.COL_UID_1} as uid_1,
                     i.${UserIdentityTable.COL_UID_2} as uid_2,
                     i.${UserIdentityTable.COL_AUTH_UID} as auth_uid,
-                    i.${UserIdentityTable.COL_OWNER_NAME} as owner_name,
+                    COALESCE(i.${UserIdentityTable.COL_OWNER_NAME}, p.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as owner_name,
                     i.${UserIdentityTable.COL_CONNECTED_ID} as connected_id,
                     i.${UserIdentityTable.COL_QR_REF} as qr_code_ref,
-                    p.${UserProfileTable.COL_NAME} as name,
+                    COALESCE(p.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as name,
                     p.${UserProfileTable.COL_EMAIL} as email,
                     p.${UserProfileTable.COL_PHONE} as phone,
                     p.${UserProfileTable.COL_AVATAR_ID} as avatar_id,
                     d.${DeviceTable.COL_LATITUDE} as latitude,
                     d.${DeviceTable.COL_LONGITUDE} as longitude,
-                    d.${DeviceTable.COL_ADDRESS} as Address,
+                    COALESCE(p.${UserProfileTable.COL_ADDRESS}, d.${DeviceTable.COL_ADDRESS}) as Address,
                     d.${DeviceTable.COL_DEVICE_MODEL} as model,
                     d.${DeviceTable.COL_BUILD_FINGERPRINT} as fingerprint
                 FROM ${UserIdentityTable.TABLE_NAME} i
@@ -1172,8 +1196,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     fun getActiveProfileAddress(): String {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
         val identityMap: Map<String, String> = getIdentityByAuthUid(uid) ?: return "Identity Not Found"
-        val workLoc = identityMap.get("work_location") as? String
-        val altLoc = identityMap.get("userAddress") as? String
+        val workLoc = identityMap.get("work_location")
+        val altLoc = identityMap.get("address")
         return workLoc ?: altLoc ?: "Location Not Configured"
     }
 
@@ -1235,13 +1259,24 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             // Logic: JOIN Tier 3 Relationship Graph with Tier 1 User Profiles
             val sql = """
                 SELECT 
-                    p.${UserProfileTable.COL_NAME} as display_name,
-                    u.${UserProfileTable.COL_NAME} as fullName,
+                    i.${UserIdentityTable.COL_UID_1} as uid_1,
+                    COALESCE(u.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as fullName,
                     u.${UserProfileTable.COL_AVATAR_ID} as avatar_id,
+                    i.${UserIdentityTable.COL_IS_ADMIN} as is_admin,
                     m.${GroupMemberTable.COL_IDENTITY_ID} as identity_id,
-                    m.${GroupMemberTable.COL_ROLE} as role
+                    m.${GroupMemberTable.COL_ROLE} as role_type,
+                    CASE 
+                        WHEN UPPER(m.${GroupMemberTable.COL_ROLE}) LIKE '%FATHER%' THEN 0
+                        WHEN UPPER(m.${GroupMemberTable.COL_ROLE}) LIKE '%MOTHER%' THEN 0
+                        WHEN UPPER(m.${GroupMemberTable.COL_ROLE}) LIKE '%GUARDIAN%' THEN 0
+                        WHEN UPPER(m.${GroupMemberTable.COL_ROLE}) LIKE '%SPOUSE%' THEN 0
+                        WHEN UPPER(m.${GroupMemberTable.COL_ROLE}) LIKE '%CHILD%' THEN 0
+                        ELSE 1 
+                    END as is_friend,
+                    'LIVE' as st_session_state
                 FROM ${GroupMemberTable.TABLE_NAME} m
-                JOIN ${UserProfileTable.TABLE_NAME} u ON m.${GroupMemberTable.COL_IDENTITY_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
+                JOIN ${UserIdentityTable.TABLE_NAME} i ON m.${GroupMemberTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
+                LEFT JOIN ${UserProfileTable.TABLE_NAME} u ON m.${GroupMemberTable.COL_IDENTITY_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
             """.trimIndent()
             
             val cursor = db.rawQuery(sql, null)
@@ -1403,5 +1438,23 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val v = android.content.ContentValues().apply { put("is_alerts_enabled", state) }
             writableDatabase.update("safe_zone", v, "zone_id = ?", arrayOf(id))
         } catch (e: Exception) { }
+    }
+
+    fun getGroupDetails(groupId: String): Map<String, String>? {
+        try {
+            val db = readableDatabase
+            val cursor = db.query(GroupTable.TABLE_NAME, null, 
+                "${GroupTable.COL_GROUP_ID}=?", arrayOf(groupId), null, null, null)
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val map = mutableMapOf<String, String>()
+                    map["id"] = it.getString(it.getColumnIndexOrThrow(GroupTable.COL_GROUP_ID))
+                    map["name"] = it.getString(it.getColumnIndexOrThrow(GroupTable.COL_GROUP_NAME)) ?: "SECURE_HUB"
+                    map["created_on"] = it.getString(it.getColumnIndexOrThrow(GroupTable.COL_CREATED_ON)) ?: ""
+                    return map
+                }
+            }
+        } catch (e: Exception) { }
+        return null
     }
 }

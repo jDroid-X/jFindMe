@@ -37,12 +37,12 @@ object FirebaseComm {
     @JvmStatic val devicesRef: DatabaseReference get() = database.reference.child(NODE_DEVICES)
     
     // 🛡️ V67.2 SAFETY REDIRECTS: Prevents build failures while blocking writes to restricted nodes
-    @JvmStatic val groupsRef: DatabaseReference get() = database.reference.child("decommissioned").child("groups")
-    @JvmStatic val eventsRef: DatabaseReference get() = database.reference.child("decommissioned").child("events")
-    @JvmStatic val locationsRef: DatabaseReference get() = database.reference.child("decommissioned").child("locations")
-    @JvmStatic val relationshipsRef: DatabaseReference get() = database.reference.child("decommissioned").child("relationships")
-    @JvmStatic val pairingRef: DatabaseReference get() = database.reference.child("decommissioned").child("pairing")
-    @JvmStatic val diagRef: DatabaseReference get() = database.reference.child("decommissioned").child("diagnostics")
+    @JvmStatic val groupsRef: DatabaseReference get() = database.reference.child(NODE_GROUPS)
+    @JvmStatic val eventsRef: DatabaseReference get() = database.reference.child(NODE_ANALYTICS_EVENTS)
+    @JvmStatic val locationsRef: DatabaseReference get() = database.reference.child(NODE_LOCATIONS)
+    @JvmStatic val relationshipsRef: DatabaseReference get() = database.reference.child(NODE_RELATIONSHIPS)
+    @JvmStatic val pairingRef: DatabaseReference get() = database.reference.child(NODE_PAIRING)
+    @JvmStatic val diagRef: DatabaseReference get() = database.reference.child(NODE_DIAGNOSTICS)
 
     // 🧬 V67.2: Group logic decommissioned. Redirecting to safe stub for backwards compatibility.
     @JvmStatic fun getGroupRef(agentId: String, groupType: String): DatabaseReference = groupsRef.child(agentId).child(groupType)
@@ -134,15 +134,21 @@ object FirebaseComm {
 
     @JvmStatic
     fun resolveHardwareIdentityByHardwareId(hwId: String, callback: (String?) -> Unit) {
+        // Enforce 8-char derived ID if mapping doesn't exist
         database.reference.child("hw_mapping").child(hwId).get().addOnSuccessListener { snapshot ->
             val agentId = snapshot.getValue(String::class.java)
             if (agentId != null && isAgentIdValid(agentId)) {
                 callback(agentId)
             } else {
-                callback(null)
+                // 🧬 Forensic Fallback: Derive Agent ID directly from HW ID to prevent top-level HW leakage
+                val cleanHw = hwId.replace("HW_", "").replace("-", "").uppercase()
+                val derived = if (cleanHw.length >= 8) cleanHw.take(4) + cleanHw.takeLast(4) else cleanHw.padEnd(8, '7')
+                callback(derived)
             }
         }.addOnFailureListener {
-            callback(null)
+            val cleanHw = hwId.replace("HW_", "").replace("-", "").uppercase()
+            val derived = if (cleanHw.length >= 8) cleanHw.take(4) + cleanHw.takeLast(4) else cleanHw.padEnd(8, '7')
+            callback(derived)
         }
     }
 
@@ -260,8 +266,28 @@ object FirebaseComm {
     }
 
     @JvmStatic
-    fun syncAnalyticalEvent(uid1: String, eventData: UserLocation) {
-        // 🛡️ V67.2: Event tracking decommissioned as per clean hierarchy mandate.
+    fun syncAnalyticalEvent(agentId: String, eventData: UserLocation) {
+        if (!isAgentIdValid(agentId)) return
+        val now = getForensicTimestamp()
+        val updates = mutableMapOf<String, Any>()
+        
+        // 1. LIVE NODE: Real-time telemetry hub
+        val livePath = "$NODE_DEVICES/$agentId/device/live"
+        updates["$livePath/latitude"] = eventData.latitude
+        updates["$livePath/longitude"] = eventData.longitude
+        updates["$livePath/speed"] = eventData.speed
+        updates["$livePath/battery"] = eventData.batteryLevel
+        updates["$livePath/address"] = eventData.address ?: ""
+        updates["$livePath/updated_at"] = now
+        
+        // 2. HISTORY NODE: Forensic timeline
+        val historyKey = getInvertedForensicKey()
+        val histPath = "$NODE_DEVICES/$agentId/history/$historyKey"
+        updates[histPath] = eventData.toMap()
+        
+        database.reference.updateChildren(updates).addOnFailureListener {
+            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${it.message}")
+        }
     }
 
     @Deprecated("Use syncAnalyticalEvent for high-fidelity tiered tracking")

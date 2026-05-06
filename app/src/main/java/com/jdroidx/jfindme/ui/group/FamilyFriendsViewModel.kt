@@ -43,10 +43,10 @@ class FamilyFriendsViewModel : ViewModel() {
             val cached = offlineNodes.map { 
                 RosterNode(
                     uid = it["uid_1"] as? String ?: "",
-                    displayName = it["id_full_name"] as? String ?: "Unknown",
+                    displayName = it["fullName"] as? String ?: "Unknown",
                     roleTitle = it["role_type"] as? String ?: "Unknown",
                     statusText = it["st_session_state"] as? String ?: "Loading...", // V55 unified
-                    isAdministrator = (it["is_admin"] as? Long ?: 0L) == 1L,
+                    isAdministrator = it["is_admin"]?.toString() == "1",
                     isFriend = (it["is_friend"] as? Long ?: 1L) == 1L,
                     avatarId = it["avatar_id"] as? String
                 ) 
@@ -130,17 +130,29 @@ class FamilyFriendsViewModel : ViewModel() {
             // 🎯 V61 Hub Resolve: Check for nested profile if this is a direct Agent scan
             val profileSnap = if (nodeSnap.hasChild("profile")) nodeSnap.child("profile") else nodeSnap
             
-            val name = profileSnap.child("full_name").getValue(String::class.java) 
-                ?: profileSnap.child("display_name").getValue(String::class.java) 
+            // ✅ DEFECT 4 FIX: relationships/{groupId}/members only stores role + ts_joined — no name fields.
+            // Firebase profile names are under devices/{agentId}/profile/, not under members/.
+            // Fall back to local SQLite dossier which has the correct name from registration.
+            val cloudName = profileSnap.child("full_name").getValue(String::class.java)
+                ?: profileSnap.child("display_name").getValue(String::class.java)
                 ?: profileSnap.child("name").getValue(String::class.java)
+            val localName = if (cloudName.isNullOrEmpty()) {
+                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                    .getLocalDossier(uid)["fullName"]
+                    ?.takeIf { it.isNotEmpty() }
+            } else null
+            val name = cloudName?.takeIf { it.isNotEmpty() }
+                ?: localName
                 ?: "Target ($uid)"
                 
-            val roleTitle = profileSnap.child("role_title").getValue(String::class.java) ?: "P2P GUEST"
+            val roleTitle = nodeSnap.child("role").getValue(String::class.java)
+                ?: profileSnap.child("role_title").getValue(String::class.java)
+                ?: "P2P GUEST"
             val avatarId = profileSnap.child("avatar_id").getValue(String::class.java)
 
             // Determine admin status from role title (Forensic Rule)
             val upper = roleTitle.uppercase()
-            val isAdmin = upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN")
+            val isAdmin = upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN") || upper == "ADMIN"
             val isFriend = !isAdmin && !upper.contains("CHILD")
 
             resolvedNodes.add(RosterNode(

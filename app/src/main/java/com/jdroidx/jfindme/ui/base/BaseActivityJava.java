@@ -336,15 +336,14 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     }
 
     protected int getResolvedThemeId() {
-        if (currentThemeId == 8) { // 🧠 System Default Mode
+        int theme = currentThemeId;
+        if (theme == 8) { // 🧠 System Default Mode
             int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-            if (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
-                return 1; // "Twilight Midnight" (Enterprise Dark Mode)
-            } else {
-                return 0; // "FamiSafe Violet" (Market Default Light)
-            }
+            theme = (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES) ? 1 : 0;
         }
-        return currentThemeId;
+        // 🚀 QA Guard: Ensure we never exceed the matrix bounds
+        if (theme < 0 || theme >= ThemeManager.THEMES.length) theme = 0;
+        return theme;
     }
 
     protected int getPrimaryColor() { return ThemeManager.getScreenBackgroundColor(getResolvedThemeId()); }

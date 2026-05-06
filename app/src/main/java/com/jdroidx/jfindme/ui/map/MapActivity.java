@@ -106,6 +106,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         SystemLogger.i(TAG, "MapActivity [onCreate] executed. Starting UI Engine...");
+
+        // 🚀 QA Fix: Initialize ViewModel BEFORE super.onCreate
+        // This prevents NullPointerException in createLayout/createTopZone logic which is triggered by super.onCreate
+        viewModel = new ViewModelProvider(this).get(MapViewModel.class);
+
         // Step 1: Force modern renderer to prevent blank map feel
         MapsInitializer.initialize(this, MapsInitializer.Renderer.LATEST, renderer -> 
             SystemLogger.i(TAG, "Map SDK Renderer Synchronized: " + renderer.name()));
@@ -432,13 +437,27 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         badgeCard.addView(headerAvatar, avLp); 
 
         TextView tvNickName = new TextView(this);
-        tvNickName.setText(prefs.getString("user_nickname", "AGENT_1E69").toUpperCase());
         tvNickName.setTextColor(getTextColor());
         tvNickName.setTextSize(11f); // Micro text
         tvNickName.setTypeface(null, Typeface.BOLD);
         tvNickName.setPadding(8, 0, 0, 0); 
         tvNickName.setSingleLine(false);
         tvNickName.setMaxLines(2); // Enable wrapping for long names
+        
+        // ≡ƒÜÇ Identity Observer: Synchronizes the Header Badge with the Global Forensic Ledger
+        viewModel.getUserDossier().observe(this, dossier -> {
+            if (dossier == null) return;
+            String ownerName = dossier.get("owner_name");
+            String fullName = dossier.get("fullName");
+            String customName = prefs.getString("user_nickname", null);
+            
+            String displayName = "USER IDENTITY";
+            if (ownerName != null && !ownerName.isEmpty()) displayName = ownerName;
+            else if (fullName != null && !fullName.isEmpty()) displayName = fullName;
+            else if (customName != null) displayName = customName;
+
+            if (tvNickName != null) tvNickName.setText(displayName.toUpperCase());
+        });
         badgeCard.addView(tvNickName);
         
         header.addView(badgeCard, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
@@ -1350,10 +1369,19 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         profileInfo.setGravity(Gravity.CENTER_VERTICAL);
         
         TextView appTitle = new TextView(this);
-        appTitle.setText(prefs.getString("user_nickname", "Guardian Name"));
         appTitle.setTextColor(getGradientOverlayText()); 
         appTitle.setTextSize(22); // ≡ƒÜÇ Forensic Tier Title sizing
         appTitle.setTypeface(null, Typeface.BOLD);
+        
+        // ≡ƒÜÇ Drawer Identity Sync: Mirrors the Dossier state in the Nav Hub
+        viewModel.getUserDossier().observe(this, dossier -> {
+            if (dossier == null) return;
+            String fullName = dossier.get("fullName");
+            String customName = prefs.getString("user_nickname", null);
+            String displayName = (fullName != null && !fullName.isEmpty()) ? fullName : (customName != null ? customName : "Guardian Name");
+            appTitle.setText(displayName);
+        });
+        
         profileInfo.addView(appTitle);
         
         TextView appStatus = new TextView(this);

@@ -116,7 +116,20 @@ public class PersonDetailsActivity extends BaseActivityJava {
         metaText.setPadding(getResponsivePaddingQuota(), 0, 0, 0);
         
         TextView gatewayTitle = new TextView(this);
-        String nameStr = prefs.getString("user_nickname", "User Identity");
+        // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        String agentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
+        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : "OWNER_001");
+        
+        String ownerName = (myDos != null) ? myDos.get("owner_name") : null;
+        String fullName = (myDos != null) ? myDos.get("fullName") : null;
+        
+        String nameStr = "User Identity";
+        if (ownerName != null && !ownerName.isEmpty()) nameStr = ownerName;
+        else if (fullName != null && !fullName.isEmpty()) nameStr = fullName;
+        else if (prefs != null) nameStr = prefs.getString("user_nickname", "User Identity");
+                
         gatewayTitle.setText("👤 Owner: " + nameStr);
         gatewayTitle.setTextColor(getTextColor());
         UiArchitect.applyText(this, gatewayTitle, "TEXT_LABEL");
@@ -286,7 +299,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         } else {
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
-            View saveDossierBtn = createIconButton("Save Profile", com.jdroidx.jfindme.R.drawable.ic_edit, true, v -> saveCitizenData());
+            View saveDossierBtn = createIconButton("Save Profile", android.R.drawable.ic_menu_edit, true, v -> saveCitizenData());
             formBox.addView(saveDossierBtn, btnLp);
             
             com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).child("force_cloud_sync_trigger")
@@ -341,7 +354,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         if (roster != null) {
             for (java.util.Map<String, Object> node : roster) {
                 String rTitle = (String) node.get("role_type");
-                String rName = (String) node.get("id_full_name");
+                String rName = (String) node.get("fullName");
                 String rUid = (String) node.get("uid_1");
                 if (rTitle == null || rName == null || rUid == null) continue;
                 
@@ -440,7 +453,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         
                         viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, frRole.contains("Friend"));
                         
-                        String myGrp = getSharedPreferences("jFindMe_Prefs", MODE_PRIVATE).getString("active_group", null);
+                        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
                             java.util.Map<String, Object> cp = new java.util.HashMap<>();
                             cp.put("role_family", famRole);
@@ -554,7 +567,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         
         android.widget.ImageView editBtn = new android.widget.ImageView(this);
-        editBtn.setImageResource(com.jdroidx.jfindme.R.drawable.ic_edit);
+        editBtn.setImageResource(android.R.drawable.ic_menu_edit);
         editBtn.setColorFilter(getGradientStart()); // Fixed to Gradient Start for section level contrast
         int iSize = getResponsiveIconQuota();
         editBtn.setPadding(10, 10, 10, 10);
@@ -584,7 +597,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.HORIZONTAL);
         wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        wrapper.setPadding(0, 0, 0, 15);
+        wrapper.setPadding(0, 0, 0, 25); // 🚀 QA Fix: Increased vertical separation to prevent overlaps
         wrapper.setWeightSum(3.0f);
 
         // 🚀 ROW-WISE PROTOCOL: Label on Left (1.0f weight)
@@ -661,7 +674,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         // 🚀 LIVE OBSERVATION PROTOCOL: UI reacts natively to Data Source (Offline SQL & Cloud)
         viewModel.getDossierLiveData().observe(this, data -> {
             if (data == null) return;
-            etFullName.setText(data.get("full_name"));
+            etFullName.setText(data.get("fullName"));
             etPhone.setText(data.get("phone"));
             etEmailId.setText(data.get("email_id"));
             etDob.setText(data.get("dob"));
@@ -761,7 +774,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.HORIZONTAL);
         wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        wrapper.setPadding(0, 0, 0, 15);
+        wrapper.setPadding(0, 0, 0, 25); // 🚀 QA Fix: Increased vertical separation (25px) to prevent label/input touch
         wrapper.setWeightSum(3.0f);
 
         TextView tvLabel = new TextView(this);
@@ -859,8 +872,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         // 🚀 QA Fix: Fetch current data from ViewModel if UI field is removed
         String currentName = (viewModel.getDossierLiveData().getValue() != null) ? 
-                             viewModel.getDossierLiveData().getValue().get("full_name") : "";
-        payload.put("full_name", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
+                             viewModel.getDossierLiveData().getValue().get("fullName") : "";
+        payload.put("fullName", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
         
         payload.put("phone", etPhone.getText().toString());
         payload.put("email_id", etEmailId.getText().toString());

@@ -20,7 +20,7 @@ class LocationEngine(private val context: Context, private val onLocationChanged
     private var updateInterval = 60000L // QA Best-Practice Default (60 seconds)
 
     init {
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         updateInterval = prefs.getLong("pref_tracking_interval", 60000L)
     }
 
@@ -59,7 +59,7 @@ class LocationEngine(private val context: Context, private val onLocationChanged
     }
 
     fun setLowPowerMode(enabled: Boolean) {
-        val prefs = context.getSharedPreferences("jFindMe_Prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val userChoice = prefs.getLong("pref_tracking_interval", 60000L)
 
         trackingPriority = if (enabled) Priority.PRIORITY_BALANCED_POWER_ACCURACY else PRIORITY_HIGH_ACCURACY
