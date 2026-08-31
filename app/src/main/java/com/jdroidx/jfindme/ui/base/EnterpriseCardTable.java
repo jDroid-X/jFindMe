@@ -77,7 +77,7 @@ public class EnterpriseCardTable {
         int tintEnd = activity.getGradientEnd();
 
         if (record.useLinearGradient) {
-            gd.setOrientation(GradientDrawable.Orientation.BL_TR);
+            gd.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
             gd.setColors(new int[]{tintStart, tintEnd});
         } else {
             gd.setColor(activity.getCardColor());
@@ -92,6 +92,13 @@ public class EnterpriseCardTable {
         view.setBackground(gd);
         
         UiArchitect.applyNeutralShadow(activity, view, responsiveElevation);
+        view.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View v, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, v.getWidth(), v.getHeight(), responsiveRadius > 0 ? responsiveRadius : 1f);
+                outline.setAlpha(1.0f);
+            }
+        });
         view.setClipToOutline(responsiveRadius > 0);
     }
 }

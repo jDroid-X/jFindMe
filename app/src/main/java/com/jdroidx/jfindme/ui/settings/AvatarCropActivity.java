@@ -205,8 +205,8 @@ public class AvatarCropActivity extends BaseActivityJava {
                 exportMatrix.postTranslate(-(circleCX - circleRadius), -(circleCY - circleRadius));
                 cropCanvas.drawBitmap(rawPhoto, exportMatrix, bmpPaint);
                 
-                // 🚀 QA Fix: Master resolution (600px) ensures a 'best fit' within the 420px profile circle
-                Bitmap scaledFinal = Bitmap.createScaledBitmap(output, 600, 600, true);
+                // 🚀 Enhanced Master Resolution (1024px) for crystal-sharp, high-DPI retina rendering
+                Bitmap scaledFinal = Bitmap.createScaledBitmap(output, 1024, 1024, true);
                 
                 java.io.File cf = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
                 java.io.FileOutputStream fos = new java.io.FileOutputStream(cf);
@@ -216,6 +216,17 @@ public class AvatarCropActivity extends BaseActivityJava {
                 // 🚀 QA Fix: Atomic Preference Sync (Set to Custom Identity -1)
                 android.content.SharedPreferences prefs = getContext().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
                 prefs.edit().putInt("equipped_avatar_id", -1).apply();
+                
+                String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getContext());
+                String nickname = prefs.getString("user_nickname", "Active Tracker");
+                
+                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getContext())
+                    .updateDeviceIdentityAndAvatar(agentId, nickname, "avatar_custom_photo");
+                
+                com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE
+                    .propagateAvatarUpdate(agentId, "avatar_custom_photo", nickname);
+
+                com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
                 
                 setResult(RESULT_OK);
                 finish();

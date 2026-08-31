@@ -4,7 +4,7 @@
  */
 export class FirebaseService {
     constructor() {
-        this.baseUrl = "http://127.0.0.1:3000";
+        this.baseUrl = window.API_BASE_URL || (window.location.origin.startsWith('http') ? window.location.origin : "http://127.0.0.1:3000");
     }
 
     async fetchRaw(endpoint, options = {}) {
@@ -52,7 +52,7 @@ export class FirebaseService {
     }
 
     async getHistoryByUID(uid) {
-        return this.fetchRaw(`/api/data?path=history/${uid}`);
+        return this.fetchRaw(`/api/data?path=History/${uid}/history`);
     }
 
     async deleteRecord(path, type = 'rtdb') {

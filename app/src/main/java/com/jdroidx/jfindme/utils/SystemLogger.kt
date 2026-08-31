@@ -40,9 +40,17 @@ object SystemLogger {
             val time = dfDate.format(Date())
             val targetFile = File(logDir, "jfindme_playstore_debug.txt")
             
-            // Auto trim if file becomes unmanageably massive (e.g., > 2 MB)
+            // GAP-009: Log rotation to preserve historical forensic data (max 5 files of 2MB each)
             if (targetFile.exists() && targetFile.length() > 2 * 1024 * 1024) {
-                targetFile.delete()
+                for (i in 4 downTo 1) {
+                    val src = File(logDir, "jfindme_playstore_debug_$i.txt")
+                    val dst = File(logDir, "jfindme_playstore_debug_${i+1}.txt")
+                    if (src.exists()) {
+                        src.renameTo(dst)
+                    }
+                }
+                val dst1 = File(logDir, "jfindme_playstore_debug_1.txt")
+                targetFile.renameTo(dst1)
             }
             
             val writer = FileWriter(targetFile, true)
@@ -58,13 +66,18 @@ object SystemLogger {
         }
     }
 
+    private fun isLogcatEnabled(): Boolean {
+        val ctx = appContext ?: return com.jdroidx.jfindme.BuildConfig.DEBUG
+        return com.jdroidx.jfindme.BuildConfig.DEBUG || ctx.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("developer_logging_enabled", false)
+    }
+
     @JvmStatic
     fun d(tag: String, msg: String) {
         logExecutor.execute {
             writeDiagnosticLine("D/$GLOBAL_TAG:$tag", msg)
             appContext?.let { DatabaseHelper.getInstance(it).saveSysLog("D", tag, msg) }
         }
-        if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
+        if (isLogcatEnabled()) {
             Log.d("$GLOBAL_TAG:$tag", msg)
         }
     }
@@ -75,7 +88,7 @@ object SystemLogger {
             writeDiagnosticLine("I/$GLOBAL_TAG:$tag", msg)
             appContext?.let { DatabaseHelper.getInstance(it).saveSysLog("I", tag, msg) }
         }
-        if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
+        if (isLogcatEnabled()) {
             Log.i("$GLOBAL_TAG:$tag", msg)
         }
     }
@@ -86,7 +99,7 @@ object SystemLogger {
             writeDiagnosticLine("W/$GLOBAL_TAG:$tag", msg)
             appContext?.let { DatabaseHelper.getInstance(it).saveSysLog("W", tag, msg) }
         }
-        if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
+        if (isLogcatEnabled()) {
             Log.w("$GLOBAL_TAG:$tag", msg)
         }
     }
@@ -99,7 +112,7 @@ object SystemLogger {
             val fullMsg = if (throwable != null) "$msg \n ${Log.getStackTraceString(throwable)}" else msg
             appContext?.let { DatabaseHelper.getInstance(it).saveSysLog("E", tag, fullMsg) }
         }
-        if (com.jdroidx.jfindme.BuildConfig.DEBUG) {
+        if (isLogcatEnabled()) {
             Log.e("$GLOBAL_TAG:$tag", msg, throwable)
         }
     }

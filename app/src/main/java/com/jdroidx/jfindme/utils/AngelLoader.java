@@ -58,6 +58,9 @@ public class AngelLoader {
             LottieAnimationView lottie = new LottieAnimationView(context);
             lottie.setAnimation(rawId);
             lottie.setRepeatCount(LottieDrawable.INFINITE);
+            lottie.setRenderMode(com.airbnb.lottie.RenderMode.HARDWARE);
+            lottie.enableMergePathsForKitKatAndAbove(true);
+            lottie.setSpeed(1.25f);
             lottie.playAnimation(); // Start the waving vector loop smoothly!
             
             android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(boxSize, boxSize);

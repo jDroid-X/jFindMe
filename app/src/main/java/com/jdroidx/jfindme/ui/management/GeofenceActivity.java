@@ -82,12 +82,26 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private EditText edtStart, edtEnd;
     private android.widget.CheckBox[] dayChecks;
     private View btnConfirm; // 🚀 Action Terminal Controller
+    private String targetUid;
+    private String targetName;
 
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         // 🚀 QA Fix: Initialize ViewModel BEFORE super.onCreate
         // This prevents NullPointerException in createLayout which is triggered by super.onCreate (BaseActivityJava logic)
         viewModel = new ViewModelProvider(this).get(GeofenceViewModel.class);
+        if (getIntent() != null) {
+            targetUid = getIntent().getStringExtra("TARGET_UID");
+            if (targetUid == null) targetUid = getIntent().getStringExtra("target_uid");
+            targetName = getIntent().getStringExtra("TARGET_NAME");
+            if (targetName == null) targetName = getIntent().getStringExtra("target_name");
+            double latExtra = getIntent().getDoubleExtra("TARGET_LAT", 0.0);
+            double lngExtra = getIntent().getDoubleExtra("TARGET_LNG", 0.0);
+            if (latExtra != 0.0 && lngExtra != 0.0) {
+                pendingLat = latExtra;
+                pendingLng = lngExtra;
+            }
+        }
         super.onCreate(savedInstanceState);
     }
 
@@ -147,20 +161,62 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         content.setPadding(q, q, q, scale(80));
 
         // 🚀 TOP CARD: PRESET FORENSIC DOMAINS (Deployment Hub)
+        // 🚀 TOP CARD: PRESET FORENSIC DOMAINS (Deployment Templates)
         LinearLayout topCard = new LinearLayout(this);
         topCard.setOrientation(LinearLayout.VERTICAL);
         UiArchitect.applyCardWithOverride(this, topCard, "CARD_STANDARD", 1.0f);
-        
-        // Universal internal padding for the card shell
         topCard.setPadding(q, q, q, q);
         
-        topCard.addView(createSectionHeader("PRESET FORENSIC DOMAINS", "Identify-linked deployment templates"));
+        topCard.addView(createSectionHeader("ESTABLISH SAFE ZONE DOMAIN", "Select a mission template or configure custom geofence"));
 
         LinearLayout presetContainer = new LinearLayout(this);
         presetContainer.setOrientation(LinearLayout.VERTICAL);
-        presetContainer.addView(createPresetTile("ESTABLISH MISSION NODE", "Deploy Home, School or Office Zone", android.R.drawable.ic_menu_add));
+
+        presetContainer.addView(createPresetTile("🏠 HOME DOMAIN", "Auto-pull profile address • 24/7 Monitoring", android.R.drawable.ic_menu_myplaces, v -> {
+            pendingZoneName = "HOME";
+            if (edtZoneName != null) edtZoneName.setText("HOME");
+            if (edtRadius != null) edtRadius.setText("100");
+            if (edtStart != null) edtStart.setText(formatToAmPm(0));
+            if (edtEnd != null) edtEnd.setText(formatToAmPm(2359));
+            setDaysSelection(true, true, true, true, true, true, true);
+            viewModel.resolveActiveProfileAddress();
+            viewModel.getProfileAddress().observe(this, addr -> {
+                if (addr != null && !addr.equals("Unknown Location")) viewModel.executeOSGeocodingQuery(addr);
+            });
+            openMapEditorState();
+        }));
+
+        presetContainer.addView(createPresetTile("🏫 SCHOOL / CAMPUS", "08:00 AM - 03:00 PM • Weekdays Only", android.R.drawable.ic_menu_agenda, v -> {
+            pendingZoneName = "SCHOOL";
+            if (edtZoneName != null) edtZoneName.setText("SCHOOL");
+            if (edtRadius != null) edtRadius.setText("150");
+            if (edtStart != null) edtStart.setText(formatToAmPm(800));
+            if (edtEnd != null) edtEnd.setText(formatToAmPm(1500));
+            setDaysSelection(true, true, true, true, true, false, false);
+            openMapEditorState();
+        }));
+
+        presetContainer.addView(createPresetTile("🏢 WORK / OFFICE", "09:00 AM - 05:00 PM • Weekdays Only", android.R.drawable.ic_menu_compass, v -> {
+            pendingZoneName = "OFFICE";
+            if (edtZoneName != null) edtZoneName.setText("OFFICE");
+            if (edtRadius != null) edtRadius.setText("100");
+            if (edtStart != null) edtStart.setText(formatToAmPm(900));
+            if (edtEnd != null) edtEnd.setText(formatToAmPm(1700));
+            setDaysSelection(true, true, true, true, true, false, false);
+            openMapEditorState();
+        }));
+
+        presetContainer.addView(createPresetTile("➕ CUSTOM MISSION NODE", "Configure custom location, schedule & radius", android.R.drawable.ic_menu_add, v -> {
+            pendingZoneName = "";
+            if (edtZoneName != null) edtZoneName.setText("");
+            if (edtRadius != null) edtRadius.setText("100");
+            if (edtStart != null) edtStart.setText(formatToAmPm(0));
+            if (edtEnd != null) edtEnd.setText(formatToAmPm(2359));
+            setDaysSelection(true, true, true, true, true, true, true);
+            openMapEditorState();
+        }));
+
         topCard.addView(presetContainer);
-        
         content.addView(topCard);
 
         // Spacer between cards
@@ -174,7 +230,24 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // Universal internal padding for the card shell
         bottomCard.setPadding(q, q, q, q);
         
-        bottomCard.addView(createSectionHeader("ACTIVE RADAR BOUNDARIES", "See Zone of active radar boundaries."));
+        LinearLayout activeHeaderRow = new LinearLayout(this);
+        activeHeaderRow.setOrientation(LinearLayout.HORIZONTAL);
+        activeHeaderRow.setGravity(Gravity.CENTER_VERTICAL);
+        activeHeaderRow.addView(createSectionHeader("ACTIVE RADAR BOUNDARIES", "Active geofence monitoring nodes."), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnArchiveVault = createPresetCapsule("📦 ARCHIVE", v -> {
+            viewModel.loadArchivedSafeZones();
+            showArchivedSafeZonesDialog();
+        });
+        TextView btnNotifLedger = createPresetCapsule("📜 NOTIFICATIONS", v -> {
+            startActivity(new android.content.Intent(this, GeofenceNotificationActivity.class));
+        });
+        LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        avLp.setMargins(scale(4), 0, scale(4), 0);
+        activeHeaderRow.addView(btnArchiveVault, avLp);
+        activeHeaderRow.addView(btnNotifLedger, avLp);
+        bottomCard.addView(activeHeaderRow);
+
         activeBoundariesContainer = new LinearLayout(this);
         activeBoundariesContainer.setOrientation(LinearLayout.VERTICAL);
         bottomCard.addView(activeBoundariesContainer);
@@ -201,7 +274,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         
         FrameLayout mapHardwareContainer = new FrameLayout(this);
         mapHardwareContainer.setId(1005);
-        mapOverlayCard.addView(mapHardwareContainer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        mapOverlayCard.addView(mapHardwareContainer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 6.0f));
 
         // Floating Search Bar Overlay (Internal to Card)
         LinearLayout searchBar = new LinearLayout(this);
@@ -216,16 +289,36 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         searchBar.setPadding(sPad * 2, sPad, sPad * 2, sPad);
         
         EditText edtSearch = new EditText(this);
-        edtSearch.setHint("Locate Domain...");
+        edtSearch.setHint("Search place or address...");
         edtSearch.setHintTextColor(getSecondaryTextColor());
         edtSearch.setTextColor(getTextColor());
         edtSearch.setBackgroundColor(Color.TRANSPARENT);
         edtSearch.setSingleLine(true);
         edtSearch.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
         UiArchitect.applyText(this, edtSearch, "TEXT_BODY");
+        
+        ImageView btnSearchClear = new ImageView(this);
+        btnSearchClear.setImageResource(android.R.drawable.ic_menu_close_clear_cancel);
+        btnSearchClear.setColorFilter(getSecondaryTextColor());
+        btnSearchClear.setPadding(scale(15), scale(15), scale(15), scale(15));
+        btnSearchClear.setVisibility(View.GONE);
+        btnSearchClear.setOnClickListener(v -> edtSearch.setText(""));
+        
+        edtSearch.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                btnSearchClear.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
         edtSearch.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
-                viewModel.executeOSGeocodingQuery(edtSearch.getText().toString());
+                String qStr = edtSearch.getText().toString().trim();
+                if (!qStr.isEmpty()) {
+                    Toast.makeText(this, "Locating: " + qStr + "...", Toast.LENGTH_SHORT).show();
+                    viewModel.executeOSGeocodingQuery(qStr);
+                }
                 return true;
             }
             return false;
@@ -247,123 +340,359 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         int searchIconSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
         searchBar.addView(btnHelp, new LinearLayout.LayoutParams(searchIconSize, searchIconSize));
         searchBar.addView(edtSearch, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        searchBar.addView(btnSearchClear, new LinearLayout.LayoutParams(searchIconSize, searchIconSize));
         searchBar.addView(btnSearch, new LinearLayout.LayoutParams(searchIconSize, searchIconSize));
         
         FrameLayout.LayoutParams searchLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         searchLp.setMargins(q * 2, q * 2, q * 2, 0); 
         mapHardwareContainer.addView(searchBar, searchLp); 
-        btnSearch.setOnClickListener(v -> viewModel.executeOSGeocodingQuery(edtSearch.getText().toString()));
+        btnSearch.setOnClickListener(v -> {
+            String qStr = edtSearch.getText().toString().trim();
+            if (!qStr.isEmpty()) {
+                Toast.makeText(this, "Locating: " + qStr + "...", Toast.LENGTH_SHORT).show();
+                viewModel.executeOSGeocodingQuery(qStr);
+            } else {
+                Toast.makeText(this, "Please enter an address or place name", Toast.LENGTH_SHORT).show();
+            }
+        });
 
-        // 🛰️ L7 ARCHITECT: TACTICAL DEPLOYMENT HUD (Integrated into Card Bottom)
+        // 📍 FLOATING GPS TARGET BUTTON (Center on Current Location)
+        ImageView btnMyGps = new ImageView(this);
+        btnMyGps.setImageResource(android.R.drawable.ic_menu_mylocation);
+        btnMyGps.setColorFilter(Color.WHITE);
+        android.graphics.drawable.GradientDrawable gGps = new android.graphics.drawable.GradientDrawable();
+        gGps.setColor(getGradientStart());
+        gGps.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        btnMyGps.setBackground(gGps);
+        btnMyGps.setElevation(scale(20));
+        int gpsPad = scale(16);
+        btnMyGps.setPadding(gpsPad, gpsPad, gpsPad, gpsPad);
+        btnMyGps.setFocusable(true);
+        btnMyGps.setClickable(true);
+        btnMyGps.setOnClickListener(v -> {
+            FusedLocationProviderClient fused = LocationServices.getFusedLocationProviderClient(this);
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                fused.getLastLocation().addOnSuccessListener(loc -> {
+                    if (loc != null) {
+                        LatLng cur = new LatLng(loc.getLatitude(), loc.getLongitude());
+                        viewModel.setDraftPin(cur);
+                        if (googleMap != null) googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(cur, 16f));
+                        Toast.makeText(this, "📍 Anchor pin set to your current GPS position!", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Acquiring GPS location... Please ensure Location Services are ON.", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, GEOFENCE_PERMISSION_CODE);
+            }
+        });
+        
+        FrameLayout.LayoutParams gpsLp = new FrameLayout.LayoutParams(scale(90), scale(90));
+        gpsLp.gravity = Gravity.BOTTOM | Gravity.END;
+        gpsLp.setMargins(0, 0, q * 2, q * 2);
+        mapHardwareContainer.addView(btnMyGps, gpsLp);
+
+        // 🛰️ L7 ARCHITECT: TACTICAL DEPLOYMENT HUD (Scrollable Bottom Input Sheet)
+        ScrollView inputScrollView = new ScrollView(this);
+        inputScrollView.setVerticalScrollBarEnabled(false);
+        inputScrollView.setClipChildren(false);
+        inputScrollView.setClipToPadding(false);
+
         LinearLayout bottomConfirmArea = new LinearLayout(this);
         bottomConfirmArea.setOrientation(LinearLayout.VERTICAL);
-        bottomConfirmArea.setPadding(hubPad, hubPad/2, hubPad, hubPad);
+        bottomConfirmArea.setPadding(hubPad, scale(8), hubPad, scale(12));
         bottomConfirmArea.setBackgroundColor(getCardColor());
         
         // 📈 L7 BEST-FIT: Consolidated Identity & Radius Row
         LinearLayout identityRadiusRow = new LinearLayout(this);
         identityRadiusRow.setOrientation(LinearLayout.HORIZONTAL);
         identityRadiusRow.setGravity(Gravity.CENTER_VERTICAL);
-        identityRadiusRow.setPadding(0, scale(10), 0, scale(10));
+        identityRadiusRow.setPadding(0, scale(6), 0, scale(6));
         
         edtZoneName = new EditText(this);
         edtZoneName.setHint("Identity (e.g. Home)");
         edtZoneName.setHintTextColor(getSecondaryTextColor());
         edtZoneName.setTextColor(getTextColor());
-        applySolidCardGeometry(edtZoneName, getCardColor(), 20f);
+        edtZoneName.setTextSize(13);
+        edtZoneName.setPadding(scale(10), scale(6), scale(10), scale(6));
+        applySolidCardGeometry(edtZoneName, getCardColor(), 14f);
         if (pendingZoneName != null) edtZoneName.setText(pendingZoneName);
         else {
             String intentInName = getIntent().getStringExtra("ESTABLISH_DOMAIN_NAME");
             if (intentInName != null) edtZoneName.setText(intentInName);
         }
-        identityRadiusRow.addView(edtZoneName, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2.3f));
+        identityRadiusRow.addView(edtZoneName, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        // 🚀 Human-in-the-Loop Radius Stepper: [-] [ 100m ] [+]
+        LinearLayout radiusStepperRow = new LinearLayout(this);
+        radiusStepperRow.setOrientation(LinearLayout.HORIZONTAL);
+        radiusStepperRow.setGravity(Gravity.CENTER_VERTICAL);
+        applySolidCardGeometry(radiusStepperRow, getCardColor(), 14f);
+        radiusStepperRow.setPadding(scale(4), scale(2), scale(4), scale(2));
+
+        TextView btnMinus = new TextView(this);
+        btnMinus.setText("－");
+        btnMinus.setTextColor(getGradientStart());
+        btnMinus.setTextSize(15);
+        btnMinus.setTypeface(null, Typeface.BOLD);
+        btnMinus.setPadding(scale(6), scale(2), scale(6), scale(2));
+        btnMinus.setOnClickListener(v -> {
+            try {
+                int r = Integer.parseInt(edtRadius.getText().toString().trim());
+                if (r > 50) {
+                    edtRadius.setText(String.valueOf(r - 50));
+                }
+            } catch (Exception ignored) { edtRadius.setText("100"); }
+        });
+        radiusStepperRow.addView(btnMinus);
 
         edtRadius = new EditText(this);
         edtRadius.setText("100");
         edtRadius.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         edtRadius.setTextColor(getGradientStart());
+        edtRadius.setTextSize(12);
         edtRadius.setTypeface(null, Typeface.BOLD);
         edtRadius.setGravity(Gravity.CENTER);
-        applySolidCardGeometry(edtRadius, getCardColor(), 20f);
-        
-        LinearLayout.LayoutParams radiusLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        radiusLp.setMargins(scale(15), 0, 0, 0);
-        identityRadiusRow.addView(edtRadius, radiusLp);
+        edtRadius.setBackground(null);
+        radiusStepperRow.addView(edtRadius, new LinearLayout.LayoutParams(scale(48), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView btnPlus = new TextView(this);
+        btnPlus.setText("＋");
+        btnPlus.setTextColor(getGradientStart());
+        btnPlus.setTextSize(15);
+        btnPlus.setTypeface(null, Typeface.BOLD);
+        btnPlus.setPadding(scale(6), scale(2), scale(6), scale(2));
+        btnPlus.setOnClickListener(v -> {
+            try {
+                int r = Integer.parseInt(edtRadius.getText().toString().trim());
+                if (r < 5000) {
+                    edtRadius.setText(String.valueOf(r + 50));
+                }
+            } catch (Exception ignored) { edtRadius.setText("150"); }
+        });
+        radiusStepperRow.addView(btnPlus);
+
+        LinearLayout.LayoutParams radiusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        radiusLp.setMargins(scale(8), 0, 0, 0);
+        identityRadiusRow.addView(radiusStepperRow, radiusLp);
         bottomConfirmArea.addView(identityRadiusRow);
 
-        // 🚀 L7 TEMPORAL SCHEDULER: Define the Monitoring Mission Window
+        // 🚀 Human-in-the-Loop: Quick Radius Preset Buttons
+        LinearLayout radiusQuickBar = new LinearLayout(this);
+        radiusQuickBar.setOrientation(LinearLayout.HORIZONTAL);
+        radiusQuickBar.setGravity(Gravity.CENTER_VERTICAL);
+        radiusQuickBar.setPadding(0, scale(2), 0, scale(6));
+        
+        int[] radiusOptions = {50, 100, 250, 500, 1000, 2000};
+        for (int opt : radiusOptions) {
+            TextView btnR = new TextView(this);
+            btnR.setText(opt >= 1000 ? (opt/1000) + "km" : opt + "m");
+            btnR.setTextColor(getTextColor());
+            btnR.setTextSize(10);
+            btnR.setTypeface(null, Typeface.BOLD);
+            btnR.setGravity(Gravity.CENTER);
+            int pPad = scale(6);
+            btnR.setPadding(pPad, scale(4), pPad, scale(4));
+            applySolidCardGeometry(btnR, getCardColor(), 10f);
+            btnR.setFocusable(true);
+            btnR.setClickable(true);
+            btnR.setOnClickListener(v -> {
+                edtRadius.setText(String.valueOf(opt));
+                LatLng curDraft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
+                if (curDraft != null) renderMapDraftRings(curDraft);
+            });
+            LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            rLp.setMargins(scale(2), 0, scale(2), 0);
+            radiusQuickBar.addView(btnR, rLp);
+        }
+        bottomConfirmArea.addView(radiusQuickBar);
+
+        edtRadius.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                LatLng curDraft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
+                if (curDraft != null) renderMapDraftRings(curDraft);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        // 🚀 L7 TEMPORAL SCHEDULER: Quick Schedule Presets + Time Pickers
         TextView lblSchedule = new TextView(this);
-        lblSchedule.setText("MONITORING WINDOW (24H FORMAT)");
-        UiArchitect.applyText(this, lblSchedule, "TEXT_LABEL");
-        lblSchedule.setPadding(0, scale(20), 0, scale(10));
+        lblSchedule.setText("MONITORING SCHEDULE");
+        lblSchedule.setTextSize(10);
+        lblSchedule.setTextColor(getTextColor());
+        lblSchedule.setTypeface(null, Typeface.BOLD);
+        lblSchedule.setPadding(0, scale(8), 0, scale(4));
         bottomConfirmArea.addView(lblSchedule);
+
+        LinearLayout scheduleQuickBar = new LinearLayout(this);
+        scheduleQuickBar.setOrientation(LinearLayout.HORIZONTAL);
+        scheduleQuickBar.setGravity(Gravity.CENTER_VERTICAL);
+        scheduleQuickBar.setPadding(0, 0, 0, scale(4));
+
+        String[] schedPresets = {"24/7 ALL-DAY", "OFFICE (09-17)", "SCHOOL (08-15)"};
+        int[][] schedTimes = {{0, 2359}, {900, 1700}, {800, 1500}};
+        for (int i = 0; i < schedPresets.length; i++) {
+            final int sT = schedTimes[i][0];
+            final int eT = schedTimes[i][1];
+            TextView btnSched = new TextView(this);
+            btnSched.setText(schedPresets[i]);
+            btnSched.setTextColor(getGradientStart());
+            btnSched.setTextSize(8.5f);
+            btnSched.setTypeface(null, Typeface.BOLD);
+            btnSched.setGravity(Gravity.CENTER);
+            btnSched.setPadding(scale(6), scale(3), scale(6), scale(3));
+            applySolidCardGeometry(btnSched, getCardColor(), 10f);
+            btnSched.setOnClickListener(v -> {
+                if (edtStart != null) edtStart.setText(formatTime(sT));
+                if (edtEnd != null) edtEnd.setText(formatTime(eT));
+            });
+            LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            sLp.setMargins(scale(2), 0, scale(2), 0);
+            scheduleQuickBar.addView(btnSched, sLp);
+        }
+        bottomConfirmArea.addView(scheduleQuickBar);
 
         LinearLayout timeRow = new LinearLayout(this);
         timeRow.setOrientation(LinearLayout.HORIZONTAL);
         timeRow.setGravity(Gravity.CENTER_VERTICAL);
 
         edtStart = new EditText(this);
-        edtStart.setHint("Start (HH:mm)"); edtStart.setText("00:00");
+        edtStart.setHint("Start (HH:mm)"); 
+        edtStart.setText("00:00");
+        edtStart.setTextSize(11);
+        edtStart.setTextColor(getTextColor());
+        edtStart.setHintTextColor(getSecondaryTextColor());
+        edtStart.setTypeface(null, Typeface.BOLD);
+        edtStart.setPadding(scale(8), scale(4), scale(8), scale(4));
         edtStart.setGravity(Gravity.CENTER);
-        edtStart.setFocusable(false); edtStart.setClickable(true);
-        applySolidCardGeometry(edtStart, getCardColor(), 20f);
+        edtStart.setFocusable(false); 
+        edtStart.setClickable(true);
+        applySolidCardGeometry(edtStart, getCardColor(), 12f);
         edtStart.setOnClickListener(v -> showTimePicker(edtStart));
         timeRow.addView(edtStart, new LinearLayout.LayoutParams(0, -2, 1.0f));
 
         TextView tSeparator = new TextView(this);
         tSeparator.setText(" TO ");
-        tSeparator.setPadding(scale(15), 0, scale(15), 0);
-        UiArchitect.applyText(this, tSeparator, "TEXT_LABEL");
+        tSeparator.setTextSize(10);
+        tSeparator.setTextColor(getTextColor());
+        tSeparator.setTypeface(null, Typeface.BOLD);
+        tSeparator.setPadding(scale(8), 0, scale(8), 0);
         timeRow.addView(tSeparator);
 
         edtEnd = new EditText(this);
-        edtEnd.setHint("End (HH:mm)"); edtEnd.setText("23:59");
+        edtEnd.setHint("End (HH:mm)"); 
+        edtEnd.setText("23:59");
+        edtEnd.setTextSize(11);
+        edtEnd.setTextColor(getTextColor());
+        edtEnd.setHintTextColor(getSecondaryTextColor());
+        edtEnd.setTypeface(null, Typeface.BOLD);
+        edtEnd.setPadding(scale(8), scale(4), scale(8), scale(4));
         edtEnd.setGravity(Gravity.CENTER);
-        edtEnd.setFocusable(false); edtEnd.setClickable(true);
-        applySolidCardGeometry(edtEnd, getCardColor(), 20f);
+        edtEnd.setFocusable(false); 
+        edtEnd.setClickable(true);
+        applySolidCardGeometry(edtEnd, getCardColor(), 12f);
         edtEnd.setOnClickListener(v -> showTimePicker(edtEnd));
         timeRow.addView(edtEnd, new LinearLayout.LayoutParams(0, -2, 1.0f));
         bottomConfirmArea.addView(timeRow);
 
-        // 📅 WEEKDAY CLUSTER: Multi-Node Day Selection
+        // AUDIT FIX [AUD-019]: Link tab sequence for hardware keyboard accessibility
+        com.jdroidx.jfindme.utils.FormUtils.linkTabSequence(edtZoneName, edtRadius);
+
+        // 📅 WEEKDAY CLUSTER: Presets + Multi-Node Day Selection
+        LinearLayout dayPresetBar = new LinearLayout(this);
+        dayPresetBar.setOrientation(LinearLayout.HORIZONTAL);
+        dayPresetBar.setGravity(Gravity.CENTER_VERTICAL);
+        dayPresetBar.setPadding(0, scale(6), 0, scale(2));
+
+        TextView btnAllDays = createPresetCapsule("ALL DAYS", v -> setDaysSelection(true, true, true, true, true, true, true));
+        TextView btnWeekdays = createPresetCapsule("WEEKDAYS", v -> setDaysSelection(true, true, true, true, true, false, false));
+        TextView btnWeekends = createPresetCapsule("WEEKENDS", v -> setDaysSelection(false, false, false, false, false, true, true));
+
+        dayPresetBar.addView(btnAllDays, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        dayPresetBar.addView(btnWeekdays, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        dayPresetBar.addView(btnWeekends, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        bottomConfirmArea.addView(dayPresetBar);
+
         LinearLayout dayStrip = new LinearLayout(this);
         dayStrip.setOrientation(LinearLayout.HORIZONTAL);
         dayStrip.setGravity(Gravity.CENTER);
-        dayStrip.setPadding(0, scale(20), 0, scale(20));
+        dayStrip.setPadding(0, scale(2), 0, scale(8));
         
         String[] daysLabels = {"M", "T", "W", "T", "F", "S", "S"};
         dayChecks = new android.widget.CheckBox[7];
         for (int i = 0; i < 7; i++) {
             dayChecks[i] = new android.widget.CheckBox(this);
             dayChecks[i].setText(daysLabels[i]);
+            dayChecks[i].setTextSize(10);
             dayChecks[i].setChecked(true);
             dayChecks[i].setTextColor(getTextColor());
+            dayChecks[i].setPadding(scale(1), 0, scale(1), 0);
             dayStrip.addView(dayChecks[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
         }
         bottomConfirmArea.addView(dayStrip);
 
+        // 👥 TARGET NODES COMPONENT: Group Profile Icon + Multi-Device Count Card + Refresh Button
+        LinearLayout targetNodeCard = new LinearLayout(this);
+        targetNodeCard.setOrientation(LinearLayout.HORIZONTAL);
+        targetNodeCard.setGravity(Gravity.CENTER_VERTICAL);
+        targetNodeCard.setPadding(scale(10), scale(6), scale(10), scale(6));
+        targetNodeCard.setClickable(true);
+        targetNodeCard.setFocusable(true);
+        UiArchitect.applyCardWithOverride(this, targetNodeCard, "CARD_STANDARD", 0.95f);
+        
+        ImageView ivGroupIcon = new ImageView(this);
+        ivGroupIcon.setImageResource(android.R.drawable.ic_menu_myplaces);
+        ivGroupIcon.setColorFilter(getGradientStart());
+        int gIconSize = scale(22);
+        targetNodeCard.addView(ivGroupIcon, new LinearLayout.LayoutParams(gIconSize, gIconSize));
+
+        LinearLayout nodeTextCol = new LinearLayout(this);
+        nodeTextCol.setOrientation(LinearLayout.VERTICAL);
+        nodeTextCol.setPadding(scale(8), 0, scale(8), 0);
+        nodeTextCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
         TextView lblNode = new TextView(this);
-        lblNode.setText("ASSIGN TO NODE");
-        UiArchitect.applyText(this, lblNode, "TEXT_LABEL");
-        bottomConfirmArea.addView(lblNode);
+        lblNode.setText("TARGET NODES (DEPENDENT DEVICES)");
+        lblNode.setTextColor(getSecondaryTextColor());
+        lblNode.setTextSize(9);
+        nodeTextCol.addView(lblNode);
 
         txtNodes = new TextView(this);
-        txtNodes.setText("ALL CONNECTED DEVICES"); 
-        selectedNodes.add("ALL CONNECTED DEVICES");
+        txtNodes.setText("0 ASSIGNED (TAP TO CONFIGURE)"); 
+        selectedNodes.clear(); // 🛑 NO AUTO-SELECT: Must be explicitly assigned
         txtNodes.setTextColor(getGradientStart());
-        txtNodes.setPadding(0, scale(15), 0, scale(15));
-        txtNodes.setFocusable(true);
-        txtNodes.setClickable(true);
-        UiArchitect.applyText(this, txtNodes, "TEXT_TITLE");
-        txtNodes.setOnClickListener(v -> showMultiNodeSelector());
-        bottomConfirmArea.addView(txtNodes);
+        txtNodes.setTextSize(10.5f);
+        txtNodes.setTypeface(null, Typeface.BOLD);
+        nodeTextCol.addView(txtNodes);
+
+        targetNodeCard.addView(nodeTextCol);
+
+        // 🔄 REFRESH ROSTER BUTTON
+        ImageView ivRefreshRoster = new ImageView(this);
+        ivRefreshRoster.setImageResource(android.R.drawable.ic_popup_sync);
+        ivRefreshRoster.setColorFilter(getGradientStart());
+        ivRefreshRoster.setPadding(scale(4), scale(4), scale(4), scale(4));
+        ivRefreshRoster.setOnClickListener(v -> {
+            Toast.makeText(this, "🔄 Synchronizing live device roster...", Toast.LENGTH_SHORT).show();
+            viewModel.fetchRosterMetadata();
+        });
+        targetNodeCard.addView(ivRefreshRoster, new LinearLayout.LayoutParams(scale(28), scale(28)));
+
+        ImageView ivChevron = new ImageView(this);
+        ivChevron.setImageResource(android.R.drawable.ic_menu_more);
+        ivChevron.setColorFilter(getGradientStart());
+        targetNodeCard.addView(ivChevron, new LinearLayout.LayoutParams(scale(20), scale(20)));
+
+        targetNodeCard.setOnClickListener(v -> showMultiNodeSelector());
+        bottomConfirmArea.addView(targetNodeCard);
 
         // 📈 GRID: Transactional Command Buttons (DEPLOY/ABORT)
         LinearLayout actionRow = new LinearLayout(this);
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        actionRow.setPadding(0, scale(25), 0, 0);
+        actionRow.setPadding(0, scale(8), 0, scale(4));
 
-        btnConfirm = createIconButton("DEPLOY", android.R.drawable.ic_menu_send, true, v -> {
+        btnConfirm = createCompactIconButton("DEPLOY SAFE ZONE", android.R.drawable.ic_menu_send, true, v -> {
             try {
                 // 🚀 L7 MISSION GUARD: Multi-Gate Validations
                 if (edtZoneName == null || edtRadius == null || edtStart == null || edtEnd == null) {
@@ -384,30 +713,51 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
                 LatLng draft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
                 double r = radiusStr.isEmpty() ? 100.0 : Double.parseDouble(radiusStr);
+
+                if (r < 25.0 || r > 5000.0) {
+                    showForensicDialog("INVALID RADIUS", "Safe Zone radius must be between 25 meters and 5000 meters.");
+                    return;
+                }
                 
-                // 🚀 QA Fix: Zero-Gap Roster Persistence
-                if (selectedNodes.isEmpty()) selectedNodes.add("ALL CONNECTED DEVICES");
+                // 🛑 MANDATORY TARGET NODE VALIDATION: Target node selection is mandatory
+                if (selectedNodes.isEmpty()) {
+                    Toast.makeText(this, "Target connected device selection is mandatory for dependent perimeter alerts.", Toast.LENGTH_LONG).show();
+                    showMultiNodeSelector();
+                    return;
+                }
                 String assigned = android.text.TextUtils.join(", ", selectedNodes);
                 
                 if (!name.isEmpty() && draft != null) {
                     checkPermissionsAndAdd(name, assigned, draft.latitude, draft.longitude, r, s, e, dStr, editingZoneId);
                 } else {
-                    Toast.makeText(this, "Enter Zone Name and Set Map Pin!", Toast.LENGTH_SHORT).show();
+                    if (name.isEmpty() && draft == null) {
+                        showForensicDialog("MISSING INPUTS", "Please enter a Zone Name and tap on the map or tap the GPS button to set a center anchor.");
+                    } else if (name.isEmpty()) {
+                        showForensicDialog("MISSING ZONE NAME", "Please provide an identity name for this safe zone (e.g. Home, School, Office).");
+                    } else {
+                        showForensicDialog("NO ANCHOR SET", "Please tap on the map or tap the GPS button to set the center coordinates of this safe zone.");
+                    }
                 }
             } catch (Exception fatal) {
                 com.jdroidx.jfindme.utils.SystemLogger.e("GeofenceActivity", "DEPLOY_FATAL_UI", fatal);
-                Toast.makeText(this, "Mission Sync Error: " + fatal.getMessage(), Toast.LENGTH_LONG).show();
+                showForensicDialog("SYNCHRONIZATION ERROR", "Failed to deploy safe zone: " + fatal.getMessage());
             }
         });
-        View btnAbort = createIconButton("ABORT", android.R.drawable.ic_menu_close_clear_cancel, v -> closeMapEditorState());
+        View btnAbort = createCompactIconButton("ABORT", android.R.drawable.ic_menu_close_clear_cancel, false, v -> closeMapEditorState());
 
-        actionRow.addView(btnConfirm, new LinearLayout.LayoutParams(0, -2, 1.0f));
-        actionRow.addView(btnAbort, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        LinearLayout.LayoutParams btnLp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f);
+        btnLp1.setMargins(0, 0, scale(4), 0);
+        actionRow.addView(btnConfirm, btnLp1);
+
+        LinearLayout.LayoutParams btnLp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f);
+        btnLp2.setMargins(scale(4), 0, 0, 0);
+        actionRow.addView(btnAbort, btnLp2);
         bottomConfirmArea.addView(actionRow);
 
-        mapOverlayCard.addView(bottomConfirmArea);
+        inputScrollView.addView(bottomConfirmArea, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        mapOverlayCard.addView(inputScrollView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 4.0f));
 
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams((int)(getResources().getDisplayMetrics().widthPixels * 0.9), (int)(getResources().getDisplayMetrics().heightPixels * 0.8));
+        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams((int)(getResources().getDisplayMetrics().widthPixels * 0.94), (int)(getResources().getDisplayMetrics().heightPixels * 0.90));
         cardLp.gravity = Gravity.CENTER;
         mapStateContainer.addView(mapOverlayCard, cardLp);
         
@@ -417,42 +767,183 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit(); 
         mapFragment.getMapAsync(this);
 
-        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
-            @Override public void handleOnBackPressed() { if (mapStateContainer.getVisibility() == View.VISIBLE) closeMapEditorState(); else finish(); }
-        });
-
+        // NOTE: OnBackPressedCallback is registered in setupLogic() — do NOT duplicate here.
         return rootLayer;
     }
 
+    private TextView createPresetCapsule(String text, View.OnClickListener cl) {
+        TextView b = new TextView(this);
+        b.setText(text);
+        b.setTextColor(getGradientStart());
+        b.setTextSize(9);
+        b.setTypeface(null, Typeface.BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(scale(8), scale(6), scale(8), scale(6));
+        applySolidCardGeometry(b, getCardColor(), 12f);
+        b.setOnClickListener(cl);
+        return b;
+    }
+
+    private void setDaysSelection(boolean... days) {
+        if (dayChecks == null) return;
+        for (int i = 0; i < Math.min(dayChecks.length, days.length); i++) {
+            if (dayChecks[i] != null) dayChecks[i].setChecked(days[i]);
+        }
+    }
+
     private void showMultiNodeSelector() {
-        if (deviceList.isEmpty()) return;
+        if (deviceList.isEmpty()) {
+            showForensicDialog(
+                "NO LINKED DEVICES DETECTED",
+                "You currently have no connected family or team devices. This Safe Zone will be assigned to 'ALL CONNECTED DEVICES' (Global Sector Broadcast) and will automatically protect newly paired members."
+            );
+            selectedNodes.clear();
+            selectedNodes.add("ALL CONNECTED DEVICES");
+            if (txtNodes != null) txtNodes.setText("GLOBAL SECTOR BROADCAST (All Devices)");
+            return;
+        }
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout parent = new LinearLayout(this);
         parent.setOrientation(LinearLayout.VERTICAL);
         int q = getResponsivePaddingQuota();
         parent.setPadding(q, q, q, q);
+
+        // Header description
+        TextView subHeader = new TextView(this);
+        subHeader.setText("Assign target connected devices. Safe Zone notifications trigger exclusively between linked devices (At least 1 device mandatory).");
+        subHeader.setTextColor(getSecondaryTextColor());
+        subHeader.setPadding(0, 0, 0, scale(10));
+        UiArchitect.applyText(this, subHeader, "TEXT_TINY");
+        parent.addView(subHeader);
+
+        // 🔍 REALTIME SEARCH BAR
+        EditText etSearchDevices = new EditText(this);
+        etSearchDevices.setHint("🔍 Search devices by name or role...");
+        etSearchDevices.setPadding(scale(14), scale(10), scale(14), scale(10));
+        etSearchDevices.setTextColor(getTextColor());
+        applySolidCardGeometry(etSearchDevices, getCardColor(), 18f);
+        parent.addView(etSearchDevices);
+
+        // 👥 GROUP-SELECT QUICK CHIP BAR
+        LinearLayout groupChipBar = new LinearLayout(this);
+        groupChipBar.setOrientation(LinearLayout.HORIZONTAL);
+        groupChipBar.setGravity(Gravity.CENTER_VERTICAL);
+        groupChipBar.setPadding(0, scale(10), 0, scale(12));
+
+        final java.util.List<android.widget.CheckBox> checks = new java.util.ArrayList<>();
+        final java.util.Map<String, View> rowViews = new java.util.HashMap<>();
+
+        TextView btnSelChildren = createPresetCapsule("👶 CHILDREN", v -> {
+            for (android.widget.CheckBox cb : checks) {
+                String dev = (String) cb.getTag();
+                String r = currentRosterMap.containsKey(dev) ? currentRosterMap.get(dev).toUpperCase() : "";
+                if (r.contains("CHILD") || r.contains("WARD") || r.contains("KID") || r.contains("SUBJECT")) {
+                    cb.setChecked(true);
+                }
+            }
+        });
+        TextView btnSelGuardians = createPresetCapsule("🛡️ GUARDIANS", v -> {
+            for (android.widget.CheckBox cb : checks) {
+                String dev = (String) cb.getTag();
+                String r = currentRosterMap.containsKey(dev) ? currentRosterMap.get(dev).toUpperCase() : "";
+                if (r.contains("GUARDIAN") || r.contains("ADMIN") || r.contains("PARENT") || r.contains("HOST")) {
+                    cb.setChecked(true);
+                }
+            }
+        });
+        TextView btnSelAll = createPresetCapsule("🌐 ALL", v -> {
+            selectedNodes.clear();
+            selectedNodes.add("ALL CONNECTED DEVICES");
+            for (android.widget.CheckBox cb : checks) {
+                cb.setChecked(cb.getText().equals("ALL CONNECTED DEVICES") || "ALL CONNECTED DEVICES".equals(cb.getTag()));
+            }
+        });
+        TextView btnClearAll = createPresetCapsule("❌ CLEAR", v -> {
+            selectedNodes.clear();
+            for (android.widget.CheckBox cb : checks) cb.setChecked(false);
+        });
+
+        groupChipBar.addView(btnSelChildren, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        groupChipBar.addView(btnSelGuardians, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        groupChipBar.addView(btnSelAll, new LinearLayout.LayoutParams(0, -2, 0.9f));
+        groupChipBar.addView(btnClearAll, new LinearLayout.LayoutParams(0, -2, 0.9f));
+        parent.addView(groupChipBar);
         
         android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
-        builder.setTitle("ASSIGN TO CLUSTER");
+        builder.setTitle("👥 ASSIGN TARGET CONNECTED DEVICES");
         
-        final java.util.List<android.widget.CheckBox> checks = new java.util.ArrayList<>();
         int accent = getGradientStart();
         android.content.res.ColorStateList csl = new android.content.res.ColorStateList(
             new int[][]{new int[]{-android.R.attr.state_checked}, new int[]{android.R.attr.state_checked}},
             new int[]{Color.GRAY, accent}
         );
 
-        for (String device : deviceList) {
+        // Ensure "ALL CONNECTED DEVICES" is available in the list
+        java.util.List<String> combinedList = new java.util.ArrayList<>();
+        if (!combinedList.contains("ALL CONNECTED DEVICES")) combinedList.add("ALL CONNECTED DEVICES");
+        for (String dev : deviceList) {
+            if (!dev.equals("ALL CONNECTED DEVICES") && !combinedList.contains(dev)) {
+                combinedList.add(dev);
+            }
+        }
+
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+
+        for (String device : combinedList) {
+            LinearLayout itemRow = new LinearLayout(this);
+            itemRow.setOrientation(LinearLayout.HORIZONTAL);
+            itemRow.setGravity(Gravity.CENTER_VERTICAL);
+            itemRow.setPadding(scale(8), scale(10), scale(8), scale(10));
+            UiArchitect.applyCardWithOverride(this, itemRow, "CARD_STANDARD", 0.95f);
+
             android.widget.CheckBox cb = new android.widget.CheckBox(this);
-            cb.setText(device);
             cb.setTextColor(getTextColor());
             cb.setButtonTintList(csl);
             cb.setChecked(selectedNodes.contains(device));
-            
-            // 🚀 Vertically Compact Logic
-            cb.setPadding(scale(10), scale(15), scale(10), scale(15));
-            
+
+            // Circular Avatar or Icon
+            FrameLayout avatarCircle = new FrameLayout(this);
+            int avSize = scale(36);
+            android.graphics.drawable.GradientDrawable avBg = new android.graphics.drawable.GradientDrawable();
+            avBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            avBg.setColor(device.equals("ALL CONNECTED DEVICES") ? Color.parseColor("#334CAF50") : getGradientStart());
+            avBg.setAlpha(50);
+            avatarCircle.setBackground(avBg);
+
+            TextView avInitial = new TextView(this);
+            avInitial.setText(device.equals("ALL CONNECTED DEVICES") ? "🌐" : device.substring(0, 1).toUpperCase());
+            avInitial.setTextColor(getGradientStart());
+            avInitial.setTypeface(null, Typeface.BOLD);
+            UiArchitect.applyText(this, avInitial, "TEXT_LABEL");
+            FrameLayout.LayoutParams iLp = new FrameLayout.LayoutParams(-2, -2);
+            iLp.gravity = Gravity.CENTER;
+            avatarCircle.addView(avInitial, iLp);
+
+            LinearLayout nameCol = new LinearLayout(this);
+            nameCol.setOrientation(LinearLayout.VERTICAL);
+            nameCol.setPadding(scale(10), 0, scale(10), 0);
+            nameCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+            TextView tvDeviceName = new TextView(this);
+            tvDeviceName.setText(device.equals("ALL CONNECTED DEVICES") ? "GLOBAL SECTOR BROADCAST" : device);
+            tvDeviceName.setTextColor(getTextColor());
+            tvDeviceName.setTypeface(null, Typeface.BOLD);
+            UiArchitect.applyText(this, tvDeviceName, "TEXT_LABEL");
+            nameCol.addView(tvDeviceName);
+
+            String role = currentRosterMap.containsKey(device) ? currentRosterMap.get(device) : (device.equals("ALL CONNECTED DEVICES") ? "ALL PAIRED DEVICES" : "CONNECTED NODE");
+            TextView tvRoleBadge = new TextView(this);
+            tvRoleBadge.setText(role != null ? role.toUpperCase() : "MEMBER");
+            tvRoleBadge.setTextColor(getGradientStart());
+            UiArchitect.applyText(this, tvRoleBadge, "TEXT_TINY");
+            nameCol.addView(tvRoleBadge);
+
+            itemRow.addView(cb);
+            itemRow.addView(avatarCircle, new LinearLayout.LayoutParams(avSize, avSize));
+            itemRow.addView(nameCol);
+
             cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 if (!isChecked) {
                     selectedNodes.remove(device);
@@ -466,34 +957,117 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                     } else {
                         selectedNodes.remove("ALL CONNECTED DEVICES");
                         for (android.widget.CheckBox allCb : checks) {
-                            if (allCb.getText().equals("ALL CONNECTED DEVICES")) allCb.setChecked(false);
+                            if (allCb.getTag() != null && allCb.getTag().equals("ALL CONNECTED DEVICES")) {
+                                allCb.setChecked(false);
+                            }
                         }
                         if (!selectedNodes.contains(device)) selectedNodes.add(device);
                     }
                 }
             });
-            
+
+            cb.setTag(device);
             checks.add(cb);
-            parent.addView(cb);
+            rowViews.put(device.toLowerCase(), itemRow);
+            itemRow.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
+            
+            listContainer.addView(itemRow);
+            listContainer.addView(new View(this), new LinearLayout.LayoutParams(1, scale(6))); // spacing
         }
-        
+
+        // Live Search Filter Watcher
+        etSearchDevices.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().toLowerCase().trim();
+                for (String dev : combinedList) {
+                    View row = rowViews.get(dev.toLowerCase());
+                    if (row != null) {
+                        String role = currentRosterMap.containsKey(dev) ? currentRosterMap.get(dev).toLowerCase() : "";
+                        boolean matches = query.isEmpty() || dev.toLowerCase().contains(query) || role.contains(query);
+                        row.setVisibility(matches ? View.VISIBLE : View.GONE);
+                    }
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        parent.addView(listContainer);
         scroll.addView(parent);
         builder.setView(scroll);
         
         builder.setPositiveButton("CONFIRM", (dialog, which) -> {
+            // 🛑 MANDATORY TARGET VALIDATION RULE: At least 1 device must be assigned
             if (selectedNodes.isEmpty()) {
                 selectedNodes.add("ALL CONNECTED DEVICES");
+                Toast.makeText(this, "Defaulted to 'GLOBAL SECTOR BROADCAST' (At least 1 target node is mandatory).", Toast.LENGTH_SHORT).show();
             }
             if (txtNodes != null) {
-                if (selectedNodes.size() == 1) txtNodes.setText(selectedNodes.get(0));
-                else txtNodes.setText(selectedNodes.size() + " NODES SELECTED");
+                if (selectedNodes.size() == 1 && selectedNodes.contains("ALL CONNECTED DEVICES")) {
+                    txtNodes.setText("GLOBAL SECTOR BROADCAST (All Devices)");
+                } else if (selectedNodes.size() == 1) {
+                    txtNodes.setText("🎯 TARGET NODE: " + selectedNodes.get(0));
+                } else {
+                    txtNodes.setText("👥 " + selectedNodes.size() + " TARGET NODES ASSIGNED");
+                }
             }
         });
-        builder.setNegativeButton("Abort", null);
+        builder.setNegativeButton("CANCEL", null);
         
         android.app.AlertDialog alert = builder.create();
         alert.show();
         applyDialogTheme(alert);
+    }
+
+    private void editZone(RenderedGeofence zone) {
+        editingZoneId = zone.getId();
+        pendingZoneName = zone.getName();
+        if (edtZoneName != null) edtZoneName.setText(zone.getName());
+        if (edtRadius != null) edtRadius.setText(String.valueOf((int) zone.getRadius()));
+        if (edtStart != null) edtStart.setText(formatTime(zone.getStartTime()));
+        if (edtEnd != null) edtEnd.setText(formatTime(zone.getEndTime()));
+
+        if (dayChecks != null) {
+            String activeDays = zone.getActiveDays() != null ? zone.getActiveDays() : "0,1,2,3,4,5,6";
+            for (int i = 0; i < 7; i++) {
+                if (dayChecks[i] != null) {
+                    dayChecks[i].setChecked(activeDays.contains(String.valueOf(i)));
+                }
+            }
+        }
+
+        selectedNodes.clear();
+        if (zone.getAssignedName() != null && !zone.getAssignedName().isEmpty()) {
+            String[] assigned = zone.getAssignedName().split(", ");
+            for (String node : assigned) {
+                selectedNodes.add(node.trim());
+            }
+        } else {
+            selectedNodes.add("ALL CONNECTED DEVICES");
+        }
+        if (txtNodes != null) {
+            if (selectedNodes.size() == 1 && selectedNodes.contains("ALL CONNECTED DEVICES")) {
+                txtNodes.setText("GLOBAL SECTOR BROADCAST (All Devices)");
+            } else if (selectedNodes.size() == 1) {
+                txtNodes.setText("🎯 TARGET NODE: " + selectedNodes.get(0));
+            } else {
+                txtNodes.setText("👥 " + selectedNodes.size() + " TARGET NODES ASSIGNED");
+            }
+        }
+
+        LatLng target = new LatLng(zone.getLat(), zone.getLng());
+        viewModel.setDraftPin(target);
+        if (googleMap != null) {
+            googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 16f));
+        }
+
+        openMapEditorState();
+    }
+
+    private String formatTime(int t) {
+        int h = t / 100;
+        int m = t % 100;
+        return String.format(java.util.Locale.getDefault(), "%02d:%02d", h, m);
     }
 
     private void openMapEditorState() {
@@ -506,10 +1080,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             TextView btnText = (TextView) ((LinearLayout) btnConfirm).getChildAt(1);
             ImageView btnIcon = (ImageView) ((LinearLayout) btnConfirm).getChildAt(0);
             if (editingZoneId != null) {
-                btnText.setText("SAVE CHANGES");
+                btnText.setText("UPDATE SAFE ZONE");
                 btnIcon.setImageResource(android.R.drawable.ic_menu_save);
             } else {
-                btnText.setText("DEPLOY NODE");
+                btnText.setText("DEPLOY SAFE ZONE");
                 btnIcon.setImageResource(android.R.drawable.ic_menu_send);
             }
         }
@@ -517,8 +1091,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         listStateContainer.setAlpha(0.3f);
         listStateContainer.setClickable(false);
         mapStateContainer.setVisibility(View.VISIBLE);
-        viewModel.setDraftPin(null);
-        Toast.makeText(this, "Long-press map to drop Anchor!", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "📍 Tap map, search place, or tap GPS button to set center anchor!", Toast.LENGTH_SHORT).show();
     }
 
     private void closeMapEditorState() {
@@ -526,7 +1099,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         pendingZoneName = null;
         selectedNodes.clear();
         selectedNodes.add("ALL CONNECTED DEVICES");
-        if (txtNodes != null) txtNodes.setText("ALL CONNECTED DEVICES");
+        if (txtNodes != null) txtNodes.setText("GLOBAL SECTOR BROADCAST (All Devices)");
 
         mapStateContainer.setVisibility(View.GONE);
         listStateContainer.setAlpha(1.0f);
@@ -588,15 +1161,44 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         builder.setPositiveButton("DEPLOY HUB", (dialog, which) -> {
             String name = input.getText().toString().trim();
             LatLng draft = viewModel.getDraftCoordinateLocation().getValue();
-            if(!name.isEmpty() && draft != null) checkPermissionsAndAdd(name, spinner.getSelectedItem().toString(), draft.latitude, draft.longitude, Double.parseDouble(radiusInput.getText().toString()), 0, 2359, "0,1,2,3,4,5,6", null);
+            if (name.isEmpty()) {
+                UiArchitect.showActionableValidationDialog(this, "MISSING ZONE NAME",
+                    "A descriptive zone name is required (e.g. Home, School, Work). Would you like to use default name 'Safe Zone' or enter custom?",
+                    "USE 'SAFE ZONE'", "ENTER CUSTOM",
+                    () -> { input.setText("Safe Zone"); showZoneNamingDialog(); }, null);
+                return;
+            }
+            if (draft == null) {
+                UiArchitect.showActionableValidationDialog(this, "NO ANCHOR SET",
+                    "Please tap or search on the map to set the center coordinate anchor for this Safe Zone before deploying.",
+                    "OPEN MAP", "DISMISS",
+                    this::openMapEditorState, null);
+                return;
+            }
+            double radius = 100.0;
+            try {
+                String rStr = radiusInput.getText().toString().trim();
+                if (!rStr.isEmpty()) radius = Double.parseDouble(rStr);
+            } catch (Exception e) {
+                radius = 100.0;
+            }
+            if (radius < 50.0) radius = 50.0;
+            if (radius > 50000.0) radius = 50000.0;
+
+            String selectedTarget = spinner.getSelectedItem() != null ? spinner.getSelectedItem().toString() : "ALL CONNECTED DEVICES";
+            checkPermissionsAndAdd(name, selectedTarget, draft.latitude, draft.longitude, radius, 0, 2359, "0,1,2,3,4,5,6", null);
         });
-        builder.setNegativeButton("Abort", null).show();
+        builder.setNegativeButton("Abort", null);
+        android.app.AlertDialog nameDialog = builder.create();
+        nameDialog.show();
+        applyDialogTheme(nameDialog);
     }
 
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
         this.googleMap = googleMap;
         this.googleMap.getUiSettings().setZoomControlsEnabled(true);
+        this.googleMap.setOnMapClickListener(latLng -> viewModel.setDraftPin(latLng));
         this.googleMap.setOnMapLongClickListener(latLng -> viewModel.setDraftPin(latLng));
         
         // 🚀 L7 MISSION ACCELERATOR: Prioritize Live GPS Telemetry for Initial Centering
@@ -625,7 +1227,9 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             if (addr != null && !addr.equals("Unknown Location") && !addr.isEmpty()) {
                 viewModel.executeOSGeocodingQuery(addr);
             } else {
-                LatLng defaultPos = new LatLng(18.5204, 73.8567); // Safe baseline (Pune)
+                double defLat = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLatitude(this);
+                double defLng = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLongitude(this);
+                LatLng defaultPos = new LatLng(defLat, defLng);
                 if (googleMap != null) googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultPos, 12f));
             }
         });
@@ -635,8 +1239,28 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         if(googleMap == null) return;
         if(previewMarker != null) previewMarker.remove();
         if(previewCircle != null) previewCircle.remove();
-        previewMarker = googleMap.addMarker(new MarkerOptions().position(pos).title("DRAFT ZONE").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
-        previewCircle = googleMap.addCircle(new CircleOptions().center(pos).radius(200f).strokeWidth(4).strokeColor(Color.GREEN).fillColor(Color.argb(50, 0, 255, 0)));
+        
+        double currentRadius = 100.0;
+        try {
+            String rStr = (edtRadius != null) ? edtRadius.getText().toString().trim() : "100";
+            if (!rStr.isEmpty()) currentRadius = Double.parseDouble(rStr);
+        } catch (Exception ignored) {}
+        if (currentRadius < 20.0) currentRadius = 20.0;
+        if (currentRadius > 50000.0) currentRadius = 50000.0;
+
+        previewMarker = googleMap.addMarker(new MarkerOptions()
+            .position(pos)
+            .title(edtZoneName != null && !edtZoneName.getText().toString().isEmpty() ? edtZoneName.getText().toString() : "DRAFT ZONE")
+            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
+            
+        int accent = getGradientStart();
+        previewCircle = googleMap.addCircle(new CircleOptions()
+            .center(pos)
+            .radius(currentRadius)
+            .strokeWidth(5)
+            .strokeColor(accent)
+            .fillColor(Color.argb(50, Color.red(accent), Color.green(accent), Color.blue(accent))));
+            
         if (btnConfirmLocation != null && mapStateContainer.getVisibility() == View.VISIBLE) {
             btnConfirmLocation.setVisibility(View.VISIBLE);
         }
@@ -646,14 +1270,20 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, GEOFENCE_PERMISSION_CODE);
-        } else {
-            com.jdroidx.jfindme.utils.AngelLoader.show(this);
-            viewModel.submitCloudCoordinateSync(n, a, lat, lng, r, s, e, days, existingId);
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
-                closeMapEditorState(); // 🚀 QA Fix: Force navigation back to the forensic list after sync completes
-            }, 3000);
+            return;
         }
+
+        // 🛡️ Android 10+ Background Location Check
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, GEOFENCE_PERMISSION_CODE);
+                return;
+            }
+        }
+
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        viewModel.submitCloudCoordinateSync(n, a, lat, lng, r, s, e, days, existingId);
     }
 
     private void addLocalGeofenceTile(String id, String name, String address, String assignedName, double lat, double lng, double radius, boolean alertsEnabled, boolean isZoneActive, int start, int end, String days) {
@@ -776,38 +1406,69 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         sep2.setAlpha(0.3f);
         mainHost.addView(sep2, new LinearLayout.LayoutParams(-1, 1));
 
-        // 🚀 SUB-TILE 3: DEVICE CLUSTER (Assigned Member Nodes - High-Fidelity Avatar Matrix)
+        // 🚀 SUB-TILE 3: DEVICE CLUSTER (Target Nodes Slide-Out Tray with Count & Group Avatar)
         LinearLayout card3 = new LinearLayout(this);
         card3.setOrientation(LinearLayout.VERTICAL);
         card3.setPadding(0, q/2, 0, q/2);
-        
-        TextView lblCluster = new TextView(this);
-        lblCluster.setText("👥 TARGET NODES:");
-        lblCluster.setTextColor(getSecondaryTextColor());
-        UiArchitect.applyText(this, lblCluster, "TEXT_TINY");
-        card3.addView(lblCluster);
+        card3.setLayoutTransition(new android.animation.LayoutTransition());
 
-        LinearLayout avatarFlow = new LinearLayout(this);
-        avatarFlow.setOrientation(LinearLayout.VERTICAL);
-        avatarFlow.setGravity(Gravity.START);
-        
         String[] nodeNames = assignedName.split(", ");
+        java.util.List<String> cleanNodes = new java.util.ArrayList<>();
         for (String node : nodeNames) {
             String clean = node.trim();
-            if (!clean.isEmpty()) {
-                if (clean.equals("ALL CONNECTED DEVICES")) {
-                    TextView tvAll = new TextView(this);
-                    tvAll.setText("GLOBAL SECTOR BROADCAST");
-                    tvAll.setTextColor(getGradientStart());
-                    UiArchitect.applyText(this, tvAll, "TEXT_LABEL");
-                    avatarFlow.addView(tvAll);
-                } else {
-                    avatarFlow.addView(createVerticalMemberRow(clean));
-                }
-            }
+            if (!clean.isEmpty()) cleanNodes.add(clean);
         }
-        
+        int nodeCount = cleanNodes.size();
+        boolean isBroadcast = cleanNodes.contains("ALL CONNECTED DEVICES");
+
+        LinearLayout clusterHeader = new LinearLayout(this);
+        clusterHeader.setOrientation(LinearLayout.HORIZONTAL);
+        clusterHeader.setGravity(Gravity.CENTER_VERTICAL);
+        clusterHeader.setClickable(true);
+        clusterHeader.setFocusable(true);
+        clusterHeader.setPadding(0, scale(4), 0, scale(6));
+
+        ImageView ivClusterIcon = new ImageView(this);
+        ivClusterIcon.setImageResource(android.R.drawable.ic_menu_myplaces);
+        ivClusterIcon.setColorFilter(getGradientStart());
+        int cIconSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        clusterHeader.addView(ivClusterIcon, new LinearLayout.LayoutParams(cIconSize, cIconSize));
+
+        TextView lblCluster = new TextView(this);
+        if (isBroadcast) {
+            lblCluster.setText(" TARGET NODES (Global Sector Broadcast - All Paired)");
+        } else if (nodeCount == 1) {
+            lblCluster.setText(" TARGET NODES (1 Connected Device)");
+        } else {
+            lblCluster.setText(" TARGET NODES (" + nodeCount + " Connected Devices)");
+        }
+        lblCluster.setTextColor(getGradientStart());
+        lblCluster.setPadding(scale(8), 0, scale(8), 0);
+        lblCluster.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        UiArchitect.applyText(this, lblCluster, "TEXT_LABEL");
+        clusterHeader.addView(lblCluster);
+
+        TextView tvTrayToggle = new TextView(this);
+        tvTrayToggle.setText("▾ SHOW TRAY");
+        tvTrayToggle.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvTrayToggle, "TEXT_TINY");
+        clusterHeader.addView(tvTrayToggle);
+
+        card3.addView(clusterHeader);
+
+        View avatarFlow = createGroupedTreeTray(cleanNodes, id);
+        avatarFlow.setVisibility(View.GONE);
         card3.addView(avatarFlow);
+
+        clusterHeader.setOnClickListener(v -> {
+            if (avatarFlow.getVisibility() == View.VISIBLE) {
+                avatarFlow.setVisibility(View.GONE);
+                tvTrayToggle.setText("▾ SHOW TRAY");
+            } else {
+                avatarFlow.setVisibility(View.VISIBLE);
+                tvTrayToggle.setText("▴ HIDE TRAY");
+            }
+        });
 
         // 🚀 SUB-TILE 4: ACTIONS (Forensic Trigger Terminal)
         LinearLayout card4 = new LinearLayout(this);
@@ -828,20 +1489,34 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // Alert
         ImageView ivBell = new ImageView(this);
         ivBell.setImageResource(android.R.drawable.ic_popup_reminder);
-        ivBell.setColorFilter(alertsEnabled ? Color.parseColor("#4CAF50") : Color.GRAY);
+        ivBell.setColorFilter(alertsEnabled && isZoneActive ? Color.parseColor("#4CAF50") : Color.GRAY);
+        ivBell.setAlpha(isZoneActive ? 1.0f : 0.4f);
         ivBell.setPadding(bp, 0, 0, 0);
-        if (isZoneActive) ivBell.setOnClickListener(v -> viewModel.toggleBellAlertState(id, alertsEnabled));
+        ivBell.setOnClickListener(v -> {
+            if (isZoneActive) {
+                viewModel.toggleBellAlertState(id, alertsEnabled);
+            } else {
+                Toast.makeText(this, "Activate Safe Zone to configure alerts.", Toast.LENGTH_SHORT).show();
+            }
+        });
         card4.addView(ivBell, new LinearLayout.LayoutParams(iSize + bp, iSize));
 
         // History
         ImageView ivHist = new ImageView(this);
         ivHist.setImageResource(android.R.drawable.ic_menu_recent_history);
-        ivHist.setColorFilter(Color.parseColor("#FF9800"));
+        ivHist.setColorFilter(isZoneActive ? Color.parseColor("#FF9800") : Color.GRAY);
+        ivHist.setAlpha(isZoneActive ? 1.0f : 0.4f);
         ivHist.setPadding(bp, 0, 0, 0);
-        if (isZoneActive) ivHist.setOnClickListener(v -> viewModel.fetchGeofenceHistory(id));
+        ivHist.setOnClickListener(v -> {
+            if (isZoneActive) {
+                viewModel.fetchGeofenceHistory(id);
+            } else {
+                Toast.makeText(this, "Activate Safe Zone to view history logs.", Toast.LENGTH_SHORT).show();
+            }
+        });
         card4.addView(ivHist, new LinearLayout.LayoutParams(iSize + bp, iSize));
 
-        // Mission Edit (Assigment Redirect)
+        // Mission Edit (Assignment Redirect)
         ImageView ivEdit = new ImageView(this);
         ivEdit.setImageResource(android.R.drawable.ic_menu_edit);
         ivEdit.setPadding(bp, 0, 0, 0);
@@ -867,19 +1542,24 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // Spacer
         card4.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1.0f));
 
-        // Erase
+        // 📦 ARCHIVE SAFE ZONE (Non-destructive removal with all logs preserved)
         ImageView ivDel = new ImageView(this);
         ivDel.setImageResource(android.R.drawable.ic_menu_delete);
         ivDel.setColorFilter(Color.parseColor("#F44336"));
         ivDel.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(this).setTitle("ERASE PERIMETER?")
-                .setMessage("Are you sure you want to decommission this forensic safe zone?")
-                .setPositiveButton("ERASE", (d, w) -> { geofenceHelper.removeGeofence(id); viewModel.deleteCloudSafeguardZone(id); })
-                .setNegativeButton("Abort", null).show();
+            UiArchitect.showConfirmationDialog(this,
+                "ARCHIVE SAFE ZONE?",
+                "Move '" + name + "' into the Archive Folder? All historical notifications and trigger logs will be preserved in the archive vault.",
+                "ARCHIVE ZONE", "CANCEL",
+                () -> {
+                    geofenceHelper.removeGeofence(id);
+                    viewModel.archiveSafeZone(id);
+                },
+                null);
         });
         card4.addView(ivDel, new LinearLayout.LayoutParams(iSize, iSize));
 
-        mainHost.addView(card4);
+        mainHost.addView(card3);
 
         // 🚀 Intense Separator (Waterfall Hardening)
         View sep3 = new View(this);
@@ -887,7 +1567,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         sep3.setAlpha(0.3f); 
         mainHost.addView(sep3, new LinearLayout.LayoutParams(-1, 1));
 
-        mainHost.addView(card3);
+        mainHost.addView(card4);
 
         activeBoundariesContainer.addView(mainHost);
     }
@@ -977,7 +1657,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         activeBoundariesContainer.addView(nodeTile);
     }
 
-    private View createPresetTile(String name, String desc, int iconRes) {
+    private View createPresetTile(String name, String desc, int iconRes, View.OnClickListener clickListener) {
         LinearLayout tile = new LinearLayout(this);
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
@@ -1012,15 +1692,9 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         tile.setFocusable(true);
         tile.setClickable(true);
         applyAccessibility(tile, "Establish " + name + " Node");
-        tile.setOnClickListener(v -> {
+        tile.setOnClickListener(clickListener != null ? clickListener : v -> {
             pendingZoneName = name;
             openMapEditorState();
-            if (name.contains("Home")) {
-                viewModel.resolveActiveProfileAddress();
-                viewModel.getProfileAddress().observe(this, addr -> {
-                    if (addr != null && !addr.equals("Unknown Location")) viewModel.executeOSGeocodingQuery(addr);
-                });
-            }
         });
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -1030,102 +1704,359 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         return tile;
     }
 
-    private void editZone(RenderedGeofence zone) {
-        editingZoneId = zone.getId();
-        pendingZoneName = zone.getName();
-        
-        selectedNodes.clear();
-        if (zone.getAssignedName() != null) {
-            String[] parts = zone.getAssignedName().split(", ");
-            for (String p : parts) selectedNodes.add(p);
-        }
-        if (selectedNodes.isEmpty()) selectedNodes.add("ALL CONNECTED DEVICES");
-        
-        openMapEditorState();
-        
-        // 🚀 Restore HUD State
-        if (edtRadius != null) edtRadius.setText(String.valueOf((int)zone.getRadius()));
-        if (txtNodes != null) {
-            txtNodes.setText(selectedNodes.size() + " NODES SELECTED");
-            if (selectedNodes.size() == 1) txtNodes.setText(selectedNodes.get(0));
-        }
-        
-        LatLng target = new LatLng(zone.getLat(), zone.getLng());
-        viewModel.setDraftPin(target);
-        viewModel.executeCameraMove(target);
-
-        // 🚀 Temporal UI Restoration (AM/PM Baseline)
-        if (edtStart != null) {
-            edtStart.setText(formatToAmPm(zone.getStartTime()));
-        }
-        if (edtEnd != null) {
-            edtEnd.setText(formatToAmPm(zone.getEndTime()));
-        }
-        if (dayChecks != null) {
-            String days = zone.getActiveDays();
-            for(int i=0; i<7; i++) dayChecks[i].setChecked(days.contains(String.valueOf(i)));
-        }
-    }
-
     private void showTimePicker(EditText target) {
         String current = target.getText().toString();
         int h = 0, m = 0;
         try {
-            String[] parts = current.split(":");
-            h = Integer.parseInt(parts[0]);
-            m = Integer.parseInt(parts[1]);
+            int t24 = parseTo24H(current);
+            h = t24 / 100;
+            m = t24 % 100;
         } catch (Exception e) {}
 
         android.app.TimePickerDialog picker = new android.app.TimePickerDialog(this, (view, hour, minute) -> {
             target.setText(formatToAmPm(hour * 100 + minute));
-        }, h, m, false); // 🚀 Alarm Mode: Enable AM/PM Selection
+        }, h, m, false); // 🚀 12-Hour AM/PM Mode
         picker.show();
+        applyDialogTheme(picker);
     }
 
-    private View createVerticalMemberRow(String name) {
+    private View createGroupedTreeTray(java.util.List<String> cleanNodes, String zoneId) {
+        LinearLayout treeContainer = new LinearLayout(this);
+        treeContainer.setOrientation(LinearLayout.VERTICAL);
+        treeContainer.setPadding(0, scale(6), 0, scale(4));
+
+        java.util.List<String> guardians = new java.util.ArrayList<>();
+        java.util.List<String> children = new java.util.ArrayList<>();
+        java.util.List<String> friends = new java.util.ArrayList<>();
+        boolean hasBroadcast = false;
+
+        for (String node : cleanNodes) {
+            if (node.equals("ALL CONNECTED DEVICES")) {
+                hasBroadcast = true;
+                continue;
+            }
+            String role = currentRosterMap.containsKey(node) ? currentRosterMap.get(node).toUpperCase() : "PEER";
+            if (role.contains("GUARDIAN") || role.contains("ADMIN") || role.contains("PARENT") || role.contains("HOST")) {
+                guardians.add(node);
+            } else if (role.contains("CHILD") || role.contains("WARD") || role.contains("KID") || role.contains("SUBJECT")) {
+                children.add(node);
+            } else {
+                friends.add(node);
+            }
+        }
+
+        if (hasBroadcast) {
+            LinearLayout broadcastTile = new LinearLayout(this);
+            broadcastTile.setOrientation(LinearLayout.HORIZONTAL);
+            broadcastTile.setGravity(Gravity.CENTER_VERTICAL);
+            broadcastTile.setPadding(scale(10), scale(8), scale(10), scale(8));
+            UiArchitect.applyCardWithOverride(this, broadcastTile, "CARD_STANDARD", 0.95f);
+
+            TextView tvGlobe = new TextView(this);
+            tvGlobe.setText("🌐");
+            tvGlobe.setPadding(0, 0, scale(10), 0);
+            broadcastTile.addView(tvGlobe);
+
+            LinearLayout broadText = new LinearLayout(this);
+            broadText.setOrientation(LinearLayout.VERTICAL);
+            TextView tvAll = new TextView(this);
+            tvAll.setText("GLOBAL SECTOR BROADCAST");
+            tvAll.setTextColor(getGradientStart());
+            tvAll.setTypeface(null, Typeface.BOLD);
+            UiArchitect.applyText(this, tvAll, "TEXT_LABEL");
+            broadText.addView(tvAll);
+
+            TextView tvAllSub = new TextView(this);
+            tvAllSub.setText("All current and future linked devices will trigger dependent perimeter alerts.");
+            tvAllSub.setTextColor(getSecondaryTextColor());
+            UiArchitect.applyText(this, tvAllSub, "TEXT_TINY");
+            broadText.addView(tvAllSub);
+
+            broadcastTile.addView(broadText);
+            treeContainer.addView(broadcastTile);
+            treeContainer.addView(new View(this), new LinearLayout.LayoutParams(1, scale(6)));
+        }
+
+        if (!guardians.isEmpty()) {
+            treeContainer.addView(createTreeGroupHeader("🛡️ GUARDIANS & HOSTS", guardians.size()));
+            for (int i = 0; i < guardians.size(); i++) {
+                treeContainer.addView(createTreeMemberNodeRow(guardians.get(i), zoneId, i == guardians.size() - 1));
+            }
+        }
+
+        if (!children.isEmpty()) {
+            treeContainer.addView(createTreeGroupHeader("👶 CHILDREN & WARDS", children.size()));
+            for (int i = 0; i < children.size(); i++) {
+                treeContainer.addView(createTreeMemberNodeRow(children.get(i), zoneId, i == children.size() - 1));
+            }
+        }
+
+        if (!friends.isEmpty()) {
+            treeContainer.addView(createTreeGroupHeader("👥 FRIENDS & PEERS", friends.size()));
+            for (int i = 0; i < friends.size(); i++) {
+                treeContainer.addView(createTreeMemberNodeRow(friends.get(i), zoneId, i == friends.size() - 1));
+            }
+        }
+
+        return treeContainer;
+    }
+
+    private View createTreeGroupHeader(String title, int count) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(scale(10), scale(8), scale(10), scale(4));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(title + " (" + count + ")");
+        tvTitle.setTextColor(getGradientStart());
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvTitle, "TEXT_TINY");
+        header.addView(tvTitle);
+
+        View line = new View(this);
+        line.setBackgroundColor(getSecondaryTextColor());
+        line.setAlpha(0.2f);
+        LinearLayout.LayoutParams lLp = new LinearLayout.LayoutParams(0, 1, 1.0f);
+        lLp.setMargins(scale(10), 0, 0, 0);
+        header.addView(line, lLp);
+
+        return header;
+    }
+
+    private View createTreeMemberNodeRow(String name, String zoneId, boolean isLast) {
         String role = currentRosterMap.get(name);
         if (role == null) role = "PEER";
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        // 🚀 Hierarchy Indentation: Added 'Fab Space' for structural clarity
-        row.setPadding(scale(30), scale(5), 0, scale(5));
+        row.setPadding(scale(15), scale(4), scale(8), scale(4));
+
+        // Tree Branch Indicator
+        TextView tvBranch = new TextView(this);
+        tvBranch.setText(isLast ? "└── " : "├── ");
+        tvBranch.setTextColor(getSecondaryTextColor());
+        tvBranch.setTypeface(Typeface.MONOSPACE);
+        row.addView(tvBranch);
+
+        LinearLayout nodeCard = new LinearLayout(this);
+        nodeCard.setOrientation(LinearLayout.VERTICAL);
+        nodeCard.setPadding(scale(12), scale(6), scale(10), scale(6));
+        UiArchitect.applyCardWithOverride(this, nodeCard, "CARD_STANDARD", 0.92f);
+        nodeCard.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
 
         int s = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
 
-        // 🚀 Connectivity Indicator: Email Icon
-        ImageView ivMail = new ImageView(this);
-        ivMail.setImageResource(android.R.drawable.ic_dialog_email);
-        ivMail.setColorFilter(getGradientStart());
-        ivMail.setOnClickListener(v -> {
-            android.content.Intent route = new android.content.Intent(this, GeofenceNotificationActivity.class);
-            route.putExtra("TARGET_AVATAR", name);
-            startActivity(route);
+        // Profile Avatar Icon
+        ImageView ivAvatar = new ImageView(this);
+        ivAvatar.setImageResource(android.R.drawable.ic_menu_myplaces);
+        ivAvatar.setColorFilter(getGradientStart());
+        topRow.addView(ivAvatar, new LinearLayout.LayoutParams(s, s));
+
+        TextView tvName = new TextView(this);
+        tvName.setText(name + " (" + role.toUpperCase() + ")");
+        tvName.setTextColor(getTextColor());
+        tvName.setTypeface(null, Typeface.BOLD);
+        tvName.setPadding(scale(8), 0, 0, 0);
+        UiArchitect.applyText(this, tvName, "TEXT_LABEL");
+        topRow.addView(tvName, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        // Direct Logs Button [📜 LOGS]
+        TextView btnLogs = new TextView(this);
+        btnLogs.setText("📜 LOGS");
+        btnLogs.setTextColor(getGradientStart());
+        btnLogs.setTextSize(10);
+        btnLogs.setTypeface(null, Typeface.BOLD);
+        btnLogs.setPadding(scale(8), scale(4), scale(8), scale(4));
+        btnLogs.setOnClickListener(v -> {
+            java.util.List<String> logs = viewModel.getDeviceEventLogs(zoneId, name);
+            showGeofenceHistoryDialog(logs.toArray(new String[0]));
         });
-        row.addView(ivMail, new LinearLayout.LayoutParams(s, s));
+        topRow.addView(btnLogs);
 
-        TextView tvDetails = new TextView(this);
-        tvDetails.setText(" " + name + " (" + role.toUpperCase() + ")");
-        tvDetails.setTextColor(getTextColor());
-        tvDetails.setPadding(scale(10), 0, 0, 0);
-        UiArchitect.applyText(this, tvDetails, "TEXT_SUB");
-        row.addView(tvDetails, new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        // 🚀 TACTICAL SEND: Integrated Mission Handshake Terminal (Trailing Edge)
+        // Tactical Send Handshake [✈️]
         ImageView ivSend = new ImageView(this);
         ivSend.setImageResource(android.R.drawable.ic_menu_send);
         ivSend.setColorFilter(getGradientStart());
-        ivSend.setPadding(0, 0, getResponsivePaddingQuota(), 0);
+        ivSend.setPadding(scale(10), 0, scale(6), 0);
         ivSend.setOnClickListener(v -> {
-            ivSend.setColorFilter(Color.GRAY);
-            ivSend.setAlpha(0.5f);
-            android.widget.Toast.makeText(this, "Mission Handshake: " + name + "...", android.widget.Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Handshake dispatched to " + name + "...", Toast.LENGTH_SHORT).show();
             viewModel.sendForensicHandshakeRequest(name);
         });
-        row.addView(ivSend, new LinearLayout.LayoutParams(s + getResponsivePaddingQuota(), s));
+        topRow.addView(ivSend, new LinearLayout.LayoutParams(s + scale(16), s));
 
+        nodeCard.addView(topRow);
+
+        // Latest Event Log Snippet
+        java.util.List<String> devLogs = viewModel.getDeviceEventLogs(zoneId, name);
+        String latestLog = !devLogs.isEmpty() ? devLogs.get(0) : "No perimeter events recorded yet";
+        TextView tvEventSnippet = new TextView(this);
+        tvEventSnippet.setText(latestLog);
+        tvEventSnippet.setTextColor(getSecondaryTextColor());
+        tvEventSnippet.setTextSize(10);
+        tvEventSnippet.setPadding(s + scale(8), scale(2), 0, 0);
+        UiArchitect.applyText(this, tvEventSnippet, "TEXT_TINY");
+        nodeCard.addView(tvEventSnippet);
+
+        row.addView(nodeCard);
         return row;
+    }
+
+    private void showArchivedSafeZonesDialog() {
+        java.util.List<RenderedGeofence> archived = viewModel.getArchivedZones().getValue();
+        if (archived == null || archived.isEmpty()) {
+            Toast.makeText(this, "📦 Archive Folder is currently empty.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int p = getResponsivePaddingQuota();
+        container.setPadding(p, p, p, p);
+
+        // 🔍 ARCHIVE SEARCH & BULK ACTIONS
+        EditText etSearchArchive = new EditText(this);
+        etSearchArchive.setHint("🔍 Search archived safe zones...");
+        etSearchArchive.setPadding(scale(12), scale(8), scale(12), scale(8));
+        etSearchArchive.setTextColor(getTextColor());
+        applySolidCardGeometry(etSearchArchive, getCardColor(), 16f);
+        container.addView(etSearchArchive);
+
+        LinearLayout bulkActionBar = new LinearLayout(this);
+        bulkActionBar.setOrientation(LinearLayout.HORIZONTAL);
+        bulkActionBar.setGravity(Gravity.CENTER_VERTICAL);
+        bulkActionBar.setPadding(0, scale(8), 0, scale(12));
+
+        TextView btnRestoreAll = createPresetCapsule("🟢 RESTORE ALL", v -> {
+            UiArchitect.showConfirmationDialog(this,
+                "RESTORE ALL ARCHIVED ZONES?",
+                "Reactivate all archived safe zones back to active perimeter monitoring?",
+                "RESTORE ALL", "CANCEL",
+                () -> viewModel.restoreAllArchivedSafeZones(),
+                null);
+        });
+        TextView btnPurgeAll = createPresetCapsule("🗑️ PURGE ALL", v -> {
+            UiArchitect.showConfirmationDialog(this,
+                "PERMANENTLY PURGE ARCHIVE?",
+                "Permanently delete all archived safe zones and purge records from the cloud?",
+                "PURGE ALL", "ABORT",
+                () -> viewModel.purgeAllArchivedSafeZones(),
+                null);
+        });
+        bulkActionBar.addView(btnRestoreAll, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        bulkActionBar.addView(btnPurgeAll, new LinearLayout.LayoutParams(0, -2, 1.0f));
+        container.addView(bulkActionBar);
+
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        final java.util.Map<String, View> archViews = new java.util.HashMap<>();
+
+        for (RenderedGeofence zone : archived) {
+            LinearLayout zoneCard = new LinearLayout(this);
+            zoneCard.setOrientation(LinearLayout.VERTICAL);
+            UiArchitect.applyCardWithOverride(this, zoneCard, "CARD_STANDARD", 1.0f);
+            zoneCard.setPadding(p, p, p, p);
+
+            LinearLayout topRow = new LinearLayout(this);
+            topRow.setOrientation(LinearLayout.HORIZONTAL);
+            topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView tvTitle = new TextView(this);
+            tvTitle.setText("📦 " + zone.getName().toUpperCase());
+            tvTitle.setTextColor(getTextColor());
+            tvTitle.setTypeface(null, Typeface.BOLD);
+            UiArchitect.applyText(this, tvTitle, "TEXT_LABEL");
+            topRow.addView(tvTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+            // RESTORE BUTTON
+            TextView btnRestore = new TextView(this);
+            btnRestore.setText("RESTORE");
+            btnRestore.setTextColor(Color.parseColor("#4CAF50"));
+            btnRestore.setTypeface(null, Typeface.BOLD);
+            btnRestore.setPadding(scale(8), scale(4), scale(8), scale(4));
+            applySolidCardGeometry(btnRestore, getCardColor(), 12f);
+            btnRestore.setOnClickListener(v -> {
+                viewModel.restoreSafeZone(zone.getId());
+                Toast.makeText(this, "Safe Zone '" + zone.getName() + "' restored to active radar!", Toast.LENGTH_SHORT).show();
+            });
+            topRow.addView(btnRestore);
+
+            // PURGE BUTTON
+            TextView btnPurge = new TextView(this);
+            btnPurge.setText("PURGE");
+            btnPurge.setTextColor(Color.parseColor("#F44336"));
+            btnPurge.setTypeface(null, Typeface.BOLD);
+            btnPurge.setPadding(scale(8), scale(4), scale(8), scale(4));
+            applySolidCardGeometry(btnPurge, getCardColor(), 12f);
+            btnPurge.setOnClickListener(v -> {
+                UiArchitect.showConfirmationDialog(this,
+                    "PURGE ARCHIVED ZONE?",
+                    "Permanently delete '" + zone.getName() + "' from cloud and memory?",
+                    "PURGE", "CANCEL",
+                    () -> viewModel.purgeArchivedSafeZone(zone.getId()),
+                    null);
+            });
+            LinearLayout.LayoutParams pLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            pLp.setMargins(scale(6), 0, 0, 0);
+            topRow.addView(btnPurge, pLp);
+
+            zoneCard.addView(topRow);
+
+            TextView tvMeta = new TextView(this);
+            tvMeta.setText("Radius: " + (int) zone.getRadius() + "m • Targets: " + (zone.getAssignedName().isEmpty() ? "None" : zone.getAssignedName()));
+            tvMeta.setTextColor(getSecondaryTextColor());
+            UiArchitect.applyText(this, tvMeta, "TEXT_SUB");
+            zoneCard.addView(tvMeta);
+
+            // Preserved Notifications Button
+            TextView btnViewLogs = new TextView(this);
+            btnViewLogs.setText("📜 VIEW PRESERVED NOTIFICATIONS");
+            btnViewLogs.setTextColor(getGradientStart());
+            btnViewLogs.setTextSize(11);
+            btnViewLogs.setTypeface(null, Typeface.BOLD);
+            btnViewLogs.setPadding(0, scale(8), 0, 0);
+            btnViewLogs.setOnClickListener(v -> {
+                viewModel.fetchGeofenceHistory(zone.getId());
+            });
+            zoneCard.addView(btnViewLogs);
+
+            listContainer.addView(zoneCard);
+            listContainer.addView(new View(this), new LinearLayout.LayoutParams(1, scale(10)));
+            archViews.put(zone.getId(), zoneCard);
+        }
+
+        // Live Search Filter Watcher
+        etSearchArchive.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().toLowerCase().trim();
+                for (RenderedGeofence z : archived) {
+                    View v = archViews.get(z.getId());
+                    if (v != null) {
+                        boolean matches = query.isEmpty() || z.getName().toLowerCase().contains(query) || z.getAssignedName().toLowerCase().contains(query);
+                        v.setVisibility(matches ? View.VISIBLE : View.GONE);
+                    }
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        container.addView(listContainer);
+        scroll.addView(container);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setTitle("📦 ARCHIVED SAFE ZONES & NOTIFICATIONS (" + archived.size() + ")")
+            .setView(scroll)
+            .setPositiveButton("CLOSE", null)
+            .create();
+        dialog.show();
+        applyDialogTheme(dialog);
     }
 
     private View createSectionHeader(String t, String sub) {
@@ -1155,6 +2086,30 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     protected void setupLogic() {
         geofenceHelper = new GeofenceHelper(this);
         viewModel = new ViewModelProvider(this).get(GeofenceViewModel.class);
+
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (mapStateContainer != null && mapStateContainer.getVisibility() == View.VISIBLE) {
+                    String curName = (edtZoneName != null) ? edtZoneName.getText().toString().trim() : "";
+                    LatLng curDraft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
+                    if (!curName.isEmpty() && curDraft != null) {
+                        UiArchitect.showConfirmationDialog(GeofenceActivity.this,
+                            "SAVE MISSION NODE?",
+                            "You have uncommitted Safe Zone coordinates for '" + curName + "'. Would you like to deploy before leaving?",
+                            "DEPLOY NOW", "DISCARD",
+                            () -> {
+                                if (btnConfirm != null) btnConfirm.performClick();
+                            },
+                            () -> closeMapEditorState());
+                    } else {
+                        closeMapEditorState();
+                    }
+                } else {
+                    finish();
+                }
+            }
+        });
         
         // 🚀 "Establish New Domain" Bridge: Handle inbound dossier metadata
         String intentAddress = getIntent().getStringExtra("ESTABLISH_DOMAIN_ADDRESS");
@@ -1163,13 +2118,44 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             Toast.makeText(this, "De-encrypting Dossier Address: " + intentAddress, Toast.LENGTH_LONG).show();
             viewModel.executeOSGeocodingQuery(intentAddress);
             if (intentName != null) pendingZoneName = intentName;
+            openMapEditorState();
+        }
+
+        // 🚀 Target UID / Name Pre-selection from Family & Friends / Roster
+        String targetUid = getIntent().getStringExtra("TARGET_UID");
+        String targetName = getIntent().getStringExtra("TARGET_NAME");
+        String effectiveTarget = (targetName != null && !targetName.isEmpty()) ? targetName : targetUid;
+        if (effectiveTarget != null && !effectiveTarget.isEmpty()) {
+            selectedNodes.clear();
+            selectedNodes.add(effectiveTarget);
+            if (txtNodes != null) txtNodes.setText(effectiveTarget);
         }
 
         viewModel.getActiveZones().observe(this, renderedGeofences -> {
             if (activeBoundariesContainer != null) activeBoundariesContainer.removeAllViews();
             
+            if (renderedGeofences == null || renderedGeofences.isEmpty()) {
+                View emptyCard = UiArchitect.createEmptyStateCard(
+                    this,
+                    "No Safe Zones Established",
+                    "Create virtual geofence boundaries to receive instant alerts when linked devices enter or exit.",
+                    android.R.drawable.ic_menu_compass,
+                    "CREATE SAFE ZONE",
+                    () -> {
+                        if (mapStateContainer != null) {
+                            openMapEditorState();
+                        }
+                    }
+                );
+                if (activeBoundariesContainer != null) activeBoundariesContainer.addView(emptyCard);
+                return;
+            }
+
             // 🚀 Forensic Diffing Engine: Track current IDs to detect orphans
             List<String> currentIds = new ArrayList<>();
+            String selfUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            String selfAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+            int ownerZonesCount = 0;
             
             for (RenderedGeofence zone : renderedGeofences) {
                 String gId = zone.getId(); // 🚀 Use Forensic UID as the hardware anchor
@@ -1181,9 +2167,51 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                     geofenceHelper.removeGeofence(gId);
                 }
                 
-                // 🚀 UNIFIED MISSION NODE: Group all geospatial, temporal, and nodal data into a single card
-                addLocalGeofenceTile(zone.getId(), zone.getName(), zone.getAddress(), zone.getAssignedName(), zone.getLat(), zone.getLng(), zone.getRadius(), zone.getAlertsEnabled(), zone.isZoneActive(), zone.getStartTime(), zone.getEndTime(), zone.getActiveDays());
+                // 🛡️ OWNER ENFORCEMENT: Full boundary editor tiles show only to the Creator / Administrator
+                boolean isOwner = (zone.getCreatorUid() != null && zone.getCreatorUid().equals(selfUid))
+                    || (zone.getCreatorAgentId() != null && zone.getCreatorAgentId().equals(selfAgentId))
+                    || (zone.getCreatorUid() == null && zone.getCreatorAgentId() == null);
+
+                if (isOwner) {
+                    ownerZonesCount++;
+                    addLocalGeofenceTile(zone.getId(), zone.getName(), zone.getAddress(), zone.getAssignedName(), zone.getLat(), zone.getLng(), zone.getRadius(), zone.getAlertsEnabled(), zone.isZoneActive(), zone.getStartTime(), zone.getEndTime(), zone.getActiveDays());
+                }
             }
+
+            if (ownerZonesCount == 0) {
+                LinearLayout nonOwnerCard = new LinearLayout(this);
+                nonOwnerCard.setOrientation(LinearLayout.VERTICAL);
+                nonOwnerCard.setGravity(Gravity.CENTER);
+                int p = getResponsivePaddingQuota();
+                nonOwnerCard.setPadding(p * 2, p * 2, p * 2, p * 2);
+                UiArchitect.applyCard(this, nonOwnerCard, "CARD_STANDARD");
+
+                TextView tvNoOwner = new TextView(this);
+                tvNoOwner.setText("🛡️ NO SELF-CREATED BOUNDARIES");
+                tvNoOwner.setTextColor(getGradientMid());
+                tvNoOwner.setTypeface(null, Typeface.BOLD);
+                UiArchitect.applyText(this, tvNoOwner, "TEXT_LABEL");
+                nonOwnerCard.addView(tvNoOwner);
+
+                TextView tvSub = new TextView(this);
+                tvSub.setText("Active radar boundary editor tiles are only shown to the Safe Zone Creator / Administrator. Connected devices view assigned Safe Zones directly under their name in Family & Friends.");
+                tvSub.setTextColor(getSecondaryTextColor());
+                tvSub.setTextSize(11f);
+                tvSub.setGravity(Gravity.CENTER);
+                tvSub.setPadding(0, scale(6), 0, 0);
+                nonOwnerCard.addView(tvSub);
+
+                activeBoundariesContainer.addView(nonOwnerCard);
+            }
+            
+            // 📦 ARCHIVE VAULT BUTTON
+            java.util.List<RenderedGeofence> archList = viewModel.getArchivedZones().getValue();
+            int archCount = archList != null ? archList.size() : 0;
+            TextView btnOpenArchive = createPresetCapsule("📦 VIEW ARCHIVED SAFE ZONES (" + archCount + ")", v -> showArchivedSafeZonesDialog());
+            btnOpenArchive.setPadding(scale(16), scale(12), scale(16), scale(12));
+            LinearLayout.LayoutParams aLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            aLp.setMargins(0, scale(15), 0, scale(10));
+            activeBoundariesContainer.addView(btnOpenArchive, aLp);
             
             // Kill Orphans (Decommission zones no longer in cloud matrix)
             for (String oldId : new ArrayList<>(registeredGeofenceIds)) {
@@ -1195,6 +2223,12 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             registeredGeofenceIds.clear();
             registeredGeofenceIds.addAll(currentIds);
         });
+
+        viewModel.getArchivedZones().observe(this, archived -> {
+            // Live update for archived zones vault
+        });
+        viewModel.loadArchivedSafeZones();
+
         viewModel.getDraftCoordinateLocation().observe(this, latLng -> { if (latLng != null) renderMapDraftRings(latLng); else if (btnConfirmLocation != null) btnConfirmLocation.setVisibility(View.GONE); });
         
         // 🛰️ OBSERVER: Sync Targetable Nodes (L7 Lifecycle Fix)
@@ -1202,15 +2236,31 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         viewModel.getActiveTargetDevices().observe(this, newDevices -> {
             deviceList.clear();
             deviceList.addAll(newDevices);
+            if (targetUid != null) {
+                for (String dev : newDevices) {
+                    if (dev.equalsIgnoreCase(targetUid)) {
+                        selectedNodes.clear();
+                        selectedNodes.add(dev);
+                        if (txtNodes != null) txtNodes.setText(dev);
+                        break;
+                    }
+                }
+            }
         });
         
         viewModel.getUiToastEvent().observe(this, e -> { String m = e.getContentIfNotHandled(); if (m != null) Toast.makeText(this, m, Toast.LENGTH_SHORT).show(); });
         viewModel.getCameraMoveEvent().observe(this, e -> { LatLng t = e.getContentIfNotHandled(); if (t != null && googleMap != null) googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(t, 16f)); });
-        viewModel.getCloseMapEvent().observe(this, e -> { Boolean a = e.getContentIfNotHandled(); if (a != null && a) closeMapEditorState(); });
+        viewModel.getCloseMapEvent().observe(this, e -> { 
+            Boolean a = e.getContentIfNotHandled(); 
+            if (a != null && a) {
+                com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                closeMapEditorState(); 
+            }
+        });
         viewModel.getHistoryDialogEvent().observe(this, e -> {
             String[] logs = e.getContentIfNotHandled();
             if (logs != null) {
-                // ... (existing history logic) ...
+                showGeofenceHistoryDialog(logs);
             }
         });
 
@@ -1218,9 +2268,21 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         viewModel.getRosterMapping().observe(this, mapping -> {
             currentRosterMap.clear();
             currentRosterMap.putAll(mapping);
-            if (viewModel.getActiveZones().getValue() != null) {
-                // Refresh list to show updated roles/avatars
-                viewModel.fetchRosterMetadata();
+            if (targetName != null && !targetName.trim().isEmpty()) {
+                selectedNodes.clear();
+                selectedNodes.add(targetName.trim());
+                if (txtNodes != null) txtNodes.setText(targetName.trim());
+            } else if (targetUid != null && !targetUid.trim().isEmpty()) {
+                String resolvedName = mapping.get(targetUid.trim());
+                if (resolvedName != null && !resolvedName.trim().isEmpty()) {
+                    selectedNodes.clear();
+                    selectedNodes.add(resolvedName.trim());
+                    if (txtNodes != null) txtNodes.setText(resolvedName.trim());
+                } else if (mapping.containsKey(targetUid.trim())) {
+                    selectedNodes.clear();
+                    selectedNodes.add(targetUid.trim());
+                    if (txtNodes != null) txtNodes.setText(targetUid.trim());
+                }
             }
         });
     }
@@ -1236,15 +2298,17 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
     @Override
     protected void onUiRebuilt(android.os.Bundle savedState) {
-        // Restore visibility after orientation matrix re-calculation
-        if (isEditorActive) {
-            openMapEditorState();
+        if (savedState != null) {
+            // Restore visibility after orientation matrix re-calculation
+            if (isEditorActive) {
+                openMapEditorState();
+            }
+            
+            // 🛰️ Map Fragment Re-Injection: Forced handshake after layout re-pivot
+            com.google.android.gms.maps.SupportMapFragment mapFragment = com.google.android.gms.maps.SupportMapFragment.newInstance();
+            getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit();
+            mapFragment.getMapAsync(this);
         }
-        
-        // 🛰️ Map Fragment Re-Injection: Forced handshake after layout re-pivot
-        com.google.android.gms.maps.SupportMapFragment mapFragment = com.google.android.gms.maps.SupportMapFragment.newInstance();
-        getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit();
-        mapFragment.getMapAsync(this);
     }
 
 
@@ -1289,6 +2353,168 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         } catch (Exception e) { return 0; }
     }
 
+    private void showGeofenceHistoryDialog(String[] logs) {
+        int p = getResponsivePaddingQuota();
+        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setPadding(p, p, p, p);
+
+        // Header Subtitle
+        TextView tvSub = new TextView(this);
+        tvSub.setText("Realtime Data Tree • 1x Notice per Device (Dormant until opposite transition)");
+        tvSub.setTextColor(getSecondaryTextColor());
+        tvSub.setPadding(0, 0, 0, scale(10));
+        UiArchitect.applyText(this, tvSub, "TEXT_TINY");
+        rootLayout.addView(tvSub);
+
+        // Search Bar
+        EditText edtFilter = new EditText(this);
+        edtFilter.setHint("🔍 Search by device, date, or transition...");
+        edtFilter.setHintTextColor(Color.parseColor("#888888"));
+        edtFilter.setTextColor(getTextColor());
+        android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
+        fieldBg.setCornerRadius(scale(10));
+        fieldBg.setColor(getCardColor());
+        fieldBg.setStroke(1, Color.parseColor("#33888888"));
+        edtFilter.setBackground(fieldBg);
+        edtFilter.setPadding(scale(12), scale(10), scale(12), scale(10));
+        UiArchitect.applyText(this, edtFilter, "TEXT_BODY");
+        rootLayout.addView(edtFilter);
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
+        sLp.setMargins(0, scale(10), 0, scale(10));
+        scroll.setLayoutParams(sLp);
+
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(listContainer);
+        rootLayout.addView(scroll);
+
+        // Renderer for timeline entries
+        java.util.List<String> rawLogList = new ArrayList<>();
+        if (logs != null) {
+            for (String l : logs) {
+                if (l != null && !l.trim().isEmpty()) rawLogList.add(l.trim());
+            }
+        }
+
+        Runnable populateList = () -> {
+            listContainer.removeAllViews();
+            String filter = edtFilter.getText().toString().trim().toLowerCase();
+            List<String> filtered = new ArrayList<>();
+            for (String item : rawLogList) {
+                if (filter.isEmpty() || item.toLowerCase().contains(filter)) {
+                    filtered.add(item);
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                TextView empty = new TextView(this);
+                empty.setText("🛡️ No perimeter trigger events match your search.");
+                empty.setTextColor(getSecondaryTextColor());
+                empty.setGravity(Gravity.CENTER);
+                empty.setPadding(p, p * 2, p, p * 2);
+                UiArchitect.applyText(this, empty, "TEXT_BODY");
+                listContainer.addView(empty);
+                return;
+            }
+
+            String lastDate = "";
+            for (String item : filtered) {
+                // Extract Date Header if formatted as 📅 [YYYY-MM-DD]
+                String currentDate = "";
+                if (item.contains("📅 [") && item.contains("]")) {
+                    int startIdx = item.indexOf("📅 [") + 4;
+                    int endIdx = item.indexOf("]", startIdx);
+                    if (endIdx > startIdx) currentDate = item.substring(startIdx, endIdx);
+                }
+
+                if (!currentDate.isEmpty() && !currentDate.equalsIgnoreCase(lastDate)) {
+                    lastDate = currentDate;
+                    TextView dateHeader = new TextView(this);
+                    dateHeader.setText("📅 " + currentDate);
+                    dateHeader.setTextColor(getGradientStart());
+                    dateHeader.setTypeface(null, Typeface.BOLD);
+                    dateHeader.setPadding(scale(4), scale(12), scale(4), scale(4));
+                    UiArchitect.applyText(this, dateHeader, "TEXT_LABEL");
+                    listContainer.addView(dateHeader);
+                }
+
+                // Event Card
+                LinearLayout logItem = new LinearLayout(this);
+                logItem.setOrientation(LinearLayout.VERTICAL);
+                UiArchitect.applyCardWithOverride(this, logItem, "CARD_STANDARD", 0.9f);
+                logItem.setPadding(p, p / 2, p, p / 2);
+                
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(0, 0, 0, scale(6));
+                logItem.setLayoutParams(lp);
+
+                // Row: Status Pill + Details
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+
+                boolean isEnter = item.contains("ENTER") || item.contains("(IN)");
+                TextView badge = new TextView(this);
+                badge.setText(isEnter ? "🟢 IN" : "🔴 OUT");
+                badge.setTextColor(Color.WHITE);
+                badge.setTypeface(null, Typeface.BOLD);
+                badge.setPadding(scale(8), scale(3), scale(8), scale(3));
+                
+                android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
+                badgeBg.setCornerRadius(scale(12));
+                badgeBg.setColor(isEnter ? Color.parseColor("#2E7D32") : Color.parseColor("#C62828"));
+                badge.setBackground(badgeBg);
+                UiArchitect.applyText(this, badge, "TEXT_TINY");
+                row.addView(badge);
+
+                TextView tvLog = new TextView(this);
+                String displayLog = item;
+                if (item.contains("•")) {
+                    String[] parts = item.split("•");
+                    displayLog = parts[parts.length - 1].trim();
+                }
+                tvLog.setText("  " + displayLog);
+                tvLog.setTextColor(getTextColor());
+                tvLog.setTypeface(null, Typeface.BOLD);
+                tvLog.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+                UiArchitect.applyText(this, tvLog, "TEXT_BODY");
+                row.addView(tvLog);
+                logItem.addView(row);
+
+                // Dormancy State Subtitle
+                TextView tvDormant = new TextView(this);
+                tvDormant.setText("⚡ 1x Notice Emitted • State Latched (Dormant until opposite transition)");
+                tvDormant.setTextColor(getSecondaryTextColor());
+                tvDormant.setPadding(0, scale(4), 0, 0);
+                UiArchitect.applyText(this, tvDormant, "TEXT_TINY");
+                logItem.addView(tvDormant);
+
+                listContainer.addView(logItem);
+            }
+        };
+
+        populateList.run();
+
+        edtFilter.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                populateList.run();
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setTitle("📜 SAFE ZONE PERIMETER TIMELINE")
+            .setView(rootLayout)
+            .setPositiveButton("Close", null)
+            .create();
+        dialog.show();
+        applyDialogTheme(dialog);
+    }
+
     private View buildIdentityBlock() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1297,15 +2523,9 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         
         myAvatarField = new ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, myAvatarField);
+        myAvatarField.setBackground(null);
         
-        // 🚀 Premium Circular Avatar (Responsive Scaling)
         int avatarSize = scale(168); 
-        android.graphics.drawable.GradientDrawable c = new android.graphics.drawable.GradientDrawable();
-        c.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        c.setColor(Color.TRANSPARENT);
-        c.setStroke(scale(4), getGradientStart());
-        myAvatarField.setBackground(c);
-        
         row.addView(myAvatarField, new LinearLayout.LayoutParams(avatarSize, avatarSize));
         
         LinearLayout textBlock = new LinearLayout(this);
@@ -1318,12 +2538,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         
         // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
         String agentId = (myUid != null) ? db.resolveAgentIdLocally(myUid) : null;
-        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : "OWNER_001");
+        String fallbackOwner = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getOwnerAgentId(this);
+        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : fallbackOwner);
         
-        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-        String nameStr = (myDos != null && myDos.containsKey("fullName") && !myDos.get("fullName").isEmpty()) 
-                ? myDos.get("fullName") 
-                : (prefs != null ? prefs.getString("user_nickname", "User Identity") : "User Identity");
+        String nameStr = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
         
         TextView myName = new TextView(this);
         myName.setText("👤 Owner: " + nameStr);
@@ -1346,7 +2564,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         }
 
         String myUidCheck = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        String safeUid = (myUidCheck != null) ? myUidCheck : "MOCK_U123";
+        String safeUid = (myUidCheck != null) ? myUidCheck : (deviceId != null ? deviceId : "LOCAL_NODE");
         String upperFirebaseId = safeUid.toUpperCase();
 
         // --- 2. DEVICE UID ---

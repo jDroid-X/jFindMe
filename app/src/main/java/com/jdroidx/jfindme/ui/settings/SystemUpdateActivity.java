@@ -1,7 +1,11 @@
 package com.jdroidx.jfindme.ui.settings;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,7 +13,10 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.lifecycle.ViewModelProvider;
+import com.jdroidx.jfindme.BuildConfig;
+import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.AngelLoader;
@@ -26,10 +33,15 @@ public class SystemUpdateActivity extends BaseActivityJava {
     private SystemUpdateViewModel viewModel;
     private EditText emailField;
     private EditText driveLinkField;
+    private EditText githubLinkField;
     private android.widget.CheckBox silentUpdateCheck;
+    private TextView tvCurrentVersion;
     private TextView tvLastUpdate;
+    private TextView tvLastCheck;
+    private TextView tvLastDownload;
     private TextView tvUpdateAvailable;
     private TextView tvIsUpdatedStatus;
+    private TextView tvLastFailedInstall;
 
     @Override
     protected void setupLogic() {
@@ -45,6 +57,10 @@ public class SystemUpdateActivity extends BaseActivityJava {
 
         viewModel.getDriveLink().observe(this, link -> {
             if (driveLinkField != null) driveLinkField.setText(link);
+        });
+
+        viewModel.getGithubLink().observe(this, link -> {
+            if (githubLinkField != null) githubLinkField.setText(link);
         });
 
         viewModel.isSilentMode().observe(this, isEnabled -> {
@@ -75,24 +91,61 @@ public class SystemUpdateActivity extends BaseActivityJava {
             }
         });
 
-        viewModel.getActionComplete().observe(this, complete -> {
-            if (complete) {
-                triggerBinaryUpdate();
-                viewModel.resetActionState();
+        viewModel.getInstallPackageUrl().observe(this, url -> {
+            if (url != null) {
+                downloadAndInstallApk(url);
+                viewModel.resetInstallPackageUrl();
+            }
+        });
+
+        viewModel.getCheckResultDialog().observe(this, pair -> {
+            if (pair != null) {
+                showForensicDialog(pair.getFirst(), pair.getSecond());
+                viewModel.dismissCheckResultDialog();
             }
         });
 
         // Forensic Update Observers
+        viewModel.getCurrentVersionInfo().observe(this, info -> {
+            if (tvCurrentVersion != null) tvCurrentVersion.setText("📱 CURRENT INSTALLED VERSION: " + info);
+        });
+
         viewModel.getLastUpdateInfo().observe(this, info -> {
-            if (tvLastUpdate != null) tvLastUpdate.setText(info);
+            if (tvLastUpdate != null) tvLastUpdate.setText("🕒 LAST APP UPDATE / INSTALL: " + info);
+        });
+
+        viewModel.getLastCheckInfo().observe(this, info -> {
+            if (tvLastCheck != null) tvLastCheck.setText("🌐 LAST CHECKED ONLINE: " + info);
         });
 
         viewModel.getUpdateAvailableInfo().observe(this, info -> {
-            if (tvUpdateAvailable != null) tvUpdateAvailable.setText(info);
+            if (tvUpdateAvailable != null) tvUpdateAvailable.setText("📦 UPDATE AVAILABLE: " + info);
+        });
+
+        viewModel.getLastDownloadInfo().observe(this, info -> {
+            if (tvLastDownload != null) tvLastDownload.setText("📥 LAST DOWNLOADED PACKAGE: " + info);
         });
 
         viewModel.getUpdateStatusInfo().observe(this, info -> {
-            if (tvIsUpdatedStatus != null) tvIsUpdatedStatus.setText(info);
+            if (tvIsUpdatedStatus != null) tvIsUpdatedStatus.setText("🛡️ SYSTEM STATUS: " + info);
+        });
+
+        viewModel.getLastFailedInstallInfo().observe(this, info -> {
+            if (tvLastFailedInstall != null) {
+                tvLastFailedInstall.setText("❌ LAST FAILED INSTALL: " + info);
+                if (info != null && !info.startsWith("None")) {
+                    tvLastFailedInstall.setTextColor(Color.parseColor("#FF5252"));
+                } else {
+                    tvLastFailedInstall.setTextColor(getSecondaryTextColor());
+                }
+            }
+        });
+
+        // 🛡️ HUMAN-IN-THE-LOOP Installation Prompt Observer
+        viewModel.getShowInstallPrompt().observe(this, promptData -> {
+            if (promptData != null) {
+                showInstallGuidanceModal(promptData);
+            }
         });
     }
 
@@ -136,16 +189,81 @@ public class SystemUpdateActivity extends BaseActivityJava {
         // Label-and-Box Strategy (Google Account)
         master.addView(createLabel("REGISTERED GOOGLE ACCOUNT (*)"));
         emailField = createEnterpriseField("Reading hardware id...", android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        emailField.setEnabled(false);
-        emailField.setFocusable(false);
+        emailField.setEnabled(true);
+        emailField.setFocusable(true);
+        emailField.setFocusableInTouchMode(false);
+        emailField.setCursorVisible(false);
+        emailField.setKeyListener(null);
         master.addView(wrapField(emailField));
 
-        // Label-and-Box Strategy (Binary Source)
-        master.addView(createLabel("BINARY SOURCE LINK (*)"));
+        // Label-and-Box Strategy (Binary Source with Interactive Edit / Custom Link)
+        LinearLayout linkHeader = new LinearLayout(this);
+        linkHeader.setOrientation(LinearLayout.HORIZONTAL);
+        linkHeader.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView linkLbl = createLabel("BINARY SOURCE LINK (*)");
+        linkHeader.addView(linkLbl, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnEditLink = new TextView(this);
+        btnEditLink.setText("EDIT / PASTE LINK");
+        btnEditLink.setTextColor(getGradientStart());
+        btnEditLink.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnEditLink, "TEXT_MINI");
+        btnEditLink.setPadding(scale(15), scale(10), scale(15), scale(10));
+        btnEditLink.setClickable(true);
+        btnEditLink.setFocusable(true);
+        btnEditLink.setOnClickListener(v -> showEditLinkDialog());
+        linkHeader.addView(btnEditLink);
+
+        master.addView(linkHeader);
+
         driveLinkField = createEnterpriseField("Constructing link...", android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        driveLinkField.setEnabled(false);
-        driveLinkField.setFocusable(false);
+        driveLinkField.setEnabled(true);
+        driveLinkField.setFocusable(true);
+        driveLinkField.setFocusableInTouchMode(false);
+        driveLinkField.setCursorVisible(false);
+        driveLinkField.setKeyListener(null);
         master.addView(wrapField(driveLinkField));
+
+        // Label-and-Box Strategy (GitHub Source with Direct Browser & Install Actions)
+        LinearLayout ghHeader = new LinearLayout(this);
+        ghHeader.setOrientation(LinearLayout.HORIZONTAL);
+        ghHeader.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView ghLbl = createLabel("GITHUB REPOSITORY DISTRIBUTION (*)");
+        ghHeader.addView(ghLbl, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnOpenGh = new TextView(this);
+        btnOpenGh.setText("🌐 OPEN IN BROWSER");
+        btnOpenGh.setTextColor(getGradientStart());
+        btnOpenGh.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnOpenGh, "TEXT_MINI");
+        btnOpenGh.setPadding(scale(10), scale(10), scale(10), scale(10));
+        btnOpenGh.setClickable(true);
+        btnOpenGh.setFocusable(true);
+        btnOpenGh.setOnClickListener(v -> viewModel.openGithubInBrowser(this));
+        ghHeader.addView(btnOpenGh);
+
+        TextView btnEditGh = new TextView(this);
+        btnEditGh.setText("EDIT");
+        btnEditGh.setTextColor(getGradientStart());
+        btnEditGh.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnEditGh, "TEXT_MINI");
+        btnEditGh.setPadding(scale(10), scale(10), scale(10), scale(10));
+        btnEditGh.setClickable(true);
+        btnEditGh.setFocusable(true);
+        btnEditGh.setOnClickListener(v -> showEditGithubLinkDialog());
+        ghHeader.addView(btnEditGh);
+
+        master.addView(ghHeader);
+
+        githubLinkField = createEnterpriseField("Constructing GitHub link...", android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        githubLinkField.setEnabled(true);
+        githubLinkField.setFocusable(true);
+        githubLinkField.setFocusableInTouchMode(false);
+        githubLinkField.setCursorVisible(false);
+        githubLinkField.setKeyListener(null);
+        master.addView(wrapField(githubLinkField));
 
         // Interaction Toggle: Silent Update
         master.addView(createSilentUpdateNode());
@@ -157,9 +275,10 @@ public class SystemUpdateActivity extends BaseActivityJava {
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setWeightSum(3.0f);
 
-        View btnInstall = createSmallButton("INSTALL", android.R.drawable.ic_menu_save, true, v -> viewModel.executeInstall(this));
-        View btnUpdate = createSmallButton("UPDATE", com.jdroidx.jfindme.R.drawable.ic_edit, true, v -> viewModel.executeUpdate(this));
-        View btnCancel = createSmallButton("CANCEL", android.R.drawable.ic_menu_close_clear_cancel, false, v -> finish());
+        // Hooked to Version Selection Hub
+        View btnInstall = createSmallButton("INSTALL VERSION", android.R.drawable.ic_menu_save, true, v -> showVersionSelectionModal());
+        View btnUpdate = createSmallButton("CHECK UPDATE", android.R.drawable.ic_popup_sync, true, v -> viewModel.executeUpdate(this));
+        View btnCancel = createSmallButton("CLOSE", android.R.drawable.ic_menu_close_clear_cancel, false, v -> finish());
 
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         actionRow.addView(btnInstall, btnLp);
@@ -172,13 +291,126 @@ public class SystemUpdateActivity extends BaseActivityJava {
 
         master.addView(actionRow);
 
-        // --- FOOTER: Design Balance Matrix ---
+        // --- FOOTER: Dynamic Design Balance Matrix ---
         master.addView(createArchitecturalFooter());
 
         scroll.addView(master);
         root.addView(scroll);
 
         return root;
+    }
+
+    private void showVersionSelectionModal() {
+        String curVer = "V" + BuildConfig.VERSION_NAME + " (Build " + BuildConfig.VERSION_CODE + ")";
+
+        UiArchitect.OptionItem[] versionOptions = new UiArchitect.OptionItem[]{
+            new UiArchitect.OptionItem("⚡ LATEST PRODUCTION BUILD (Universal)", "Full architecture parity (Multi-Marker, SafeZone Radar, Roster Link)", android.R.drawable.ic_menu_save),
+            new UiArchitect.OptionItem("📥 GITHUB DISTRIBUTION (jButterfly main)", "Fetch latest production release directly from GitHub raw branch", android.R.drawable.ic_menu_set_as),
+            new UiArchitect.OptionItem("☁️ GOOGLE DRIVE CLOUD MIRROR", "Download mirrored build package from cloud Google Drive repository", android.R.drawable.ic_menu_upload),
+            new UiArchitect.OptionItem("🏷️ CHOOSE SPECIFIC VERSION / CUSTOM URL", "Enter custom version tag or custom APK binary link to download", android.R.drawable.ic_menu_edit),
+            new UiArchitect.OptionItem("🛡️ ARCHITECTURE / SIGNATURE CONFLICT GUIDE", "How to resolve 'App not installed' when switching Debug and Release builds", android.R.drawable.ic_menu_info_details)
+        };
+
+        UiArchitect.showRichOptionsDialog(this, "📦 SELECT VERSION TO UPDATE / INSTALL", versionOptions, (index, label) -> {
+            switch (index) {
+                case 0: // Latest Universal
+                    viewModel.executeInstall(this);
+                    break;
+                case 1: // GitHub
+                    viewModel.installGithubApk(this);
+                    break;
+                case 2: // Google Drive
+                    viewModel.executeInstall(this);
+                    break;
+                case 3: // Custom Version URL
+                    showEditLinkDialog();
+                    break;
+                case 4: // Architecture Guide
+                    showArchitectureHelpDialog();
+                    break;
+            }
+        });
+    }
+
+    private void showArchitectureHelpDialog() {
+        UiArchitect.showConfirmationDialog(this,
+            "🛡️ ARCHITECTURE & SIGNATURE UPDATE GUIDE",
+            "Why did 'App not installed' happen in previous versions?\n\n" +
+            "1. SIGNATURE MISMATCH: If your phone currently runs a DEBUG build (from Android Studio USB) and you try to install a RELEASE build from GitHub, Android OS security blocks the update.\n\n" +
+            "2. TO FIX THIS ISSUE:\n" +
+            "   • If updating from GitHub Release -> Uninstall existing Debug app once, then install the Release APK.\n" +
+            "   • Future Release-to-Release online updates will install smoothly in 1-click!\n\n" +
+            "3. PERMISSION: Ensure 'Install Unknown Apps' is enabled in Android Settings.",
+            "OPEN GITHUB RELEASES", "GOT IT",
+            () -> viewModel.openGithubInBrowser(this),
+            null
+        );
+    }
+
+    private void showEditLinkDialog() {
+        String current = viewModel.getDriveLink().getValue();
+        UiArchitect.showInputPromptDialog(this,
+            "🔗 CUSTOM BINARY SOURCE LINK",
+            "Enter or paste direct APK download URL...",
+            current != null ? current : "",
+            newLink -> {
+                if (newLink != null && !newLink.trim().isEmpty()) {
+                    boolean success = viewModel.updateCustomDriveLink(this, newLink.trim());
+                    if (success) {
+                        Toast.makeText(this, "Binary Source Link Updated.", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+    }
+
+    private void showEditGithubLinkDialog() {
+        String current = viewModel.getGithubLink().getValue();
+        UiArchitect.showInputPromptDialog(this,
+            "🔗 CUSTOM GITHUB REPOSITORY LINK",
+            "Enter or paste GitHub repository URL...",
+            current != null ? current : "",
+            newLink -> {
+                if (newLink != null && !newLink.trim().isEmpty()) {
+                    boolean success = viewModel.updateCustomGithubLink(this, newLink.trim());
+                    if (success) {
+                        Toast.makeText(this, "GitHub Repository Link Updated.", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+    }
+
+    private void showInstallGuidanceModal(SystemUpdateViewModel.InstallPromptData data) {
+        String ver = data != null ? data.getTargetVersion() : "Latest";
+        String sz = data != null ? data.getPackageSizeEst() : "";
+
+        UiArchitect.OptionItem[] updateOptions = new UiArchitect.OptionItem[]{
+            new UiArchitect.OptionItem("⚡ INSTALL NOW (Direct Download)", "Download and launch package installer immediately", android.R.drawable.ic_menu_save),
+            new UiArchitect.OptionItem("📥 Install from GitHub (jButterfly)", "Fetch latest release binary from GitHub repository", android.R.drawable.ic_menu_set_as),
+            new UiArchitect.OptionItem("📥 Install from Google Drive Mirror", "Download APK from cloud Google Drive storage", android.R.drawable.ic_menu_upload),
+            new UiArchitect.OptionItem("🌐 Open GitHub in Web Browser", "Visit releases page in your mobile browser", android.R.drawable.ic_menu_view),
+            new UiArchitect.OptionItem("⏱️ REMIND ME LATER", "Postpone update and remind on next cycle", android.R.drawable.ic_menu_recent_history)
+        };
+
+        UiArchitect.showRichOptionsDialog(this, "📦 SYSTEM UPDATE V" + ver + " (" + sz + ")", updateOptions, (index, label) -> {
+            viewModel.dismissInstallPrompt();
+            switch (index) {
+                case 0: // Direct install
+                    viewModel.executeInstall(this);
+                    break;
+                case 1: // GitHub
+                    viewModel.installGithubApk(this);
+                    break;
+                case 2: // Google Drive
+                    viewModel.executeInstall(this);
+                    break;
+                case 3: // Browser
+                    viewModel.openGithubInBrowser(this);
+                    break;
+                case 4: // Later
+                    Toast.makeText(this, "Update postponed. You will be reminded on next cycle.", Toast.LENGTH_SHORT).show();
+                    break;
+            }
+        });
     }
 
     private View createSilentUpdateNode() {
@@ -193,6 +425,15 @@ public class SystemUpdateActivity extends BaseActivityJava {
         glass.setStroke(2, getGradientStart());
         row.setBackground(glass);
 
+        row.setFocusable(true);
+        row.setClickable(true);
+        applyAccessibility(row, "Toggle Silent Update Mode");
+        row.setOnClickListener(v -> {
+            if (silentUpdateCheck != null) {
+                silentUpdateCheck.toggle();
+            }
+        });
+
         TextView label = new TextView(this);
         label.setText("SILENT UPDATE");
         label.setTextColor(getTextColor());
@@ -202,6 +443,8 @@ public class SystemUpdateActivity extends BaseActivityJava {
 
         silentUpdateCheck = new android.widget.CheckBox(this);
         silentUpdateCheck.setButtonTintList(android.content.res.ColorStateList.valueOf(getGradientStart()));
+        silentUpdateCheck.setFocusable(false);
+        silentUpdateCheck.setClickable(false);
         row.addView(silentUpdateCheck);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -212,25 +455,60 @@ public class SystemUpdateActivity extends BaseActivityJava {
         LinearLayout wrapper = new LinearLayout(this);
         wrapper.setOrientation(LinearLayout.VERTICAL);
 
-        tvLastUpdate = new TextView(this);
-        tvLastUpdate.setPadding(scale(10), scale(10), 0, scale(5));
-        tvLastUpdate.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
-        UiArchitect.applyText(this, tvLastUpdate, "TEXT_MINI");
-        wrapper.addView(tvLastUpdate);
+        LinearLayout cardMeta = new LinearLayout(this);
+        cardMeta.setOrientation(LinearLayout.VERTICAL);
+        cardMeta.setPadding(scale(15), scale(15), scale(15), scale(15));
+        android.graphics.drawable.GradientDrawable metaBg = new android.graphics.drawable.GradientDrawable();
+        metaBg.setCornerRadius(24f);
+        metaBg.setColor(Color.parseColor("#15" + String.format("%06X", (0xFFFFFF & getGradientStart()))));
+        metaBg.setStroke(2, Color.parseColor("#30" + String.format("%06X", (0xFFFFFF & getGradientStart()))));
+        cardMeta.setBackground(metaBg);
 
-        wrapper.addView(row);
+        tvCurrentVersion = new TextView(this);
+        tvCurrentVersion.setPadding(scale(5), scale(3), 0, scale(3));
+        tvCurrentVersion.setTextColor(getTextColor());
+        tvCurrentVersion.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvCurrentVersion, "TEXT_MINI");
+        cardMeta.addView(tvCurrentVersion);
+
+        tvLastUpdate = new TextView(this);
+        tvLastUpdate.setPadding(scale(5), scale(3), 0, scale(3));
+        tvLastUpdate.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvLastUpdate, "TEXT_MINI");
+        cardMeta.addView(tvLastUpdate);
+
+        tvLastCheck = new TextView(this);
+        tvLastCheck.setPadding(scale(5), scale(3), 0, scale(3));
+        tvLastCheck.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvLastCheck, "TEXT_MINI");
+        cardMeta.addView(tvLastCheck);
+
+        tvLastDownload = new TextView(this);
+        tvLastDownload.setPadding(scale(5), scale(3), 0, scale(3));
+        tvLastDownload.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvLastDownload, "TEXT_MINI");
+        cardMeta.addView(tvLastDownload);
 
         tvUpdateAvailable = new TextView(this);
-        tvUpdateAvailable.setPadding(scale(10), scale(5), 0, scale(2));
-        tvUpdateAvailable.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
+        tvUpdateAvailable.setPadding(scale(5), scale(3), 0, scale(3));
+        tvUpdateAvailable.setTextColor(getSecondaryTextColor());
         UiArchitect.applyText(this, tvUpdateAvailable, "TEXT_MINI");
-        wrapper.addView(tvUpdateAvailable);
+        cardMeta.addView(tvUpdateAvailable);
 
         tvIsUpdatedStatus = new TextView(this);
-        tvIsUpdatedStatus.setPadding(scale(10), 0, 0, scale(10));
-        tvIsUpdatedStatus.setTextColor(getSecondaryTextColor()); // Sync to L7 Secondary Text Palette
+        tvIsUpdatedStatus.setPadding(scale(5), scale(3), 0, scale(3));
+        tvIsUpdatedStatus.setTextColor(getSecondaryTextColor());
         UiArchitect.applyText(this, tvIsUpdatedStatus, "TEXT_MINI");
-        wrapper.addView(tvIsUpdatedStatus);
+        cardMeta.addView(tvIsUpdatedStatus);
+
+        tvLastFailedInstall = new TextView(this);
+        tvLastFailedInstall.setPadding(scale(5), scale(3), 0, scale(3));
+        tvLastFailedInstall.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvLastFailedInstall, "TEXT_MINI");
+        cardMeta.addView(tvLastFailedInstall);
+
+        wrapper.addView(cardMeta);
+        wrapper.addView(row);
         
         return wrapper;
     }
@@ -261,7 +539,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
         LinearLayout footer = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setGravity(Gravity.CENTER);
-        footer.setPadding(0, scale(40), 0, scale(40)); // Adjusted for more content
+        footer.setPadding(0, scale(40), 0, scale(40));
 
         int lottieId = getResources().getIdentifier("butterfly_angel", "raw", getPackageName());
         if (lottieId != 0) {
@@ -269,7 +547,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
             lottie.setAnimation(lottieId);
             lottie.setRepeatCount(LottieDrawable.INFINITE);
             lottie.playAnimation();
-            int bSize = scale(180); // Scaled slightly for better balance
+            int bSize = scale(180);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(bSize, bSize);
             lp.gravity = Gravity.CENTER_HORIZONTAL;
             footer.addView(lottie, lp);
@@ -283,12 +561,12 @@ public class SystemUpdateActivity extends BaseActivityJava {
         name.setAlpha(0.9f);
         footer.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // Enterprise Version Stack (Hardened Horizontal Alignment)
+        // Enterprise Version Stack (Dynamically mapped from BuildConfig & System Modules)
         LinearLayout.LayoutParams verLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        footer.addView(createVersionLine("ENTERPRISE BUILD: V1.0.0 (SECURE)"), verLp);
-        footer.addView(createVersionLine("DATABASE VERSION: SYNC V4.02.21"), verLp);
-        footer.addView(createVersionLine("L7 ARCHITECTURE: CORE V7.2.4"), verLp);
-        footer.addView(createVersionLine("TRACKING ENGINE: BETA 18.1.0"), verLp);
+        footer.addView(createVersionLine("ENTERPRISE BUILD: V" + BuildConfig.VERSION_NAME + " (CODE " + BuildConfig.VERSION_CODE + ")"), verLp);
+        footer.addView(createVersionLine("DATABASE SCHEMA: V" + DatabaseHelper.DATABASE_VERSION + " (EPOCH-AWARE)"), verLp);
+        footer.addView(createVersionLine("UI ARCHITECT STAGE: " + UiArchitect.getStage(this).name()), verLp);
+        footer.addView(createVersionLine("OS ENVIRONMENT: ANDROID " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"), verLp);
 
         return footer;
     }
@@ -300,7 +578,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
         ver.setGravity(Gravity.CENTER_HORIZONTAL);
         UiArchitect.applyText(this, ver, "TEXT_MINI");
         ver.setAlpha(0.6f);
-        ver.setPadding(0, scale(2), 0, 0); // Subtle inter-line spacing
+        ver.setPadding(0, scale(2), 0, 0);
         return ver;
     }
 
@@ -348,15 +626,43 @@ public class SystemUpdateActivity extends BaseActivityJava {
         return v;
     }
 
-    private void triggerBinaryUpdate() {
-        try {
-            String link = viewModel.getDriveLink().getValue();
-            if (link != null) {
-                android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link));
-                startActivity(intent);
+    private void downloadAndInstallApk(String url) {
+        if (url == null || url.trim().isEmpty()) return;
+        com.jdroidx.jfindme.utils.ApkInstallerHelper.INSTANCE.downloadAndInstall(this, url, success -> {
+            if (Boolean.TRUE.equals(success)) {
+                Toast.makeText(this, "Package downloaded. Launching installer...", Toast.LENGTH_SHORT).show();
             }
-        } catch (Exception e) {
-            showForensicDialog("Protocol Execution Blocked", "The hardware browser node could not be activated for binary sync.");
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        com.jdroidx.jfindme.utils.ApkInstallerHelper.INSTANCE.resumePendingInstall(this);
+    }
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null) return;
+        if (driveLinkField != null) {
+            outState.putString("SAVED_SOURCE_LINK", driveLinkField.getText().toString());
+        }
+        if (githubLinkField != null) {
+            outState.putString("SAVED_GITHUB_LINK", githubLinkField.getText().toString());
+        }
+    }
+
+    @Override
+    protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState == null) return;
+        String link = savedState.getString("SAVED_SOURCE_LINK");
+        if (driveLinkField != null && link != null && !link.isEmpty()) {
+            driveLinkField.setText(link);
+        }
+        String ghLink = savedState.getString("SAVED_GITHUB_LINK");
+        if (githubLinkField != null && ghLink != null && !ghLink.isEmpty()) {
+            githubLinkField.setText(ghLink);
         }
     }
 }

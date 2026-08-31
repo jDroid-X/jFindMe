@@ -5,18 +5,25 @@ import android.os.Looper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ServerValue
+import com.jdroidx.jfindme.data.remote.FirebaseComm
+import com.jdroidx.jfindme.engine.EngineRegistry
 import com.jdroidx.jfindme.utils.SystemLogger
 
 /**
- * PHASE 3 BLUEPRINT: AVATAR CUSTOMIZATION LOGIC WITH BACKEND SYNC
- * Implementation of the sophisticated Queue + Debounce + Version Conflict systems.
- * Prevents Firebase overloading while guaranteeing Multi-Device consistency.
+ * AvatarSyncEngine — Avatar customization sync with debounce, version control,
+ * and closed-loop ProfileActivity → MapEngine propagation.
+ *
+ * AUDIT FIX [AUD-007]: Was writing to 'users/' collection.
+ *   → Corrected to 'devices/' which is the authoritative RTDB root.
+ * AUDIT FIX [LOOP-001]: Added propagateAvatarUpdate() for ProfileActivity
+ *   closed-loop callback → MultiMarkerEngine callout refresh.
  */
 object AvatarSyncEngine {
     private const val TAG = "AvatarSyncEngine"
-    
+
     // 1. DATA MODEL STRUCTURAL BINDINGS
-    private val database = FirebaseDatabase.getInstance().reference.child("users")
+    // AUDIT FIX [AUD-007]: Corrected from 'users/' to 'devices/' (authoritative RTDB root)
+    private val devicesRef = FirebaseDatabase.getInstance().reference.child(FirebaseComm.NODE_DEVICES)
     
     // 3. SYNC QUEUE SYSTEM (CRITICAL)
     private val pendingUpdates = mutableMapOf<String, Any>()
@@ -53,7 +60,7 @@ object AvatarSyncEngine {
     private fun flushQueueToFirebase() {
         if (pendingUpdates.isEmpty()) return
 
-        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: "U123" // Fallback for QA Testing
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return // Never write without auth
         
         // 5. CONFLICT RESOLUTION (VERSION CONTROL)
         // Increment the physical version number and attach a server timestamp
@@ -68,19 +75,28 @@ object AvatarSyncEngine {
             payload["appearance/$key"] = value
         }
 
-        // Execute partial update() command! Prevents overwriting unrelated nodes explicitly.
-        database.child(userId).child("avatar_config").updateChildren(payload)
-            .addOnSuccessListener {
-                SystemLogger.i(TAG, "Sync Pipeline Executed Successfully. Version: $localVersionCounter")
-                pendingUpdates.clear() // Wipe queue ONLY on success 
+        // Resolve the agentId before writing (uses devices/ root, not users/)
+        FirebaseComm.resolveHardwareIdentity(userId) { agentId ->
+            val finalId = agentId ?: return@resolveHardwareIdentity
+
+            // Execute partial update() — prevents overwriting unrelated nodes
+            devicesRef.child(finalId).child("profile").updateChildren(payload)
+                .addOnSuccessListener {
+                    SystemLogger.i(TAG, "Avatar sync executed. agentId=$finalId version=$localVersionCounter")
+                    pendingUpdates.clear() // Wipe queue ONLY on success
                 
                 // 10. END-TO-END FLOW: Broadcast to Unity Runtime via JNI
-                broadcastToUnitySandbox(payload)
-            }
-            .addOnFailureListener { error ->
-                SystemLogger.e(TAG, "Network Drop! Keeping items in Local Queue to Retry later.", error)
-                // Exception handling: Do nothing. Queue remains intact for next retry loop.
-            }
+                    broadcastToUnitySandbox(payload)
+                    // Notify closed-loop listeners (e.g. MultiMarkerEngine refresh)
+                    closedLoopCallbacks.forEach { callback -> callback(finalId, payload) }
+                    // 📝 AUDIT CHANGE LOG: Record Profile mutation under /devices/{finalId}/Change_Log/Profile
+                    FirebaseComm.logChange(finalId, FirebaseComm.LOG_ITEM_PROFILE, "AVATAR_UPDATE", finalId, payload)
+                }
+                .addOnFailureListener { error ->
+                    SystemLogger.e(TAG, "Network Drop! Queue retained for retry. version=$localVersionCounter", error)
+                    // Queue remains intact for next retry loop
+                }
+        }
     }
 
     /**
@@ -111,4 +127,78 @@ object AvatarSyncEngine {
     fun syncAnimationState(animationName: String) {
         queueCustomizationUpdate("animation_state", animationName.lowercase())
     }
+
+    // ─── CLOSED-LOOP PROPAGATION (LOOP-001 Fix) ───────────────────────────────
+
+    /**
+     * Callbacks registered by ProfileActivity (via ProfileViewModel) to be notified
+     * when an avatar sync completes, so MapEngine markers can be refreshed.
+     * @param callback  Lambda(agentId: String, payload: Map<String, Any>)
+     */
+    private val closedLoopCallbacks = mutableListOf<(String, Map<String, Any>) -> Unit>()
+
+    @JvmStatic
+    fun registerClosedLoopCallback(callback: @JvmSuppressWildcards (agentId: String, payload: Map<String, Any>) -> Unit) {
+        if (!closedLoopCallbacks.contains(callback)) {
+            closedLoopCallbacks.add(callback)
+            SystemLogger.d(TAG, "Closed-loop callback registered. Total: ${closedLoopCallbacks.size}")
+        }
+    }
+
+    @JvmStatic
+    fun unregisterClosedLoopCallback(callback: @JvmSuppressWildcards (agentId: String, payload: Map<String, Any>) -> Unit) {
+        closedLoopCallbacks.remove(callback)
+    }
+
+    /**
+     * Propagates avatar and name change to all linked roster nodes and group hubs.
+     * Called by ProfileViewModel after syncForensicHeartbeat() succeeds.
+     * @param agentId     The agent whose avatar changed
+     * @param newAvatarId The new avatar resource identifier
+     * @param newName     The updated display name
+     */
+    fun propagateAvatarUpdate(agentId: String, newAvatarId: String, newName: String) {
+        if (agentId.isBlank()) return
+        val update = mapOf(
+            "avatar_id" to newAvatarId,
+            "name" to newName,
+            "fullName" to newName,
+            "userName" to newName,
+            "updated_at" to ServerValue.TIMESTAMP
+        )
+        
+        // 1. Direct device profile & telemetry nodes
+        devicesRef.child(agentId).child("profile").updateChildren(update)
+            .addOnSuccessListener {
+                devicesRef.child(agentId).child("device").child("live").child("avatar_id").setValue(newAvatarId)
+                devicesRef.child(agentId).child("device").child("live").child("userName").setValue(newName)
+                devicesRef.child(agentId).child("Identity").child("avatar_id").setValue(newAvatarId)
+                com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+                
+                // 2. Cascade update to all active Group Hubs where this agent belongs
+                devicesRef.child(agentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
+                    val groupId = grpSnap.getValue(String::class.java)
+                    if (!groupId.isNullOrEmpty()) {
+                        val relRef = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.child(groupId)
+                        relRef.child("members").child(agentId).updateChildren(mapOf(
+                            "avatar_id" to newAvatarId,
+                            "name" to newName,
+                            "display_name" to newName
+                        ))
+                        relRef.child("citizen_dossiers").child(agentId).updateChildren(mapOf(
+                            "avatar_id" to newAvatarId,
+                            "fullName" to newName,
+                            "name" to newName
+                        ))
+                    }
+                }
+                
+                SystemLogger.i(TAG, "LOOP-001 Avatar propagation complete across cloud matrix: agentId=$agentId avatar=$newAvatarId")
+                closedLoopCallbacks.forEach { cb -> cb(agentId, update) }
+            }
+            .addOnFailureListener { e ->
+                SystemLogger.e(TAG, "LOOP-001 Avatar propagation failed for agentId=$agentId", e)
+            }
+    }
 }
+

@@ -43,9 +43,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _geofenceAlertTrigger = MutableLiveData<String>()
     val geofenceAlertTrigger: LiveData<String> = _geofenceAlertTrigger
 
-    // ≡ƒöÆ Security Matrix: Restricts the visible universe to local verified family members only
+    private val _safeZones = MutableLiveData<List<com.jdroidx.jfindme.data.model.SafeZoneModel>>()
+    val safeZones: LiveData<List<com.jdroidx.jfindme.data.model.SafeZoneModel>> = _safeZones
+
+    // 🛡️ Security Matrix: Restricts the visible universe to local verified family members only
     private val familyMeshIds = mutableSetOf<String>()
     private var activeGroupAlertListener: com.google.firebase.database.ChildEventListener? = null
+    private var activeAlertRef: com.google.firebase.database.DatabaseReference? = null
+    private val activeValueListeners = mutableMapOf<com.google.firebase.database.Query, com.google.firebase.database.ValueEventListener>()
     
     private val _currentUserRole = MutableLiveData<String>("VIEWER")
     val currentUserRole: LiveData<String> get() = _currentUserRole
@@ -67,11 +72,58 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         loadLocalDossier()
+        loadSafeZones()
     }
 
     private fun loadLocalDossier() {
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
         _userDossier.postValue(db.getLocalDossier(auth.uid ?: ""))
+    }
+
+    fun loadSafeZones() {
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+        val localZones = db.getActiveSafeZones()
+        if (localZones.isNotEmpty()) {
+            _safeZones.postValue(localZones)
+        }
+        
+        val currentGroupId = getApplication<Application>()
+            .getSharedPreferences("system_registry", Application.MODE_PRIVATE)
+            .getString("current_group_id", null) ?: "DEFAULT_GROUP"
+
+        FirebaseDatabase.getInstance().reference.child("safe_zones").child(currentGroupId)
+            .addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val cloudZones = mutableListOf<com.jdroidx.jfindme.data.model.SafeZoneModel>()
+                    for (child in snapshot.children) {
+                        try {
+                            val model = child.getValue(com.jdroidx.jfindme.data.model.SafeZoneModel::class.java)
+                            if (model != null && (model.lat != 0.0 || model.lng != 0.0)) {
+                                if (model.zoneId.isEmpty()) model.zoneId = child.key ?: ""
+                                cloudZones.add(model)
+                                db.writableDatabase.let { sdb ->
+                                    com.jdroidx.jfindme.data.local.tables.SafeZoneTable.save(
+                                        sdb, model.zoneId, model.name, model.lat, model.lng,
+                                        model.radius.toDouble(), null, model.assignedName,
+                                        model.alertsEnabled, model.isZoneActive
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    if (cloudZones.isNotEmpty()) {
+                        _safeZones.postValue(cloudZones)
+                    }
+                }
+                override fun onCancelled(error: DatabaseError) {}
+            })
+    }
+
+    fun refreshLocations() {
+        fetchCurrentUserRole()
+        bindSecureFamilyMesh()
+        loadLocalDossier()
+        loadSafeZones()
     }
 
     fun setFilterMode(mode: String) {
@@ -82,18 +134,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun getCurrentFilterMode(): String = currentFilterMode
 
     private fun applyTacticalFilter() {
-        val safeUid = auth.uid ?: return
+        val safeUid = auth.uid ?: ""
+        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
         
         // Step 1: Baseline Group Mesh Isolation
-        val authorized = rawLocationCache.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+        val authorized = rawLocationCache.filter { 
+            val uid = it.getResolvedUserId()
+            familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid)
+        }
         
         // Step 2: User-Driven Tactical Filter Application
         val filtered = when (currentFilterMode) {
             "FAMILY" -> authorized.filter { 
-                it.userId == safeUid || (!it.role_family.equals("None", true) && it.role_family.isNotBlank())
+                val uid = it.getResolvedUserId()
+                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || (!it.role_family.equals("None", true) && it.role_family.isNotBlank())
             }
             "FRIENDS" -> authorized.filter { 
-                it.userId == safeUid || (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank())
+                val uid = it.getResolvedUserId()
+                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank())
             }
             else -> authorized // ALL
         }
@@ -108,7 +166,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 // 🚀 V67.2: Relational Bridge - Use Agent Hub, NOT Legacy users node
                 FirebaseComm.resolveHardwareIdentity(safeUid) { agentId ->
                     val finalId = agentId ?: safeUid
-                    rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                    val deviceRef = rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId)
+                    
+                    activeValueListeners[deviceRef]?.let { deviceRef.removeEventListener(it) }
+
+                    val deviceListener = object : com.google.firebase.database.ValueEventListener {
                         override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                             val myGroupId = snapshot.child("profile").child("active_group").getValue(String::class.java)
                             val linkCsvRaw = snapshot.child("profile").child("valid_linked_uids").getValue(String::class.java) ?: ""
@@ -120,8 +182,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             val explicitFriendUids = mutableSetOf<String>()
                             friendMatrix.children.forEach { explicitFriendUids.add(it.key ?: "") }
                             
+                            // Seed mesh from local SQLite Roster (SSOT)
+                            try {
+                                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+                                val offlineRoster = db.getOfflineRoster()
+                                for (node in offlineRoster) {
+                                    val u1 = node["uid_1"] as? String
+                                    val u2 = node["uid_2"] as? String
+                                    if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
+                                    if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
+                                }
+                            } catch (e: Exception) {
+                                SystemLogger.e(TAG, "Offline roster mesh seed error", e)
+                            }
+
                             if (myGroupId == null || myGroupId.isEmpty()) {
-                                familyMeshIds.clear()
                                 familyMeshIds.addAll(explicitFriendUids) // 🚀 QA Fix: P2P Friendship Stability (V9.8)
                                 val currentRaw = repository.userLocations.value ?: return
                                 val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
@@ -129,47 +204,100 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 return
                             }
                             
-                            // 🚀 V67.2: Unified Forensic Hub Query
-                            rootDb.child(FirebaseComm.NODE_DEVICES).orderByChild("profile/active_group").equalTo(myGroupId).addValueEventListener(object : com.google.firebase.database.ValueEventListener {
-                                override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
-                                    val newMesh = mutableSetOf<String>()
-                                    newMesh.addAll(explicitFriendUids) // Preserving 1-to-1 pairings in the hybrid mesh!
+                            val defaultGroup = "GRP_" + finalId
+                            val effectiveGroup = if (!myGroupId.isNullOrBlank() && myGroupId != "DEFAULT_GROUP") myGroupId else defaultGroup
+                            
+                            // 🚀 Strict Security: Only query real private group relationships, never global DEFAULT_GROUP
+                            val relMembersRef = FirebaseComm.relationshipsRef.child(effectiveGroup).child("members")
+                            activeValueListeners[relMembersRef]?.let { relMembersRef.removeEventListener(it) }
 
-                                    groupSnap.children.forEach { 
-                                        val possibleNodeId = it.key ?: ""
-                                        val thisNodeRole = it.child("profile").child("role_family").getValue(String::class.java) ?: "None"
-                                        
-                                        // 🛡️ MASTER TRUST HEURISTICS: 
-                                        if (approvedUids.contains(possibleNodeId) || possibleNodeId == safeUid || thisNodeRole == "Father" || thisNodeRole == "Mother") {
-                                            newMesh.add(possibleNodeId)
-                                        } else {
-                                            // Default Stability: If you share a group, you should be visible to prevent blinking!
-                                            newMesh.add(possibleNodeId)
+                            val relListener = object : com.google.firebase.database.ValueEventListener {
+                                override fun onDataChange(membersSnap: com.google.firebase.database.DataSnapshot) {
+                                    val newMesh = mutableSetOf<String>()
+                                    newMesh.add(finalId)
+                                    newMesh.add(safeUid)
+                                    newMesh.addAll(explicitFriendUids)
+                                    newMesh.addAll(approvedUids)
+
+                                    // Add offline verified members from SQLite SSOT
+                                    try {
+                                        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+                                        for (node in db.getOfflineRoster()) {
+                                            val u1 = node["uid_1"] as? String
+                                            val u2 = node["uid_2"] as? String
+                                            val connId = node["connected_id"] as? String
+                                            if (!u1.isNullOrBlank()) newMesh.add(u1.trim())
+                                            if (!u2.isNullOrBlank()) newMesh.add(u2.trim())
+                                            if (!connId.isNullOrBlank()) newMesh.add(connId.trim())
                                         }
+                                    } catch (e: Exception) { }
+
+                                    // Add verified cloud circle members from private relationships node
+                                    membersSnap.children.forEach { memberNode ->
+                                        val mId = memberNode.key ?: ""
+                                        if (mId.isNotEmpty()) newMesh.add(mId)
                                     }
-                                    
+
                                     familyMeshIds.clear()
                                     familyMeshIds.addAll(newMesh)
-                                    
-                                    // Retrigger the visual layer organically
+
                                     val currentRaw = repository.userLocations.value ?: return
-                                    val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
+                                    val authorized = currentRaw.filter { loc ->
+                                        val uId = loc.getResolvedUserId()
+                                        uId == safeUid || uId == finalId || familyMeshIds.contains(uId)
+                                    }
                                     _filteredLocations.postValue(authorized)
                                 }
                                 override fun onCancelled(e: com.google.firebase.database.DatabaseError) {
-                                    SystemLogger.e(TAG, "Map HUD Sync Dropped", e.toException())
+                                    SystemLogger.e(TAG, "Relationships Sync Dropped: ${e.message}")
                                 }
-                            })
+                            }
+                            relMembersRef.addValueEventListener(relListener)
+                            activeValueListeners[relMembersRef] = relListener
 
-                            // 🛡️ PHASE 2 QA: Listen strictly for Children broadcasting Safe Zone Violations
-                            if (activeGroupAlertListener != null) rootDb.child(FirebaseComm.NODE_DEVICES).child(myGroupId).child("alerts").removeEventListener(activeGroupAlertListener!!)
+                            // 🛡️ PHASE 2 QA: Listen strictly for Safe Zone Notifications & Perimeter Breaches (Live Only & Dormancy Latched)
+                            val alertRef = FirebaseComm.relationshipsRef.child(myGroupId).child("notifications")
+                            if (activeGroupAlertListener != null && activeAlertRef != null) {
+                                activeAlertRef!!.removeEventListener(activeGroupAlertListener!!)
+                            }
+                            
+                            val listenerAttachTime = System.currentTimeMillis()
+                            val lastSeenZoneStateMap = mutableMapOf<String, String>()
+                            
                             activeGroupAlertListener = object : com.google.firebase.database.ChildEventListener {
                                 override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {
-                                    val alertMessage = snapshot.getValue(String::class.java)
-                                    if (alertMessage != null) {
-                                        SystemLogger.w(TAG, "Intercepted Geofence Breach: $alertMessage")
-                                        _geofenceAlertTrigger.postValue(alertMessage)
+                                    val map = snapshot.value as? Map<*, *>
+                                    val alertTs = snapshot.child("timestamp").value?.toString()?.toLongOrNull() ?: 0L
+                                    
+                                    // 🛑 SUPPRESS STALE ALERTS: Ignore alerts older than when the Map screen opened (5s buffer)
+                                    if (alertTs > 0 && alertTs < listenerAttachTime - 5000L) {
+                                        return
                                     }
+
+                                    val avatar = map?.get("avatar_name")?.toString() ?: "Asset"
+                                    val zone = map?.get("zone_name")?.toString() ?: "Safe Zone"
+                                    val status = map?.get("status")?.toString() ?: "TRANSITION"
+                                    val stateKey = "${avatar}_${zone}"
+                                    
+                                    // 🛑 DORMANCY LATCH: Do not pop HUD banner if already in this state
+                                    if (lastSeenZoneStateMap[stateKey] == status) {
+                                        SystemLogger.i(TAG, "GEOFENCE_HUD_DORMANT: State already rendered ($stateKey -> $status)")
+                                        return
+                                    }
+                                    lastSeenZoneStateMap[stateKey] = status
+
+                                    val timeMs = if (alertTs > 0) alertTs else System.currentTimeMillis()
+                                    val dateStr = map?.get("date")?.toString() ?: java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(timeMs))
+                                    val timeStr = map?.get("time")?.toString() ?: java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(java.util.Date(timeMs))
+
+                                    val alertMessage = if (map != null) {
+                                        "Target: $avatar\nAction: $status Safe Zone '$zone'\n\n🕒 Date: $dateStr\n⏰ Time: $timeStr"
+                                    } else {
+                                        "${snapshot.getValue(String::class.java)}\n\n🕒 Date: $dateStr | Time: $timeStr"
+                                    }
+                                    
+                                    SystemLogger.w(TAG, "Intercepted Live Geofence Breach: $alertMessage")
+                                    _geofenceAlertTrigger.postValue(alertMessage)
                                 }
                                 override fun onChildChanged(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
                                 override fun onChildRemoved(snapshot: com.google.firebase.database.DataSnapshot) {}
@@ -177,27 +305,56 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
                             }
                             
-                            // Only Administrators physically query and intercept the alerts generated!
-                            if (_currentUserRole.value == "ADMIN" || isAdmin()) {
-                                rootDb.child(FirebaseComm.NODE_DEVICES).child(myGroupId).child("alerts")
-                                    .limitToLast(3) // Keep RAM light, intercept newest 3
-                                    .addChildEventListener(activeGroupAlertListener!!)
+                            alertRef.limitToLast(5).addChildEventListener(activeGroupAlertListener!!)
+                            activeAlertRef = alertRef
+
+                            // 🛰️ V50: Sync Group SafeZone Overlays for Map Rendering
+                            val geoRef = FirebaseComm.relationshipsRef.child(myGroupId).child("geofences")
+                            val geoListener = object : com.google.firebase.database.ValueEventListener {
+                                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                                    val list = mutableListOf<com.jdroidx.jfindme.data.model.SafeZoneModel>()
+                                    for (child in snapshot.children) {
+                                        val name = child.child("name").getValue(String::class.java) ?: child.key ?: ""
+                                        val lat = child.child("lat").value?.toString()?.toDoubleOrNull() ?: continue
+                                        val lng = child.child("lng").value?.toString()?.toDoubleOrNull() ?: continue
+                                        val rad = child.child("radius").value?.toString()?.toFloatOrNull() ?: 100f
+                                        val isActive = child.child("isZoneActive").getValue(Boolean::class.java) ?: true
+                                        if (isActive) {
+                                            list.add(com.jdroidx.jfindme.data.model.SafeZoneModel(
+                                                zoneId = child.key ?: name,
+                                                name = name,
+                                                latitude = lat,
+                                                longitude = lng,
+                                                radiusMeters = rad
+                                            ))
+                                        }
+                                    }
+                                    _safeZones.postValue(list)
+                                }
+                                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
                             }
+                            geoRef.addValueEventListener(geoListener)
+                            activeValueListeners[geoRef] = geoListener
                         }
                         override fun onCancelled(e: com.google.firebase.database.DatabaseError) {}
-                    })
+                    }
+                    deviceRef.addValueEventListener(deviceListener)
+                    activeValueListeners[deviceRef] = deviceListener
                 }
         
         // 🚀 V66.7: P2P Strict Tracking Array Matrix! Ensure offline strictly paired 1-to-1 users ALSO load!
-        FirebaseComm.getProfileRef(safeUid).child("friend_matrix").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+        val friendMatrixRef = FirebaseComm.getProfileRef(safeUid).child("friend_matrix")
+        activeValueListeners[friendMatrixRef]?.let { friendMatrixRef.removeEventListener(it) }
+        
+        val friendMatrixListener = object : com.google.firebase.database.ValueEventListener {
             override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                 snapshot.children.forEach { familyMeshIds.add(it.key ?: "") }
-                val currentRaw = repository.userLocations.value ?: return
-                val authorized = currentRaw.filter { familyMeshIds.contains(it.userId) || it.userId == safeUid }
-                _filteredLocations.postValue(authorized)
+                applyTacticalFilter()
             }
             override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
-        })
+        }
+        friendMatrixRef.addValueEventListener(friendMatrixListener)
+        activeValueListeners[friendMatrixRef] = friendMatrixListener
     }
 
     private fun fetchCurrentUserRole() {
@@ -319,25 +476,38 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             val finalId = agentId ?: safeUid
             val ref = rootDb.child(FirebaseComm.NODE_DEVICES).child(finalId).child("Identity").child("geofence_sync_requests")
             
-            ref.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                var count = 0
-                for (snap in snapshot.children) {
-                    val status = snap.child("status").getValue(String::class.java)
-                    if ("PENDING_ACCEPTANCE" == status) {
-                        count++
+            activeValueListeners[ref]?.let { ref.removeEventListener(it) }
+            
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    var count = 0
+                    for (snap in snapshot.children) {
+                        val status = snap.child("status").getValue(String::class.java)
+                        if ("PENDING_ACCEPTANCE" == status) {
+                            count++
+                        }
                     }
+                    _pendingSafeZoneRequestsCount.postValue(count)
                 }
-                _pendingSafeZoneRequestsCount.postValue(count)
+                override fun onCancelled(error: DatabaseError) {}
             }
-            override fun onCancelled(error: DatabaseError) {}
-        })
+            ref.addValueEventListener(listener)
+            activeValueListeners[ref] = listener
+        }
     }
-}
 
     override fun onCleared() {
         super.onCleared()
         stopListening()
+        
+        activeValueListeners.forEach { (query, listener) ->
+            query.removeEventListener(listener)
+        }
+        activeValueListeners.clear()
+        
+        if (activeGroupAlertListener != null && activeAlertRef != null) {
+            activeAlertRef!!.removeEventListener(activeGroupAlertListener!!)
+        }
     }
 
     // ≡ƒÜÇ Refresh trigger for Callouts (Can be observed by Activity)
@@ -355,5 +525,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("callout_hide_mode", !h).apply()
         SystemLogger.i(TAG, "Ghost Mode Toggled: ${!h}")
         triggerRefresh()
+    }
+
+    /**
+     * 🛰️ WATERFALL PRIORITY & CHRONOLOGY PIPELINE
+     * Filters and sorts user locations strictly:
+     * 1. Priority 1: isSosActive == true (Highest Emergency Priority)
+     * 2. Priority 2: Newest GPS timestamp to Oldest (Descending)
+     * 3. Excludes soft-deleted nodes (DatabaseHelper.isDeviceDeleted)
+     */
+    fun applyTacticalFilter(mode: String = currentFilterMode) {
+        currentFilterMode = mode
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+        val filtered = rawLocationCache.filter { loc ->
+            val uid = loc.getResolvedUserId()
+            !db.isDeviceDeleted(uid) && (familyMeshIds.isEmpty() || familyMeshIds.contains(uid) || uid == (auth.uid ?: ""))
+        }.sortedWith(
+            compareByDescending<UserLocation> { it.isSosActive }
+                .thenByDescending { it.getLongTimestamp() }
+        )
+        _filteredLocations.postValue(filtered)
     }
 }

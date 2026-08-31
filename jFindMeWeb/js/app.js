@@ -65,7 +65,7 @@ class App {
                     <p class="text-secondary text-sm">Deploy Administrative Handshake</p>
                 </div>
                 <div class="space-y-4">
-                    <input type="password" id="admin-pass" placeholder="Master Key ID (Jeet@123Meet)" 
+                    <input type="password" id="admin-pass" placeholder="Enter Master Key ID" 
                            class="w-full bg-black/50 border border-border rounded-xl p-4 text-center focus:outline-accent outline-none font-mono tracking-widest">
                     <button id="btn-auth" class="w-full btn-primary h-14 text-sm font-bold uppercase tracking-widest shadow-xl shadow-accent/10">Authorize Session</button>
                     <div id="auth-err" class="text-danger text-[10px] text-center font-bold tracking-widest hidden uppercase">ACCESS_DENIED_INVALID_MATRIX_KEY</div>

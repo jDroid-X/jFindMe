@@ -4,8 +4,15 @@
  */
 export class AuthService {
     constructor() {
-        this.MASTER_KEY_ID = 'Jeet@123Meet';
+        this.MASTER_KEY_ID = window.ENV?.MASTER_KEY_ID || localStorage.getItem('matrix_master_key') || 'Jeet@123Meet';
         this.sessionKey = 'jFindMe_Session';
+    }
+
+    setMasterKey(key) {
+        if (key && key.trim()) {
+            this.MASTER_KEY_ID = key.trim();
+            localStorage.setItem('matrix_master_key', this.MASTER_KEY_ID);
+        }
     }
 
     async login(password) {

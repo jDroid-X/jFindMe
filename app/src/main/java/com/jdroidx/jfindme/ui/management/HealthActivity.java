@@ -59,9 +59,6 @@ public class HealthActivity extends BaseActivityJava {
         subtitle.setPadding(0, 10, 0, 0);
         header.addView(subtitle);
 
-        // 🚀 ANALYTICAL HUB: Architecture Status Bar (Transparency Pillar)
-        header.addView(buildArchitectureStatusBar());
-
         mainRoot.addView(header);
 
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
@@ -101,8 +98,55 @@ public class HealthActivity extends BaseActivityJava {
         opCard.addView(createMetricRow("Service Hub", Color.parseColor("#4CAF50"), v -> v.setText("ACTIVE")));
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(0, 0, 0, scale(40));
+        cardLp.setMargins(0, 0, 0, scale(20));
         content.addView(opCard, cardLp);
+
+        // --- LAYER 2.5: PING FREQUENCY SELECTOR ---
+        content.addView(createSectionHeader("TRACKING PULSE"));
+        LinearLayout freqCard = new LinearLayout(this);
+        freqCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, freqCard, "CARD_STANDARD");
+        freqCard.setPadding(opPad, scale(10), opPad, scale(10));
+        freqCard.setClickable(true);
+        freqCard.setFocusable(true);
+        
+        TextView tvCurrentPulse = new TextView(this);
+        long currentInterval = prefs.getLong("location_update_interval_ms", 7000L);
+        String currentLabel = (currentInterval / 1000L) + "s Active Ping";
+        
+        View pingRow = createMetricRow("GPS Tracking Rate", getGradientStart(), v -> {
+            v.setText(currentLabel);
+        });
+        freqCard.addView(pingRow);
+        freqCard.setOnClickListener(v -> showPingFrequencyDialog(pingRow));
+        content.addView(freqCard, cardLp);
+
+        // --- LAYER 3: ACTION CONTROLLER ---
+        TextView btnRefresh = new TextView(this);
+        btnRefresh.setText("RERUN SYSTEM DIAGNOSTICS");
+        btnRefresh.setTextColor(Color.WHITE);
+        btnRefresh.setTextSize(13);
+        btnRefresh.setTypeface(null, android.graphics.Typeface.BOLD);
+        btnRefresh.setGravity(android.view.Gravity.CENTER);
+        int bPad = scale(20);
+        btnRefresh.setPadding(bPad * 2, bPad, bPad * 2, bPad);
+        android.graphics.drawable.GradientDrawable bBg = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
+            new int[]{getGradientStart(), getGradientEnd()}
+        );
+        bBg.setCornerRadius(scale(25));
+        btnRefresh.setBackground(bBg);
+        btnRefresh.setElevation(scale(10));
+        btnRefresh.setClickable(true);
+        btnRefresh.setFocusable(true);
+        btnRefresh.setOnClickListener(v -> {
+            updateMetrics();
+            android.widget.Toast.makeText(this, "Hardware Diagnostics Refreshed Successfully", android.widget.Toast.LENGTH_SHORT).show();
+        });
+
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bLp.setMargins(0, scale(10), 0, scale(40));
+        content.addView(btnRefresh, bLp);
 
         updateMetrics(); // Fire Native Hardware Check
 
@@ -142,32 +186,43 @@ public class HealthActivity extends BaseActivityJava {
     }
 
     private void updateMetrics() {
-        // 1. Battery Metric
+        // 1. Battery Metric & Charging State
         IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent batteryStatus = registerReceiver(null, ifilter);
         int level = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) : -1;
+        int status = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1) : -1;
+        boolean isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+        
         if (tvBattery != null) {
-            tvBattery.setText(level + "%");
+            String bText = level + "% " + (isCharging ? "(⚡ CHARGING)" : "(DISCHARGING)");
+            tvBattery.setText(bText);
             tvBattery.setTextColor(level > 20 ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         }
 
         // 2. Network Metric
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkCapabilities nc = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        NetworkCapabilities nc = (cm != null && cm.getActiveNetwork() != null) ? cm.getNetworkCapabilities(cm.getActiveNetwork()) : null;
         boolean isWifi = nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+        boolean isCellular = nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR);
         if (tvNetwork != null) {
-            tvNetwork.setText(isWifi ? "WIFI (STABLE)" : "MOBILE (SYNCED)");
+            if (isWifi) tvNetwork.setText("WIFI (ONLINE)");
+            else if (isCellular) tvNetwork.setText("CELLULAR (SYNCED)");
+            else tvNetwork.setText("OFFLINE / AIRPLANE");
         }
 
-        // 3. Storage Metric (Internal Cache)
+        // 3. Storage Metric (Internal Storage)
         File internalDir = getFilesDir();
-        long freeSpace = internalDir.getFreeSpace() / (1024 * 1024); // MB
+        long freeSpaceMb = internalDir.getFreeSpace() / (1024 * 1024);
         if (tvStorage != null) {
-            tvStorage.setText(freeSpace + " MB FREE");
+            tvStorage.setText(freeSpaceMb > 1024 ? String.format(java.util.Locale.getDefault(), "%.1f GB FREE", freeSpaceMb / 1024.0) : freeSpaceMb + " MB FREE");
         }
         
+        // 4. GPS Hardware State
         if (tvGps != null) {
-            tvGps.setText("STABLE");
+            android.location.LocationManager lm = (android.location.LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            boolean gpsOn = lm != null && lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER);
+            tvGps.setText(gpsOn ? "ACTIVE (GNSS LOCK)" : "DISABLED (GPS OFF)");
+            tvGps.setTextColor(gpsOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         }
     }
 
@@ -186,44 +241,39 @@ public class HealthActivity extends BaseActivityJava {
         SystemLogger.i(TAG, "Health Metrics Engine active.");
     }
 
-    private View buildArchitectureStatusBar() {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(android.view.Gravity.CENTER);
-        bar.setPadding(20, 15, 20, 15);
-        bar.setBackgroundColor(Color.argb(80, Color.red(getPrimaryColor()), Color.green(getPrimaryColor()), Color.blue(getPrimaryColor()))); 
+    private void showPingFrequencyDialog(View pingRow) {
+        String[] options = {
+            "⚡ 1s Pulse (Max Tracking • High Battery)",
+            "🚀 7s Pulse (Recommended • Standard Balance)",
+            "🛰️ 15s Pulse (Smooth Tracking • Battery Saver)",
+            "🔋 30s Pulse (Eco Mode • Low Drain)",
+            "🌱 60s Pulse (Ultra Eco • Maximum Longevity)"
+        };
+        long[] intervals = {1000L, 7000L, 15000L, 30000L, 60000L};
+        long current = prefs.getLong("location_update_interval_ms", 7000L);
+        int selectedIdx = 1;
+        for (int i = 0; i < intervals.length; i++) {
+            if (intervals[i] == current) { selectedIdx = i; break; }
+        }
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setTitle("Select Tracking Pulse")
+            .setSingleChoiceItems(options, selectedIdx, (d, which) -> {
+                long chosen = intervals[which];
+                prefs.edit().putLong("location_update_interval_ms", chosen).apply();
+                android.widget.Toast.makeText(this, "Tracking rate updated to " + (chosen / 1000L) + "s", android.widget.Toast.LENGTH_SHORT).show();
+                if (pingRow instanceof ViewGroup) {
+                    View lastChild = ((ViewGroup) pingRow).getChildAt(((ViewGroup) pingRow).getChildCount() - 1);
+                    if (lastChild instanceof TextView) {
+                        ((TextView) lastChild).setText((chosen / 1000L) + "s Active Ping");
+                    }
+                }
+                d.dismiss();
+            })
+            .setNegativeButton("Cancel", null)
+            .create();
         
-        bar.addView(createArchitectureIcon(android.R.drawable.ic_lock_silent_mode, "Secure", "Analytical Tiering: 5-Tier Normalized Architecture active."));
-        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_save, "Local", "Identity Hub: Data retrieval anchored in Tier 1 Local Profiles."));
-        bar.addView(createArchitectureIcon(android.R.drawable.ic_popup_sync, "Matrix", "Analytical Sync: Cloud and Local parity maintained via tiered nodes."));
-        bar.addView(createArchitectureIcon(android.R.drawable.ic_menu_recent_history, "Silicon", "Hardware Lock: Tier 2 Silicon Fingerprints verified and archived."));
-        bar.addView(createArchitectureIcon(android.R.drawable.checkbox_on_background, "Mesh", "Relationship Mesh: Tier 3 Graph Traversal active for peer discovery."));
-
-        return bar;
-    }
-
-    private View createArchitectureIcon(int resId, String label, String toastMsg) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(android.view.Gravity.CENTER);
-        box.setPadding(25, 5, 25, 5);
-        box.setClickable(true);
-        box.setOnClickListener(v -> android.widget.Toast.makeText(this, toastMsg, android.widget.Toast.LENGTH_SHORT).show());
-        
-        android.widget.ImageView iv = new android.widget.ImageView(this);
-        iv.setImageResource(resId);
-        iv.setColorFilter(getGradientOverlayText());
-        int iSize = scale(60); 
-        box.addView(iv, new LinearLayout.LayoutParams(iSize, iSize));
-
-        TextView tv = new TextView(this);
-        tv.setText(label);
-        tv.setTextSize(9);
-        tv.setTextColor(getGradientOverlayText());
-        tv.setAlpha(0.6f);
-        tv.setGravity(android.view.Gravity.CENTER);
-        box.addView(tv);
-
-        return box;
+        dialog.show();
+        applyDialogTheme(dialog);
     }
 }

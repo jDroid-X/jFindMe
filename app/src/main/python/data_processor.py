@@ -63,3 +63,82 @@ def predict_next_point(path, interval_seconds=3):
     predicted_lon = p2['longitude'] + vel_lon * interval_seconds
     
     return {'latitude': predicted_lat, 'longitude': predicted_lon}
+
+# GAP-006: Python Bridge Functions
+
+BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
+
+def encode_geohash(lat, lon, precision=9):
+    lat_interval = [-90.0, 90.0]
+    lon_interval = [-180.0, 180.0]
+    geohash = []
+    bits = [16, 8, 4, 2, 1]
+    bit = 0
+    ch = 0
+    even = True
+    while len(geohash) < precision:
+        if even:
+            mid = (lon_interval[0] + lon_interval[1]) / 2
+            if lon > mid:
+                ch |= bits[bit]
+                lon_interval[0] = mid
+            else:
+                lon_interval[1] = mid
+        else:
+            mid = (lat_interval[0] + lat_interval[1]) / 2
+            if lat > mid:
+                ch |= bits[bit]
+                lat_interval[0] = mid
+            else:
+                lat_interval[1] = mid
+        even = not even
+        if bit < 4:
+            bit += 1
+        else:
+            geohash.append(BASE32[ch])
+            bit = 0
+            ch = 0
+    return "".join(geohash)
+
+def decode_geohash(hashcode):
+    lat_interval = [-90.0, 90.0]
+    lon_interval = [-180.0, 180.0]
+    even = True
+    for c in hashcode:
+        cd = BASE32.find(c)
+        for mask in [16, 8, 4, 2, 1]:
+            if even:
+                mid = (lon_interval[0] + lon_interval[1]) / 2
+                if cd & mask:
+                    lon_interval[0] = mid
+                else:
+                    lon_interval[1] = mid
+            else:
+                mid = (lat_interval[0] + lat_interval[1]) / 2
+                if cd & mask:
+                    lat_interval[0] = mid
+                else:
+                    lat_interval[1] = mid
+            even = not even
+    lat = (lat_interval[0] + lat_interval[1]) / 2
+    lon = (lon_interval[0] + lon_interval[1]) / 2
+    return {'latitude': lat, 'longitude': lon}
+
+def filter_gps_jitter(path, threshold_meters=5.0):
+    if len(path) < 3:
+        return path
+    filtered = [path[0]]
+    for i in range(1, len(path)-1):
+        prev_p = filtered[-1]
+        curr_p = path[i]
+        dist = calculate_distance(prev_p['latitude'], prev_p['longitude'], curr_p['latitude'], curr_p['longitude'])
+        if dist > threshold_meters:
+            filtered.append(curr_p)
+    filtered.append(path[-1])
+    return filtered
+
+def sanitize_history_batch(batch):
+    if not batch: return []
+    unique = {p['timestamp']: p for p in batch}
+    sorted_batch = sorted(unique.values(), key=lambda k: k['timestamp'])
+    return filter_gps_jitter(sorted_batch)

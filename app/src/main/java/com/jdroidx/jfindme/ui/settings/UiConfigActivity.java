@@ -326,7 +326,7 @@ public class UiConfigActivity extends BaseActivityJava {
 
         // --- STAGE-BY-STAGE REGISTRY ---
         UiArchitect.DesignStage currentStage = UiArchitect.getStage(this);
-        UiArchitect.DesignStage[] stages = UiArchitect.DesignStage.values();
+        UiArchitect.DesignStage[] stages = UiArchitect.STAGES;
         
         for (UiArchitect.DesignStage s : stages) {
             UiScalingMatrixTable.ScalingRecord record = UiScalingMatrixTable.get(s);
@@ -774,21 +774,82 @@ public class UiConfigActivity extends BaseActivityJava {
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         UiArchitect.applyCard(this, container, "CARD_STANDARD");
+        int cPad = Math.max(scale(4), 16);
+        container.setPadding(cPad, cPad, cPad, cPad);
 
         TextView label = new TextView(this);
         label.setText("SELECT GLOBAL AESTHETIC");
         label.setTextColor(getTextColor());
         label.setTypeface(null, Typeface.BOLD);
         label.setTextSize(14f);
-        label.setPadding(20, 0, 0, 20);
+        label.setPadding(0, 0, 0, 16);
         container.addView(label);
+
+        // --- 🌓 SYSTEM THEME DEFAULT TOGGLE SWITCH & TICK BOX ---
+        boolean isSystemThemeActive = (currentThemeId == 8);
+        LinearLayout systemThemeCard = new LinearLayout(this);
+        systemThemeCard.setOrientation(LinearLayout.HORIZONTAL);
+        systemThemeCard.setGravity(Gravity.CENTER_VERTICAL);
+        int stPad = Math.max(scale(3), 12);
+        systemThemeCard.setPadding(stPad, stPad, stPad, stPad);
+        
+        android.graphics.drawable.GradientDrawable stBg = new android.graphics.drawable.GradientDrawable();
+        stBg.setColor(isSystemThemeActive ? Color.argb(40, Color.red(getGradientStart()), Color.green(getGradientStart()), Color.blue(getGradientStart())) : Color.argb(20, 128, 128, 128));
+        stBg.setCornerRadius(16f);
+        stBg.setStroke(isSystemThemeActive ? 3 : 1, isSystemThemeActive ? getGradientStart() : Color.argb(60, 128, 128, 128));
+        systemThemeCard.setBackground(stBg);
+        
+        android.widget.CheckBox cbSystemTheme = new android.widget.CheckBox(this);
+        cbSystemTheme.setChecked(isSystemThemeActive);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            cbSystemTheme.setButtonTintList(android.content.res.ColorStateList.valueOf(getGradientStart()));
+        }
+        systemThemeCard.addView(cbSystemTheme);
+
+        LinearLayout textLayout = new LinearLayout(this);
+        textLayout.setOrientation(LinearLayout.VERTICAL);
+        textLayout.setPadding(12, 0, 0, 0);
+        
+        TextView tvSystemTitle = new TextView(this);
+        tvSystemTitle.setText("System Default Theme (Auto Light / Dark)");
+        tvSystemTitle.setTextColor(getTextColor());
+        tvSystemTitle.setTextSize(12f);
+        tvSystemTitle.setTypeface(null, Typeface.BOLD);
+        textLayout.addView(tvSystemTitle);
+
+        TextView tvSystemSub = new TextView(this);
+        int nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        String currentDetected = (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) ? "Dark Mode Detected" : "Light Mode Detected";
+        tvSystemSub.setText(isSystemThemeActive ? "Active: Device Default Applied (" + currentDetected + ")" : "Disabled: Custom Palette Active");
+        tvSystemSub.setTextColor(getSecondaryTextColor());
+        tvSystemSub.setTextSize(10f);
+        textLayout.addView(tvSystemSub);
+
+        systemThemeCard.addView(textLayout, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        View.OnClickListener toggleSystemTheme = v -> {
+            boolean nextState = !cbSystemTheme.isChecked();
+            cbSystemTheme.setChecked(nextState);
+            int newTheme = nextState ? 8 : 0; // 8 = System Default, 0 = Celadon Sage
+            String msg = nextState ? "APPLYING SYSTEM DEFAULT THEME..." : "APPLYING CUSTOM PALETTE...";
+            AngelLoad.engage(this, msg, () -> {
+                viewModel.updateTheme(newTheme);
+                safeRecreate();
+            });
+        };
+        systemThemeCard.setOnClickListener(toggleSystemTheme);
+        cbSystemTheme.setOnClickListener(toggleSystemTheme);
+
+        LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        stLp.setMargins(0, 0, 0, 20);
+        container.addView(systemThemeCard, stLp);
 
         // --- THEME SYNC MATRIX (WRAPPING GRID) ---
         android.widget.GridLayout themeGrid = new android.widget.GridLayout(this);
         themeGrid.setColumnCount(4);
-        themeGrid.setPadding(0, 10, 0, 30);
+        themeGrid.setPadding(0, 4, 0, 16);
 
-        String[] themeNames = {"FamiSafe Violet", "Twilight Midnight", "Oceanic Teal", "Sunrise Orange", "Bubblegum Pop", "Silver Chrome", "Electric Azure", "Golden Hour"};
+        String[] themeNames = com.jdroidx.jfindme.ui.base.ThemeManager.THEME_NAMES;
         int tSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
         
         for (int i = 0; i < 8; i++) {
@@ -796,7 +857,9 @@ public class UiConfigActivity extends BaseActivityJava {
             LinearLayout themeItem = new LinearLayout(this);
             themeItem.setOrientation(LinearLayout.VERTICAL);
             themeItem.setGravity(Gravity.CENTER);
-            themeItem.setPadding(20, 20, 20, 20); 
+            // Enforce minimum 2px padding
+            int minPad = Math.max(scale(2), 2);
+            themeItem.setPadding(minPad, minPad, minPad, minPad); 
             themeItem.setFocusable(true);
             themeItem.setClickable(true);
 
@@ -809,7 +872,7 @@ public class UiConfigActivity extends BaseActivityJava {
             gd.setColors(new int[]{s, e});
             gd.setOrientation(android.graphics.drawable.GradientDrawable.Orientation.TL_BR);
             
-            if (currentThemeId == i) {
+            if (currentThemeId == i && !isSystemThemeActive) {
                 gd.setStroke(8, getGradientStart()); // Professional Highlight
             }
             circle.setBackground(gd);
@@ -822,7 +885,7 @@ public class UiConfigActivity extends BaseActivityJava {
             tLabel.setTextColor(getTextColor());
             tLabel.setTextSize(10);
             tLabel.setTypeface(null, Typeface.BOLD);
-            tLabel.setPadding(0, 10, 0, 0);
+            tLabel.setPadding(0, 8, 0, 0);
             tLabel.setGravity(Gravity.CENTER);
             themeItem.addView(tLabel);
 
@@ -830,12 +893,12 @@ public class UiConfigActivity extends BaseActivityJava {
                 String msg = "APPLYING [" + themeNames[themeIndex].toUpperCase() + "] AESTHETIC...";
                 AngelLoad.engage(this, msg, () -> {
                     viewModel.updateTheme(themeIndex);
-                    // ≡ƒÜÇ QA Fix: Stay on Screen! Instant repaint of the current hub.
+                    // 🚀 QA Fix: Stay on Screen! Instant repaint of the current hub.
                     safeRecreate();
                 });
             });
 
-            // ≡ƒÜÇ QA Fix: Global Focus State Loop (Enter / D-Pad Support)
+            // 🚀 QA Fix: Global Focus State Loop (Enter / D-Pad Support)
             themeItem.setOnKeyListener((v, keyCode, event) -> {
                 if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
                     (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {

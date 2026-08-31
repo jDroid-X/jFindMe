@@ -8,6 +8,7 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.google.firebase.auth.FirebaseAuth;
 import com.jdroidx.jfindme.engine.security.SecurityEngine;
@@ -28,6 +29,7 @@ public class ProfileActivity extends BaseActivityJava {
     private android.webkit.WebView activeProfileImgView; // 🧠 Upgraded to Real 3D GLTF Decoder
     private ProfileViewModel profileViewModel; // 🚀 Pure Native MVVM Pipeline Injection
     private boolean isSaveLaterAction = false; 
+    private TextView titleView;
 
     private android.widget.ArrayAdapter<String> countryAdapter;
     private android.widget.ArrayAdapter<String> stateAdapter;
@@ -106,12 +108,12 @@ public class ProfileActivity extends BaseActivityJava {
         backBtn.setOnClickListener(v -> onBackPressed());
         topRow.addView(backBtn);
 
-        TextView title = new TextView(this);
-        title.setText(prefs.getString("user_nickname", "UNIDENTIFIED AGENT").toUpperCase());
-        title.setTextColor(getGradientOverlayText());
-        com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, title, "TEXT_HEADER");
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        topRow.addView(title);
+        titleView = new TextView(this);
+        titleView.setText(prefs.getString("user_nickname", "UNIDENTIFIED AGENT").toUpperCase());
+        titleView.setTextColor(getGradientOverlayText());
+        com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, titleView, "TEXT_HEADER");
+        titleView.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        topRow.addView(titleView);
         header.addView(topRow);
         
         TextView subtitle = new TextView(this);
@@ -144,19 +146,12 @@ public class ProfileActivity extends BaseActivityJava {
         // CARD 1: IDENTITY LENS (Left)
         ImageView nativeProfilePhoto = new ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, nativeProfilePhoto);
-        
-        android.graphics.drawable.GradientDrawable photoBorder = new android.graphics.drawable.GradientDrawable();
-        photoBorder.setShape(android.graphics.drawable.GradientDrawable.OVAL); 
-        photoBorder.setColor(Color.TRANSPARENT);
-        photoBorder.setStroke(6, getGradientStart()); 
-        nativeProfilePhoto.setBackground(photoBorder);
-        nativeProfilePhoto.setPadding(quota, quota, quota, quota); 
-        nativeProfilePhoto.setClipToOutline(true);
+        nativeProfilePhoto.setBackground(null);
+        nativeProfilePhoto.setPadding(0, 0, 0, 0);
 
         activeProfileImgView = new android.webkit.WebView(this);
         activeProfileImgView.setBackgroundColor(Color.TRANSPARENT);
         activeProfileImgView.getSettings().setJavaScriptEnabled(true);
-        activeProfileImgView.loadUrl("file:///android_asset/web/vrm_viewer.html");
 
         LinearLayout lensCard = new LinearLayout(this);
         lensCard.setOrientation(LinearLayout.VERTICAL);
@@ -164,13 +159,20 @@ public class ProfileActivity extends BaseActivityJava {
         UiArchitect.applyCard(this, lensCard, "CARD_STANDARD");
         lensCard.setPadding(quota, quota, quota, quota);
         
+        // 🚀 Human-In-Loop Performance Optimization: Defer 3D WebGL engine initialization to post-layout
+        lensCard.post(() -> {
+            if (activeProfileImgView != null && !isFinishing() && !isDestroyed()) {
+                activeProfileImgView.loadUrl("file:///android_asset/web/vrm_viewer.html");
+            }
+        });
+        
         LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f);
         lp1.setMargins(0, 0, headerItemGap, 0);
         lensCard.setLayoutParams(lp1);
 
         android.widget.FrameLayout renderStack = new android.widget.FrameLayout(this);
-        // 🚀 QA Fix: Increased height by 30% (3.5f -> 4.5f) as per User Request
-        int iQuota = (int)(getResponsiveIconQuota() * 4.5f); 
+        // 🚀 Enhanced Resolution & Size (Double Fidelity)
+        int iQuota = (int)(getResponsiveIconQuota() * 5.5f); 
         renderStack.addView(nativeProfilePhoto, new android.widget.FrameLayout.LayoutParams(iQuota, iQuota, Gravity.CENTER));
         renderStack.addView(activeProfileImgView, new android.widget.FrameLayout.LayoutParams(iQuota, iQuota, Gravity.CENTER));
         
@@ -178,10 +180,10 @@ public class ProfileActivity extends BaseActivityJava {
         View clickInterceptor = new View(this);
         clickInterceptor.setClickable(true);
         clickInterceptor.setFocusable(true);
-        clickInterceptor.setOnClickListener(v -> showAvatarAssetsDetailsDialog());
+        clickInterceptor.setOnClickListener(v -> showAvatarActionsDialog(nativeProfilePhoto));
         renderStack.addView(clickInterceptor, new android.widget.FrameLayout.LayoutParams(iQuota, iQuota, Gravity.CENTER));
         
-        lensCard.setOnClickListener(v -> showAvatarAssetsDetailsDialog());
+        lensCard.setOnClickListener(v -> showAvatarActionsDialog(nativeProfilePhoto));
         lensCard.addView(renderStack);
 
         // CARD 2: ACTION GRID (Right)
@@ -228,10 +230,15 @@ public class ProfileActivity extends BaseActivityJava {
             java.io.File file = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
             if (file.exists()) {
                 startActivityForResult(new android.content.Intent(this, AvatarCropActivity.class), 1002);
+            } else {
+                UiArchitect.showValidationDialog(this,
+                    "No Custom Photo Found",
+                    "Please capture a photo using the camera or select one from the gallery before cropping.",
+                    null);
             }
         }), gLp);
         
-        gridRow2.addView(prepareGridIcon(android.R.drawable.ic_menu_edit, v -> showAvatarSelectionDialog(nativeProfilePhoto)), gLp);
+        gridRow2.addView(prepareGridIcon(android.R.drawable.ic_menu_edit, v -> showAvatarActionsDialog(nativeProfilePhoto)), gLp);
 
         actionGrid.addView(gridRow1);
         actionGrid.addView(gridRow2);
@@ -253,7 +260,7 @@ public class ProfileActivity extends BaseActivityJava {
         View securityStatus = createIconButton(rooted ? "Risk: ROOTED" : "Identity: SECURE", 
                 android.R.drawable.ic_lock_idle_lock, v -> {
                     try {
-                        startActivity(new android.content.Intent(this, Class.forName("com.jdroidx.jfindme.ui.management.PrivacyActivity")));
+                        startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.management.PrivacyActivity.class));
                     } catch (Exception e) {}
                 });
         
@@ -263,8 +270,8 @@ public class ProfileActivity extends BaseActivityJava {
         securityStatus.setBackground(secBg);
         
         View pairingStatus = createIconButton("Device Pairing", 
-                android.R.drawable.ic_menu_share, v -> {
-                    startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.group.GroupActivity.class));
+                com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, v -> {
+                    startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.group.NetworkGatewayActivity.class));
                 });
                 
         android.graphics.drawable.GradientDrawable pairBg = new android.graphics.drawable.GradientDrawable();
@@ -298,7 +305,17 @@ public class ProfileActivity extends BaseActivityJava {
         nameField = new android.widget.EditText(this);
         nameField.setHint(android.text.Html.fromHtml("Name <font color='#D32F2F'>(*)</font>"));
         nameField.setText(prefs.getString("user_nickname", "").toUpperCase());
-        nameField.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+        nameField.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        nameField.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String txt = s.toString().trim();
+                if (titleView != null) {
+                    titleView.setText(txt.isEmpty() ? "UNIDENTIFIED AGENT" : txt.toUpperCase());
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
         
         phoneField = new android.widget.EditText(this);
         phoneField.setHint(android.text.Html.fromHtml("Mobile Number <font color='#D32F2F'>(*)</font>"));
@@ -331,9 +348,21 @@ public class ProfileActivity extends BaseActivityJava {
         dobField.setClickable(true);
         dobField.setOnClickListener(v -> {
             java.util.Calendar cal = java.util.Calendar.getInstance();
-            new android.app.DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            String currentDob = dobField.getText().toString().trim();
+            if (currentDob.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                try {
+                    String[] parts = currentDob.split("-");
+                    int y = Integer.parseInt(parts[0]);
+                    int m = Integer.parseInt(parts[1]) - 1;
+                    int d = Integer.parseInt(parts[2]);
+                    cal.set(y, m, d);
+                } catch (Exception ignored) {}
+            }
+            android.app.DatePickerDialog dpd = new android.app.DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
                 dobField.setText(java.lang.String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth));
-            }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show();
+            }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH));
+            dpd.getDatePicker().setMaxDate(System.currentTimeMillis()); // Prevent future dates
+            dpd.show();
         });
 
         genderField = new android.widget.AutoCompleteTextView(this);
@@ -354,6 +383,9 @@ public class ProfileActivity extends BaseActivityJava {
         countrySpinner.setAdapter(countryAdapter);
         countrySpinner.setThreshold(1);
         countrySpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        countrySpinner.setFocusable(false);
+        countrySpinner.setClickable(true);
+        countrySpinner.setOnClickListener(v -> countrySpinner.showDropDown());
 
         stateSpinner = new android.widget.AutoCompleteTextView(this);
         stateSpinner.setHint(android.text.Html.fromHtml("State/Province<font color='#D32F2F'>(*)</font>"));
@@ -363,6 +395,9 @@ public class ProfileActivity extends BaseActivityJava {
         stateSpinner.setAdapter(stateAdapter);
         stateSpinner.setThreshold(1);
         stateSpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        stateSpinner.setFocusable(false);
+        stateSpinner.setClickable(true);
+        stateSpinner.setOnClickListener(v -> stateSpinner.showDropDown());
         
         citySpinner = new android.widget.AutoCompleteTextView(this);
         citySpinner.setHint(android.text.Html.fromHtml("City/Zone<font color='#D32F2F'>(*)</font>"));
@@ -372,20 +407,34 @@ public class ProfileActivity extends BaseActivityJava {
         citySpinner.setAdapter(cityAdapter);
         citySpinner.setThreshold(1);
         citySpinner.setDropDownBackgroundDrawable(createPopupBackground());
+        citySpinner.setFocusable(false);
+        citySpinner.setClickable(true);
+        citySpinner.setOnClickListener(v -> citySpinner.showDropDown());
         
         countrySpinner.setOnItemClickListener((parent, view, position, id) -> {
             String selection = countryAdapter.getItem(position);
-            if (profileViewModel != null && selection != null && !selection.equals("Identifying...")) {
-                profileViewModel.fetchStatesList(selection);
+            if (selection != null && !selection.equals("Select Country") && !selection.equals("Identifying...")) {
+                stateSpinner.setText("");
+                citySpinner.setText("");
+                if (profileViewModel != null) {
+                    profileViewModel.fetchStatesList(selection);
+                }
             }
         });
 
         stateSpinner.setOnItemClickListener((parent, view, position, id) -> {
             String selection = stateAdapter.getItem(position);
-            String parentCountry = countrySpinner.getText().toString();
-            if (profileViewModel != null && selection != null && !parentCountry.isEmpty() && !parentCountry.equals("Identifying...")) {
-                profileViewModel.fetchCitiesList(parentCountry, selection);
+            String parentCountry = countrySpinner.getText().toString().trim();
+            if (selection != null && !selection.equals("Select State") && !selection.equals("Select Country First") && !parentCountry.isEmpty()) {
+                citySpinner.setText("");
+                if (profileViewModel != null) {
+                    profileViewModel.fetchCitiesList(parentCountry, selection);
+                }
             }
+        });
+
+        citySpinner.setOnItemClickListener((parent, view, position, id) -> {
+            // City locked
         });
 
         pincodeField = new android.widget.EditText(this);
@@ -394,7 +443,8 @@ public class ProfileActivity extends BaseActivityJava {
         pincodeField.setText(prefs.getString("user_pincode", ""));
 
         String currentEmail = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null ? 
-            com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser().getEmail() : "node@jfindme.net";
+            com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser().getEmail() : 
+            ("node@" + com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getEnterpriseDomain(this));
         android.widget.EditText emailField = new android.widget.EditText(this);
         emailField.setHint("Enterprise Email (Read Only)");
         emailField.setText(currentEmail);
@@ -454,6 +504,9 @@ public class ProfileActivity extends BaseActivityJava {
         pForm.addView(wrapEnterpriseFullGrid(orgField, android.R.drawable.ic_menu_agenda));
         pForm.addView(wrapEnterpriseFullGrid(deptField, android.R.drawable.ic_menu_directions));
         
+        // AUDIT FIX [AUD-019]: Link tab sequence for hardware keyboard accessibility
+        com.jdroidx.jfindme.utils.FormUtils.linkTabSequence(nameField, phoneField, addressField, countrySpinner, stateSpinner, citySpinner, pincodeField, emergencyNoteField, orgField, deptField);
+
         root.addView(pForm, cardLp);
 
         // --- LAYER 4: SYSTEM ACTIONS & SECURITY ---
@@ -482,7 +535,7 @@ public class ProfileActivity extends BaseActivityJava {
 
         View orgBtn = createIconButton("ORGANIZATION", android.R.drawable.ic_menu_edit, true, v -> {
             try {
-                startActivity(new android.content.Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.OrgActivity")));
+                startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.OrgActivity.class));
             } catch (Exception e) {
                 android.widget.Toast.makeText(this, "Organization Suite Initialization Failed.", android.widget.Toast.LENGTH_SHORT).show();
             }
@@ -501,22 +554,24 @@ public class ProfileActivity extends BaseActivityJava {
         row2.setWeightSum(2.0f);
 
         View passBtn = createIconButton("PASSWORD", android.R.drawable.ic_menu_edit, true, v -> {
-            android.widget.EditText passInput = new android.widget.EditText(this);
-            passInput.setHint("New Password");
-            passInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Update Password")
-                .setView(passInput)
-                .setPositiveButton("UPDATE", (dialog, which) -> {
-                    String newPass = passInput.getText().toString();
-                    if (newPass.length() >= 6) {
+            UiArchitect.showInputPromptDialog(this,
+                "Update Password",
+                "Enter new password (min 6 chars)",
+                "",
+                newPass -> {
+                    if (newPass != null && newPass.length() >= 6) {
                         try {
-                            com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser().updatePassword(newPass);
-                            android.widget.Toast.makeText(this, "Security Matrix Updated.", android.widget.Toast.LENGTH_SHORT).show();
-                        } catch (Exception e) {}
+                            if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null) {
+                                com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser().updatePassword(newPass);
+                                android.widget.Toast.makeText(this, "Security Matrix Updated.", android.widget.Toast.LENGTH_SHORT).show();
+                            }
+                        } catch (Exception e) {
+                            android.widget.Toast.makeText(this, "Failed to update password: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                    } else {
+                        UiArchitect.showValidationDialog(this, "Password Invalid", "Password must be at least 6 characters.", null);
                     }
-                })
-                .setNegativeButton("Cancel", null).show();
+                });
         });
 
         View saveBtn = createIconButton("VERIFY & SAVE", android.R.drawable.ic_menu_save, true, v -> handleProfileSaveAction(false));
@@ -532,13 +587,16 @@ public class ProfileActivity extends BaseActivityJava {
 
         // 🚀 QA Fix: Terminal Logout Session (Post-Grid Action)
         View logoutBtn = createIconButton("LOGOUT SESSION", android.R.drawable.ic_lock_power_off, v -> {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Confirm Logout")
-                .setPositiveButton("Logout", (dialog, which) -> {
+            UiArchitect.showConfirmationDialog(this,
+                "Confirm Logout",
+                "Are you sure you want to securely sign out?",
+                "LOGOUT", "CANCEL",
+                () -> {
                     com.google.firebase.auth.FirebaseAuth.getInstance().signOut();
                     startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.auth.AuthActivity.class));
                     finishAffinity();
-                }).setNegativeButton("Cancel", null).show();
+                },
+                null);
         });
         LinearLayout.LayoutParams logoutLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         logoutLp.setMargins(10, 40, 10, 100); 
@@ -559,8 +617,7 @@ public class ProfileActivity extends BaseActivityJava {
         UiArchitect.DesignStage stage = UiArchitect.getStage(this);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        String mAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
-        applyGlassmorphism(card, Color.parseColor("#" + mAlpha + "ffffff"), 16f);
+        applyGlassmorphism(card, getCardColor(), 16f);
         card.setGravity(Gravity.CENTER);
         
         android.widget.GridLayout.LayoutParams params = new android.widget.GridLayout.LayoutParams();
@@ -605,225 +662,541 @@ public class ProfileActivity extends BaseActivityJava {
         return tv;
     }
 
-    private void showAvatarSelectionDialog(final ImageView mainProfilePic) {
-        // Build the Custom Graphical Layout
-        android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
-        android.widget.GridLayout gridLayout = new android.widget.GridLayout(this);
-        gridLayout.setColumnCount(3);
-        gridLayout.setPadding(20, 20, 20, 20);
+    private void showAvatarActionsDialog(ImageView nativeProfilePhoto) {
+        String[] options = {
+            "📸 Take Camera Selfie",
+            "🖼️ Choose from Gallery",
+            "✂️ Crop Custom Photo",
+            "🎭 Choose 2D Avatar Character",
+            "🪞 Open 3D Avatar Customizer Studio",
+            "🆔 View Identity Asset Details"
+        };
+        
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, options) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                TextView tv = (TextView) super.getView(position, convertView, parent);
+                tv.setTextColor(getTextColor());
+                tv.setTypeface(null, Typeface.BOLD);
+                int p = scale(25);
+                tv.setPadding(p, p, p, p);
+                return tv;
+            }
+        };
 
-        // Fixed: Kotlin returns immutable Lists as `List<? extends AvatarEntity>` in Java. 
-        // Iterating directly skips the strict casting variance error that breaks compilation.
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this)
+            .setTitle("Avatar Command Center")
+            .setAdapter(adapter, (dialog, which) -> {
+                switch (which) {
+                    case 0:
+                        handleCameraLaunch();
+                        break;
+                    case 1:
+                        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+                        intent.setType("image/*");
+                        startActivityForResult(intent, 1004);
+                        break;
+                    case 2:
+                        java.io.File file = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
+                        if (file.exists()) {
+                            startActivityForResult(new android.content.Intent(this, AvatarCropActivity.class), 1002);
+                        } else {
+                            UiArchitect.showValidationDialog(this,
+                                "No Custom Photo Found",
+                                "Please capture a photo using the camera or select one from the gallery before cropping.",
+                                null);
+                        }
+                        break;
+                    case 3:
+                        showAvatarSelectionDialog(nativeProfilePhoto);
+                        break;
+                    case 4:
+                        startActivity(new android.content.Intent(this, AvatarEditorActivity.class));
+                        break;
+                    case 5:
+                        showAvatarAssetsDetailsDialog();
+                        break;
+                }
+            })
+            .setNegativeButton("Cancel", null)
+            .create();
+            
+        d.show();
+        applyDialogTheme(d);
+    }
+
+    private void showAvatarSelectionDialog(final ImageView mainProfilePic) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float widthDp = dm.widthPixels / dm.density;
+        int colCount = (widthDp >= 600) ? 4 : 3; // Adaptive 3-col on phones, 4-col on foldables/tablets
+        
+        int pad = (int) (8 * dm.density);
+        int tileMargin = (int) (4 * dm.density);
+        int imgFrameHeight = (int) ((widthDp >= 600 ? 95 : 82) * dm.density);
+
+        LinearLayout mainDialogLayout = new LinearLayout(this);
+        mainDialogLayout.setOrientation(LinearLayout.VERTICAL);
+
+        // 🔍 Real-Time Smooth Search Bar (Edit Input)
+        LinearLayout searchContainer = new LinearLayout(this);
+        searchContainer.setOrientation(LinearLayout.HORIZONTAL);
+        searchContainer.setGravity(Gravity.CENTER_VERTICAL);
+        searchContainer.setPadding(pad, (int)(8 * dm.density), pad, (int)(4 * dm.density));
+
+        android.widget.EditText searchField = new android.widget.EditText(this);
+        searchField.setHint("🔍 Search 50 Popular Avatars (e.g. King, Jane, Zombie)...");
+        searchField.setHintTextColor(Color.argb(140, 148, 163, 184));
+        searchField.setTextColor(getTextColor());
+        searchField.setTextSize(13);
+        searchField.setSingleLine(true);
+        searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        
+        android.graphics.drawable.GradientDrawable searchBg = new android.graphics.drawable.GradientDrawable();
+        searchBg.setCornerRadius((int) (12 * dm.density));
+        searchBg.setColor(getCardColor());
+        searchBg.setStroke((int) (1.5f * dm.density), Color.argb(80, 59, 130, 246));
+        searchField.setBackground(searchBg);
+        searchField.setPadding((int)(12 * dm.density), (int)(8 * dm.density), (int)(12 * dm.density), (int)(8 * dm.density));
+        
+        LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        searchField.setLayoutParams(searchLp);
+        searchContainer.addView(searchField);
+        mainDialogLayout.addView(searchContainer);
+
+        // 🏷️ Category Filter Tab Bar (Horizontal Scroll)
+        android.widget.HorizontalScrollView tabScroller = new android.widget.HorizontalScrollView(this);
+        tabScroller.setHorizontalScrollBarEnabled(false);
+        tabScroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout tabLayout = new LinearLayout(this);
+        tabLayout.setOrientation(LinearLayout.HORIZONTAL);
+        tabLayout.setPadding(pad, (int)(4 * dm.density), pad, (int)(6 * dm.density));
+        tabScroller.addView(tabLayout);
+        mainDialogLayout.addView(tabScroller);
+
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.setSmoothScrollingEnabled(true);
+        LinearLayout gridContainer = new LinearLayout(this);
+        gridContainer.setOrientation(LinearLayout.VERTICAL);
+        gridContainer.setPadding(pad, (int)(2 * dm.density), pad, pad);
+        scrollView.addView(gridContainer);
+        mainDialogLayout.addView(scrollView);
+
+        int currentlyEquippedId = prefs.getInt("equipped_avatar_id", 1);
+
         java.util.List<? extends com.jdroidx.jfindme.engine.data.avatar.AvatarEntity> templateList = 
             com.jdroidx.jfindme.engine.data.avatar.AvatarRegistry.INSTANCE.getTemplateList();
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-            .setTitle("Avatar Customization Gallery")
-            .setView(scrollView)
+            .setTitle("🖼️ 50 Popular Avatars Collection")
+            .setView(mainDialogLayout)
             .setNegativeButton("Close", null)
             .create();
 
-        // 🚀 QA Override: Inject the freshly saved Custom Local Photo into the very front of the physical list!
-        java.io.File customPhotoFile = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
-        if (customPhotoFile.exists()) {
-            android.widget.RelativeLayout customTile = new android.widget.RelativeLayout(this);
-            android.widget.GridLayout.LayoutParams gridParams = new android.widget.GridLayout.LayoutParams();
-            gridParams.width = 300;
-            gridParams.height = 350;
-            gridParams.setMargins(15, 15, 15, 15);
-            customTile.setLayoutParams(gridParams);
-            applySolidCardGeometry(customTile, getCardColor(), 16f);
-            customTile.setFocusable(true);
-            customTile.setClickable(true);
+        // 🚀 Functional category & search filtering engine
+        final String[] categories = {"ALL", "COMMON", "RARE", "EPIC", "LEGENDARY"};
+        final String[] categoryLabels = {"✨ All (50)", "🟢 Common", "🔵 Rare", "🟣 Epic", "🟡 Legendary"};
+        final TextView[] tabViews = new TextView[categories.length];
 
-            ImageView previewImg = new ImageView(this);
-            previewImg.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(customPhotoFile.getAbsolutePath());
-            previewImg.setImageBitmap(b);
-            android.widget.RelativeLayout.LayoutParams imgParams = new android.widget.RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            previewImg.setLayoutParams(imgParams);
-            customTile.addView(previewImg);
+        final String[] activeCategory = {"ALL"};
+        final String[] activeSearchQuery = {""};
+        Runnable[] updateGrid = new Runnable[1];
 
-            ImageView circle = new ImageView(this);
-            circle.setImageResource(android.R.drawable.checkbox_off_background);
-            android.widget.RelativeLayout.LayoutParams circleParams = new android.widget.RelativeLayout.LayoutParams(60, 60);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT);
-            circleParams.setMargins(0, 15, 15, 0);
-            circle.setLayoutParams(circleParams);
-            customTile.addView(circle);
+        updateGrid[0] = () -> {
+            gridContainer.removeAllViews();
+            java.util.List<View> filteredTiles = new java.util.ArrayList<>();
+            String query = activeSearchQuery[0].toLowerCase(java.util.Locale.ROOT);
 
-            // 🚀 QA Fix: Physical Hardware Deletion Hook ("X" Button)
-            ImageView deleteBtn = new ImageView(this);
-            deleteBtn.setImageResource(android.R.drawable.ic_menu_delete);
-            deleteBtn.setColorFilter(Color.WHITE);
-            
-            android.graphics.drawable.GradientDrawable delBg = new android.graphics.drawable.GradientDrawable();
-            delBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-            delBg.setColor(Color.parseColor("#D32F2F")); // Aggressive Red
-            deleteBtn.setBackground(delBg);
-            deleteBtn.setPadding(15, 15, 15, 15);
-            
-            android.widget.RelativeLayout.LayoutParams delParams = new android.widget.RelativeLayout.LayoutParams(70, 70);
-            delParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
-            delParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_START);
-            delParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT);
-            delParams.setMargins(15, 15, 0, 0);
-            deleteBtn.setLayoutParams(delParams);
-            customTile.addView(deleteBtn);
+            // 1. Custom Local Camera Selfie (only on ALL or when query matches selfie)
+            java.io.File customPhotoFile = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
+            if (customPhotoFile.exists() && (activeCategory[0].equals("ALL") || query.contains("selfie") || query.contains("camera"))) {
+                boolean isCustomEquipped = (currentlyEquippedId == -1);
 
-            // Intersect and Execute Hard Delete
-            deleteBtn.setOnClickListener(v -> {
-                if (customPhotoFile.exists()) {
-                    boolean destroyed = customPhotoFile.delete();
-                    if (destroyed) {
-                        // Fallback constraint if they deleted the currently equipped photo!
+                LinearLayout customTile = new LinearLayout(this);
+                customTile.setOrientation(LinearLayout.VERTICAL);
+                customTile.setGravity(Gravity.CENTER_HORIZONTAL);
+                customTile.setPadding((int) (4 * dm.density), (int) (6 * dm.density), (int) (4 * dm.density), (int) (6 * dm.density));
+
+                android.graphics.drawable.GradientDrawable tileBg = new android.graphics.drawable.GradientDrawable();
+                tileBg.setCornerRadius((int) (12 * dm.density));
+                tileBg.setColor(getCardColor());
+                tileBg.setStroke((int) (isCustomEquipped ? 2.5f * dm.density : 1 * dm.density), isCustomEquipped ? Color.parseColor("#00E676") : Color.argb(60, 148, 163, 184));
+                customTile.setBackground(tileBg);
+                customTile.setFocusable(true);
+                customTile.setClickable(true);
+
+                android.widget.RelativeLayout imgContainer = new android.widget.RelativeLayout(this);
+                imgContainer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, imgFrameHeight));
+
+                ImageView previewImg = new ImageView(this);
+                previewImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                previewImg.setAdjustViewBounds(true);
+                android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile(customPhotoFile.getAbsolutePath());
+                previewImg.setImageBitmap(b);
+                android.widget.RelativeLayout.LayoutParams imgParams = new android.widget.RelativeLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                imgParams.addRule(android.widget.RelativeLayout.CENTER_IN_PARENT);
+                previewImg.setLayoutParams(imgParams);
+                imgContainer.addView(previewImg);
+
+                // Tick Box Indicator
+                TextView activeBadge = new TextView(this);
+                activeBadge.setText(isCustomEquipped ? "✓" : "☐");
+                activeBadge.setTextColor(Color.WHITE);
+                activeBadge.setTextSize(isCustomEquipped ? 10 : 12);
+                activeBadge.setTypeface(null, Typeface.BOLD);
+                activeBadge.setGravity(Gravity.CENTER);
+                android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
+                badgeBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                badgeBg.setColor(isCustomEquipped ? Color.parseColor("#00E676") : Color.argb(160, 100, 116, 139));
+                activeBadge.setBackground(badgeBg);
+                int badgeSize = (int) (18 * dm.density);
+                android.widget.RelativeLayout.LayoutParams badgeParams = new android.widget.RelativeLayout.LayoutParams(badgeSize, badgeSize);
+                badgeParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+                badgeParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
+                activeBadge.setLayoutParams(badgeParams);
+                imgContainer.addView(activeBadge);
+
+                ImageView deleteBtn = new ImageView(this);
+                deleteBtn.setImageResource(android.R.drawable.ic_menu_delete);
+                deleteBtn.setColorFilter(Color.WHITE);
+                android.graphics.drawable.GradientDrawable delBg = new android.graphics.drawable.GradientDrawable();
+                delBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                delBg.setColor(Color.parseColor("#EF4444"));
+                deleteBtn.setBackground(delBg);
+                int delSize = (int) (20 * dm.density);
+                deleteBtn.setPadding((int) (3 * dm.density), (int) (3 * dm.density), (int) (3 * dm.density), (int) (3 * dm.density));
+                android.widget.RelativeLayout.LayoutParams delParams = new android.widget.RelativeLayout.LayoutParams(delSize, delSize);
+                delParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+                delParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_START);
+                deleteBtn.setLayoutParams(delParams);
+                imgContainer.addView(deleteBtn);
+
+                deleteBtn.setOnClickListener(v -> {
+                    if (customPhotoFile.exists() && customPhotoFile.delete()) {
                         if (prefs.getInt("equipped_avatar_id", 1) == -1) {
-                            prefs.edit().putInt("equipped_avatar_id", 1).apply();
+                            prefs.edit().putInt("equipped_avatar_id", 1).commit();
                         }
                         dialog.dismiss();
-                        android.widget.Toast.makeText(this, "Selfie Purged Securely.", android.widget.Toast.LENGTH_SHORT).show();
-                        safeRecreate(); // 🚀 QA NATIVE FIX! Bypasses OEM Relaunch Error!
+                        Toast.makeText(this, "Selfie Purged Securely.", Toast.LENGTH_SHORT).show();
+                        syncFieldsToPrefs();
+                        com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
+                        safeRecreate();
+                    }
+                });
+
+                customTile.addView(imgContainer);
+
+                TextView nameStr = new TextView(this);
+                nameStr.setText(isCustomEquipped ? "Selfie [✓]" : "Camera Selfie");
+                nameStr.setTextColor(isCustomEquipped ? Color.parseColor("#00E676") : getTextColor());
+                nameStr.setTextSize(11);
+                nameStr.setTypeface(null, Typeface.BOLD);
+                nameStr.setGravity(Gravity.CENTER);
+                nameStr.setSingleLine(true);
+                nameStr.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                nameStr.setPadding((int) (2 * dm.density), (int) (4 * dm.density), (int) (2 * dm.density), 0);
+                customTile.addView(nameStr);
+
+                customTile.setOnClickListener(v -> {
+                    showAvatarEnlargedPopup("Camera Selfie", "Custom Photo", customPhotoFile.getAbsolutePath(), -1, isCustomEquipped, () -> {
+                        mainProfilePic.setImageDrawable(previewImg.getDrawable());
+                        mainProfilePic.clearColorFilter();
+                        if (activeProfileImgView != null) {
+                            activeProfileImgView.evaluateJavascript("if(typeof currentVrm !== 'undefined' && currentVrm) { scene.remove(currentVrm.scene); currentVrm=null; }", null);
+                        }
+                        if (profileViewModel != null) {
+                            profileViewModel.equipCustomAvatar(prefs); 
+                        }
+                        Toast.makeText(this, "Equipped Custom Camera Snapshot!", Toast.LENGTH_SHORT).show();
+                        dialog.dismiss();
+                    });
+                });
+
+                filteredTiles.add(customTile);
+            }
+
+            // 2. Master Avatars matching category filter and real-time search query
+            for (final com.jdroidx.jfindme.engine.data.avatar.AvatarEntity avatar : templateList) {
+                String rarityStr = avatar.getRarity().name();
+                if (!activeCategory[0].equals("ALL") && !rarityStr.equalsIgnoreCase(activeCategory[0])) {
+                    continue;
+                }
+
+                String avatarName = avatar.getType();
+                int activeId = avatar.getBaseId();
+                if (!query.isEmpty()) {
+                    boolean matchName = avatarName.toLowerCase(java.util.Locale.ROOT).contains(query);
+                    boolean matchId = String.valueOf(activeId).equals(query) || ("#" + activeId).equals(query);
+                    boolean matchCategory = rarityStr.toLowerCase(java.util.Locale.ROOT).contains(query);
+                    if (!matchName && !matchId && !matchCategory) {
+                        continue;
                     }
                 }
-            });
 
-            TextView nameStr = new TextView(this);
-            nameStr.setText("Camera Selfie");
-            nameStr.setTextColor(Color.WHITE);
-            nameStr.setTextSize(12);
-            nameStr.setGravity(Gravity.CENTER);
-            nameStr.setBackgroundColor(Color.parseColor("#88000000"));
-            nameStr.setPadding(0, 15, 0, 15);
-            android.widget.RelativeLayout.LayoutParams nameParams = new android.widget.RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            nameParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
-            nameStr.setLayoutParams(nameParams);
-            customTile.addView(nameStr);
+                boolean isEquipped = (activeId == currentlyEquippedId);
 
-            customTile.setOnClickListener(v -> {
-                circle.setImageResource(android.R.drawable.checkbox_on_background);
-                mainProfilePic.setImageDrawable(previewImg.getDrawable());
-                mainProfilePic.clearColorFilter();
-                
-                // Clear the 3D surface visually if they selected a raw 2D image
-                if (activeProfileImgView != null) {
-                    activeProfileImgView.evaluateJavascript("if(typeof currentVrm !== 'undefined' && currentVrm) { scene.remove(currentVrm.scene); currentVrm=null; }", null);
+                LinearLayout tile = new LinearLayout(this);
+                tile.setOrientation(LinearLayout.VERTICAL);
+                tile.setGravity(Gravity.CENTER_HORIZONTAL);
+                tile.setPadding((int) (4 * dm.density), (int) (6 * dm.density), (int) (4 * dm.density), (int) (6 * dm.density));
+
+                android.graphics.drawable.GradientDrawable tileBg = new android.graphics.drawable.GradientDrawable();
+                tileBg.setCornerRadius((int) (12 * dm.density));
+                tileBg.setColor(getCardColor());
+                tileBg.setStroke((int) (isEquipped ? 2.5f * dm.density : 1 * dm.density), isEquipped ? Color.parseColor("#00E676") : Color.argb(60, 148, 163, 184));
+                tile.setBackground(tileBg);
+                tile.setFocusable(true);
+                tile.setClickable(true);
+
+                android.widget.RelativeLayout imgContainer = new android.widget.RelativeLayout(this);
+                imgContainer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, imgFrameHeight));
+
+                String customGraphicName = "avatar_custom_" + activeId;
+                int customResId = getResources().getIdentifier(customGraphicName, "drawable", getPackageName());
+                if (customResId == 0) {
+                    int dyn = ((activeId - 1) % 22) + 1;
+                    customResId = getResources().getIdentifier("avatar_custom_" + dyn, "drawable", getPackageName());
+                }
+
+                final int finalResId = customResId;
+
+                ImageView previewImg = new ImageView(this);
+                previewImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                previewImg.setAdjustViewBounds(true);
+                if (finalResId != 0) {
+                    previewImg.setImageResource(finalResId);
+                } else {
+                    previewImg.setImageResource(android.R.drawable.ic_menu_gallery);
                 }
                 
-                // 🚀 QA Fix: Prime Directive MVVM Controller
-                if (profileViewModel != null) {
-                    profileViewModel.equipCustomAvatar(prefs); 
-                }
-                android.widget.Toast.makeText(this, "Equipped Custom Camera Snapshot!", android.widget.Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
-            });
-            gridLayout.addView(customTile);
-        }
+                android.widget.RelativeLayout.LayoutParams imgParams = new android.widget.RelativeLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                imgParams.addRule(android.widget.RelativeLayout.CENTER_IN_PARENT);
+                previewImg.setLayoutParams(imgParams);
+                imgContainer.addView(previewImg);
 
-        for (final com.jdroidx.jfindme.engine.data.avatar.AvatarEntity avatar : templateList) {
-            android.widget.RelativeLayout tile = new android.widget.RelativeLayout(this);
-            android.widget.GridLayout.LayoutParams gridParams = new android.widget.GridLayout.LayoutParams();
-            gridParams.width = 300;
-            gridParams.height = 350;
-            gridParams.setMargins(15, 15, 15, 15);
-            tile.setLayoutParams(gridParams);
-            applySolidCardGeometry(tile, getCardColor(), 16f); // Use standard Floating Geometry
-            
-            // Required for QA Tab Sequences!
-            tile.setFocusable(true);
-            tile.setClickable(true);
+                // Tick Box Indicator
+                TextView activeBadge = new TextView(this);
+                activeBadge.setText(isEquipped ? "✓" : "☐");
+                activeBadge.setTextColor(Color.WHITE);
+                activeBadge.setTextSize(isEquipped ? 10 : 12);
+                activeBadge.setTypeface(null, Typeface.BOLD);
+                activeBadge.setGravity(Gravity.CENTER);
+                android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
+                badgeBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                badgeBg.setColor(isEquipped ? Color.parseColor("#00E676") : Color.argb(160, 100, 116, 139));
+                activeBadge.setBackground(badgeBg);
+                int badgeSize = (int) (18 * dm.density);
+                android.widget.RelativeLayout.LayoutParams badgeParams = new android.widget.RelativeLayout.LayoutParams(badgeSize, badgeSize);
+                badgeParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
+                badgeParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
+                activeBadge.setLayoutParams(badgeParams);
+                imgContainer.addView(activeBadge);
 
-            // 1. Core Profile Image (Centered in Tile)
-            ImageView previewImg = new ImageView(this);
-            previewImg.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            
-            // Prime Directive Sync: Integration with the User's newly defined "Avatar" Directory!
-            // Safely distributes the 8 physical image files across our 25 Unique Avatar models.
-            int dynamicImgIndex = (avatar.getBaseId() % 22 == 0) ? 22 : (avatar.getBaseId() % 22);
-            String customGraphicName = "avatar_custom_" + dynamicImgIndex;
-            
-            int customResId = getResources().getIdentifier(customGraphicName, "drawable", getPackageName());
-            
-            // Failsafe Execution (If an image goes missing, don't crash the grid)
-            if (customResId != 0) {
-                previewImg.setImageResource(customResId);
-            } else {
-                previewImg.setImageResource(android.R.drawable.ic_menu_gallery);
+                tile.addView(imgContainer);
+
+                TextView nameStr = new TextView(this);
+                nameStr.setText(activeId + ". " + avatar.getType());
+                nameStr.setTextColor(isEquipped ? Color.parseColor("#00E676") : getTextColor());
+                nameStr.setTextSize(11);
+                nameStr.setTypeface(null, Typeface.BOLD);
+                nameStr.setGravity(Gravity.CENTER);
+                nameStr.setSingleLine(true);
+                nameStr.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                nameStr.setPadding((int) (2 * dm.density), (int) (4 * dm.density), (int) (2 * dm.density), 0);
+                tile.addView(nameStr);
+
+                applyAccessibility(tile, "Select Avatar: " + activeId + ". " + avatar.getType());
+
+                tile.setOnClickListener(v -> {
+                    showAvatarEnlargedPopup(activeId + ". " + avatar.getType(), rarityStr, finalResId, activeId, isEquipped, () -> {
+                        mainProfilePic.setImageDrawable(previewImg.getDrawable());
+                        mainProfilePic.clearColorFilter();
+                        
+                        if (activeProfileImgView != null) {
+                            String[] existingModels = {
+                                "models/AliciaSolid.vrm", 
+                                "models/BlackSuger.vrm", 
+                                "models/ButterCup.vrm", 
+                                "models/FoxModel.vrm", 
+                                "models/Seed-chan.vrm", 
+                                "models/VRM1_Fox.vrm", 
+                                "models/VRoid_Test.vrm"
+                            };
+                            String baseModel = existingModels[Math.abs(activeId) % existingModels.length];
+                            activeProfileImgView.evaluateJavascript("window.loadModel('../" + baseModel + "');", null);
+                        }
+                        
+                        if (profileViewModel != null) {
+                            profileViewModel.equipAvatar(prefs, activeId);
+                        }
+
+                        Toast.makeText(this, "Equipped Avatar: " + avatar.getType() + " [✓]", Toast.LENGTH_SHORT).show();
+                        dialog.dismiss();
+                    });
+                });
+
+                filteredTiles.add(tile);
             }
-            
-            android.widget.RelativeLayout.LayoutParams imgParams = new android.widget.RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            previewImg.setLayoutParams(imgParams);
-            tile.addView(previewImg);
 
-            // 2. Selection Loop Indicator (Top Right Circle)
-            ImageView circle = new ImageView(this);
-            circle.setImageResource(android.R.drawable.checkbox_off_background);
-            android.widget.RelativeLayout.LayoutParams circleParams = new android.widget.RelativeLayout.LayoutParams(60, 60);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
-            circleParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT); // SDK Compatibility
-            circleParams.setMargins(0, 15, 15, 0);
-            circle.setLayoutParams(circleParams);
-            tile.addView(circle);
+            // 3. Build Adaptive Multi-Pixel Rows
+            for (int i = 0; i < filteredTiles.size(); i += colCount) {
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setWeightSum((float) colCount);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                rowLp.setMargins(0, (int) (2 * dm.density), 0, (int) (2 * dm.density));
+                row.setLayoutParams(rowLp);
 
-            // 3. Variant Name Identifier (Bottom Text)
-            TextView nameStr = new TextView(this);
-            nameStr.setText(avatar.getType());
-            nameStr.setTextColor(Color.WHITE);
-            nameStr.setTextSize(UiScalingMatrixTable.scaleText(UiArchitect.getStage(this), 12));
-            nameStr.setGravity(Gravity.CENTER);
-            nameStr.setBackgroundColor(Color.parseColor("#88000000")); // 50% Black transparency for contrast
-            nameStr.setPadding(0, 15, 0, 15);
-            
-            android.widget.RelativeLayout.LayoutParams nameParams = new android.widget.RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            nameParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
-            nameStr.setLayoutParams(nameParams);
-            tile.addView(nameStr);
-            applyAccessibility(tile, "Select Avatar: " + avatar.getType());
-
-            // 4. Interaction Binding (Execute Equip & Circle Fill)
-            tile.setOnClickListener(v -> {
-                circle.setImageResource(android.R.drawable.checkbox_on_background); // Visual fill confirmation
-                mainProfilePic.setImageDrawable(previewImg.getDrawable());
-                mainProfilePic.clearColorFilter(); // Remove Tint
-                
-                // Apply the new 3D WebGL payload
-                int activeId = avatar.getBaseId();
-                if (activeProfileImgView != null) {
-                    // 🚀 QA Fix: Dynamically load exact physical files from the 'assets/models/' folder!
-                    String[] existingModels = {
-                        "models/AliciaSolid.vrm", 
-                        "models/BlackSuger.vrm", 
-                        "models/ButterCup.vrm", 
-                        "models/FoxModel.vrm", 
-                        "models/Seed-chan.vrm", 
-                        "models/VRM1_Fox.vrm", 
-                        "models/VRoid_Test.vrm"
-                    };
-                    String baseModel = existingModels[Math.abs(activeId) % existingModels.length];
-                    activeProfileImgView.evaluateJavascript("window.loadModel('../" + baseModel + "');", null);
+                for (int j = 0; j < colCount; j++) {
+                    if (i + j < filteredTiles.size()) {
+                        View tile = filteredTiles.get(i + j);
+                        LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+                        cellLp.setMargins(tileMargin, tileMargin, tileMargin, tileMargin);
+                        tile.setLayoutParams(cellLp);
+                        row.addView(tile);
+                    } else {
+                        View emptySpacer = new View(this);
+                        LinearLayout.LayoutParams cellLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+                        cellLp.setMargins(tileMargin, tileMargin, tileMargin, tileMargin);
+                        emptySpacer.setLayoutParams(cellLp);
+                        row.addView(emptySpacer);
+                    }
                 }
-                
-                // prime directive context map: Save specific Selection natively
-                if (profileViewModel != null) {
-                    profileViewModel.equipAvatar(prefs, activeId);
-                }
+                gridContainer.addView(row);
+            }
+        };
 
-                android.widget.Toast.makeText(this, "Equipped Avatar: " + avatar.getType(), android.widget.Toast.LENGTH_SHORT).show();
-                
-                dialog.dismiss();
+        // Real-Time Search Text Watcher
+        searchField.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                activeSearchQuery[0] = (s != null) ? s.toString().trim() : "";
+                updateGrid[0].run();
+            }
+            @Override
+            public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        // Build Horizontal Filter Tab Chips
+        for (int k = 0; k < categories.length; k++) {
+            final int tabIndex = k;
+            final String catKey = categories[k];
+            TextView tab = new TextView(this);
+            tab.setText(categoryLabels[k]);
+            tab.setTextSize(12);
+            tab.setTypeface(null, Typeface.BOLD);
+            tab.setPadding((int) (12 * dm.density), (int) (6 * dm.density), (int) (12 * dm.density), (int) (6 * dm.density));
+            LinearLayout.LayoutParams tabLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            tabLp.setMargins((int) (3 * dm.density), 0, (int) (3 * dm.density), 0);
+            tab.setLayoutParams(tabLp);
+
+            tabViews[k] = tab;
+            tab.setOnClickListener(v -> {
+                activeCategory[0] = catKey;
+                for (int m = 0; m < categories.length; m++) {
+                    boolean isSelected = (m == tabIndex);
+                    android.graphics.drawable.GradientDrawable tBg = new android.graphics.drawable.GradientDrawable();
+                    tBg.setCornerRadius((int) (16 * dm.density));
+                    if (isSelected) {
+                        tBg.setColor(Color.parseColor("#3B82F6")); // Active Blue Accent
+                        tabViews[m].setTextColor(Color.WHITE);
+                    } else {
+                        tBg.setColor(Color.argb(40, 148, 163, 184));
+                        tabViews[m].setTextColor(getTextColor());
+                    }
+                    tabViews[m].setBackground(tBg);
+                }
+                updateGrid[0].run();
             });
 
-            gridLayout.addView(tile);
+            // Initialize Style
+            android.graphics.drawable.GradientDrawable tBg = new android.graphics.drawable.GradientDrawable();
+            tBg.setCornerRadius((int) (16 * dm.density));
+            if (k == 0) {
+                tBg.setColor(Color.parseColor("#3B82F6"));
+                tab.setTextColor(Color.WHITE);
+            } else {
+                tBg.setColor(Color.argb(40, 148, 163, 184));
+                tab.setTextColor(getTextColor());
+            }
+            tab.setBackground(tBg);
+            tabLayout.addView(tab);
         }
 
-        scrollView.addView(gridLayout);
+        // Initial Grid Render
+        updateGrid[0].run();
+
         dialog.show();
+        applyDialogTheme(dialog);
+        if (dialog.getWindow() != null) {
+            int maxDialogWidth = (int) (dm.widthPixels * 0.94f);
+            dialog.getWindow().setLayout(maxDialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+    }
+
+    /**
+     * 🔍 High-Definition Popup Image Preview Modal on Tap
+     */
+    private void showAvatarEnlargedPopup(String avatarTitle, String category, Object imageResOrPath, int avatarId, boolean isEquipped, Runnable onEquipAction) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setGravity(Gravity.CENTER_HORIZONTAL);
+        layout.setPadding((int)(16 * dm.density), (int)(16 * dm.density), (int)(16 * dm.density), (int)(16 * dm.density));
+
+        // Enlarged Image Preview
+        ImageView bigImage = new ImageView(this);
+        int bigSize = (int)(180 * dm.density);
+        LinearLayout.LayoutParams bigLp = new LinearLayout.LayoutParams(bigSize, bigSize);
+        bigLp.setMargins(0, 0, 0, (int)(12 * dm.density));
+        bigImage.setLayoutParams(bigLp);
+        bigImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+        if (imageResOrPath instanceof Integer) {
+            bigImage.setImageResource((Integer) imageResOrPath);
+        } else if (imageResOrPath instanceof String) {
+            android.graphics.Bitmap b = android.graphics.BitmapFactory.decodeFile((String) imageResOrPath);
+            if (b != null) bigImage.setImageBitmap(b);
+            else bigImage.setImageResource(android.R.drawable.ic_menu_gallery);
+        }
+
+        android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+        ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        ring.setStroke((int)(3 * dm.density), isEquipped ? Color.parseColor("#00E676") : Color.parseColor("#3B82F6"));
+        ring.setColor(getCardColor());
+        bigImage.setBackground(ring);
+        layout.addView(bigImage);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText(avatarTitle);
+        titleTv.setTextColor(getTextColor());
+        titleTv.setTextSize(18);
+        titleTv.setTypeface(null, Typeface.BOLD);
+        titleTv.setGravity(Gravity.CENTER);
+        layout.addView(titleTv);
+
+        TextView catTv = new TextView(this);
+        catTv.setText("Tier: " + category + "  ●  ID: #" + (avatarId == -1 ? "CUSTOM" : avatarId));
+        catTv.setTextColor(Color.parseColor("#94A3B8"));
+        catTv.setTextSize(12);
+        catTv.setGravity(Gravity.CENTER);
+        catTv.setPadding(0, (int)(4 * dm.density), 0, (int)(14 * dm.density));
+        layout.addView(catTv);
+
+        android.app.AlertDialog previewDialog = new android.app.AlertDialog.Builder(this)
+            .setTitle("✨ Avatar Identity Inspection")
+            .setView(layout)
+            .setPositiveButton(isEquipped ? "EQUIPPED ✓" : "EQUIP AVATAR [✓]", (d, w) -> {
+                if (onEquipAction != null) onEquipAction.run();
+            })
+            .setNegativeButton("Cancel", null)
+            .create();
+
+        previewDialog.show();
+        applyDialogTheme(previewDialog);
     }
 
     private View createSectionHeader(String text) {
@@ -932,8 +1305,7 @@ public class ProfileActivity extends BaseActivityJava {
         row.setPadding(pS, pV, pS, pV); 
         
         android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-        String mAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
-        fieldBg.setColor(Color.parseColor("#" + mAlpha + "000000")); 
+        fieldBg.setColor(getCardColor()); 
         fieldBg.setStroke(3, getGradientStart()); 
         fieldBg.setCornerRadius(UiScalingMatrixTable.scaleRadius(stage, 30f));
         row.setBackground(fieldBg);
@@ -972,8 +1344,7 @@ public class ProfileActivity extends BaseActivityJava {
         row.setPadding(pS, pS, pS, pS); 
         
         android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-        String mAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
-        fieldBg.setColor(Color.parseColor("#" + mAlpha + "000000")); 
+        fieldBg.setColor(getCardColor()); 
         fieldBg.setStroke(3, getGradientStart()); 
         fieldBg.setCornerRadius(UiScalingMatrixTable.scaleRadius(stage, 20f));
         row.setBackground(fieldBg);
@@ -1014,22 +1385,23 @@ public class ProfileActivity extends BaseActivityJava {
                 syncFieldsToPrefs(); // Force sync current UI values to prefs for validation
                 
                 if (hasUnsavedChanges()) {
-                    new android.app.AlertDialog.Builder(ProfileActivity.this)
+                    android.app.AlertDialog unsavedDialog = new android.app.AlertDialog.Builder(ProfileActivity.this)
                         .setTitle("⚠️ UNSAVED CHANGES")
                         .setMessage("You have made changes to your identity profile. Would you like to update your cloud roster or discard these changes?")
                         .setPositiveButton("UPDATE 🚀", (dialog, which) -> handleProfileSaveAction(false))
                         .setNegativeButton("DISCARD 🕒", (dialog, which) -> {
-                            // Restore initial values visually if needed, or just exit
                             finish();
                         })
                         .setNeutralButton("CANCEL", null)
-                        .show();
+                        .create();
+                    unsavedDialog.show();
+                    applyDialogTheme(unsavedDialog);
                     return;
                 }
 
                 String missing = profileViewModel.getMissingMandatoryFields(prefs);
                 if (missing != null) {
-                    new android.app.AlertDialog.Builder(ProfileActivity.this)
+                    android.app.AlertDialog missingDialog = new android.app.AlertDialog.Builder(ProfileActivity.this)
                         .setTitle("🛡️ IDENTITY INTEGRITY REQUIRED")
                         .setMessage("Hi there! We found a few pieces of your safety shield that need completing: 🛡️\n\n" +
                                 missing + "\n\n" +
@@ -1037,18 +1409,17 @@ public class ProfileActivity extends BaseActivityJava {
                                 "⚠️ Note: This is a mandatory requirement for your safety network.")
                         .setPositiveButton("COMPLETE NOW 🚀", null)
                         .setNegativeButton("SAVE LATER 🕒", (dialog, which) -> {
-                            handleProfileSaveAction(true); // Save current changes without validation
-                            
                             // 🚀 QA Fix: Set Bypass Flag to allow MapActivity access for this session
                             prefs.edit().putBoolean("profile_bypass_nudge", true).apply();
-                            
-                            startActivity(new android.content.Intent(ProfileActivity.this, com.jdroidx.jfindme.ui.map.MapActivity.class)
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
-                            finish();
+                            com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
+                            handleProfileSaveAction(true); // Save current changes without validation, single-route through executeCloudMatrixVerification
                         })
                         .setCancelable(false) // Hard Lock: Cannot dismiss without choosing an action
-                        .show();
+                        .create();
+                    missingDialog.show();
+                    applyDialogTheme(missingDialog);
                 } else {
+                    com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
                     android.widget.Toast.makeText(ProfileActivity.this, "🛡️ Identity Verified. Proceeding to Dashboard.", android.widget.Toast.LENGTH_SHORT).show();
                     startActivity(new android.content.Intent(ProfileActivity.this, com.jdroidx.jfindme.ui.map.MapActivity.class)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
@@ -1109,15 +1480,23 @@ public class ProfileActivity extends BaseActivityJava {
                 if (genderField != null && (genderField.getText().toString().isEmpty() || genderField.getText().toString().equals("Select Gender"))) genderField.setText(val, false);
                 editor.putString("user_gender", val);
             }
+            String loadedCountry = "";
             if (data.containsKey("userCountry") || data.containsKey("country")) {
                 String val = String.valueOf(data.getOrDefault("userCountry", data.get("country")));
                 if (countrySpinner != null && (countrySpinner.getText().toString().isEmpty() || countrySpinner.getText().toString().equals("Select Country"))) countrySpinner.setText(val, false);
                 editor.putString("user_country", val);
+                loadedCountry = val;
+                if (!val.isEmpty() && !val.equals("Select Country") && !val.equals("Identifying...")) {
+                    profileViewModel.fetchStatesList(val);
+                }
             }
             if (data.containsKey("userState") || data.containsKey("state")) {
                 String val = String.valueOf(data.getOrDefault("userState", data.get("state")));
                 if (stateSpinner != null && (stateSpinner.getText().toString().isEmpty() || stateSpinner.getText().toString().equals("Select State"))) stateSpinner.setText(val, false);
                 editor.putString("user_state", val);
+                if (!val.isEmpty() && !val.equals("Select State") && !val.equals("Identifying...") && !loadedCountry.isEmpty()) {
+                    profileViewModel.fetchCitiesList(loadedCountry, val);
+                }
             }
             if (data.containsKey("userCity") || data.containsKey("city")) {
                 String val = String.valueOf(data.getOrDefault("userCity", data.get("city")));
@@ -1142,26 +1521,28 @@ public class ProfileActivity extends BaseActivityJava {
                 captureInitialState();
                 isDataLoaded = true;
             }
+
+            // 🚀 QA Fix: Async Profile Completeness Verification Nudge (Resolves Race Condition)
+            String loadedPincode = prefs.getString("user_pincode", "");
+            if (loadedPincode.isEmpty() && !onboardingDialogShown) {
+                onboardingDialogShown = true;
+                android.app.AlertDialog onboardingDialog = new android.app.AlertDialog.Builder(ProfileActivity.this)
+                    .setTitle("🔔 Finishing Touches Required!")
+                    .setMessage("Hi there! We are almost done setting up your safety shield! 🛡️\n\n" +
+                            "To complete your installation, please fill in these important fields marked with a (*) red star:\n\n" +
+                            "✅ Your Name\n" +
+                            "✅ Mobile Number\n" +
+                            "✅ Pincode (Very Important!)\n" +
+                            "✅ Your Country, State, and City\n\n" +
+                            "This helps your friends and family find you quickly if you ever need them. It's like giving your house a proper address on the map! 🏠✨")
+                    .setPositiveButton("LET'S DO IT! 🚀", null)
+                    .create();
+                onboardingDialog.show();
+                applyDialogTheme(onboardingDialog);
+            }
         });
         
         profileViewModel.fetchProfile(this);
-        
-        // 🚀 QA Fix: Installation Completion Guard
-        // Suppress on every action taken in the image icons (SafeRecreate blocker)
-        if (prefs.getString("user_pincode", "").isEmpty() && !onboardingDialogShown) {
-            onboardingDialogShown = true;
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("🔔 Finishing Touches Required!")
-                .setMessage("Hi there! We are almost done setting up your safety shield! 🛡️\n\n" +
-                        "To complete your installation, please fill in these important fields marked with a (*) red star:\n\n" +
-                        "✅ Your Name\n" +
-                        "✅ Mobile Number\n" +
-                        "✅ Pincode (Very Important!)\n" +
-                        "✅ Your Country, State, and City\n\n" +
-                        "This helps your friends and family find you quickly if you ever need them. It's like giving your house a proper address on the map! 🏠✨")
-                .setPositiveButton("LET'S DO IT! 🚀", null)
-                .show();
-        }
 
         profileViewModel.isLoading().observe(this, loading -> {
             if (loading) com.jdroidx.jfindme.utils.AngelLoader.show(this);
@@ -1192,11 +1573,13 @@ public class ProfileActivity extends BaseActivityJava {
                     displayMsg = error;
                 }
                 
-                new android.app.AlertDialog.Builder(this)
+                android.app.AlertDialog errorDialog = new android.app.AlertDialog.Builder(this)
                     .setTitle("🔔 FINISHING TOUCHES REQUIRED")
                     .setMessage(displayMsg)
                     .setPositiveButton("RESOLVE ISSUES 🚀", null)
-                    .show();
+                    .create();
+                errorDialog.show();
+                applyDialogTheme(errorDialog);
                 
                 profileViewModel.clearError();
             }
@@ -1269,6 +1652,8 @@ public class ProfileActivity extends BaseActivityJava {
         
         // Lens Crop Execution Bypass
         if (requestCode == 1002 && resultCode == RESULT_OK) {
+            syncFieldsToPrefs(); // 🚀 QA Fix: Prevent unsaved data loss during image update
+            com.jdroidx.jfindme.utils.AvatarLoader.clearCache(); // 🚀 QA Fix: Clear LruCache to show new photo
             safeRecreate(); // 🚀 QA NATIVE FIX! Bypasses OEM Relaunch Error!
             return;
         }
@@ -1519,10 +1904,12 @@ public class ProfileActivity extends BaseActivityJava {
             detailsRoot.addView(fTv);
         }
 
-        new android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this)
             .setView(detailsRoot)
             .setPositiveButton("OK", null)
-            .show();
+            .create();
+        d.show();
+        applyDialogTheme(d);
     }
     private void captureInitialState() {
         initialValues.clear();
@@ -1535,6 +1922,7 @@ public class ProfileActivity extends BaseActivityJava {
         if (stateSpinner != null) initialValues.put("state", stateSpinner.getText().toString().trim());
         if (citySpinner != null) initialValues.put("city", citySpinner.getText().toString().trim());
         if (addressField != null) initialValues.put("address", addressField.getText().toString().trim());
+        if (emergencyNoteField != null) initialValues.put("emergency_note", emergencyNoteField.getText().toString().trim());
         if (orgField != null) initialValues.put("org", orgField.getText().toString().trim());
         if (deptField != null) initialValues.put("dept", deptField.getText().toString().trim());
     }
@@ -1550,8 +1938,56 @@ public class ProfileActivity extends BaseActivityJava {
         if (stateSpinner != null && !stateSpinner.getText().toString().trim().equals(initialValues.getOrDefault("state", ""))) return true;
         if (citySpinner != null && !citySpinner.getText().toString().trim().equals(initialValues.getOrDefault("city", ""))) return true;
         if (addressField != null && !addressField.getText().toString().trim().equals(initialValues.getOrDefault("address", ""))) return true;
+        if (emergencyNoteField != null && !emergencyNoteField.getText().toString().trim().equals(initialValues.getOrDefault("emergency_note", ""))) return true;
         if (orgField != null && !orgField.getText().toString().trim().equals(initialValues.getOrDefault("org", ""))) return true;
         if (deptField != null && !deptField.getText().toString().trim().equals(initialValues.getOrDefault("dept", ""))) return true;
         return false;
+    }
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null) return;
+        if (nameField != null) outState.putString("PROFILE_NAME", nameField.getText().toString());
+        if (phoneField != null) outState.putString("PROFILE_PHONE", phoneField.getText().toString());
+        if (dobField != null) outState.putString("PROFILE_DOB", dobField.getText().toString());
+        if (genderField != null) outState.putString("PROFILE_GENDER", genderField.getText().toString());
+        if (pincodeField != null) outState.putString("PROFILE_PINCODE", pincodeField.getText().toString());
+        if (countrySpinner != null) outState.putString("PROFILE_COUNTRY", countrySpinner.getText().toString());
+        if (stateSpinner != null) outState.putString("PROFILE_STATE", stateSpinner.getText().toString());
+        if (citySpinner != null) outState.putString("PROFILE_CITY", citySpinner.getText().toString());
+        if (addressField != null) outState.putString("PROFILE_ADDRESS", addressField.getText().toString());
+        if (emergencyNoteField != null) outState.putString("PROFILE_EMERGENCY", emergencyNoteField.getText().toString());
+        if (orgField != null) outState.putString("PROFILE_ORG", orgField.getText().toString());
+        if (deptField != null) outState.putString("PROFILE_DEPT", deptField.getText().toString());
+    }
+
+    @Override
+    protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState == null) return;
+        if (nameField != null && savedState.containsKey("PROFILE_NAME")) nameField.setText(savedState.getString("PROFILE_NAME", ""));
+        if (phoneField != null && savedState.containsKey("PROFILE_PHONE")) phoneField.setText(savedState.getString("PROFILE_PHONE", ""));
+        if (dobField != null && savedState.containsKey("PROFILE_DOB")) dobField.setText(savedState.getString("PROFILE_DOB", ""));
+        if (genderField != null && savedState.containsKey("PROFILE_GENDER")) genderField.setText(savedState.getString("PROFILE_GENDER", ""));
+        if (pincodeField != null && savedState.containsKey("PROFILE_PINCODE")) pincodeField.setText(savedState.getString("PROFILE_PINCODE", ""));
+        if (countrySpinner != null && savedState.containsKey("PROFILE_COUNTRY")) countrySpinner.setText(savedState.getString("PROFILE_COUNTRY", ""));
+        if (stateSpinner != null && savedState.containsKey("PROFILE_STATE")) stateSpinner.setText(savedState.getString("PROFILE_STATE", ""));
+        if (citySpinner != null && savedState.containsKey("PROFILE_CITY")) citySpinner.setText(savedState.getString("PROFILE_CITY", ""));
+        if (addressField != null && savedState.containsKey("PROFILE_ADDRESS")) addressField.setText(savedState.getString("PROFILE_ADDRESS", ""));
+        if (emergencyNoteField != null && savedState.containsKey("PROFILE_EMERGENCY")) emergencyNoteField.setText(savedState.getString("PROFILE_EMERGENCY", ""));
+        if (orgField != null && savedState.containsKey("PROFILE_ORG")) orgField.setText(savedState.getString("PROFILE_ORG", ""));
+        if (deptField != null && savedState.containsKey("PROFILE_DEPT")) deptField.setText(savedState.getString("PROFILE_DEPT", ""));
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (hasUnsavedChanges()) {
+            UiArchitect.showConfirmationDialog(this,
+                "Unsaved Changes",
+                "You have modified your profile details. Do you want to discard your changes and exit?",
+                "DISCARD", "KEEP EDITING",
+                super::onBackPressed, null);
+        } else {
+            super.onBackPressed();
+        }
     }
 }

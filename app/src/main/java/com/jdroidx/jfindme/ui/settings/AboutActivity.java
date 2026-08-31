@@ -11,6 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.UiArchitect;
 
 public class AboutActivity extends BaseActivityJava {
     @Override
@@ -38,26 +39,25 @@ public class AboutActivity extends BaseActivityJava {
         ImageView logo = new ImageView(this);
         logo.setImageResource(android.R.drawable.ic_dialog_info); 
         logo.setColorFilter(getGradientStart()); // Overridden mathematically by current Theme
-        master.addView(logo, new LinearLayout.LayoutParams(250, 250));
+        int lSize = scale(100);
+        master.addView(logo, new LinearLayout.LayoutParams(lSize, lSize));
 
         // Enterprise Title
         TextView title = new TextView(this);
         title.setText("jFIND-ME TRACKING ENGINE");
         title.setTextColor(getTextColor());
-        title.setTextSize(24f);
-        title.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, title, "TEXT_HEADER");
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 40, 0, 10);
+        title.setPadding(0, scale(15), 0, scale(5));
         master.addView(title);
 
         TextView ver = new TextView(this);
-        ver.setText("ENTERPRISE BUILD MATRIX: V1.0.0 (PRODUCTION SECURE)");
+        ver.setText("ENTERPRISE BUILD: V" + com.jdroidx.jfindme.BuildConfig.VERSION_NAME + " (BUILD " + com.jdroidx.jfindme.BuildConfig.VERSION_CODE + ")");
         ver.setTextColor(getSecondaryTextColor());
         ver.setAlpha(0.8f);
-        ver.setTextSize(11f);
-        ver.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, ver, "TEXT_MINI");
         ver.setGravity(Gravity.CENTER);
-        ver.setPadding(0, 0, 0, 60);
+        ver.setPadding(0, 0, 0, scale(20));
         master.addView(ver);
 
         // Core Values Injection
@@ -74,11 +74,23 @@ public class AboutActivity extends BaseActivityJava {
         }));
         
         master.addView(buildActionButton("View Enterprise License (EULA)", "Read corporate bounds and authorization limitations", v -> {
-            android.widget.Toast.makeText(this, "Fetching EULA via secure channel...", android.widget.Toast.LENGTH_SHORT).show();
+            UiArchitect.showValidationDialog(this,
+                "Enterprise End-User License (EULA)",
+                "1. GRANT OF LICENSE: Licensed for internal family & guardian safety operations.\n\n" +
+                "2. TELEMETRY CONSENT: Real-time GPS coordinates are transmitted exclusively to paired guardian devices via end-to-end encryption.\n\n" +
+                "3. DATA RETENTION: Historical breadcrumbs are stored locally on device for up to 7 days and can be permanently purged at any time.\n\n" +
+                "4. RESTRICTIONS: Reverse engineering, unauthorized distribution, or unauthorized location spoofing is strictly prohibited.",
+                null);
         }));
 
         master.addView(buildActionButton("Privacy Policy & Terms", "Review active Data Cryptography and Retention laws", v -> {
-            android.widget.Toast.makeText(this, "Loading Core Protection Rules...", android.widget.Toast.LENGTH_SHORT).show();
+            UiArchitect.showValidationDialog(this,
+                "Privacy & Data Protection Policy",
+                "• ZERO THIRD-PARTY SHARING: Your spatial telemetry and identity dossiers are never sold or transmitted to third-party data brokers.\n\n" +
+                "• LOCAL-FIRST ENCRYPTION: Sensitive biometrics, medical notes, and local breadcrumbs are encrypted with AES-256 GCM.\n\n" +
+                "• GHOST MODE: You can engage Ghost Mode at any time in Privacy Settings to temporarily halt outbound telemetry pings.\n\n" +
+                "• COMPLIANCE: Adheres to GDPR Data Minimization and Children's Online Privacy guidelines.",
+                null);
         }));
 
         scroll.addView(master);
@@ -133,6 +145,7 @@ public class AboutActivity extends BaseActivityJava {
         row.setClickable(true);
         row.setFocusable(true);
         row.setOnClickListener(listener);
+        applyAccessibility(row, titleStr);
         
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, 0, 0, 30);

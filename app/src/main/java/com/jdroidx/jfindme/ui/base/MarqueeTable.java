@@ -82,15 +82,13 @@ public class MarqueeTable {
         tv.setTextSize(textSize);
         tv.setTypeface(null, android.graphics.Typeface.BOLD);
         tv.setElevation(elevation);
-        tv.setTextColor(activity.getGradientEnd()); // 🚀 Theme Dynamic Sync
+        int neonColor = ThemeManager.isDarkTheme(activity.getResolvedThemeId()) ? Color.parseColor("#00F0FF") : Color.parseColor("#00FF66");
+        tv.setTextColor(neonColor); // 🚀 Neon Green/Blue context
         
         GradientDrawable gd = new GradientDrawable();
-        int tint = activity.getGradientStart();
-        if (record.usesDynamicTheme) {
-            gd.setColor(Color.argb(15, Color.red(tint), Color.green(tint), Color.blue(tint)));
-        } else {
-            gd.setColor(record.fallbackColor);
-        }
+        gd.setColor(Color.argb(200, 8, 12, 20));
+        gd.setStroke(2, Color.argb(160, Color.red(neonColor), Color.green(neonColor), Color.blue(neonColor)));
+        gd.setCornerRadius(12f);
         tv.setBackground(gd);
         
         return tv;

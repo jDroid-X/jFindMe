@@ -12,10 +12,15 @@ import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.jdroidx.jfindme.ui.base.BaseViewModel
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.utils.DeviceIdentityHelper
+import com.jdroidx.jfindme.utils.FirebaseErrorMapper
+import com.jdroidx.jfindme.utils.RegistryManager
+import com.jdroidx.jfindme.utils.ValidationEngine
 import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import android.content.Context
 import android.app.Application
+import kotlinx.coroutines.*
 
 /**
  * AuthViewModel handles user authentication and session management.
@@ -40,14 +45,28 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
     }
 
     @JvmOverloads
-    fun login(email: String, pass: String, nick: String = "", autoLoginEnabled: Boolean = false, 
+    fun login(email: String, pass: String, nick: String = "", autoLoginEnabled: Boolean = false,
               lat: Double = 0.0, lng: Double = 0.0, addr: String = "") {
         val cleanEmail = email.trim().lowercase()
         val cleanPass = pass.trim()
-        val isSystemNode = cleanEmail.endsWith("@jfindme.net")
+
+        // AUDIT FIX [AUD-009]: Validate email and password BEFORE calling Firebase
+        val emailCheck = ValidationEngine.validateEmail(cleanEmail)
+        if (!emailCheck.isValid) {
+            _errorMessage.value = emailCheck.errorMessage
+            return
+        }
+        val passCheck = ValidationEngine.validatePassword(cleanPass)
+        if (!passCheck.isValid) {
+            _errorMessage.value = passCheck.errorMessage
+            return
+        }
+
+        val domain = RegistryManager.getEnterpriseDomain(getApplication())
+        val isSystemNode = cleanEmail.endsWith("@$domain")
         val dbHelper = DatabaseHelper.getInstance(getApplication())
         _isLoading.value = true
-        
+
         SystemLogger.i("Handshake", "Initiating Analytical Identity Sync for Node: $cleanEmail")
 
         auth.signInWithEmailAndPassword(cleanEmail, cleanPass)
@@ -57,32 +76,43 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                     
                     // 🛡️ Forensic Bridge: Unify Hardware IDENTITY Protocol (V58.1 Standard)
                     val rawId = android.provider.Settings.Secure.getString(getApplication<android.app.Application>().contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "AGENT_L7_NODE"
-                    val hardwareUid = "HW_" + rawId.uppercase()
+                    val prefix = RegistryManager.getHardwarePrefix(getApplication())
+                    val hardwareUid = prefix + rawId.uppercase()
                     val agentId = dbHelper.resolveForensicAgentId(hardwareUid)
 
                     // 🚀 Step 1: Cloud Meta-Data Recovery (Fetch existing profile markers)
                     FirebaseComm.devicesRef.child(agentId).child("profile").get().addOnCompleteListener { profileTask ->
                         var finalName = nick
                         var finalEmail = cleanEmail
-                        var activeGroup = "DEFAULT_GROUP"
-                        
+                        val defaultPersonalGroup = "GRP_" + agentId
+                        var activeGroup = defaultPersonalGroup
+
                         if (profileTask.isSuccessful && profileTask.result != null && profileTask.result!!.exists()) {
                             val snap = profileTask.result!!
                             val cloudName = snap.child("name").getValue(String::class.java) ?: snap.child("full_name").getValue(String::class.java)
                             if (cloudName != null) finalName = cloudName
-                            
+
                             val cloudEmail = snap.child("email").getValue(String::class.java) ?: snap.child("email_id").getValue(String::class.java)
                             if (cloudEmail != null) finalEmail = cloudEmail
-                            
-                            activeGroup = snap.child("active_group").getValue(String::class.java) ?: "DEFAULT_GROUP"
+
+                            val savedGroup = snap.child("active_group").getValue(String::class.java)
+                            activeGroup = if (!savedGroup.isNullOrBlank() && savedGroup != "DEFAULT_GROUP") savedGroup else defaultPersonalGroup
+                            if (savedGroup.isNullOrBlank() || savedGroup == "DEFAULT_GROUP") {
+                                FirebaseComm.devicesRef.child(agentId).child("profile").child("active_group").setValue(activeGroup)
+                                FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(agentId).child("role").setValue("OWNER")
+                            }
+                        } else {
+                            // First time cloud registration or legacy profile recovery
+                            FirebaseComm.devicesRef.child(agentId).child("profile").child("active_group").setValue(activeGroup)
+                            FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(agentId).child("role").setValue("OWNER")
                         }
-                        
+
                         // 🧬 V58.2 Alias-Identity Parity Enforcement
                         if (finalName.isEmpty() || finalName.startsWith("Agent_")) {
                             finalName = agentId
                         }
 
-                        // 🧬 STEP 2: Execute Master Analytical Handshake (SQLite Ledger)
+                        // 🧬 STEP 2: Execute Master Analytical Handshake with Epoch Isolation (SQLite Ledger)
                         val profileData = mapOf(
                             "name" to finalName,
                             "email" to finalEmail,
@@ -90,16 +120,18 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             "fingerprint" to android.os.Build.FINGERPRINT,
                             "imei" to "REDACTED"
                         )
-                        
+
                         val groupData = mapOf(
                             "group_id" to activeGroup,
                             "group_name" to "Primary Hub"
                         )
 
+                        val epochId = "EP_" + System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().take(6)
+
                         dbHelper.executeTieredHandshake(
                             authUid, agentId, hardwareUid, rawId,
                             profileData, null, null, groupData, null, null, null,
-                            lat, lng, addr
+                            lat, lng, addr, "ADMIN", epochId
                         )
 
                         // 📡 STEP 3: One-Click Cloud Matrix Parity (Waterfall Heartbeat)
@@ -112,8 +144,40 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             "active_group" to activeGroup,
                             "updated_at" to forensicTs
                         )
-                        
+
                         FirebaseComm.syncForensicHeartbeat(authUid, agentId, hardwareUid, cloudPayload, activeGroup)
+
+                        // 🔄 STEP 4: Prune abandoned in-flight pairing sessions & purge rogue Auth UID nodes
+                        FirebaseComm.cleanupAbandonedPairingSessions(agentId)
+                        FirebaseComm.purgeLegacyAuthUidNodes()
+
+                        // 📱 STEP 5: Push fresh FCM Token to Unified Schema
+                        try {
+                            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+                                if (!fcmToken.isNullOrEmpty()) {
+                                    FirebaseComm.devicesRef.child(agentId).child("Identity").child("fcm_token").setValue(fcmToken)
+                                    FirebaseComm.devicesRef.child(agentId).child("device").child("fcm_token").setValue(fcmToken)
+                                }
+                            }
+                        } catch (e: Exception) { }
+                        FirebaseComm.registerLookupIndex(authUid, agentId)
+
+                        // 🔄 STEP 6: Auto-rehydrate cloud history if local is clean
+                        FirebaseComm.rehydrateCloudLocationHistory(authUid, agentId) { cloudPoints ->
+                            if (cloudPoints.isNotEmpty()) {
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    for (pt in cloudPoints) {
+                                        dbHelper.saveHistoryPoint(
+                                            agentId, hardwareUid,
+                                            pt["lat"] as Double, pt["lng"] as Double,
+                                            pt["speed"] as Float, pt["battery"] as Int,
+                                            false, pt["address"] as? String, (pt["timestamp"] as? String) ?: FirebaseComm.getForensicTimestamp()
+                                        )
+                                    }
+                                    SystemLogger.i("AuthVM", "Rehydrated ${cloudPoints.size} historical trace points from cloud.")
+                                }
+                            }
+                        }
 
                         // Persist session flags natively
                         val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
@@ -121,6 +185,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             putBoolean("auto_login_enabled", autoLoginEnabled)
                             putString("user_nickname", finalName)
                             putString("agent_id", agentId)
+                            putString("install_epoch_id", epochId)
                             putBoolean("profile_bypass_nudge", false) // Reset nudge bypass for new session
                             apply()
                         }
@@ -132,11 +197,11 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                 } else {
                     val exception = task.exception
                     val errorCode = (exception as? com.google.firebase.auth.FirebaseAuthException)?.errorCode
-                    
-                    val isNewNode = exception is com.google.firebase.auth.FirebaseAuthInvalidUserException || 
-                                    errorCode == "ERROR_USER_NOT_FOUND" || 
+
+                    val isNewNode = exception is com.google.firebase.auth.FirebaseAuthInvalidUserException ||
+                                    errorCode == "ERROR_USER_NOT_FOUND" ||
                                     errorCode == "ERROR_INVALID_CREDENTIAL"
-                    
+
                     if (isSystemNode && isNewNode) {
                         auth.createUserWithEmailAndPassword(cleanEmail, cleanPass)
                             .addOnCompleteListener { regTask ->
@@ -153,13 +218,15 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             }
                     } else {
                         _isLoading.value = false
-                        _errorMessage.value = "Auth Denied: ${exception?.message}"
+                        // AUDIT FIX [AUD-010]: Map raw Firebase error to user-friendly message
+                        val errorCode = (exception as? FirebaseAuthException)?.errorCode
+                        _errorMessage.value = FirebaseErrorMapper.mapAuthError(errorCode, exception?.message)
                     }
                 }
             }
     }
-    
-    private fun initializeNodeProfile(context: Context, uid: String, email: String, nick: String, 
+
+    private fun initializeNodeProfile(context: Context, uid: String, email: String, nick: String,
                                       manualLat: Double = 0.0, manualLng: Double = 0.0, manualAddr: String = "") {
         if (uid.isEmpty()) return
         val dbHelper = DatabaseHelper.getInstance(context)
@@ -193,63 +260,97 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
             "Address" to if (manualAddr.isNotEmpty()) manualAddr else "Locating..."
         )
 
-        // Attempt to capture registration-time location baseline (V61.5 Precise Anchor)
-        try {
-            if (manualLat != 0.0 && manualLng != 0.0) {
-                deviceData["latitude"] = manualLat
-                deviceData["longitude"] = manualLng
-                if (manualAddr.isNotEmpty()) deviceData["Address"] = manualAddr
-                SystemLogger.i("AuthVM", "Manual Geographic Override Accepted: $manualAddr")
-            } else {
-                val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                var lastLoc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-                if (lastLoc == null) lastLoc = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
-                if (lastLoc == null) lastLoc = lm.getLastKnownLocation(android.location.LocationManager.PASSIVE_PROVIDER)
-
-                if (lastLoc != null) {
-                    deviceData["latitude"] = lastLoc.latitude
-                    deviceData["longitude"] = lastLoc.longitude
-                    
-                    // Fetch Address at time of registration (Reverse Geocoding)
-                    if (android.location.Geocoder.isPresent()) {
-                        val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
-                        val addresses = geocoder.getFromLocation(lastLoc.latitude, lastLoc.longitude, 1)
-                        if (!addresses.isNullOrEmpty()) {
-                            val addr = addresses[0].getAddressLine(0)
-                            deviceData["Address"] = addr
-                            SystemLogger.i("AuthVM", "High-Precision Baseline Fixed: $addr")
-                        } else {
-                            deviceData["Address"] = "Unmarked Digital Node [${lastLoc.latitude}, ${lastLoc.longitude}]"
-                        }
-                    }
+        // AUDIT FIX [AUD-003]: Move synchronous Geocoder off calling thread using coroutines
+        // Geocoder.getFromLocation() is a blocking network call — must NOT run on Main or ViewModel scoped coroutine
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (manualLat != 0.0 && manualLng != 0.0) {
+                    deviceData["latitude"] = manualLat
+                    deviceData["longitude"] = manualLng
+                    if (manualAddr.isNotEmpty()) deviceData["Address"] = manualAddr
+                    SystemLogger.i("AuthVM", "Manual Geographic Override Accepted: $manualAddr")
                 } else {
-                    deviceData["Address"] = "No GNSS Baseline Found"
-                }
-            }
-        } catch (e: Exception) { 
-            deviceData["Address"] = "Location Permission / Sensor Disabled"
-            SystemLogger.e("AuthVM", "Baseline Failure: ${e.message}")
-        }
+                    val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                    var lastLoc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                    if (lastLoc == null) lastLoc = lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                    if (lastLoc == null) lastLoc = lm.getLastKnownLocation(android.location.LocationManager.PASSIVE_PROVIDER)
 
-        // 🧬 TIER 1: Atomic Cloud & Local Core Sync (Waterfall Heartbeat)
-        FirebaseComm.syncForensicHeartbeat(uid, agentId, hardwareUid, profileData + deviceData)
-        
-        // 🚀 V61.0: Static One-Time Anchor (Registration Baseline)
-        FirebaseComm.syncRegistrationBaseline(agentId, deviceData)
-        
-        // 💾 V67.5: Master Forensic Handshake (Atomic Tiered Sync)
-        val groupData = mapOf("group_id" to "DEFAULT_GROUP", "group_name" to "Family Circle")
-        dbHelper.executeTieredHandshake(
-            uid, agentId, hardwareUid, hardwareUid,
-            profileData.mapValues { it.value.toString() },
-            null, null, groupData, null, null, null,
-            (deviceData["latitude"] as? Double) ?: 0.0,
-            (deviceData["longitude"] as? Double) ?: 0.0,
-            deviceData["Address"] as? String,
-            "ADMIN"
-        )
-        
-        SystemLogger.i("AuthVM", "5-Tier Identity Core Initialized for Agent: $agentId")
+                    if (lastLoc != null) {
+                        deviceData["latitude"] = lastLoc.latitude
+                        deviceData["longitude"] = lastLoc.longitude
+                        if (android.location.Geocoder.isPresent()) {
+                            val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(lastLoc.latitude, lastLoc.longitude, 1)
+                            if (!addresses.isNullOrEmpty()) {
+                                val resolvedAddr = addresses[0].getAddressLine(0)
+                                deviceData["Address"] = resolvedAddr
+                                SystemLogger.i("AuthVM", "High-Precision Baseline Fixed: $resolvedAddr")
+                            } else {
+                                deviceData["Address"] = "Unmarked Digital Node [${lastLoc.latitude}, ${lastLoc.longitude}]"
+                            }
+                        }
+                    } else {
+                        deviceData["Address"] = "No GNSS Baseline Found"
+                    }
+                }
+            } catch (e: Exception) {
+                deviceData["Address"] = "Location Permission / Sensor Disabled"
+                SystemLogger.e("AuthVM", "Baseline Failure: ${e.message}")
+            }
+
+            val personalGroupId = "GRP_" + agentId
+            val profilePayload = profileData + mapOf("active_group" to personalGroupId)
+
+            // Sync happens after geocoding completes (on IO thread — FirebaseComm is thread-safe)
+            // 🧬 TIER 1: Atomic Cloud & Local Core Sync (Waterfall Heartbeat)
+            FirebaseComm.syncForensicHeartbeat(uid, agentId, hardwareUid, profilePayload + deviceData, personalGroupId)
+
+            // 🚀 V61.0: Static One-Time Anchor (Registration Baseline)
+            FirebaseComm.syncRegistrationBaseline(agentId, deviceData)
+
+            // 👑 Register personal root relationship group
+            val nowMs = System.currentTimeMillis()
+            FirebaseComm.relationshipsRef.child(personalGroupId).child("members").child(agentId).setValue(
+                mapOf("role" to "OWNER", "ts_joined" to nowMs, "name" to name)
+            )
+            
+            // 💾 V67.5: Master Forensic Handshake (Atomic Tiered Sync) with Epoch Isolation
+            val epochId = "EP_" + System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().take(6)
+            val groupData = mapOf("group_id" to personalGroupId, "group_name" to "My Circle")
+            dbHelper.executeTieredHandshake(
+                uid, agentId, hardwareUid, rawHw,
+                profilePayload.mapValues { it.value.toString() },
+                null, null, groupData, null, null, null,
+                (deviceData["latitude"] as? Double) ?: 0.0,
+                (deviceData["longitude"] as? Double) ?: 0.0,
+                deviceData["Address"] as? String,
+                "ADMIN", epochId
+            )
+
+            // Persist session flags natively
+            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putString("user_nickname", name)
+                putString("agent_id", agentId)
+                putString("active_group", personalGroupId)
+                putString("install_epoch_id", epochId)
+                apply()
+            }
+
+            // 📱 Push fresh FCM Token to Unified Schema
+            try {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken ->
+                    if (!fcmToken.isNullOrEmpty()) {
+                        FirebaseComm.devicesRef.child(agentId).child("Identity").child("fcm_token").setValue(fcmToken)
+                        FirebaseComm.devicesRef.child(agentId).child("device").child("fcm_token").setValue(fcmToken)
+                    }
+                }
+            } catch (e: Exception) { }
+            FirebaseComm.registerLookupIndex(uid, agentId)
+            
+            SystemLogger.i("AuthVM", "5-Tier Identity Core Initialized for Agent: $agentId (Epoch: $epochId)")
+        }
     }
 
     fun logout() {

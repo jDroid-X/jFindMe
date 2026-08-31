@@ -6,11 +6,13 @@ import com.google.android.gms.nearby.connection.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.FirebaseDatabase
 import com.jdroidx.jfindme.utils.SystemLogger
+import org.json.JSONObject
 
 /**
  * 📡 OPTION B — Local Pairing (Nearby Devices - Production Grade)
  * Implements the Official Google Nearby Connections API routing discovery over P2P Wi-Fi Direct.
  * Merges the localized handshake state physically into the Global Firebase Array.
+ * Supports structured JSON payloads for dynamic role negotiation (Child, Spouse, Guardian, Friend).
  */
 object LocalPairingManager {
     private const val TAG = "LocalPairingManager"
@@ -19,12 +21,18 @@ object LocalPairingManager {
     private val relationshipsEndpoint = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef
 
     private var activeHostEndpointId: String? = null
+    private var pendingChildRole: String = "Child"
+    private var pendingChildName: String = "Local Member"
+
+    // 📡 Forensic Merge Callbacks
+    var onHostFoundCallback: ((String) -> Unit)? = null
+    var onLocalMergeCompletedCallback: (() -> Unit)? = null
 
     /**
      * Parent Device: Spins up the Advertiser beacon using a localized 8-Digit identifier locking P2P requests.
      */
     fun startLocalHostSession(context: Context, onLocalTokenReady: (String) -> Unit) {
-        val hostUid = getDeviceId()
+        val hostUid = getDeviceId(context)
         
         val allowedChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         val localToken = (1..8).map { allowedChars.random() }.joinToString("")
@@ -38,8 +46,19 @@ object LocalPairingManager {
             }
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
                 if (result.status.isSuccess) {
-                    SystemLogger.i(TAG, "P2P Hardware Link Established. Awaiting Payload Identity from Child...")
-                    // We DO NOT sync database here anymore. We wait for the child to beam its actual Firebase UID payload!
+                    SystemLogger.i(TAG, "P2P Hardware Link Established. Blasting Host UID & Metadata to Child...")
+                    val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                    val hostDos = dbHelper.getLocalDossier(hostUid)
+                    val hostName = hostDos?.get("fullName") ?: "Host Admin"
+                    
+                    val hostJson = JSONObject().apply {
+                        put("type", "HOST_META")
+                        put("uid", hostUid)
+                        put("name", hostName)
+                        put("role", "Guardian")
+                    }
+                    val hostPayload = Payload.fromBytes(hostJson.toString().toByteArray(Charsets.UTF_8))
+                    Nearby.getConnectionsClient(context).sendPayload(endpointId, hostPayload)
                 } else {
                     SystemLogger.w(TAG, "P2P Handshake Rejected strictly natively.")
                 }
@@ -64,11 +83,18 @@ object LocalPairingManager {
     }
 
     /**
-     * Child Device: Actively scans wireless frequencies hunting for a matching beacon token matrix.
+     * Child Device: Actively scans wireless frequencies hunting for a matching beacon token matrix with role metadata.
      */
-    fun startLocalDiscoveryBinding(scannedToken: String, context: Context, onHostFound: (String) -> Unit) {
-        SystemLogger.i(TAG, "Initializing P2P Discovery Seek Mode for Target Identifier: $scannedToken")
-        val childUid = getDeviceId()
+    @JvmOverloads
+    fun startLocalDiscoveryBinding(scannedToken: String, context: Context, selectedRole: String = "Child", onHostFound: (String) -> Unit) {
+        SystemLogger.i(TAG, "Initializing P2P Discovery Seek Mode for Target Identifier: $scannedToken (Role: $selectedRole)")
+        val childUid = getDeviceId(context)
+        this.pendingChildRole = selectedRole
+        this.onHostFoundCallback = onHostFound
+
+        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val childDos = dbHelper.getLocalDossier(childUid)
+        this.pendingChildName = childDos?.get("fullName") ?: "Local Target"
 
         val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
             override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
@@ -82,17 +108,25 @@ object LocalPairingManager {
                         }
                         override fun onConnectionResult(epId: String, result: ConnectionResolution) {
                             if (result.status.isSuccess) {
-                                SystemLogger.i(TAG, "Child Successfully Bound P2P. Blasting authentic UID Payload to Parent.")
+                                SystemLogger.i(TAG, "Child Successfully Bound P2P. Blasting authentic structured UID Payload to Parent.")
                                 activeHostEndpointId = epId
                                 
-                                // QA Bug Fix: Blast our REAL Firebase UID across the Bluetooth/Wifi Direct channel to the Parent!
-                                val childPayload = Payload.fromBytes(childUid.toByteArray(Charsets.UTF_8))
+                                val childJson = JSONObject().apply {
+                                    put("type", "CHILD_JOIN")
+                                    put("uid", childUid)
+                                    put("name", pendingChildName)
+                                    put("role", pendingChildRole)
+                                }
+                                val childPayload = Payload.fromBytes(childJson.toString().toByteArray(Charsets.UTF_8))
                                 Nearby.getConnectionsClient(context).sendPayload(epId, childPayload)
-                                
-                                onHostFound(endpointId)
                             }
                         }
-                        override fun onDisconnected(epId: String) {}
+                        override fun onDisconnected(epId: String) {
+                            SystemLogger.w(TAG, "P2P Hardware Link Severed on Child.")
+                            if (epId == activeHostEndpointId) {
+                                activeHostEndpointId = null
+                            }
+                        }
                     }
                     Nearby.getConnectionsClient(context).requestConnection(childUid, endpointId, lifecycleCallback)
                 }
@@ -112,11 +146,99 @@ object LocalPairingManager {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val bytes = payload.asBytes()
             if (bytes != null) {
-                // The Parent catches the REAL Firebase target UID from the child over Bluetooth here!
-                val authenticChildUid = String(bytes, Charsets.UTF_8)
-                val hostUid = getDeviceId()
-                SystemLogger.i(TAG, "Authentic Child UID intercepted over P2P Radio: $authenticChildUid. Finalizing Database Merge.")
-                finalizeLocalMerge(hostUid, authenticChildUid) {}
+                val message = String(bytes, Charsets.UTF_8)
+                SystemLogger.i(TAG, "Intercepted payload over P2P Radio: $message")
+                val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
+                val myUid = getDeviceId(context)
+                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+
+                try {
+                    if (message.startsWith("{") && message.endsWith("}")) {
+                        val json = JSONObject(message)
+                        val type = json.optString("type", "")
+                        
+                        if (type == "CHILD_JOIN") {
+                            val childUid = json.optString("uid", "")
+                            val childName = json.optString("name", "Local Target")
+                            val childRole = json.optString("role", "Child")
+                            
+                            SystemLogger.i(TAG, "Authentic Child JSON received: $childUid ($childName, $childRole). Finalizing Merge as Host.")
+                            finalizeLocalMergeWithMetadata(myUid, "Guardian", childUid, childName, childRole) { success ->
+                                if (success) {
+                                    val isFriend = childRole.equals("Friends", ignoreCase = true)
+                                    db.saveRosterNode(
+                                        childUid,
+                                        childName,
+                                        childRole,
+                                        "P2P PAIRED",
+                                        false,
+                                        isFriend,
+                                        ownerName = "Local Host",
+                                        uid2 = null,
+                                        connectedDeviceId = childUid,
+                                        qrCode = null,
+                                        avatarId = "1"
+                                    )
+                                    db.updateCitizenRole(childUid, childRole, if (isFriend) "Friends" else "None", isFriend)
+                                    onLocalMergeCompletedCallback?.invoke()
+                                }
+                            }
+                        } else if (type == "HOST_META") {
+                            val hostUid = json.optString("uid", "")
+                            val hostName = json.optString("name", "Host Admin")
+                            val hostRole = json.optString("role", "Guardian")
+                            
+                            SystemLogger.i(TAG, "Authentic Host JSON received: $hostUid ($hostName). Finalizing Merge as Child.")
+                            finalizeLocalMergeWithMetadata(hostUid, hostRole, myUid, pendingChildName, pendingChildRole) { success ->
+                                if (success) {
+                                    val isHostFriend = hostRole.equals("Friends", ignoreCase = true)
+                                    db.saveRosterNode(
+                                        hostUid,
+                                        hostName,
+                                        hostRole,
+                                        "P2P PAIRED",
+                                        true,
+                                        isHostFriend,
+                                        ownerName = hostName,
+                                        uid2 = null,
+                                        connectedDeviceId = hostUid,
+                                        qrCode = null,
+                                        avatarId = "1"
+                                    )
+                                    onHostFoundCallback?.invoke(hostUid)
+                                }
+                            }
+                        }
+                    } else if (message.startsWith("CHILD:")) {
+                        val childUid = message.substring(6)
+                        SystemLogger.i(TAG, "Legacy Child UID: $childUid. Finalizing Database Merge as Host.")
+                        finalizeLocalMerge(myUid, childUid) { success ->
+                            if (success) {
+                                db.saveRosterNode(
+                                    childUid,
+                                    "Local Child Target",
+                                    "Child",
+                                    "P2P PAIRED",
+                                    false,
+                                    false,
+                                    null, null, null, null, "1"
+                                )
+                                db.updateCitizenRole(childUid, "Child", "None", false)
+                                onLocalMergeCompletedCallback?.invoke()
+                            }
+                        }
+                    } else if (message.startsWith("HOST:")) {
+                        val hostUid = message.substring(5)
+                        SystemLogger.i(TAG, "Legacy Host UID: $hostUid. Finalizing Database Merge as Child.")
+                        finalizeLocalMerge(hostUid, myUid) { success ->
+                            if (success) {
+                                onHostFoundCallback?.invoke(hostUid)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    SystemLogger.e(TAG, "Payload decode exception: ${e.message}", e)
+                }
             }
         }
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {}
@@ -126,15 +248,48 @@ object LocalPairingManager {
      * Final architectural bridge. Takes physical offline nodes and mounts them into the Unified Cloud Tracker.
      */
     fun finalizeLocalMerge(hostDeviceId: String, childDeviceId: String, onMergeComplete: (Boolean) -> Unit) {
-        // 🚀 QA STRICK RULE: Strictly 1-to-1 P2P friend_matrix architecture!
-        relationshipsEndpoint.child(hostDeviceId).child(childDeviceId).setValue(true).addOnSuccessListener {
-            relationshipsEndpoint.child(childDeviceId).child(hostDeviceId).setValue("HOST_LOCAL")
-            SystemLogger.i("LocalPairingManager", "Strict Local Tier 3 Mesh Binding Complete.")
+        finalizeLocalMergeWithMetadata(hostDeviceId, "Guardian", childDeviceId, "Local Target", "Child", onMergeComplete)
+    }
+
+    fun finalizeLocalMergeWithMetadata(
+        hostDeviceId: String,
+        hostRole: String,
+        childDeviceId: String,
+        childName: String,
+        childRole: String,
+        onMergeComplete: (Boolean) -> Unit
+    ) {
+        val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
+        val updates = hashMapOf<String, Any>(
+            "${com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_DEVICES}/$hostDeviceId/relationships/$childDeviceId" to mapOf(
+                "role" to childRole,
+                "name" to childName,
+                "linked_at" to now
+            ),
+            "${com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_DEVICES}/$childDeviceId/relationships/$hostDeviceId" to mapOf(
+                "role" to hostRole,
+                "name" to "Host Admin",
+                "linked_at" to now
+            ),
+            "${com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS}/$hostDeviceId/$childDeviceId" to true,
+            "${com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS}/$childDeviceId/$hostDeviceId" to hostRole
+        )
+
+        com.jdroidx.jfindme.data.remote.FirebaseComm.database.reference.updateChildren(updates).addOnSuccessListener {
+            SystemLogger.i("LocalPairingManager", "Strict Local Tier 3 Mesh Binding Complete for $childName ($childRole).")
             
-            // 🚀 AUDIT LEDGER: Log Local P2P Node Status
-            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(com.jdroidx.jfindme.JFindMeApplication.getContext())
-            db.logDevicePairing(hostDeviceId, "LOCAL_HOST_NODE", childDeviceId, "LOCAL_CHILD_NODE", "PEER_P2P", "LOCAL_ONLY", "P2P_SOCKET_ESTABLISHED")
-            
+            val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            db.logDevicePairing(
+                hostDeviceId,
+                "Local Host",
+                "HOST_DEV",
+                childDeviceId,
+                childName,
+                "CHILD_DEV",
+                childRole,
+                "DEFAULT_GROUP"
+            )
             onMergeComplete(true)
         }.addOnFailureListener {
             SystemLogger.e(TAG, "Legacy P2P Matrix Binding Crash.", it)
@@ -142,24 +297,9 @@ object LocalPairingManager {
         }
     }
 
-    private fun forgeLocalPersistentGroup(hostDeviceId: String, childDeviceId: String, onMergeComplete: (Boolean) -> Unit) {
-        // Obsolete Engine: P2P friend_matrix completely handles offline arrays now!
-        SystemLogger.i(TAG, "Legacy forgeLocalPersistentGroup bypassed. Array already written to friend_matrix natively.")
-        onMergeComplete(true)
-    }
-
-    // QA In-Memory Cache: Prevents the Bluetooth tracker from seizing mid-scan.
-    private var cachedMockUid: String? = null
-
-    // QA Secure Fix: Fallback for Unauthenticated Google Nearby tests preventing Database Corruption
-    private fun getDeviceId(): String {
-        val authUid = FirebaseAuth.getInstance().currentUser?.uid
-        if (authUid != null) return authUid
-
-        if (cachedMockUid == null) {
-            cachedMockUid = "DEV_${java.util.UUID.randomUUID().toString().substring(0, 8)}"
-        }
-        return cachedMockUid!!
+    private fun getDeviceId(context: Context? = null): String {
+        val ctx = context ?: com.jdroidx.jfindme.JFindMeApplication.getContext()
+        return com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(ctx)
     }
 }
 

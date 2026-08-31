@@ -20,6 +20,7 @@ import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.map.MapActivity;
 import com.jdroidx.jfindme.utils.SystemLogger;
+import com.jdroidx.jfindme.utils.ValidationEngine;
 import java.util.concurrent.atomic.AtomicBoolean;
 import com.airbnb.lottie.LottieAnimationView;
 import com.airbnb.lottie.LottieDrawable;
@@ -36,7 +37,26 @@ public class AuthActivity extends BaseActivityJava {
     private EditText etNick, etEmail, etPass;
     private EditText etLat, etLng, etAddr;
     private TextView tvLocationBaseline;
-    private AtomicBoolean isFinalizing = new AtomicBoolean(false);
+    private final java.util.concurrent.atomic.AtomicBoolean isFinalizing = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private String savedEmail = "";
+    private String savedPassword = "";
+
+    // 🛡️ Forensic Stability: Explicit LocationListener implementation to prevent AbstractMethodError onProviderDisabled
+    private final android.location.LocationListener safeLocationListener = new android.location.LocationListener() {
+        @Override
+        public void onLocationChanged(android.location.Location location) {
+            if (location != null) updateGeoMatrix(location);
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, android.os.Bundle extras) {}
+
+        @Override
+        public void onProviderEnabled(String provider) {}
+
+        @Override
+        public void onProviderDisabled(String provider) {}
+    };
 
     @Override
     protected View createLayout() {
@@ -65,6 +85,9 @@ public class AuthActivity extends BaseActivityJava {
         if (rawId != 0) {
             lottie.setAnimation(rawId);
             lottie.setRepeatCount(LottieDrawable.INFINITE);
+            lottie.setRenderMode(com.airbnb.lottie.RenderMode.HARDWARE);
+            lottie.enableMergePathsForKitKatAndAbove(true);
+            lottie.setSpeed(1.25f);
             lottie.playAnimation();
         } else {
             lottie.setImageResource(android.R.drawable.ic_menu_compass); // Standard Fallback
@@ -92,7 +115,6 @@ public class AuthActivity extends BaseActivityJava {
         cardLp.setMargins(cPad, -scale(30), cPad, cPad); // Overlap header slightly for premium look
         card.setLayoutParams(cardLp);
         UiArchitect.applyCard(this, card, "CARD_STANDARD");
-        card.setBackground(getSolidDrawable(Color.WHITE, 40f));
 
         TextView tvCardTitle = new TextView(this);
         tvCardTitle.setText("jButterFly Authentication");
@@ -144,6 +166,9 @@ public class AuthActivity extends BaseActivityJava {
         etAddr = createField("Current Node Address", android.R.drawable.ic_menu_mapmode, false);
         card.addView(etAddr);
 
+        // AUDIT FIX [AUD-019]: Establish programmatic tab sequence for dynamically generated fields
+        com.jdroidx.jfindme.utils.FormUtils.linkTabSequence(etNick, etEmail, etPass, etLat, etLng, etAddr);
+
         tvLocationBaseline = new TextView(this);
         tvLocationBaseline.setText("📍 Current Node: Waiting for GNSS...");
         tvLocationBaseline.setTextColor(getSecondaryTextColor());
@@ -156,16 +181,43 @@ public class AuthActivity extends BaseActivityJava {
             String nick = etNick.getText().toString().trim();
             String email = etEmail.getText().toString().trim();
             String pass = etPass.getText().toString().trim();
-            if (nick.isEmpty() || email.isEmpty() || pass.isEmpty()) {
+            
+            if (nick.isEmpty() && email.isEmpty() && pass.isEmpty()) {
                 showAutoSetupDialog();
                 return;
             }
+            
+            ValidationEngine.ValidationResult nameResult = ValidationEngine.INSTANCE.validateAlias(nick);
+            if (!nameResult.isValid()) {
+                UiArchitect.showConditionActionDialog(this, "Identity Alias Required", nameResult.getErrorMessage(),
+                    "AUTO SETUP", "FIX ALIAS",
+                    this::performAutoSetup, () -> etNick.requestFocus());
+                return;
+            }
+
+            ValidationEngine.ValidationResult emailResult = ValidationEngine.INSTANCE.validateEmail(email);
+            if (!emailResult.isValid()) {
+                UiArchitect.showConditionActionDialog(this, "Invalid Email Format", 
+                    emailResult.getErrorMessage() + " Would you like to auto-configure?",
+                    "AUTO SETUP", "EDIT EMAIL", 
+                    this::performAutoSetup, () -> etEmail.requestFocus());
+                return;
+            }
+
+            ValidationEngine.ValidationResult passResult = ValidationEngine.INSTANCE.validatePassword(pass);
+            if (!passResult.isValid()) {
+                UiArchitect.showConditionActionDialog(this, "Password Invalid", passResult.getErrorMessage(),
+                    "AUTO SETUP", "EDIT PASSWORD",
+                    this::performAutoSetup, () -> etPass.requestFocus());
+                return;
+            }
+
             double lat = 0.0;
             double lng = 0.0;
             try {
                 lat = Double.parseDouble(etLat.getText().toString());
                 lng = Double.parseDouble(etLng.getText().toString());
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
             String addr = etAddr.getText().toString();
 
             com.jdroidx.jfindme.utils.AngelLoader.show(this);
@@ -207,7 +259,7 @@ public class AuthActivity extends BaseActivityJava {
     private EditText createField(String hint, int iconRes, boolean isPassword) {
         EditText et = new EditText(this);
         et.setHint(hint);
-        et.setHintTextColor(Color.LTGRAY);
+        et.setHintTextColor(getSecondaryTextColor());
         et.setTextColor(getTextColor());
         et.setPadding(35, 30, 35, 30);
         et.setCompoundDrawablePadding(25);
@@ -219,11 +271,30 @@ public class AuthActivity extends BaseActivityJava {
 
         if (isPassword) {
             et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            final boolean[] isVisible = {false};
+            et.setOnTouchListener((view, event) -> {
+                if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    if (et.getCompoundDrawables()[2] != null) {
+                        int drawableWidth = et.getCompoundDrawables()[2].getBounds().width();
+                        if (event.getRawX() >= (et.getRight() - drawableWidth - et.getPaddingRight())) {
+                            isVisible[0] = !isVisible[0];
+                            if (isVisible[0]) {
+                                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+                            } else {
+                                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                            }
+                            et.setSelection(et.getText().length());
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            });
         }
 
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.parseColor("#F0F0F0"));
-        bg.setStroke(3, Color.parseColor("#E0E0E0"));
+        bg.setColor(getCardColor());
+        bg.setStroke(2, getGradientStart());
         bg.setCornerRadius(20f);
         et.setBackground(bg);
 
@@ -283,8 +354,10 @@ public class AuthActivity extends BaseActivityJava {
         if (hwId == null || hwId.length() < 8) hwId = "AGENT_MASTER_NODE_L7";
         String sig = (hwId.length() >= 8) ? (hwId.substring(0, 4) + hwId.substring(hwId.length() - 4)).toLowerCase() : hwId.toLowerCase();
         
-        if (etNick != null) etNick.setText("Agent_" + sig.toUpperCase());
-        if (etEmail != null) etEmail.setText("node_" + sig + "@jfindme.net");
+        String prefix = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getAgentPrefix(this);
+        String domain = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getEnterpriseDomain(this);
+        if (etNick != null) etNick.setText(prefix + sig.toUpperCase());
+        if (etEmail != null) etEmail.setText("node_" + sig + "@" + domain);
         if (etPass != null) etPass.setText("PassCode" + sig + "!");
         
         // 🚀 QA Fix: Resolve Geographic Anchor for Registration Field
@@ -306,9 +379,14 @@ public class AuthActivity extends BaseActivityJava {
                 // 📡 Active Burst: Request fresh update if last known is null (Cold Start)
                 SystemLogger.i(TAG, "Cold Start: Requesting fresh GNSS/Network baseline.");
                 if (lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)) {
-                    lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, loc -> updateGeoMatrix(loc), null);
+                    lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, safeLocationListener, null);
                 } else if (lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
-                    lm.requestSingleUpdate(android.location.LocationManager.GPS_PROVIDER, loc -> updateGeoMatrix(loc), null);
+                    lm.requestSingleUpdate(android.location.LocationManager.GPS_PROVIDER, safeLocationListener, null);
+                } else {
+                    UiArchitect.showConfirmationDialog(this, "Enable Location", 
+                        "Device location service is turned off. Would you like to open settings to enable GPS?",
+                        "SETTINGS", "LATER", 
+                        () -> startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)), null);
                 }
             }
         } catch (Exception e) {
@@ -353,6 +431,11 @@ public class AuthActivity extends BaseActivityJava {
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
 
+        // Auto-populate identity credentials on fresh install or re-install
+        if (etNick != null && etNick.getText().toString().trim().isEmpty()) {
+            performAutoSetup();
+        }
+
         // 🧬 V63.5: Reactive Geolocation Auto-Sync (Display as per current location)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             try {
@@ -391,10 +474,42 @@ public class AuthActivity extends BaseActivityJava {
         viewModel.getErrorMessage().observe(this, error -> {
             if (isDestroyed() || isFinishing()) return;
             if (error != null) {
-                Toast.makeText(this, "AUTHENTICATION FAILURE: " + error, Toast.LENGTH_LONG).show();
-                viewModel.clearError();
+                UiArchitect.showValidationDialog(this, "Authentication Intercept", error, () -> viewModel.clearError());
             }
         });
+    }
+
+    private void showPermissionOnboardingDialog() {
+        UiArchitect.showConfirmationDialog(
+            this,
+            "Required Permissions",
+            "jFindMe requires Location ('Allow all the time') and Notification permissions to provide live tracking, geofence alerts, and emergency SOS services.",
+            "GRANT PERMISSIONS",
+            "LATER",
+            () -> {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                            android.Manifest.permission.POST_NOTIFICATIONS
+                        },
+                        100
+                    );
+                } else {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        },
+                        100
+                    );
+                }
+            },
+            null
+        );
     }
 
     @Override
@@ -417,7 +532,11 @@ public class AuthActivity extends BaseActivityJava {
                     updateGeoMatrix(last);
                 } else {
                     // Force a single update if no last known location is available
-                    lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, loc -> updateGeoMatrix(loc), null);
+                    if (lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)) {
+                        lm.requestSingleUpdate(android.location.LocationManager.NETWORK_PROVIDER, safeLocationListener, null);
+                    } else if (lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
+                        lm.requestSingleUpdate(android.location.LocationManager.GPS_PROVIDER, safeLocationListener, null);
+                    }
                 }
             }
         } catch (Exception e) {

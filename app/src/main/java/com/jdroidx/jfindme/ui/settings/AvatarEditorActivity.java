@@ -65,6 +65,16 @@ public class AvatarEditorActivity extends BaseActivityJava {
         LinearLayout topRow = new LinearLayout(this);
         topRow.setOrientation(LinearLayout.HORIZONTAL);
         topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView backBtn = new ImageView(this);
+        backBtn.setImageResource(android.R.drawable.ic_menu_revert);
+        backBtn.setColorFilter(getGradientOverlayText());
+        int bS = scale(60);
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(bS, bS);
+        bLp.setMargins(0, 0, scale(20), 0);
+        backBtn.setLayoutParams(bLp);
+        backBtn.setOnClickListener(v -> finish());
+        topRow.addView(backBtn);
         
         // 🚀 Identity Editor: Direct Nickname Modification
         nameEntryField = new android.widget.EditText(this);
@@ -338,7 +348,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
 
         TextView hint = new TextView(this);
         hint.setText("🔍 PINCH & CUBE ROTATE");
-        hint.setTextColor(Color.parseColor("#555555"));
+        hint.setTextColor(getSecondaryTextColor());
         hint.setTextSize(10);
         RelativeLayout.LayoutParams hintParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hintParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
@@ -352,7 +362,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
     private View buildTacticalUtilities() {
         HorizontalScrollView hScroll = new HorizontalScrollView(this);
         hScroll.setHorizontalScrollBarEnabled(false);
-        applySolidCardGeometry(hScroll, Color.parseColor("#1A000000"), 0f); // Subtle glass separator
+        applySolidCardGeometry(hScroll, getCardColor(), 0f); // Subtle pottery/ceramic separator
 
         LinearLayout toolRow = new LinearLayout(this);
         toolRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -474,7 +484,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         tabRow.setOrientation(LinearLayout.HORIZONTAL);
         tabRow.setPadding(30, 40, 30, 30);
         
-        String[] cats = {"AVATARS", "BODY", "HAIR", "OUTFIT", "SHOES", "ACCESS", "AURA"};
+        String[] cats = {"2D AVATARS (50 POPULAR)", "AVATARS (3D VRM)", "BODY", "HAIR", "OUTFIT", "SHOES", "ACCESS", "AURA"};
         for (String cat : cats) {
             TextView tab = new TextView(this);
             tab.setText(cat);
@@ -507,7 +517,9 @@ public class AvatarEditorActivity extends BaseActivityJava {
         inventoryOptionsGrid.removeAllViews();
         com.jdroidx.jfindme.engine.avatar.AvatarSmartEngine.INSTANCE.preemptivelyCacheAssets(category.toLowerCase(), 1);
 
-        if (category.equalsIgnoreCase("AVATARS")) {
+        if (category.startsWith("2D")) {
+            load2DPopularAvatarsView();
+        } else if (category.contains("3D") || category.equalsIgnoreCase("AVATARS")) {
             boolean foundMesh = false;
             String[] searchPaths = {"models"};
             
@@ -537,8 +549,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
             }
         } else {
             // 🧠 COMPONENT STYLING SYSTEM:
-            // Since VRM models are physically monolithic, we simulate 'interchangeable parts' by executing dynamic
-            // Material Shader Recoloring over the WebGL bridge when a user tweaks their Body, Hair, or Outfit tabs!
+            // Dynamic Material Shader Recoloring over WebGL bridge
             String[] hexColors = {"#FFFFFF", "#000000", "#FF0000", "#00FF00", "#0000FF", "#FFB6C1", "#8B4513"};
             String[] styleNames = {"Base Standard", "Obsidian Black", "Crimson Red", "Neon Green", "Sapphire Blue", "Sakura Pink", "Leather Brown"};
             
@@ -546,6 +557,178 @@ public class AvatarEditorActivity extends BaseActivityJava {
                 inventoryOptionsGrid.addView(createInventoryCard(category, "Style: " + styleNames[i], 0, hexColors[i], null));
             }
         }
+    }
+
+    /**
+     * 🖼️ 2D Popular Avatars Gallery Loader with Search & Real-Time Filter
+     */
+    private void load2DPopularAvatarsView() {
+        int pad = scale(12);
+        
+        // Search Filter Textbox
+        android.widget.EditText searchBox = new android.widget.EditText(this);
+        searchBox.setHint("🔍 Search 50 Avatars (e.g. King, Detective, Jane)...");
+        searchBox.setHintTextColor(Color.argb(140, 148, 163, 184));
+        searchBox.setTextColor(getTextColor());
+        searchBox.setTextSize(14);
+        searchBox.setSingleLine(true);
+        searchBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        
+        android.graphics.drawable.GradientDrawable sBg = new android.graphics.drawable.GradientDrawable();
+        sBg.setCornerRadius(25f);
+        sBg.setColor(getCardColor());
+        sBg.setStroke(2, getGradientStart());
+        searchBox.setBackground(sBg);
+        searchBox.setPadding(30, 20, 30, 20);
+        
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sLp.setMargins(0, 0, 0, 20);
+        searchBox.setLayoutParams(sLp);
+        inventoryOptionsGrid.addView(searchBox);
+
+        LinearLayout listContainer = new LinearLayout(this);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        inventoryOptionsGrid.addView(listContainer);
+
+        java.util.List<? extends com.jdroidx.jfindme.engine.data.avatar.AvatarEntity> templateList = 
+            com.jdroidx.jfindme.engine.data.avatar.AvatarRegistry.INSTANCE.getTemplateList();
+        int currentlyEquippedId = prefs.getInt("equipped_avatar_id", 1);
+
+        Runnable[] renderAvatars = new Runnable[1];
+        final String[] queryHolder = {""};
+
+        renderAvatars[0] = () -> {
+            listContainer.removeAllViews();
+            String q = queryHolder[0].toLowerCase(java.util.Locale.ROOT);
+
+            for (final com.jdroidx.jfindme.engine.data.avatar.AvatarEntity entity : templateList) {
+                int baseId = entity.getBaseId();
+                String avName = entity.getType();
+                String rarity = entity.getRarity().name();
+
+                if (!q.isEmpty()) {
+                    boolean matchName = avName.toLowerCase(java.util.Locale.ROOT).contains(q);
+                    boolean matchId = String.valueOf(baseId).equals(q) || ("#" + baseId).equals(q);
+                    boolean matchRarity = rarity.toLowerCase(java.util.Locale.ROOT).contains(q);
+                    if (!matchName && !matchId && !matchRarity) continue;
+                }
+
+                boolean isEquipped = (baseId == currentlyEquippedId);
+
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.HORIZONTAL);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                applySolidCardGeometry(card, getCardColor(), 25f);
+                card.setPadding(25, 20, 25, 20);
+                LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                cLp.setMargins(0, 10, 0, 10);
+                card.setLayoutParams(cLp);
+
+                // Thumbnail
+                ImageView thumb = new ImageView(this);
+                int dynamicResId = getResources().getIdentifier("avatar_custom_" + baseId, "drawable", getPackageName());
+                if (dynamicResId == 0) {
+                    int dyn = ((baseId - 1) % 22) + 1;
+                    dynamicResId = getResources().getIdentifier("avatar_custom_" + dyn, "drawable", getPackageName());
+                }
+                thumb.setImageResource(dynamicResId != 0 ? dynamicResId : android.R.drawable.ic_menu_gallery);
+                thumb.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int uSize = scale(48);
+                card.addView(thumb, new LinearLayout.LayoutParams(uSize, uSize));
+
+                // Metadata Text Column
+                LinearLayout col = new LinearLayout(this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                col.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+                col.setPadding(25, 0, 0, 0);
+
+                TextView title = new TextView(this);
+                title.setText(baseId + ". " + avName);
+                title.setTextColor(isEquipped ? Color.parseColor("#00E676") : getTextColor());
+                title.setTextSize(15);
+                title.setTypeface(null, Typeface.BOLD);
+                col.addView(title);
+
+                TextView sub = new TextView(this);
+                sub.setText("Tier: " + rarity + "  ●  ID: #" + baseId + (isEquipped ? "  [ACTIVE]" : ""));
+                sub.setTextColor(isEquipped ? Color.parseColor("#00E676") : Color.parseColor("#94A3B8"));
+                sub.setTextSize(11);
+                col.addView(sub);
+                card.addView(col);
+
+                // Tick Box Indicator
+                TextView tick = new TextView(this);
+                tick.setText(isEquipped ? "✓" : "☐");
+                tick.setTextColor(Color.WHITE);
+                tick.setTextSize(isEquipped ? 12 : 14);
+                tick.setTypeface(null, Typeface.BOLD);
+                tick.setGravity(Gravity.CENTER);
+                android.graphics.drawable.GradientDrawable tBg = new android.graphics.drawable.GradientDrawable();
+                tBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                tBg.setColor(isEquipped ? Color.parseColor("#00E676") : Color.argb(160, 100, 116, 139));
+                tick.setBackground(tBg);
+                int tSize = scale(28);
+                card.addView(tick, new LinearLayout.LayoutParams(tSize, tSize));
+
+                final int finalResId = dynamicResId;
+
+                // Tap Action: Popup Dialog with Options
+                card.setOnClickListener(v -> {
+                    android.app.AlertDialog optDialog = new android.app.AlertDialog.Builder(this)
+                        .setTitle("✨ " + baseId + ". " + avName)
+                        .setMessage("Tier: " + rarity + "\nEquip this avatar across the entire system Single Source of Truth (SSOT)?")
+                        .setIcon(finalResId)
+                        .setPositiveButton(isEquipped ? "EQUIPPED ✓" : "EQUIP AVATAR [✓]", (d, w) -> {
+                            prefs.edit().putInt("equipped_avatar_id", baseId).apply();
+                            
+                            String currentNick = prefs.getString("user_nickname", "Active Tracker");
+                            String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                            
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                                .updateDeviceIdentityAndAvatar(agentId, currentNick, "avatar_custom_" + baseId);
+                            
+                            com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE
+                                .propagateAvatarUpdate(agentId, "avatar_custom_" + baseId, currentNick);
+                            
+                            com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
+                            
+                            if (profileViewModel != null) {
+                                profileViewModel.equipAvatar(prefs, baseId);
+                            }
+
+                            Toast.makeText(this, "Equipped Avatar: " + avName + " [✓]", Toast.LENGTH_SHORT).show();
+                            load2DPopularAvatarsView();
+                        })
+                        .setNeutralButton("PREVIEW 3D PROXY", (d, w) -> {
+                            String[] models = {"models/AliciaSolid.vrm", "models/BlackSuger.vrm", "models/ButterCup.vrm", "models/FoxModel.vrm"};
+                            String m = models[Math.abs(baseId) % models.length];
+                            if (renderingStageWindow != null) {
+                                renderingStageWindow.evaluateJavascript("window.loadModel('https://jfindme.local/" + m + "');", null);
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .create();
+                    optDialog.show();
+                    applyDialogTheme(optDialog);
+                });
+
+                listContainer.addView(card);
+            }
+        };
+
+        searchBox.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                queryHolder[0] = (s != null) ? s.toString().trim() : "";
+                renderAvatars[0].run();
+            }
+            @Override
+            public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        renderAvatars[0].run();
     }
 
     private View createInventoryCard(String category, String itemName, int coinCost, String hexColorCommand, String assetPathOverride) {
@@ -575,10 +758,19 @@ public class AvatarEditorActivity extends BaseActivityJava {
             thumb.setLayoutParams(p);
         } else {
             // It's a root Avatar VRM File
-            int dynamicIdx = Math.abs(itemName.hashCode()) % 22 + 1;
+            int dynamicIdx = Math.abs(itemName.hashCode()) % 50 + 1;
             int resId = getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", getPackageName());
             thumb.setImageResource(resId != 0 ? resId : com.jdroidx.jfindme.R.drawable.ic_image_upload);
-            thumb.setLayoutParams(new LinearLayout.LayoutParams(100, 100));
+            thumb.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            thumb.setAdjustViewBounds(true);
+            int pad = scale(4);
+            thumb.setPadding(pad, pad, pad, pad);
+            android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+            ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            ring.setStroke(3, getGradientStart());
+            thumb.setBackground(ring);
+            int universalSize = com.jdroidx.jfindme.ui.base.UiArchitect.getUniversalAvatarSize(this);
+            thumb.setLayoutParams(new LinearLayout.LayoutParams(universalSize, universalSize));
         }
         row.addView(thumb);
 
@@ -680,7 +872,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Broadcasting Identity Matrix...");
 
-        // 🚀 ATOMIC RIPPLE: Execute the 8-Pillar Sync via ProfileViewModel
+        // 🚀 ATOMIC RIPPLE: Execute the 8-Pillar Sync via ProfileViewModel (ignoreValidation = true for avatar/identity quick customization)
         profileViewModel.verifyAndSaveProfile(
             this,
             finalName, 
@@ -698,7 +890,8 @@ public class AvatarEditorActivity extends BaseActivityJava {
             prefs.getString("user_emergency_note", ""),
             prefs.getString("org_name", ""),
             prefs.getString("department", ""),
-            getSharedPreferences("system_registry", MODE_PRIVATE) 
+            getSharedPreferences("system_registry", MODE_PRIVATE),
+            true
         );
     }
 
@@ -709,6 +902,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         // 🚀 REACTIVE OBSERVER: Listen for the high-fidelity commit ACK
         profileViewModel.getSaveSuccess().observe(this, success -> {
             if (Boolean.TRUE.equals(success)) {
+                com.jdroidx.jfindme.utils.AvatarLoader.clearCache(); // 🚀 Closed-Loop Sync: Evict bitmap cache so all screens reflect new avatar immediately
                 com.jdroidx.jfindme.utils.AngelLoader.hide(this);
                 android.widget.Toast.makeText(this, "🛡️ Identity Synchronized Successfully.", android.widget.Toast.LENGTH_LONG).show();
                 profileViewModel.resetSaveState();

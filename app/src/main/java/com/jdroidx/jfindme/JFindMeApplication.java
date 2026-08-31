@@ -25,5 +25,8 @@ public class JFindMeApplication extends Application {
         
         // 🚀 L7 Silent Update Check: Execute update check at boot-up
         com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleCheck(this);
+
+        // 🛠️ Initialize background jobs & sentinels with persisted frequencies
+        com.jdroidx.jfindme.service.BackgroundJobManager.INSTANCE.initializeAllJobs(this);
     }
 }

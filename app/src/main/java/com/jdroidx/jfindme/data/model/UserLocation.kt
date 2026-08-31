@@ -37,11 +37,8 @@ data class UserLocation(
     val isForensicAudit: Boolean = true, // ✅ Closed Loop Validation Flag
     val address: String? = null,        // 🌍 V58.7 Human-Readable Spatial Context
 
-    // 🎭 UI SHADOW FIELDS (Hydrated from Profile Tier - EXCLUDED from direct persistence)
-    @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
+    // 🎭 UI IDENTITY FIELDS (Synchronized natively across Firebase cloud matrix)
     var userName: String = "",
-    
-    @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var avatar_id: String = "avatar_custom_1",
  
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
@@ -67,12 +64,34 @@ data class UserLocation(
     @com.google.firebase.database.Exclude
     fun getLongTimestamp(): Long {
         val t = timestamp
-        return when (t) {
-            is Long -> t
-            is Double -> t.toLong()
-            is String -> t.toLongOrNull() ?: System.currentTimeMillis()
-            else -> System.currentTimeMillis()
+        if (t is Number) {
+            val num = t.toLong()
+            if (num in 1_000_000_000_000L..4_102_444_800_000L) return num
+            if (num in 1_000_000_000L..4_102_444_800L) return num * 1000L
+            return parseForensicStringToMillis(num.toString())
         }
+        if (t is String) {
+            return parseForensicStringToMillis(t)
+        }
+        return System.currentTimeMillis()
+    }
+
+    private fun parseForensicStringToMillis(str: String?): Long {
+        if (str.isNullOrBlank() || str == "0") return System.currentTimeMillis()
+        val s = str.trim()
+        val num = s.toLongOrNull()
+        if (num != null && num in 1_000_000_000_000L..4_102_444_800_000L) return num
+        if (num != null && num in 1_000_000_000L..4_102_444_800L) return num * 1000L
+        
+        val patterns = arrayOf("yyyyMMddHHmmssSS", "yyyyMMddHHmmss", "yyyyMMdd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss")
+        for (p in patterns) {
+            try {
+                val sdf = java.text.SimpleDateFormat(p, java.util.Locale.US)
+                val d = sdf.parse(if (s.length > p.length) s.substring(0, p.length) else s)
+                if (d != null) return d.time
+            } catch (e: Exception) {}
+        }
+        return System.currentTimeMillis()
     }
 
     @com.google.firebase.database.Exclude

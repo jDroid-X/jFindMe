@@ -85,35 +85,36 @@ public class SettingsActivity extends BaseActivityJava {
         LinearLayout themeCard = new LinearLayout(this);
         themeCard.setOrientation(LinearLayout.VERTICAL);
         
-        themeCard.addView(createIconButton("GLOBAL UI & ICON ARCHITECT", android.R.drawable.ic_menu_gallery, v -> {
-            try {
-                startActivity(new Intent(this, Class.forName("com.jdroidx.jfindme.ui.settings.UiConfigActivity")));
-            } catch (Exception e) {
-                android.widget.Toast.makeText(this, "Compiling Master UI Engine...", android.widget.Toast.LENGTH_SHORT).show();
-            }
+        themeCard.addView(createIconButton("GLOBAL UI & ICON ARCHITECT", com.jdroidx.jfindme.R.drawable.ic_edit, v -> {
+            startActivity(new Intent(this, UiConfigActivity.class));
         }), btnLp);
         content.addView(themeCard, getCardParams());
         // --- LAYER 1.5: 🔋 BATTERY & PING INTELLIGENCE ENTRY ---
         content.addView(createSectionHeader("🔋 BATTERY OPTIMIZATION & PING INTELLIGENCE"));
-        View batteryLauncher = createIconButton("🔋 BATTERY OPTIMIZATION & PING HUB", android.R.drawable.ic_lock_power_off, true, v -> showBatteryOptimizerDialog());
+        View batteryLauncher = createIconButton("🔋 BATTERY OPTIMIZATION & PING HUB", com.jdroidx.jfindme.R.drawable.ic_device_health, true, v -> showBatteryOptimizerDialog());
         content.addView(batteryLauncher, btnLp);
+
+        // --- LAYER 1.8: ⚙️ BACKGROUND JOBS & SENTINELS ---
+        content.addView(createSectionHeader("⚙️ BACKGROUND JOBS & SENTINELS"));
+        View bgJobsLauncher = createIconButton("⚙️ BACKGROUND JOBS & ENGINE SENTINELS", com.jdroidx.jfindme.R.drawable.ic_settings_gears, true, v -> BackgroundJobsConfigDialog.show(this));
+        content.addView(bgJobsLauncher, btnLp);
 
         // --- LAYER 2: ADVANCED APP TELEMETRY ---
         content.addView(createSectionHeader("ADVANCED APP TELEMETRY"));
         LinearLayout engineCard = new LinearLayout(this);
         engineCard.setOrientation(LinearLayout.VERTICAL);
 
-        engineCard.addView(createIconButton("SMART AVATAR CLUSTERING", android.R.drawable.ic_menu_sort_by_size, v -> {
+        engineCard.addView(createIconButton("SMART AVATAR CLUSTERING", com.jdroidx.jfindme.R.drawable.ic_people, v -> {
             boolean currentCluster = prefs.getBoolean("pref_smart_avatar_clustering", true);
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Configure Smart Clustering")
-                .setMessage("PROS:\n- Stacks users within 10-meters into a clean badge.\n\nCONS:\n- Overlapping avatars hidden until zoomed in.\n\nCurrent State: " + (currentCluster ? "ENABLED" : "DISABLED"))
-                .setPositiveButton("Enable", (dialog, which) -> prefs.edit().putBoolean("pref_smart_avatar_clustering", true).apply())
-                .setNegativeButton("Disable", (dialog, which) -> prefs.edit().putBoolean("pref_smart_avatar_clustering", false).apply())
-                .show();
+            UiArchitect.showConfirmationDialog(this,
+                "Configure Smart Clustering",
+                "PROS:\n- Stacks users within 10-meters into a clean badge.\n\nCONS:\n- Overlapping avatars hidden until zoomed in.\n\nCurrent State: " + (currentCluster ? "ENABLED" : "DISABLED"),
+                "ENABLE", "DISABLE",
+                () -> prefs.edit().putBoolean("pref_smart_avatar_clustering", true).apply(),
+                () -> prefs.edit().putBoolean("pref_smart_avatar_clustering", false).apply());
         }), btnLp);
         
-        engineCard.addView(createIconButton("VECTOR MAP RENDERER", android.R.drawable.ic_menu_mapmode, v -> {
+        engineCard.addView(createIconButton("VECTOR MAP RENDERER", com.jdroidx.jfindme.R.drawable.ic_nav_map, v -> {
             android.widget.Toast.makeText(this, "Hardware Accelerated Vector Engine Active", android.widget.Toast.LENGTH_SHORT).show();
         }), btnLp);
         
@@ -124,24 +125,33 @@ public class SettingsActivity extends BaseActivityJava {
         LinearLayout secCard = new LinearLayout(this);
         secCard.setOrientation(LinearLayout.VERTICAL);
         
-        secCard.addView(createIconButton("PUPIL PROFILE ARCHITECTURE", android.R.drawable.ic_menu_edit, v -> {
+        secCard.addView(createIconButton("PUPIL PROFILE ARCHITECTURE", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> {
             startActivity(new Intent(this, ProfileActivity.class));
         }), btnLp);
-        secCard.addView(createIconButton("NOTIFICATION ROUTING", android.R.drawable.ic_popup_reminder, v -> {
+        secCard.addView(createIconButton("NOTIFICATION ROUTING", com.jdroidx.jfindme.R.drawable.ic_nav_notice, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class));
         }), btnLp);
-        secCard.addView(createIconButton("IDENTITY SECURITY PROTOCOL", android.R.drawable.ic_lock_idle_lock, v -> {
+        secCard.addView(createIconButton("IDENTITY SECURITY PROTOCOL", com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.PrivacyActivity.class));
         }), btnLp);
-        secCard.addView(createIconButton("SUPPORT DOCUMENTS", android.R.drawable.ic_menu_help, v -> {
+        secCard.addView(createIconButton("PAIRING PIN EXPIRY TTL", com.jdroidx.jfindme.R.drawable.ic_location_history, v -> {
+            showPinTtlSelectionDialog();
+        }), btnLp);
+        secCard.addView(createIconButton("SUPPORT DOCUMENTS", com.jdroidx.jfindme.R.drawable.ic_help_support, v -> {
             startActivity(new Intent(this, HelpSupportActivity.class));
         }), btnLp);
-        secCard.addView(createIconButton("SYSTEM LOGS & AUDIT TRAIL", android.R.drawable.ic_menu_info_details, v -> {
+        secCard.addView(createIconButton("DEVICE HEALTH DIAGNOSTICS", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
+            startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.HealthActivity.class));
+        }), btnLp);
+        secCard.addView(createIconButton("SYSTEM AUDIT LOG MATRIX", com.jdroidx.jfindme.R.drawable.ic_system_audit, v -> {
+            startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.SystemLogActivity.class));
+        }), btnLp);
+        secCard.addView(createIconButton("FORENSIC WATCHDOG AUDIT", com.jdroidx.jfindme.R.drawable.ic_watchdog, v -> {
             android.content.Intent watchdog = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.WatchDogAuditActivity.class);
             watchdog.putExtra("VIEW_MODE", "STATE");
             startActivity(watchdog);
         }), btnLp);
-        secCard.addView(createIconButton("FACTORY RESET CONSOLE", android.R.drawable.ic_menu_revert, v -> {
+        secCard.addView(createIconButton("FACTORY RESET CONSOLE", com.jdroidx.jfindme.R.drawable.ic_system_audit, v -> {
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.FactoryResetActivity.class));
         }), btnLp);
         
@@ -308,5 +318,32 @@ public class SettingsActivity extends BaseActivityJava {
         lp.copyFrom(dialog.getWindow().getAttributes());
         lp.width = (int)(getResources().getDisplayMetrics().widthPixels * 0.9);
         dialog.getWindow().setAttributes(lp);
+    }
+
+    private void showPinTtlSelectionDialog() {
+        String[] options = {
+            "5 Minutes (Recommended - NIST SP 800-63B)",
+            "10 Minutes",
+            "15 Minutes",
+            "20 Minutes",
+            "30 Minutes (Extended Pairing Window)"
+        };
+        int[] values = {5, 10, 15, 20, 30};
+        int currentTtl = prefs.getInt("pairing_pin_ttl_minutes", 5);
+        int selectedIdx = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == currentTtl) { selectedIdx = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏱️ Pairing PIN Expiry TTL")
+            .setSingleChoiceItems(options, selectedIdx, (dialog, which) -> {
+                int chosen = values[which];
+                prefs.edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
+                android.widget.Toast.makeText(this, "Pairing PIN Expiry TTL set to " + chosen + " minutes.", android.widget.Toast.LENGTH_SHORT).show();
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
     }
 }

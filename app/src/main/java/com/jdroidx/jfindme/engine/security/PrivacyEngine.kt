@@ -22,6 +22,49 @@ object PrivacyEngine {
         FRIENDS_ONLY,   // Only users in your pre-approved FriendsList sub-collection
         GHOST_MODE      // Total invisibility to everything including APIs
     }
+
+    enum class PrivacyTier {
+        PRECISE,        // Exact GPS pinpoint (Guardians)
+        FUZZY,          // Algorithmic neighborhood jitter (~500-1200m)
+        FROZEN          // Ghost mode - locks to last known fixed location
+    }
+
+    /**
+     * Apply circular mathematical perturbation to latitude and longitude.
+     * Offset is deterministic within a 30-minute window to avoid wild jumping while concealing exact residential address.
+     */
+    @JvmStatic
+    fun applyFuzzyPerturbation(lat: Double, lng: Double, radiusMeters: Double = 800.0): Pair<Double, Double> {
+        val timeBucket = System.currentTimeMillis() / (1000 * 60 * 30) // 30-minute steady bucket
+        val seed = ((lat * 10000).toLong() xor (lng * 10000).toLong() xor timeBucket)
+        val rng = java.util.Random(seed)
+        
+        val angle = rng.nextDouble() * 2.0 * Math.PI
+        val distanceMeters = 250.0 + rng.nextDouble() * (radiusMeters - 250.0)
+        
+        val deltaLat = (distanceMeters * Math.cos(angle)) / 111320.0
+        val deltaLng = (distanceMeters * Math.sin(angle)) / (111320.0 * Math.cos(Math.toRadians(lat)))
+        
+        return Pair(lat + deltaLat, lng + deltaLng)
+    }
+
+    @JvmStatic
+    fun getPrivacyTier(context: Context): PrivacyTier {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val tierStr = prefs.getString("privacy_tier", PrivacyTier.PRECISE.name) ?: PrivacyTier.PRECISE.name
+        return try {
+            PrivacyTier.valueOf(tierStr)
+        } catch (e: Exception) {
+            PrivacyTier.PRECISE
+        }
+    }
+
+    @JvmStatic
+    fun setPrivacyTier(context: Context, tier: PrivacyTier) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString("privacy_tier", tier.name).apply()
+        SystemLogger.i(TAG, "Privacy Tier changed to: ${tier.name}")
+    }
     
     // Network Hook
     private val liveStateEndpoint = FirebaseDatabase.getInstance().reference.child("live_state")

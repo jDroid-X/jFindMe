@@ -22,4 +22,8 @@ local.properties
 /watchdog_dog.png
 /app/release/
 *.log
+crash_*.txt
+build_errors.txt
+/tmp/
+/apk/
 /jFindMeWeb/node_modules/

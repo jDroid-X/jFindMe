@@ -15,6 +15,7 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.auth.FirebaseAuth
 import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.remote.FirebaseComm
+import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,7 +33,7 @@ open class SingleEvent<out T>(private val content: T) {
     }
 }
 
-data class RenderedGeofence(
+data class RenderedGeofence @JvmOverloads constructor(
     val id: String,
     val name: String,
     val lat: Double,
@@ -44,7 +45,9 @@ data class RenderedGeofence(
     val isZoneActive: Boolean,
     val startTime: Int = 0,
     val endTime: Int = 2359,
-    val activeDays: String = "1,2,3,4,5,6,0" // 0=Sun, 1=Mon...
+    val activeDays: String = "1,2,3,4,5,6,0", // 0=Sun, 1=Mon...
+    val creatorUid: String? = null,
+    val creatorAgentId: String? = null
 )
 
 /**
@@ -57,6 +60,9 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     
     private val _activeZones = MutableLiveData<List<RenderedGeofence>>()
     val activeZones: LiveData<List<RenderedGeofence>> = _activeZones
+
+    private val _archivedZones = MutableLiveData<List<RenderedGeofence>>()
+    val archivedZones: LiveData<List<RenderedGeofence>> = _archivedZones
 
     private val _activeTargetDevices = MutableLiveData<List<String>>()
     val activeTargetDevices: LiveData<List<String>> = _activeTargetDevices
@@ -102,18 +108,21 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         }
         val safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
         if (safeUid != null) {
-            FirebaseDatabase.getInstance().getReference("users").child(safeUid).child("active_group")
-                .addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(snapshot: DataSnapshot) {
-                        val realId = snapshot.getValue(String::class.java)
-                        if (!realId.isNullOrEmpty()) {
-                            currentGroupId = realId
-                            prefs.edit().putString("active_group", realId).apply()
-                            initFirebaseCloudLink()
-                        } else { engageStandaloneSandbox(prefs) }
-                    }
-                    override fun onCancelled(error: DatabaseError) { engageStandaloneSandbox(prefs) }
-                })
+            FirebaseComm.resolveHardwareIdentity(safeUid) { agentId ->
+                val finalId = agentId ?: safeUid
+                FirebaseComm.getIdentityRef(finalId).child("active_group")
+                    .addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(snapshot: DataSnapshot) {
+                            val realId = snapshot.getValue(String::class.java)
+                            if (!realId.isNullOrEmpty()) {
+                                currentGroupId = realId
+                                prefs.edit().putString("active_group", realId).apply()
+                                initFirebaseCloudLink()
+                            } else { engageStandaloneSandbox(prefs) }
+                        }
+                        override fun onCancelled(error: DatabaseError) { engageStandaloneSandbox(prefs) }
+                    })
+            }
         } else { engageStandaloneSandbox(prefs) }
     }
 
@@ -126,14 +135,29 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     
     fun setDraftPin(latLng: LatLng?) { _draftCoordinateLocation.value = latLng }
 
+    fun getHostDeviceCode(): String {
+        val prefs = getApplication<Application>().getSharedPreferences("system_registry", Application.MODE_PRIVATE)
+        val localAgentId = prefs.getString("agent_id", null)
+        if (!localAgentId.isNullOrBlank()) return localAgentId
+        
+        val safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+        if (!safeUid.isNullOrBlank()) {
+            val resolved = dbDelegate.resolveAgentIdLocally(safeUid)
+            if (!resolved.isNullOrBlank()) return resolved
+        }
+        val fallbackHw = com.jdroidx.jfindme.engine.sync.FirebasePairingManager.getDeviceId(getApplication())
+        return dbDelegate.resolveForensicAgentId(fallbackHw)
+    }
+
     private fun initFirebaseCloudLink() {
         val activeId = currentGroupId ?: return
         val safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
+        val hostCode = getHostDeviceCode()
         
         loadLocalBackupVault(false)
         performGlobalMatrixSync(safeUid, activeId)
         
-        val ref = FirebaseDatabase.getInstance().getReference("groups").child(activeId).child("geofences")
+        val ref = FirebaseComm.relationshipsRef.child(activeId).child("geofences")
         geofenceListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<RenderedGeofence>()
@@ -145,13 +169,18 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     val radius = snap.child("radius").value?.toString()?.toDoubleOrNull() ?: 100.0
                     val assignedName = snap.child("assignedName").getValue(String::class.java) ?: "ALL CONNECTED DEVICES"
                     val address = snap.child("address").getValue(String::class.java) ?: "Network Target Locked"
-                    val alertsEnabled = snap.child("alertsEnabled").getValue(Boolean::class.java) ?: true
-                    val isZoneActive = snap.child("isZoneActive").getValue(Boolean::class.java) ?: true
-                    val startTime = snap.child("startTime").getValue(Int::class.java) ?: 0
-                    val endTime = snap.child("endTime").getValue(Int::class.java) ?: 2359
+                    // 🛡️ Type-Safe: alertsEnabled/isZoneActive can be Boolean, Int(0/1), or String
+                    val alertsRaw = snap.child("alertsEnabled").value
+                    val alertsEnabled = when (alertsRaw) { is Boolean -> alertsRaw; is Number -> alertsRaw.toInt() != 0; is String -> alertsRaw.equals("true", true); else -> true }
+                    val activeRaw = snap.child("isZoneActive").value
+                    val isZoneActive = when (activeRaw) { is Boolean -> activeRaw; is Number -> activeRaw.toInt() != 0; is String -> activeRaw.equals("true", true); else -> true }
+                    val startTime = snap.child("startTime").value?.toString()?.toIntOrNull() ?: 0
+                    val endTime = snap.child("endTime").value?.toString()?.toIntOrNull() ?: 2359
                     val activeDays = snap.child("activeDays").getValue(String::class.java) ?: "1,2,3,4,5,6,0"
+                    val creatorUid = snap.child("creator_uid").getValue(String::class.java)
+                    val creatorAgentId = snap.child("creator_agent_id").getValue(String::class.java)
                     
-                    list.add(RenderedGeofence(id, name, lat, lng, radius, assignedName, address, alertsEnabled, isZoneActive, startTime, endTime, activeDays))
+                    list.add(RenderedGeofence(id, name, lat, lng, radius, assignedName, address, alertsEnabled, isZoneActive, startTime, endTime, activeDays, creatorUid, creatorAgentId))
                 }
                 
                 // 🚀 V36 Optimized Sync: Single Batch Commit (Forensic Efficiency)
@@ -184,6 +213,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                             }
                         }
                         _activeZones.postValue(mergedList)
+                        seedAndSyncGeofencingTree(hostCode, mergedList)
                     }
                 } else {
                      // Empty Cloud: We keep the Local Cache (V47 Protocol)
@@ -193,8 +223,126 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onCancelled(error: DatabaseError) { loadLocalBackupVault(true) }
         }
         ref.addValueEventListener(geofenceListener!!)
+
+        // Immediate Seeding of Creator Root under /Geofencing/{creatorDeviceCode}
+        val prefs = getApplication<Application>().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+        val userName = prefs.getString("user_nickname", "Host Device") ?: "Host Device"
+        FirebaseComm.getGeofencingCreatorRef(hostCode).updateChildren(mapOf(
+            "device_name" to userName,
+            "owner_uid" to safeUid,
+            "updated_at" to System.currentTimeMillis()
+        ))
     }
     
+    private fun seedAndSyncGeofencingTree(creatorId: String, safeZones: List<RenderedGeofence>) {
+        val hostCode = getHostDeviceCode()
+        val cleanCreatorId = FirebaseComm.sanitizePathKey(hostCode)
+        if (cleanCreatorId.isBlank()) return
+
+        try {
+            val prefs = getApplication<Application>().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+            val userName = prefs.getString("user_nickname", "Host Device") ?: "Host Device"
+            val safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: cleanCreatorId
+
+            val creatorRef = FirebaseComm.getGeofencingCreatorRef(cleanCreatorId)
+            creatorRef.updateChildren(mapOf(
+                "device_name" to userName,
+                "owner_uid" to safeUid,
+                "updated_at" to System.currentTimeMillis()
+            ))
+
+            // 🧹 PURGE LEGACY GRP_ BRANCH if different from canonical Host Device Code
+            if (creatorId.startsWith("GRP_") && creatorId != cleanCreatorId) {
+                try {
+                    FirebaseComm.geofencingRef.child(FirebaseComm.sanitizePathKey(creatorId)).removeValue()
+                } catch (e: Exception) { }
+            }
+
+            // Build canonical lookup from offline roster
+            val roster = dbDelegate.getOfflineRoster()
+            val nameToCodeMap = mutableMapOf<String, String>()
+            val codeToNameMap = mutableMapOf<String, String>()
+            val codeToRoleMap = mutableMapOf<String, String>()
+            val codeToAvatarMap = mutableMapOf<String, String>()
+            for (node in roster) {
+                val cName = node["fullName"]?.toString() ?: ""
+                val cCode = node["uid_1"]?.toString() ?: ""
+                val cRole = node["role_type"]?.toString() ?: "MEMBER"
+                val cAvatar = node["avatar_id"]?.toString() ?: "avatar_custom_1"
+                if (cCode.isNotEmpty()) {
+                    if (cName.isNotEmpty()) nameToCodeMap[cName] = cCode
+                    nameToCodeMap[cCode] = cCode
+                    codeToNameMap[cCode] = cName.ifEmpty { cCode }
+                    codeToRoleMap[cCode] = cRole
+                    codeToAvatarMap[cCode] = cAvatar
+                }
+            }
+
+            for (zone in safeZones) {
+                try {
+                    val cleanZoneId = FirebaseComm.sanitizePathKey(zone.id)
+                    val zoneData = mapOf(
+                        "zone_id" to zone.id,
+                        "zone_name" to zone.name,
+                        "lat" to zone.lat,
+                        "lng" to zone.lng,
+                        "radius" to zone.radius,
+                        "assigned_targets" to zone.assignedName,
+                        "is_active" to zone.isZoneActive,
+                        "alerts_enabled" to zone.alertsEnabled,
+                        "startTime" to zone.startTime,
+                        "endTime" to zone.endTime,
+                        "activeDays" to zone.activeDays,
+                        "address" to zone.address,
+                        "created_on" to FirebaseComm.getForensicTimestamp(),
+                        "updated_at" to System.currentTimeMillis()
+                    )
+                    val zRef = creatorRef.child("safe_zones").child(cleanZoneId)
+                    zRef.updateChildren(zoneData)
+
+                    // 📱 DEVICE NODE: Keep latest safe zone configuration synchronized under /devices/{hostDeviceCode}/
+                    FirebaseComm.getDeviceRef(cleanCreatorId).child("safe_zones").child(cleanZoneId).updateChildren(zoneData)
+
+                    // 📝 AUDIT CHANGE LOG: Record Safehouse mutation under /devices/{cleanCreatorId}/Change_Log/Safehouse
+                    FirebaseComm.logChange(cleanCreatorId, FirebaseComm.LOG_ITEM_SAFEHOUSE, "ZONE_UPDATE", cleanZoneId, zoneData)
+
+                    // 🎯 DEDUPLICATED CANONICAL DEVICE CODES ONLY
+                    val targetCodes = if (zone.assignedName == "ALL CONNECTED DEVICES") {
+                        nameToCodeMap.values.filter { it.isNotEmpty() }.distinct()
+                    } else {
+                        zone.assignedName.split(", ")
+                            .mapNotNull { nameToCodeMap[it.trim()] ?: deviceUidMap[it.trim()] ?: it.trim().takeIf { s -> s.isNotEmpty() } }
+                            .distinct()
+                    }
+
+                    for (code in targetCodes) {
+                        try {
+                            val cleanTargetCode = FirebaseComm.sanitizePathKey(code)
+                            val targetName = codeToNameMap[code] ?: code
+                            val targetRole = codeToRoleMap[code] ?: rosterMapping.value?.get(targetName) ?: "MEMBER"
+                            val targetAvatar = codeToAvatarMap[code] ?: "avatar_custom_1"
+                            val connectedDeviceData = mapOf(
+                                "device_id" to cleanTargetCode,
+                                "device_name" to targetName,
+                                "avatar_id" to targetAvatar,
+                                "role" to targetRole,
+                                "assigned_at" to System.currentTimeMillis()
+                            )
+                            zRef.child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
+                            FirebaseComm.getDeviceRef(cleanCreatorId).child("safe_zones").child(cleanZoneId).child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
+                        } catch (tErr: Exception) {
+                            SystemLogger.e("GeofenceSync", "TARGET_NODE_SYNC_ERR: $code", tErr)
+                        }
+                    }
+                } catch (zErr: Exception) {
+                    SystemLogger.e("GeofenceSync", "ZONE_NODE_SYNC_ERR: ${zone.id}", zErr)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("GeofenceSync", "SEED_TREE_ERR", e)
+        }
+    }
+
     private fun loadLocalBackupVault(isEmergency: Boolean) {
         try {
             val localZones = dbDelegate.getOfflineSafeZones()
@@ -216,42 +364,54 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 _activeZones.postValue(list)
+                currentGroupId?.let { seedAndSyncGeofencingTree(it, list) }
                 if (isEmergency) _uiToastEvent.postValue(SingleEvent("Cloud Offline: Forensic Vault Engaged!"))
             }
         } catch (e: Exception) {}
     }
     
     private fun performGlobalMatrixSync(uid: String, groupId: String) {
-        val rootRef = FirebaseDatabase.getInstance().getReference("users").child(uid)
-        
-        // Cluster 1: Identity & Network (Profile + Roster + Org)
-        syncCloudProfileRegistry(uid)
-        syncCloudRosterRegistry(uid)
-        rootRef.child("org").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(s: DataSnapshot) {
-                val map = s.value as? Map<String, String> ?: return
-                viewModelScope.launch(Dispatchers.IO) { 
-                    val v = ContentValues()
-                    for ((k, val_str) in map) v.put(k, val_str)
-                    dbDelegate.saveOrgDossier(v) 
+        FirebaseComm.resolveHardwareIdentity(uid) { agentId ->
+            val finalId = agentId ?: return@resolveHardwareIdentity
+            val rootRef = FirebaseComm.getDeviceRef(finalId)
+            
+            // Cluster 1: Identity & Network (Profile + Roster + Org)
+            syncCloudProfileRegistry(finalId)
+            syncCloudRosterRegistry(finalId)
+            rootRef.child("profile").child("org").addValueEventListener(object : ValueEventListener {
+                override fun onDataChange(s: DataSnapshot) {
+                    val rawMap = s.value as? Map<*, *> ?: return
+                    val map = rawMap.entries.associate { it.key.toString() to (it.value?.toString() ?: "") }
+                    viewModelScope.launch(Dispatchers.IO) { 
+                        try {
+                            val v = ContentValues()
+                            for ((k, val_str) in map) v.put(k, val_str)
+                            dbDelegate.saveOrgDossier(v) 
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "ORG_DOSSIER_ERR", e)
+                        }
+                    }
                 }
-            }
-            override fun onCancelled(e: DatabaseError) {}
-        })
+                override fun onCancelled(e: DatabaseError) {}
+            })
 
         // Cluster 2: Strategic Missions (Missions + Handshakes)
         rootRef.child("missions").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
-                        dbDelegate.syncSafeZoneGroup(
-                            snap.child("zone_id").getValue(String::class.java) ?: "ZONE",
-                            snap.child("assigned_nodes").getValue(String::class.java) ?: "",
-                            snap.child("start").getValue(Int::class.java) ?: 0,
-                            snap.child("end").getValue(Int::class.java) ?: 2359,
-                            snap.child("days").getValue(String::class.java) ?: "ALL",
-                            1, 1, "CLOUD_RESTORED"
-                        )
+                        try {
+                            dbDelegate.syncSafeZoneGroup(
+                                snap.child("zone_id").value?.toString() ?: "ZONE",
+                                snap.child("assigned_nodes").value?.toString() ?: "",
+                                snap.child("start").value?.toString()?.toIntOrNull() ?: 0,
+                                snap.child("end").value?.toString()?.toIntOrNull() ?: 2359,
+                                snap.child("days").value?.toString() ?: "ALL",
+                                1, 1, "CLOUD_RESTORED"
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "MISSIONS_PARSE_ERR", e)
+                        }
                     }
                 }
             }
@@ -260,12 +420,18 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("handshakes").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.logDevicePairing(
-                        uid, "ME", "SELF", // Host identity
-                        snap.child("peer_uid").getValue(String::class.java) ?: "OTHER",
-                        snap.child("peer_name").getValue(String::class.java) ?: "NODE", 
-                        "SUBJECT", "GUARDIAN" // Peer identity & Role
-                    )
+                    for (snap in s.children) {
+                        try {
+                            dbDelegate.logDevicePairing(
+                                uid, "ME", "SELF", // Host identity
+                                snap.child("peer_uid").value?.toString() ?: "OTHER",
+                                snap.child("peer_name").value?.toString() ?: "NODE", 
+                                "SUBJECT", "GUARDIAN" // Peer identity & Role
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "HANDSHAKE_PARSE_ERR", e)
+                        }
+                    }
                 }
             }
             override fun onCancelled(e: DatabaseError) {}
@@ -275,10 +441,16 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("alerts").limitToLast(50).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.saveSysLog("I", 
-                        snap.child("title").getValue(String::class.java) ?: "ALERT", 
-                        snap.child("msg").getValue(String::class.java) ?: ""
-                    )
+                    for (snap in s.children) {
+                        try {
+                            dbDelegate.saveSysLog("I", 
+                                snap.child("title").value?.toString() ?: "ALERT", 
+                                snap.child("msg").value?.toString() ?: ""
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "ALERTS_PARSE_ERR", e)
+                        }
+                    }
                 }
             }
             override fun onCancelled(e: DatabaseError) {}
@@ -287,21 +459,33 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
-                        val historyUid = snap.child("uid").getValue(String::class.java) ?: ""
-                        // 🚀 QA Fix: Identity Resolution Bridge
-                        val resolvedName = dbDelegate.getLocalDossier(historyUid)?.get("full_name") ?: "Active Node"
-                        val tsStr = snap.child("timestamp").value?.toString() ?: dbDelegate.getReadableNow()
-                        dbDelegate.saveHistoryPoint(
-                            historyUid,
-                            "IDENTITY_MIRROR",
-                            snap.child("lat").getValue(Double::class.java) ?: 0.0,
-                            snap.child("lng").getValue(Double::class.java) ?: 0.0,
-                            snap.child("speed").getValue(Double::class.java)?.toFloat() ?: 0f,
-                            snap.child("battery").getValue(Long::class.java)?.toInt() ?: 100,
-                            (snap.child("sos").getValue(Long::class.java) ?: 0L) == 1L,
-                            "CLOUD_SYNC",
-                            tsStr
-                        )
+                        try {
+                            val historyUid = snap.child("uid").value?.toString() ?: ""
+                            // 🚀 QA Fix: Identity Resolution Bridge
+                            val tsStr = snap.child("timestamp").value?.toString() ?: dbDelegate.getReadableNow()
+                            val latVal = snap.child("lat").value?.toString()?.toDoubleOrNull() ?: 0.0
+                            val lngVal = snap.child("lng").value?.toString()?.toDoubleOrNull() ?: 0.0
+                            val speedVal = snap.child("speed").value?.toString()?.toFloatOrNull() ?: 0f
+                            // 🛡️ Type-Safe Firebase Read: battery can be Long, Int, or Boolean in mixed-schema nodes
+                            val batteryVal = snap.child("battery").value?.toString()?.toIntOrNull() ?: 100
+                            // 🛡️ Type-Safe Firebase Read: sos can be Boolean (true/false) or Long (0/1)
+                            val sosRaw = snap.child("sos").value
+                            val sosVal = when (sosRaw) {
+                                is Boolean -> sosRaw
+                                is Number  -> sosRaw.toLong() == 1L
+                                is String  -> sosRaw.equals("true", ignoreCase = true) || sosRaw == "1"
+                                else       -> false
+                            }
+                            dbDelegate.saveHistoryPoint(
+                                historyUid,
+                                "IDENTITY_MIRROR",
+                                latVal, lngVal, speedVal, batteryVal, sosVal,
+                                "CLOUD_SYNC",
+                                tsStr
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "HISTORY_PARSE_ERR", e)
+                        }
                     }
                 }
             }
@@ -312,12 +496,18 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("sim_inventory").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.logSimCard(
-                        snap.child("slot").getValue(Int::class.java) ?: 0,
-                        snap.child("serial").getValue(String::class.java) ?: "RESTORED",
-                        snap.child("operator").getValue(String::class.java) ?: "PROVIDER",
-                        "", "", "", "", false
-                    )
+                    for (snap in s.children) {
+                        try {
+                            dbDelegate.logSimCard(
+                                snap.child("slot").value?.toString()?.toIntOrNull() ?: 0,
+                                snap.child("serial").value?.toString() ?: "RESTORED",
+                                snap.child("operator").value?.toString() ?: "PROVIDER",
+                                "", "", "", "", false
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "SIM_INV_ERR", e)
+                        }
+                    }
                 }
             }
             override fun onCancelled(e: DatabaseError) {}
@@ -325,16 +515,22 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("sim_transactions").limitToLast(50).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.logSimTransaction(
-                        snap.child("slot").getValue(Int::class.java) ?: 0,
-                        snap.child("mcc").getValue(String::class.java) ?: "",
-                        snap.child("mnc").getValue(String::class.java) ?: "",
-                        snap.child("lac").getValue(String::class.java) ?: "",
-                        snap.child("cid").getValue(String::class.java) ?: "",
-                        snap.child("lat").getValue(Double::class.java) ?: 0.0,
-                        snap.child("lng").getValue(Double::class.java) ?: 0.0,
-                        "CLOUD"
-                    )
+                    for (snap in s.children) {
+                        try {
+                            dbDelegate.logSimTransaction(
+                                snap.child("slot").value?.toString()?.toIntOrNull() ?: 0,
+                                snap.child("mcc").value?.toString() ?: "",
+                                snap.child("mnc").value?.toString() ?: "",
+                                snap.child("lac").value?.toString() ?: "",
+                                snap.child("cid").value?.toString() ?: "",
+                                snap.child("lat").value?.toString()?.toDoubleOrNull() ?: 0.0,
+                                snap.child("lng").value?.toString()?.toDoubleOrNull() ?: 0.0,
+                                "CLOUD"
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "SIM_TX_ERR", e)
+                        }
+                    }
                 }
             }
             override fun onCancelled(e: DatabaseError) {}
@@ -344,25 +540,31 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         rootRef.child("transition_logs").limitToLast(100).addValueEventListener(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
-                    for (snap in s.children) dbDelegate.saveGeofenceLog(
-                        uid, snap.child("avatar").getValue(String::class.java) ?: "NODE",
-                        snap.child("zone_id").getValue(String::class.java) ?: "GENERAL",
-                        snap.child("zone_name").getValue(String::class.java) ?: "ZONE",
-                        snap.child("status").getValue(String::class.java) ?: "UNKNOWN"
-                    )
+                    for (snap in s.children) {
+                        try {
+                            dbDelegate.saveGeofenceLog(
+                                uid, snap.child("avatar").value?.toString() ?: "NODE",
+                                snap.child("zone_id").value?.toString() ?: "GENERAL",
+                                snap.child("zone_name").value?.toString() ?: "ZONE",
+                                snap.child("status").value?.toString() ?: "UNKNOWN"
+                            )
+                        } catch (e: Exception) {
+                            SystemLogger.e("GlobalSync", "TRANSITION_LOG_ERR", e)
+                        }
+                    }
                 }
             }
             override fun onCancelled(e: DatabaseError) {}
         })
+        }
     }
     
     private fun syncCloudProfileRegistry(uid: String) {
-        FirebaseDatabase.getInstance().getReference("users").child(uid)
+        FirebaseComm.getProfileRef(uid)
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    val map = snapshot.value as? Map<String, Any> ?: return
-                    val stringMap = mutableMapOf<String, String>()
-                    map.forEach { (k, v) -> stringMap[k] = v.toString() }
+                    val rawMap = snapshot.value as? Map<*, *> ?: return
+                    val stringMap = rawMap.entries.associate { it.key.toString() to (it.value?.toString() ?: "") }
                     
                     viewModelScope.launch(Dispatchers.IO) {
                         dbDelegate.commitAnalyticalDossier(uid, stringMap)
@@ -374,14 +576,14 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun syncCloudRosterRegistry(uid: String) {
-        FirebaseDatabase.getInstance().getReference("users").child(uid).child("roster")
+        FirebaseComm.getRelationshipsRef(uid)
             .addValueEventListener(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     viewModelScope.launch(Dispatchers.IO) {
                         for (snap in snapshot.children) {
                             val peerUid = snap.key ?: continue
-                            val name = snap.child("display_name").getValue(String::class.java) ?: "PEER"
-                            val role = snap.child("role_title").getValue(String::class.java) ?: "FAMILY"
+                            val name = snap.child("name").getValue(String::class.java) ?: snap.child("display_name").getValue(String::class.java) ?: "PEER"
+                            val role = snap.child("role").getValue(String::class.java) ?: snap.child("role_title").getValue(String::class.java) ?: "FAMILY"
                             
                             val v = ContentValues().apply {
                                 put("uid_1", peerUid)
@@ -413,23 +615,23 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
     
     fun fetchTargetableDevices() {
-        FirebaseDatabase.getInstance().getReference("locations")
-            .addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val devices = mutableSetOf<String>(); devices.add("ALL CONNECTED DEVICES")
-                    deviceUidMap.clear()
-                    for (snap in snapshot.children) { 
-                        val name = snap.child("userName").getValue(String::class.java) 
-                        val uid = snap.key
-                        if (name != null && uid != null) {
-                            devices.add(name)
-                            deviceUidMap[name] = uid
-                        }
-                    }
-                    _activeTargetDevices.value = devices.toList()
-                }
-                override fun onCancelled(error: DatabaseError) {}
-            })
+        viewModelScope.launch(Dispatchers.IO) {
+            val roster = dbDelegate.getOfflineRoster()
+            val devices = mutableSetOf<String>()
+            devices.add("ALL CONNECTED DEVICES")
+            
+            deviceUidMap.clear()
+            for (node in roster) {
+                val name = node["fullName"]?.toString() ?: continue
+                val deviceCode = node["uid_1"]?.toString() ?: continue
+                devices.add(name)
+                deviceUidMap[name] = deviceCode
+                deviceUidMap[deviceCode] = deviceCode
+            }
+            withContext(Dispatchers.Main) {
+                _activeTargetDevices.value = devices.toList()
+            }
+        }
     }
 
     @kotlin.jvm.JvmOverloads
@@ -469,6 +671,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
 
     private fun finalizeCloudGeofencePush(name: String, assignedName: String, lat: Double, lng: Double, radius: Double, addr: String, startTime: Int, endTime: Int, activeDays: String, existingId: String? = null) {
         val activeId = currentGroupId ?: return
+        val hostCode = getHostDeviceCode()
+        val cleanHostCode = FirebaseComm.sanitizePathKey(hostCode)
         val data = mapOf(
             "name" to name,
             "assignedName" to assignedName, // 🚀 QA Fix: Global Nodal Payload Injection
@@ -486,10 +690,94 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         )
         
         // 🚀 UNIQUE IDENTITY: Prevent data collisions for zones with identical labels
-        val uniqueZoneId = existingId ?: "${name}_${System.currentTimeMillis()}"
+        val rawZoneId = existingId ?: "${name}_${System.currentTimeMillis()}"
+        val uniqueZoneId = FirebaseComm.sanitizePathKey(rawZoneId)
         
         // 📚 GLOBAL LEDGER: Write to the Group's master geofence registry using a unique ID
-        FirebaseDatabase.getInstance().getReference("groups").child(activeId).child("geofences").child(uniqueZoneId).setValue(data)
+        try {
+            FirebaseComm.relationshipsRef.child(FirebaseComm.sanitizePathKey(activeId)).child("geofences").child(uniqueZoneId).setValue(data)
+        } catch (e: Exception) {
+            SystemLogger.e("GeofenceViewModel", "RELATIONSHIPS_GEOFENCE_WRITE_ERR", e)
+        }
+
+        // 🌳 GEOFENCING TOP-LEVEL MATRIX SYNC: /Geofencing/{creatorDeviceCode}/safe_zones/{zoneId}/connected_devices
+        try {
+            val geofencingZoneData = mapOf(
+                "zone_id" to uniqueZoneId,
+                "zone_name" to name,
+                "lat" to lat,
+                "lng" to lng,
+                "radius" to radius,
+                "assigned_targets" to assignedName,
+                "is_active" to true,
+                "alerts_enabled" to true,
+                "startTime" to startTime,
+                "endTime" to endTime,
+                "activeDays" to activeDays,
+                "address" to addr,
+                "created_on" to FirebaseComm.getForensicTimestamp(),
+                "updated_at" to System.currentTimeMillis()
+            )
+            val geofencingSafeZoneRef = FirebaseComm.getGeofencingSafeZoneRef(cleanHostCode, uniqueZoneId)
+            // 📱 DEVICE NODE: Keep latest safe zone configuration synchronized under /devices/{hostDeviceCode}/
+            FirebaseComm.getDeviceRef(cleanHostCode).child("safe_zones").child(uniqueZoneId).updateChildren(geofencingZoneData)
+
+            // Build canonical lookup from offline roster
+            val roster = dbDelegate.getOfflineRoster()
+            val nameToCodeMap = mutableMapOf<String, String>()
+            val codeToNameMap = mutableMapOf<String, String>()
+            val codeToRoleMap = mutableMapOf<String, String>()
+            val codeToAvatarMap = mutableMapOf<String, String>()
+            for (node in roster) {
+                val cName = node["fullName"]?.toString() ?: ""
+                val cCode = node["uid_1"]?.toString() ?: ""
+                val cRole = node["role_type"]?.toString() ?: "MEMBER"
+                val cAvatar = node["avatar_id"]?.toString() ?: "avatar_custom_1"
+                if (cCode.isNotEmpty()) {
+                    if (cName.isNotEmpty()) nameToCodeMap[cName] = cCode
+                    nameToCodeMap[cCode] = cCode
+                    codeToNameMap[cCode] = cName.ifEmpty { cCode }
+                    codeToRoleMap[cCode] = cRole
+                    codeToAvatarMap[cCode] = cAvatar
+                }
+            }
+
+            // Register each assigned connected device using its UNIQUE canonical Device Code
+            val targetCodes = if (assignedName == "ALL CONNECTED DEVICES") {
+                nameToCodeMap.values.filter { it.isNotEmpty() }.distinct()
+            } else {
+                assignedName.split(", ")
+                    .mapNotNull { nameToCodeMap[it.trim()] ?: deviceUidMap[it.trim()] ?: it.trim().takeIf { s -> s.isNotEmpty() } }
+                    .distinct()
+            }
+
+            val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
+            for (code in targetCodes) {
+                try {
+                    val cleanTargetCode = FirebaseComm.sanitizePathKey(code)
+                    // 🛡️ Filter out Creator Self-Device (Self device cannot be a connected target to its own safe zone)
+                    if (cleanTargetCode == cleanHostCode || cleanTargetCode == myAuthUid || cleanTargetCode.equals(cleanHostCode, ignoreCase = true)) {
+                        continue;
+                    }
+                    val targetName = codeToNameMap[code] ?: code
+                    val role = codeToRoleMap[code] ?: rosterMapping.value?.get(targetName) ?: "MEMBER"
+                    val targetAvatar = codeToAvatarMap[code] ?: "avatar_custom_1"
+                    val connectedDeviceData = mapOf(
+                        "device_id" to cleanTargetCode,
+                        "device_name" to targetName,
+                        "avatar_id" to targetAvatar,
+                        "role" to role,
+                        "assigned_at" to System.currentTimeMillis()
+                    )
+                    geofencingSafeZoneRef.child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
+                    FirebaseComm.getDeviceRef(cleanHostCode).child("safe_zones").child(uniqueZoneId).child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
+                } catch (tErr: Exception) {
+                    SystemLogger.e("GeofenceViewModel", "TARGET_NODE_PUSH_ERR: $code", tErr)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("GeofenceViewModel", "GEOFENCING_MATRIX_WRITE_ERR", e)
+        }
 
         // 💾 LOCAL FORENSIC VAULT: Immediate SQLite update to ensure off-grid parity
         viewModelScope.launch(Dispatchers.IO) {
@@ -507,7 +795,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             dbDelegate.syncSafeZoneGroup(uniqueZoneId, assignedName, startTime, endTime, activeDays, 1, 1, addr)
         }
         
-        // 🚀 TARGETED HANDSHAKE: Multi-Node Cluster Assignment
+        // 🚀 TARGETED HANDSHAKE: Multi-Node Cluster Assignment (V50.0 - Full Payload)
         if (assignedName != "ALL CONNECTED DEVICES") {
             val targets = assignedName.split(", ").map { it.trim() }
             targets.forEach { target ->
@@ -515,8 +803,12 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 if (targetUid != null) {
                     val syncRequest = mapOf(
                         "type" to "GEOFENCE_ASSIGNMENT",
+                        "zone_id" to uniqueZoneId,
                         "zone_name" to name,
                         "group_id" to activeId,
+                        "lat" to lat,
+                        "lng" to lng,
+                        "radius" to radius,
                         "status" to "PENDING_ACCEPTANCE",
                         "timestamp" to System.currentTimeMillis()
                     )
@@ -546,30 +838,190 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         _cameraMoveEvent.postValue(SingleEvent(target))
     }
     
+    fun archiveSafeZone(id: String) {
+        val grp = currentGroupId
+        if (grp != null) {
+            val srcRef = FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id)
+            val destRef = FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").child(id)
+            srcRef.get().addOnSuccessListener { snap ->
+                if (snap.exists() && snap.value != null) {
+                    destRef.setValue(snap.value)
+                    srcRef.removeValue()
+                } else {
+                    srcRef.removeValue()
+                }
+            }.addOnFailureListener {
+                srcRef.removeValue()
+            }
+
+            // 🌳 GEOFENCING MATRIX PARITY: Update is_active and is_archived flags
+            FirebaseComm.getGeofencingSafeZoneRef(grp, id).updateChildren(mapOf(
+                "is_active" to false,
+                "is_archived" to true,
+                "archived_at" to System.currentTimeMillis()
+            ))
+            FirebaseComm.logChange(grp, FirebaseComm.LOG_ITEM_SAFEHOUSE, "ZONE_ARCHIVE", id, mapOf("zone_id" to id))
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.archiveSafeZone(id)
+            loadArchivedSafeZones()
+        }
+        _uiToastEvent.postValue(SingleEvent("📦 Safe Zone archived. All notifications preserved."))
+    }
+
+    fun restoreSafeZone(id: String) {
+        val grp = currentGroupId
+        if (grp != null) {
+            val srcRef = FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").child(id)
+            val destRef = FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id)
+            srcRef.get().addOnSuccessListener { snap ->
+                if (snap.exists() && snap.value != null) {
+                    destRef.setValue(snap.value)
+                    srcRef.removeValue()
+                }
+            }
+
+            // 🌳 GEOFENCING MATRIX PARITY: Restore is_active and clear is_archived flag
+            FirebaseComm.getGeofencingSafeZoneRef(grp, id).updateChildren(mapOf(
+                "is_active" to true,
+                "is_archived" to false,
+                "restored_at" to System.currentTimeMillis()
+            ))
+            FirebaseComm.logChange(grp, FirebaseComm.LOG_ITEM_SAFEHOUSE, "ZONE_RESTORE", id, mapOf("zone_id" to id))
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.restoreArchivedSafeZone(id)
+            loadArchivedSafeZones()
+        }
+        _uiToastEvent.postValue(SingleEvent("🟢 Safe Zone restored to Active Monitoring!"))
+    }
+
+    fun purgeArchivedSafeZone(id: String) {
+        val grp = currentGroupId
+        if (grp != null) {
+            FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").child(id).removeValue()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.purgeArchivedSafeZone(id)
+            loadArchivedSafeZones()
+        }
+        _uiToastEvent.postValue(SingleEvent("🗑️ Archived Safe Zone permanently purged."))
+    }
+
+    fun restoreAllArchivedSafeZones() {
+        val grp = currentGroupId
+        if (grp != null) {
+            val srcRef = FirebaseComm.relationshipsRef.child(grp).child("archived_geofences")
+            val destRef = FirebaseComm.relationshipsRef.child(grp).child("geofences")
+            srcRef.get().addOnSuccessListener { snap ->
+                if (snap.exists() && snap.value != null) {
+                    for (child in snap.children) {
+                        val k = child.key ?: continue
+                        destRef.child(k).setValue(child.value)
+                    }
+                    srcRef.removeValue()
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.restoreAllArchivedSafeZones()
+            loadArchivedSafeZones()
+        }
+        _uiToastEvent.postValue(SingleEvent("🟢 All Archived Safe Zones restored to Active Monitoring!"))
+    }
+
+    fun purgeAllArchivedSafeZones() {
+        val grp = currentGroupId
+        if (grp != null) {
+            FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").removeValue()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.purgeAllArchivedSafeZones()
+            loadArchivedSafeZones()
+        }
+        _uiToastEvent.postValue(SingleEvent("🗑️ All Archived Safe Zones permanently purged."))
+    }
+
+    fun loadArchivedSafeZones() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val archivedList = dbDelegate.getArchivedSafeZones()
+                val list = archivedList.map { map ->
+                    RenderedGeofence(
+                        map["zone_id"] as String,
+                        map["name"] as? String ?: "Archived Node",
+                        map["lat"] as? Double ?: 0.0,
+                        map["lng"] as? Double ?: 0.0,
+                        map["radius"] as? Double ?: 100.0,
+                        map["target"] as? String ?: "",
+                        "Archive Vault",
+                        (map["flag_a"] as? Int ?: 1) == 1,
+                        false, // Inactive
+                        0, 2359, "1,2,3,4,5,6,0"
+                    )
+                }
+                _archivedZones.postValue(list)
+            } catch (e: Exception) {}
+        }
+    }
+
+    fun getDeviceEventLogs(zoneId: String, deviceName: String): List<String> {
+        val rawLogs = dbDelegate.getGeofenceLogsByDeviceAndZone(zoneId, deviceName)
+        if (rawLogs.isEmpty()) return listOf("No trigger events recorded for $deviceName in this zone.")
+        return rawLogs.map { log ->
+            val status = log["status"]?.toString() ?: "EVENT"
+            val ts = log["ts_start"]?.toString() ?: ""
+            val formattedTime = if (ts.isNotEmpty()) {
+                try {
+                    val millis = ts.toLongOrNull() ?: 0L
+                    if (millis > 0) java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(millis)) else ts
+                } catch (e: Exception) { ts }
+            } else "Recent"
+            "🔔 [$formattedTime] $deviceName $status"
+        }
+    }
+
     fun deleteCloudSafeguardZone(id: String) {
-        currentGroupId?.let { FirebaseDatabase.getInstance().getReference("groups").child(it).child("geofences").child(id).removeValue() }
+        archiveSafeZone(id)
+    }
+
+    fun deleteGeofence(zoneId: String) {
+        archiveSafeZone(zoneId)
     }
     
     fun toggleBellAlertState(id: String, currentState: Boolean) {
-        currentGroupId?.let { FirebaseDatabase.getInstance().getReference("groups").child(it).child("geofences").child(id).child("alertsEnabled").setValue(!currentState) }
+        val grp = currentGroupId ?: return
+        val newState = !currentState
+        FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id).child("alertsEnabled").setValue(newState)
+        FirebaseComm.getGeofencingSafeZoneRef(grp, id).child("alerts_enabled").setValue(newState)
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.updateSafeZoneAlerts(id, newState)
+        }
+        _uiToastEvent.postValue(SingleEvent(if (newState) "🔔 Perimeter Alerts Enabled" else "🔕 Perimeter Alerts Muted"))
     }
 
     fun toggleZoneActiveState(id: String, currentState: Boolean) {
-        currentGroupId?.let { FirebaseDatabase.getInstance().getReference("groups").child(it).child("geofences").child(id).child("isZoneActive").setValue(!currentState) }
+        val grp = currentGroupId ?: return
+        val newState = !currentState
+        FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id).child("isZoneActive").setValue(newState)
+        FirebaseComm.getGeofencingSafeZoneRef(grp, id).child("is_active").setValue(newState)
+        viewModelScope.launch(Dispatchers.IO) {
+            dbDelegate.updateSafeZoneActive(id, newState)
+        }
+        _uiToastEvent.postValue(SingleEvent(if (newState) "🟢 Safe Zone Monitoring Active" else "⏸️ Safe Zone Monitoring Paused"))
     }
     
-    // 🚀 MISSION DEPLOYMENT HUB (V48: Targeted Forensic Handshake)
+    // 🚀 MISSION DEPLOYMENT HUB (V50: Targeted Forensic Handshake)
 
     fun sendForensicHandshakeRequest(targetName: String) {
         val activeId = currentGroupId ?: return
         val targetUid = deviceUidMap[targetName] ?: return
         
-        // 🛰️ MISSION PAYLOAD: High-Level Assignment Context
         val nowFormatted = java.text.SimpleDateFormat("dd/MM/yy hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         
-        // 🛰️ MISSION PAYLOAD: High-Level Assignment Context (V49.4)
         val syncRequest = mapOf(
             "type" to "GEOFENCE_ASSIGNMENT",
+            "zone_id" to "ACTIVE_MISSION",
             "zone_name" to "Active Mission Node",
             "group_id" to activeId,
             "status" to "PENDING_ACCEPTANCE",
@@ -591,7 +1043,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         val jPrefs = getApplication<android.app.Application>().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
         val finalAgentId = jPrefs.getString("agent_id", FirebaseAuth.getInstance().getUid());
         val db = DatabaseHelper.getInstance(getApplication())
-        val now = System.currentTimeMillis()
         
         // 1. Update SafeZoneGroup_Table (Master Mission Assignment)
         db.syncSafeZoneGroup("ACTIVE_MISSION", targetUid, 0, 100, "ALL", 1, 1, "MISSION_DEPLOYED")
@@ -608,25 +1059,67 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
     
     fun logManualGeofenceCheck(id: String, logString: String) {
-        currentGroupId?.let { FirebaseDatabase.getInstance().getReference("groups").child(it).child("geofences").child(id).child("history").push().setValue(logString) }
+        currentGroupId?.let { FirebaseComm.relationshipsRef.child(it).child("geofences").child(id).child("history").push().setValue(logString) }
     }
 
     fun fetchGeofenceHistory(id: String) {
         val activeId = currentGroupId ?: return
-        FirebaseDatabase.getInstance().getReference("groups").child(activeId).child("geofences").child(id).child("history")
+        val localLogs = dbDelegate.getGeofenceLogs(zoneId = id).map { 
+            val status = it["status"]?.toString() ?: "EVENT"
+            val transition = if (status.contains("ENTER") || status.equals("IN", ignoreCase = true)) "IN" else "OUT"
+            "📅 [${it["date"] ?: "RECENT"}] • [${if (transition == "IN") "🟢 ENTERED (IN)" else "🔴 EXITED (OUT)"}] • ${it["id_full_name"] ?: "Device"} at ${it["readable_time"] ?: it["time"] ?: "Unknown"}"
+        }
+
+        // Query Date-Grouped notifications tree from /Geofencing/{creatorId}/safe_zones/{id}/connected_devices
+        FirebaseComm.getGeofencingConnectedDevicesRef(activeId, id)
             .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    val logs = mutableListOf<String>()
-                    for (snap in snapshot.children) { snap.getValue(String::class.java)?.let { logs.add(it) } }
-                    if (logs.isEmpty()) logs.add("No manual checks recorded yet.")
+                    val logs = LinkedHashSet<String>()
+                    logs.addAll(localLogs)
+
+                    for (devSnap in snapshot.children) {
+                        val devName = devSnap.child("device_name").getValue(String::class.java) ?: devSnap.key ?: "Device"
+                        val notifSnap = devSnap.child("notifications")
+                        for (dateSnap in notifSnap.children) {
+                            val dateKey = dateSnap.key ?: "RECENT"
+                            for (evtSnap in dateSnap.children) {
+                                val trans = evtSnap.child("transition").getValue(String::class.java) ?: "IN"
+                                val timeStr = evtSnap.child("time").getValue(String::class.java) 
+                                    ?: evtSnap.child("readable_time").getValue(String::class.java) 
+                                    ?: "00:00"
+                                val badge = if (trans.equals("IN", ignoreCase = true)) "🟢 ENTERED (IN)" else "🔴 EXITED (OUT)"
+                                val line = "📅 [$dateKey] • [$badge] • $devName at $timeStr"
+                                logs.add(line)
+                            }
+                        }
+                    }
+                    if (logs.isEmpty()) logs.add("🛡️ No perimeter trigger events recorded yet.")
                     _historyDialogEvent.postValue(SingleEvent(logs.reversed().toTypedArray()))
                 }
-                override fun onCancelled(error: DatabaseError) {}
+                override fun onCancelled(error: DatabaseError) {
+                    val fallback = if (localLogs.isNotEmpty()) localLogs.reversed().toTypedArray() else arrayOf("🛡️ No perimeter trigger events recorded yet.")
+                    _historyDialogEvent.postValue(SingleEvent(fallback))
+                }
             })
     }
 
     fun executeOSGeocodingQuery(query: String) {
         if (query.isEmpty()) return
+
+        // 1. Direct Lat/Lng coordinate parsing support (e.g. "28.6139, 77.2090" or "28.6139 77.2090")
+        val coordParts = query.trim().split(Regex("[,\\s]+"))
+        if (coordParts.size == 2) {
+            val lat = coordParts[0].toDoubleOrNull()
+            val lng = coordParts[1].toDoubleOrNull()
+            if (lat != null && lng != null && lat in -90.0..90.0 && lng in -180.0..180.0) {
+                val target = LatLng(lat, lng)
+                _cameraMoveEvent.postValue(SingleEvent(target))
+                _draftCoordinateLocation.postValue(target)
+                _uiToastEvent.postValue(SingleEvent("📍 Coordinate anchor set: $lat, $lng"))
+                return
+            }
+        }
+
         val geocoder = Geocoder(getApplication())
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             geocoder.getFromLocationName(query, 1, object : Geocoder.GeocodeListener {
@@ -635,12 +1128,13 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         val target = LatLng(addresses[0].latitude, addresses[0].longitude)
                         _cameraMoveEvent.postValue(SingleEvent(target))
                         _draftCoordinateLocation.postValue(target)
+                        _uiToastEvent.postValue(SingleEvent("📍 Target pinned: ${addresses[0].locality ?: query}"))
                     } else {
-                        _uiToastEvent.postValue(SingleEvent("Target Not Found"))
+                        _uiToastEvent.postValue(SingleEvent("Address '$query' not found. Tap directly on the map or tap the GPS button."))
                     }
                 }
                 override fun onError(errorMessage: String?) {
-                    _uiToastEvent.postValue(SingleEvent("Geocoding Error"))
+                    _uiToastEvent.postValue(SingleEvent("Geocoding lookup unavailable. Tap directly on the map."))
                 }
             })
         } else {
@@ -653,9 +1147,12 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     } catch (e: Exception) { null }
                 }
                 if (target != null) {
-                    _cameraMoveEvent.value = SingleEvent(target)
-                    _draftCoordinateLocation.value = target
-                } else { _uiToastEvent.value = SingleEvent("Target Not Found") }
+                    _cameraMoveEvent.postValue(SingleEvent(target))
+                    _draftCoordinateLocation.postValue(target)
+                    _uiToastEvent.postValue(SingleEvent("📍 Target location pinned!"))
+                } else { 
+                    _uiToastEvent.postValue(SingleEvent("Address '$query' not found. Tap directly on the map or tap the GPS button.")) 
+                }
             }
         }
     }
@@ -669,6 +1166,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        currentGroupId?.let { FirebaseDatabase.getInstance().getReference("groups").child(it).child("geofences").removeEventListener(geofenceListener!!) }
+        geofenceListener?.let { listener ->
+            currentGroupId?.let { gid ->
+                FirebaseComm.relationshipsRef.child(gid).child("geofences").removeEventListener(listener)
+            }
+        }
     }
 }

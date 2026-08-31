@@ -1,7 +1,5 @@
-/**
- * Matrix Manager V2 - Enterprise State Engine
- * Pattern: Observable Store with Optimistic Persistence
- */
+const getApiBase = () => window.API_BASE_URL || (window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:3000');
+
 export const Store = {
     state: {
         activeCollection: null,
@@ -13,8 +11,8 @@ export const Store = {
         syncStatus: 'SYNCED', // SYNCED, PENDING, ERROR
         user: { 
             role: 'ADMIN', 
-            email: 'jmeet2gether@gmail.com',
-            auth_key: 'Jeet@123Meet'
+            email: window.ENV?.ADMIN_EMAIL || 'jmeet2gether@gmail.com',
+            auth_key: window.ENV?.MASTER_KEY_ID || localStorage.getItem('matrix_master_key') || 'Jeet@123Meet'
         }
     },
 
@@ -36,7 +34,7 @@ export const Store = {
         this.notify();
 
         try {
-            const res = await fetch(`http://127.0.0.1:3000/api/data?path=/${name}`);
+            const res = await fetch(`${getApiBase()}/api/data?path=/${name}`);
             const rawData = await res.json();
             
             this.state.records = Object.entries(rawData || {}).map(([id, val]) => ({
@@ -138,7 +136,7 @@ export const Store = {
     },
 
     async apiCall(method, endpoint, body) {
-        const res = await fetch(`http://127.0.0.1:3000${endpoint}`, {
+        const res = await fetch(`${getApiBase()}${endpoint}`, {
             method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -156,7 +154,7 @@ export const Store = {
             timestamp: new Date().toISOString()
         };
         this.state.auditLogs.unshift(log);
-        fetch(`http://127.0.0.1:3000/api/update`, {
+        fetch(`${getApiBase()}/api/update`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -1,5 +1,6 @@
 package com.jdroidx.jfindme.ui.management;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -12,6 +13,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.ViewModelProvider;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
@@ -64,6 +66,7 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
         LinearLayout titleBundle = new LinearLayout(this);
         titleBundle.setOrientation(LinearLayout.VERTICAL);
         titleBundle.setPadding(scale(20), 0, 0, 0);
+        titleBundle.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         TextView title = new TextView(this);
         title.setText("MISSION NOTIFICATIONS");
@@ -79,6 +82,31 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
         titleBundle.addView(subTitle);
 
         header.addView(titleBundle);
+
+        // 📤 Export / Share Logs Action Button
+        ImageView btnExport = new ImageView(this);
+        btnExport.setImageResource(android.R.drawable.ic_menu_share);
+        btnExport.setColorFilter(getGradientOverlayText());
+        btnExport.setPadding(scale(15), scale(15), scale(15), scale(15));
+        int btnSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        btnExport.setOnClickListener(v -> exportAuditLogs());
+        header.addView(btnExport, new LinearLayout.LayoutParams(btnSize, btnSize));
+
+        // 🗑️ Clear All Logs Action Button
+        ImageView btnClear = new ImageView(this);
+        btnClear.setImageResource(android.R.drawable.ic_menu_delete);
+        btnClear.setColorFilter(getGradientOverlayText());
+        btnClear.setPadding(scale(15), scale(15), scale(15), scale(15));
+        btnClear.setOnClickListener(v -> {
+            UiArchitect.showConfirmationDialog(this,
+                "PURGE AUDIT LOGS?",
+                "Are you sure you want to clear all forensic transition logs from the local ledger?",
+                "CLEAR", "ABORT",
+                () -> viewModel.clearAllLogs(targetAvatar, targetZoneId),
+                null);
+        });
+        header.addView(btnClear, new LinearLayout.LayoutParams(btnSize, btnSize));
+
         root.addView(header);
 
         // Filter Matrix
@@ -136,31 +164,34 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
         if (filterBar == null) return;
         filterBar.removeAllViews();
         int p = getResponsivePaddingQuota();
-        filterBar.setPadding(p, p/4, p, p/4);
+        filterBar.setPadding(p, scale(6), p, scale(6));
 
-        String[] filters = {"ALL LOGS", "IN (GREEN)", "OUT (RED)", "HISTORY"};
+        String[] filters = {"ALL LOGS", "🟢 IN / ARRIVAL", "🔴 OUT / DEPARTURE", "📜 HISTORY"};
         for (int i = 0; i < filters.length; i++) {
             final int idx = i;
             TextView tab = new TextView(this);
             tab.setText(filters[i]);
-            tab.setPadding(p, p/4, p, p/4);
+            tab.setPadding(scale(10), scale(6), scale(10), scale(6));
             tab.setGravity(Gravity.CENTER);
+            tab.setTextSize(10.5f);
+            tab.setTypeface(null, Typeface.BOLD);
             
             if (activeFilter == i) {
                 tab.setTextColor(Color.WHITE);
-                tab.setBackgroundColor(getGradientStart());
+                applySolidCardGeometry(tab, getGradientStart(), 14f);
             } else {
                 tab.setTextColor(getSecondaryTextColor());
-                tab.setBackgroundColor(Color.TRANSPARENT);
+                applySolidCardGeometry(tab, getCardColor(), 14f);
             }
             
-            UiArchitect.applyText(this, tab, "TEXT_TINY");
+            LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            tLp.setMargins(scale(3), 0, scale(3), 0);
             tab.setOnClickListener(v -> {
                 activeFilter = idx;
                 refreshFilterBar();
                 renderNotifications(currentList);
             });
-            filterBar.addView(tab);
+            filterBar.addView(tab, tLp);
         }
     }
 
@@ -180,13 +211,7 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
 
         if (list == null) list = new ArrayList<>();
         
-        // 🚀 ANALYTIC GUARD: Only display samples if the forensic local archival is completely sterile
-        if (list.isEmpty() && targetAvatar == null && targetZoneId == null) {
-            list.add(new GeofenceNotification("S1", "SUSAN", "IN", System.currentTimeMillis() - 3600000, "HOME", ""));
-            list.add(new GeofenceNotification("S2", "SUSAN", "OUT", System.currentTimeMillis() - 7200000, "SCHOOL", ""));
-            list.add(new GeofenceNotification("S3", "JOHN", "IN", System.currentTimeMillis() - 10800000, "SCHOOL", ""));
-        }
-
+        List<GeofenceNotification> filteredList = new ArrayList<>();
         for (GeofenceNotification n : list) {
             boolean isEntry = n.getStatus().equalsIgnoreCase("IN") || n.getStatus().equalsIgnoreCase("ENTERED");
             boolean isExit = n.getStatus().equalsIgnoreCase("OUT") || n.getStatus().equalsIgnoreCase("EXITED");
@@ -194,6 +219,40 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
             if (activeFilter == 1 && !isEntry) continue; // 🟢 'IN' Filter: Show both IN and ENTERED
             if (activeFilter == 2 && !isExit) continue;  // 🔴 'OUT' Filter: Show both OUT and EXITED
             
+            filteredList.add(n);
+        }
+
+        if (filteredList.isEmpty()) {
+            View emptyCard = UiArchitect.createEmptyStateCard(
+                this,
+                "No Boundary Transitions Recorded",
+                "When tracked devices enter or exit designated safe zones, forensic logs will appear here in real-time.",
+                android.R.drawable.ic_popup_reminder,
+                "REFRESH LOGS",
+                () -> viewModel.fetchNotifications(targetAvatar, targetZoneId)
+            );
+            container.addView(emptyCard);
+            return;
+        }
+
+        String lastDateHeader = "";
+        for (GeofenceNotification n : filteredList) {
+            String logDate = n.getDate();
+            if (logDate == null || logDate.trim().isEmpty()) {
+                logDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date(n.getTimestamp()));
+            }
+
+            if (!logDate.equalsIgnoreCase(lastDateHeader)) {
+                lastDateHeader = logDate;
+                TextView dateHeader = new TextView(this);
+                dateHeader.setText("📅 " + logDate);
+                dateHeader.setTextColor(getGradientStart());
+                dateHeader.setTypeface(null, Typeface.BOLD);
+                dateHeader.setPadding(scale(4), scale(12), scale(4), scale(6));
+                UiArchitect.applyText(this, dateHeader, "TEXT_LABEL");
+                container.addView(dateHeader);
+            }
+
             container.addView(createForensicRowTile(n));
         }
     }
@@ -275,9 +334,107 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
         ImageView ivMap = new ImageView(this);
         ivMap.setImageResource(android.R.drawable.ic_dialog_map);
         ivMap.setColorFilter(getGradientStart());
-        ivMap.setOnClickListener(v -> {}); // 0.0, 0.0 Analytics
+        ivMap.setOnClickListener(v -> showTransitionDetailDialog(n));
         row.addView(ivMap, new LinearLayout.LayoutParams(sSize, sSize));
 
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setOnClickListener(v -> showTransitionDetailDialog(n));
+
         return row;
+    }
+
+    private void showTransitionDetailDialog(GeofenceNotification n) {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        builder.setTitle("📡 TRANSITION EVENT DETAILS");
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int p = getResponsivePaddingQuota();
+        root.setPadding(p, p, p, p);
+
+        // Event Type Header Badge
+        LinearLayout statusBadge = new LinearLayout(this);
+        statusBadge.setOrientation(LinearLayout.HORIZONTAL);
+        statusBadge.setGravity(Gravity.CENTER);
+        statusBadge.setPadding(p, p/2, p, p/2);
+        boolean isEntry = n.getStatus().equalsIgnoreCase("IN") || n.getStatus().equalsIgnoreCase("ENTERED");
+        int bgCol = isEntry ? Color.parseColor("#1B5E20") : Color.parseColor("#B71C1C");
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(bgCol);
+        gd.setCornerRadius(scale(16));
+        statusBadge.setBackground(gd);
+
+        TextView tvStatus = new TextView(this);
+        tvStatus.setText("STATUS: " + (isEntry ? "ARRIVED (ENTERED)" : "DEPARTED (EXITED)"));
+        tvStatus.setTextColor(Color.WHITE);
+        tvStatus.setTypeface(null, Typeface.BOLD);
+        statusBadge.addView(tvStatus);
+        root.addView(statusBadge);
+
+        // Key details
+        root.addView(createDetailRow("👤 Tracked Asset", n.getAvatarName()));
+        root.addView(createDetailRow("📍 Safe Zone", n.getZoneName()));
+        root.addView(createDetailRow("🕒 Timestamp", n.getReadableTime()));
+        root.addView(createDetailRow("🆔 Forensic Event ID", n.getId()));
+
+        scroll.addView(root);
+        builder.setView(scroll);
+
+        builder.setPositiveButton("VIEW ON MAP", (dialog, which) -> {
+            Intent mapIntent = new Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class);
+            mapIntent.putExtra("target_zone_name", n.getZoneName());
+            startActivity(mapIntent);
+        });
+        builder.setNegativeButton("DISMISS", null);
+
+        android.app.AlertDialog dialog = builder.create();
+        dialog.show();
+        applyDialogTheme(dialog);
+    }
+
+    private View createDetailRow(String label, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        int p = getResponsivePaddingQuota();
+        row.setPadding(0, p/2, 0, p/2);
+
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText(label);
+        tvLabel.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvLabel, "TEXT_LABEL");
+        row.addView(tvLabel);
+
+        TextView tvVal = new TextView(this);
+        tvVal.setText(value != null && !value.isEmpty() ? value : "N/A");
+        tvVal.setTextColor(getTextColor());
+        tvVal.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvVal, "TEXT_BODY");
+        row.addView(tvVal);
+
+        return row;
+    }
+
+    private void exportAuditLogs() {
+        if (currentList == null || currentList.isEmpty()) {
+            Toast.makeText(this, "No transition logs available to export.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== jFindMe SAFE ZONE AUDIT REPORT ===\n");
+        sb.append("Generated: ").append(new java.util.Date().toString()).append("\n");
+        sb.append("Total Events: ").append(currentList.size()).append("\n\n");
+        for (GeofenceNotification n : currentList) {
+            sb.append("[").append(n.getReadableTime()).append("] ")
+              .append(n.getAvatarName()).append(" - ")
+              .append(n.getStatus()).append(" - ")
+              .append(n.getZoneName()).append(" (ID: ").append(n.getId()).append(")\n");
+        }
+        Intent sendIntent = new Intent(Intent.ACTION_SEND);
+        sendIntent.putExtra(Intent.EXTRA_SUBJECT, "jFindMe Safe Zone Transition Report");
+        sendIntent.putExtra(Intent.EXTRA_TEXT, sb.toString());
+        sendIntent.setType("text/plain");
+        startActivity(Intent.createChooser(sendIntent, "Export Safe Zone Audit Logs"));
     }
 }

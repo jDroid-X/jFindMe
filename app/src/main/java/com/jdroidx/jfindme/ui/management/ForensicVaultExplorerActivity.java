@@ -30,6 +30,7 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     private String tableName, tableLabel;
     private DatabaseHelper db;
     private DatabaseReference cloudRef;
+    private DatabaseReference activeTarget;
     
     private LinearLayout contentMatrix;
     private TextView tvTableMeta;
@@ -123,28 +124,31 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         AngelLoader.show(this);
         AngelLoader.setStatus(this, "SYNCHRONIZING FORENSIC MATRIX...");
         
-        // 🚀 CLOUD PATH RESOLVER: Map local table names to their 5-Tier Firebase JSON architecture
-        DatabaseReference activeTarget = cloudRef;
-        String activeGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        // 🚀 CLOUD PATH RESOLVER: Map local table names to device-centric sub-group architecture
+        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        String currentAgentId = myUid != null ? myUid : "DEFAULT_AGENT";
         
-        // 5-Tier Analytical Node Mapping (V57 Standards)
-        if (tableName.equals("user_identity")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("identities");
-        } else if (tableName.equals("user_profile")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("profiles");
-        } else if (tableName.equals("devices")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("devices");
-        } else if (tableName.equals("group_members") || tableName.equals("groups")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("relationships");
-        } else if (tableName.equals("location_events") || tableName.equals("geofence_events")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("events");
-        } else if (tableName.equals("device_pairings")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("pairing_sessions");
-        } else if (tableName.equals("organizations")) {
-            activeTarget = FirebaseDatabase.getInstance().getReference("organizations");
+        // 5-Tier Analytical Node Mapping (Normalized Case-Insensitive Matching)
+        String lowerTable = (tableName != null) ? tableName.toLowerCase() : "";
+        if (lowerTable.contains("profile")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(currentAgentId);
+        } else if (lowerTable.contains("identity")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getIdentityRef(currentAgentId);
+        } else if (lowerTable.contains("device")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(currentAgentId);
+        } else if (lowerTable.contains("roster") || lowerTable.contains("group") || lowerTable.contains("relationship")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(currentAgentId);
+        } else if (lowerTable.contains("safezone") || lowerTable.contains("geofence")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getSafeZonesRef(currentAgentId);
+        } else if (lowerTable.contains("history") || lowerTable.contains("location")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeepHistoryRef(currentAgentId);
+        } else if (lowerTable.contains("pairing")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getPairingRef();
+        } else if (lowerTable.contains("log") || lowerTable.contains("audit") || lowerTable.contains("alert")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getAlertsRef(currentAgentId);
         } else {
-            // Fallback for custom or legacy nodes
-            activeTarget = FirebaseDatabase.getInstance().getReference(tableName);
+            // Fallback for custom or root nodes
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef();
         }
         
         activeTarget.limitToLast(20).addListenerForSingleValueEvent(new ValueEventListener() {
@@ -207,7 +211,18 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     }
 
     private void renderTransposedMatrix(List<Map<String, String>> allData, List<String> columns) {
-        if (allData.isEmpty()) return;
+        if (allData == null || allData.isEmpty()) {
+            View emptyCard = UiArchitect.createEmptyStateCard(
+                this,
+                "No Records to Inspect",
+                "This database table currently contains 0 records.",
+                android.R.drawable.ic_menu_info_details,
+                null,
+                null
+            );
+            contentMatrix.addView(emptyCard);
+            return;
+        }
         
         // 🚀 Analytical Command Hub (List Page Controller)
         LinearLayout hub = new LinearLayout(this);
@@ -276,7 +291,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         
         AngelLoader.show(this);
         AngelLoader.setStatus(this, "Mirroring Node to Cloud...");
-        cloudRef.child(idVal).setValue(data).addOnCompleteListener(t -> {
+        DatabaseReference targetRef = activeTarget != null ? activeTarget : cloudRef;
+        targetRef.child(idVal).setValue(data).addOnCompleteListener(t -> {
             AngelLoader.hide(this);
             if (t.isSuccessful()) Toast.makeText(this, "Cloud Sync Completed", Toast.LENGTH_SHORT).show();
             else Toast.makeText(this, "Sync Blocked: " + t.getException().getMessage(), Toast.LENGTH_LONG).show();
@@ -284,6 +300,18 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     }
 
     private void renderTable(List<Map<String, String>> rows, List<String> columns, boolean isLocal) {
+        if (rows == null || rows.isEmpty()) {
+            View emptyCard = UiArchitect.createEmptyStateCard(
+                this,
+                "No Records Found",
+                isLocal ? "This local table currently has 0 rows recorded." : "No matching records found in Firebase Cloud node.",
+                android.R.drawable.ic_menu_info_details,
+                null,
+                null
+            );
+            contentMatrix.addView(emptyCard);
+            return;
+        }
         HorizontalScrollView hScroll = new HorizontalScrollView(this);
         TableLayout table = new TableLayout(this);
         table.setStretchAllColumns(true);

@@ -68,9 +68,9 @@ app.get("/api/ping", (req, res) => res.json({ status: "ALIVE", project: PROJECT_
 app.get("/api/discovery", async (req, res) => {
     console.log("[DEBUG] Multi-Cloud Discovery Probe Initiated...");
     try {
-        // 1. Define ENTEPRISE_SCHEMA_REGISTRY (The 'Published' Tables)
+        // 1. Define ENTERPRISE_SCHEMA_REGISTRY (Unified 4-Node Cloud Architecture)
         const SCHEMA_REGISTRY = {
-            rtdb: ["users", "locations", "groups", "history", "system_audit", "system_settings", "geofences"],
+            rtdb: ["devices", "lookup_indices", "pairing_requests", "History"],
             firestore: ["users", "avatars", "sessions", "cells", "users_metadata"]
         };
 
@@ -199,6 +199,52 @@ app.get("/api/stats", async (req, res) => {
     }
 });
 
+// ============================================================
+// UPDATE / SET / DELETE RECORD ENDPOINT
+// ============================================================
+app.post("/api/update", async (req, res) => {
+    const { path: targetPath, data, type } = req.body;
+    const sourceType = type || "rtdb";
+    console.log(`[ACTION] UPDATE_REQUEST: Source [${sourceType}] | Path [${targetPath}]`);
+
+    try {
+        if (!targetPath) {
+            return res.status(400).json({ error: "MISSING_PATH" });
+        }
+
+        if (sourceType === "firestore") {
+            const parts = targetPath.replace(/^\/+/, "").split("/").filter(Boolean);
+            if (parts.length < 2) throw new Error("INVALID_FIRESTORE_PATH: Expected collection/docId");
+            const docRef = fs_db.collection(parts[0]).doc(parts[1]);
+            
+            if (data === null) {
+                await docRef.delete();
+                console.log(`[SUCCESS] Firestore Doc deleted: ${targetPath}`);
+            } else {
+                await docRef.set(data, { merge: true });
+                console.log(`[SUCCESS] Firestore Doc updated: ${targetPath}`);
+            }
+        } else {
+            const sanitizedPath = targetPath.replace(/^\/+/, "");
+            if (data === null) {
+                await db.ref(sanitizedPath).remove();
+                console.log(`[SUCCESS] RTDB Node removed: ${sanitizedPath}`);
+            } else {
+                if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+                    await db.ref(sanitizedPath).update(data);
+                } else {
+                    await db.ref(sanitizedPath).set(data);
+                }
+                console.log(`[SUCCESS] RTDB Node updated: ${sanitizedPath}`);
+            }
+        }
+        res.json({ status: "SUCCESS", path: targetPath });
+    } catch (err) {
+        console.error(`[ERROR] Update Failure (${targetPath}):`, err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post("/api/delete", async (req, res) => {
     const { path, type } = req.body;
     const sourceType = type || "rtdb";
@@ -281,10 +327,11 @@ app.post("/api/purge-node", async (req, res) => {
     }
 });
 
-const PORT = 3000;
-app.listen(PORT, "127.0.0.1", () => {
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
+app.listen(PORT, HOST, () => {
     console.log(`==========================================`);
     console.log(`   jFindMe FORENSIC PROXY LIVE            `);
-    console.log(`   Endpoint: http://127.0.0.1:${PORT}     `);
+    console.log(`   Endpoint: http://${HOST}:${PORT}       `);
     console.log(`==========================================`);
 });

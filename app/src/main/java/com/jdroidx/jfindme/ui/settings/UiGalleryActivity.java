@@ -395,7 +395,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         btnRow.setPadding(0, 20, 0, 20);
 
         UiArchitect.DesignStage current = UiArchitect.getStage(this);
-        for (UiArchitect.DesignStage stage : UiArchitect.DesignStage.values()) {
+        for (UiArchitect.DesignStage stage : UiArchitect.STAGES) {
             boolean isActive = (stage == current);
             
             LinearLayout stageBtn = new LinearLayout(this);
@@ -491,7 +491,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         table.addView(header);
 
         // Data Rows - The Waterfall Grouping
-        for (UiArchitect.DesignStage stage : UiArchitect.DesignStage.values()) {
+        for (UiArchitect.DesignStage stage : UiArchitect.STAGES) {
             com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.ScalingRecord r = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.get(stage);
             
             LinearLayout row = new LinearLayout(this);

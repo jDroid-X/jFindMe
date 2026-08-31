@@ -27,12 +27,16 @@ import com.jdroidx.jfindme.ui.base.UiArchitect;
  */
 public abstract class BaseActivityJava extends AppCompatActivity implements SharedPreferences.OnSharedPreferenceChangeListener {
 
+    /** Intent extra key: suppresses the first onResume mismatch check after safeRecreate(). */
+    private static final String EXTRA_SUPPRESS_RECREATE = "__suppress_recreate_check";
+
     protected SharedPreferences prefs;
     protected int currentThemeId;
     protected int currentStage;
     protected long currentUiHash;
     protected boolean isLandscape;
     protected boolean isUiRebuilding = false; // 🚀 Lifecycle Guard
+    private boolean isInForeground = false;    // 🚀 Lifecycle Guard: prevents background activity recreation
     private static long lastRecreateTime = 0;
     private static final Handler registryHandler = new Handler(Looper.getMainLooper());
     private Runnable registryCheckRunnable;
@@ -70,14 +74,21 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
 
             masterWrap.addView(originalRoot, new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             
-            // 🚀 QA Fix: Global Floating Help Icon Rebuilt!
+            // 🚀 QA Fix: Global Floating Help Icon Rebuilt with Theme Border Dark Shade
             android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
             globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
-            globalHelpBtn.setColorFilter(getGradientOverlayText()); 
+            int borderDark = ThemeManager.isDarkTheme(getResolvedThemeId()) ? getGradientEnd() : getGradientStart();
+            globalHelpBtn.setColorFilter(borderDark); 
             int hPad = scale(20);
             globalHelpBtn.setPadding(hPad, hPad, hPad, hPad);
             globalHelpBtn.setClickable(true);
             globalHelpBtn.setFocusable(true);
+            
+            android.graphics.drawable.GradientDrawable helpBg = new android.graphics.drawable.GradientDrawable();
+            helpBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            helpBg.setColor(getCardColor());
+            helpBg.setStroke(scale(4), borderDark);
+            globalHelpBtn.setBackground(helpBg);
             
             // 🚀 Universal Architecture Sync: Calibrated for precise Header-Row centering
             int helpSize = scale(100); 
@@ -91,7 +102,6 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
             helpLp.setMargins(0, mTop, mEnd, 0);
             globalHelpBtn.setLayoutParams(helpLp);
             
-            UiArchitect.applyCardWithOverride(this, globalHelpBtn, "CARD_STANDARD", 1.2f);
             globalHelpBtn.setElevation(scale(25)); // Force distinct Z-axis separation
             globalHelpBtn.setOnClickListener(v -> triggerHelpDialog());
             
@@ -100,6 +110,18 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
                 !(this.getClass().getSimpleName().equals("SplashActivity"))) {
                 masterWrap.addView(globalHelpBtn);
             }
+
+            // 🚨 Tactical Offline Security: Red Screen Border if Internet is OFF
+            offlineBorderOverlay = new View(this);
+            android.graphics.drawable.GradientDrawable borderShape = new android.graphics.drawable.GradientDrawable();
+            borderShape.setColor(Color.TRANSPARENT);
+            borderShape.setStroke(scale(8), Color.parseColor("#E53935")); // Tactical Alert Red
+            offlineBorderOverlay.setBackground(borderShape);
+            offlineBorderOverlay.setClickable(false);
+            offlineBorderOverlay.setFocusable(false);
+            android.widget.FrameLayout.LayoutParams borderLp = new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            masterWrap.addView(offlineBorderOverlay, borderLp);
+            updateNetworkBorderState();
             
             setContentView(masterWrap);
         }
@@ -124,39 +146,55 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     protected void onSaveCurrentState(Bundle outState) {}
     protected void onUiRebuilt(Bundle savedState) {}
     
+    /**
+     * AUDIT FIX [AUD-004]: Removed redundant 1500ms polling Runnable.
+     * The OnSharedPreferenceChangeListener (registered in onCreate) already handles
+     * all registry changes reactively via onSharedPreferenceChanged() callback.
+     * Keeping these methods for API compatibility — they are now intentional no-ops.
+     */
     private void startRegistryAudit() {
-        if (registryCheckRunnable != null) return;
-        
-        registryCheckRunnable = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    int latestInstalledTheme = prefs.getInt("theme_id", 0);
-                    long latestUiHash = prefs.getLong("ui_config_hash", 0);
-                    int latestStage = prefs.getInt("stage_override", -1);
-                    
-                    UiArchitect.DesignStage currentStageEnum = UiArchitect.getStage(BaseActivityJava.this);
-                    int currentStageVal = currentStageEnum.ordinal();
-                    
-                    if (currentThemeId != latestInstalledTheme || currentUiHash != latestUiHash || (latestStage != -1 && currentStage != latestStage)) {
-                        SystemLogger.i("BaseActivityJava", "Registry Mismatch Detected via Audit. Triggering Sync.");
-                        safeRecreate();
-                    }
-                } catch (Exception e) {
-                    SystemLogger.e("BaseActivityJava", "Audit Error", e);
-                }
-                
-                registryHandler.postDelayed(this, 1500);
-            }
-        };
-        registryHandler.post(registryCheckRunnable);
+        // NO-OP: OnSharedPreferenceChangeListener handles all reactive updates.
+        // The previous 1500ms Runnable was polling the UI thread unnecessarily.
     }
 
     private void stopRegistryAudit() {
-        if (registryCheckRunnable != null) {
-            registryHandler.removeCallbacks(registryCheckRunnable);
-            registryCheckRunnable = null;
+        // NO-OP: Matching no-op for startRegistryAudit().
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isInForeground = true;
+
+        // If this Activity was just re-launched by safeRecreate(), skip the first onResume check
+        // to prevent an infinite finish()+startActivity() loop.
+        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_SUPPRESS_RECREATE, false)) {
+            getIntent().removeExtra(EXTRA_SUPPRESS_RECREATE);
+            SystemLogger.i("BaseActivityJava", "onResume: Suppressed post-recreation mismatch check.");
+            return;
         }
+
+        if (prefs != null) {
+            int newTheme = prefs.getInt("theme_id", 0);
+            long newHash = prefs.getLong("ui_config_hash", 0);
+            int newStage = UiArchitect.getStage(this).ordinal();
+            if (newTheme != currentThemeId || newHash != currentUiHash || newStage != currentStage) {
+                SystemLogger.i("BaseActivityJava", "onResume: Theme or UI config change detected (" + currentThemeId + " -> " + newTheme + "). Executing Hot-Sync.");
+                currentThemeId = newTheme;
+                currentUiHash = newHash;
+                currentStage = newStage;
+                safeRecreate();
+            }
+        }
+        registerNetworkMonitor();
+        updateNetworkBorderState();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isInForeground = false;
+        unregisterNetworkMonitor();
     }
 
     @Override
@@ -182,6 +220,12 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if ("theme_id".equals(key) || "ui_config_hash".equals(key) || "stage_override".equals(key)) {
+            // Only recreate if this activity is actually in the foreground.
+            // Background activities will pick up changes in their own onResume().
+            if (!isInForeground) {
+                SystemLogger.i("BaseActivityJava", "Master Registry Signal: " + key + " changed (deferred: activity not in foreground).");
+                return;
+            }
             SystemLogger.i("BaseActivityJava", "Master Registry Signal: " + key + " changed. Executing Hot-Sync.");
             safeRecreate();
         }
@@ -215,7 +259,14 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         UiArchitect.DesignStage stage = UiArchitect.getStage(this);
         android.widget.ImageView globalHelpBtn = new android.widget.ImageView(this);
         globalHelpBtn.setImageResource(android.R.drawable.ic_menu_help);
-        globalHelpBtn.setColorFilter(getGradientOverlayText()); 
+        int borderDark = ThemeManager.isDarkTheme(getResolvedThemeId()) ? getGradientEnd() : getGradientStart();
+        globalHelpBtn.setColorFilter(borderDark); 
+        
+        android.graphics.drawable.GradientDrawable helpBg = new android.graphics.drawable.GradientDrawable();
+        helpBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        helpBg.setColor(getCardColor());
+        helpBg.setStroke(scale(4), borderDark);
+        globalHelpBtn.setBackground(helpBg); 
         
         // 🚀 L7 Symmetric Matrix: Recalibrated for Perfect Center-Axis Alignment
         int helpSize = 100;
@@ -284,29 +335,41 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         showForensicDialog("Screen Guide: " + actName, helpText);
     }
 
-    // 🦋 Master QA Enterprise Fix: Completely Bypasses Chinese OEM 'BinderProxy' crashes natively!
+    // 🦋 Master QA Enterprise Fix: OEM-safe theme & UI configuration recreation
+    // Uses finish()+startActivity() to bypass Chinese OEM BinderProxy crashes with recreate().
     protected void safeRecreate() {
-        // 🚀 QA Fix: Master Synchronicity Guard (Prevents recreation loops)
         long now = System.currentTimeMillis();
-        if (now - lastRecreateTime < 1000) return; 
+        if (now - lastRecreateTime < 2000) return; // 2s debounce to prevent rapid loops
+        if (isUiRebuilding) return;
         lastRecreateTime = now;
+        isUiRebuilding = true;
 
-        // 🚀 QA Fix: Input Channel Protection (Ensures window is ready for handover)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            if (isFinishing() || isDestroyed()) return;
+            if (isFinishing() || isDestroyed()) { isUiRebuilding = false; return; }
             
-            // Sync current instance fields before death to prevent audit re-firing in new instance
-            currentThemeId = prefs.getInt("theme_id", currentThemeId);
-            currentUiHash = prefs.getLong("ui_config_hash", currentUiHash);
-            currentStage = prefs.getInt("stage_override", currentStage);
+            // Sync ALL current instance fields using the SAME sources as onCreate
+            if (prefs != null) {
+                currentThemeId = prefs.getInt("theme_id", currentThemeId);
+                currentUiHash = prefs.getLong("ui_config_hash", currentUiHash);
+            }
+            // CRITICAL: Use UiArchitect.getStage() ordinal, NOT raw prefs.getInt("stage_override")
+            currentStage = UiArchitect.getStage(this).ordinal();
 
-            android.content.Intent hardwareMirror = getIntent();
-            hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
-            finish();
-            overridePendingTransition(0, 0);
-            startActivity(hardwareMirror);
-            overridePendingTransition(0, 0);
-        }, 150); // 🧩 Forensic Debounce (150ms)
+            try {
+                android.content.Intent hardwareMirror = new android.content.Intent(this, this.getClass());
+                hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
+                // Mark the new instance so its first onResume() skips the mismatch check
+                hardwareMirror.putExtra(EXTRA_SUPPRESS_RECREATE, true);
+                finish();
+                overridePendingTransition(0, 0);
+                startActivity(hardwareMirror);
+                overridePendingTransition(0, 0);
+            } catch (Exception e) {
+                SystemLogger.e("BaseActivityJava", "safeRecreate failed", e);
+            } finally {
+                isUiRebuilding = false;
+            }
+        }, 200); // 200ms debounce for window readiness
     }
 
     protected abstract View createLayout();
@@ -336,6 +399,10 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     }
 
     protected int getResolvedThemeId() {
+        if (prefs == null) {
+            prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE);
+        }
+        currentThemeId = prefs.getInt("theme_id", 0);
         int theme = currentThemeId;
         if (theme == 8) { // 🧠 System Default Mode
             int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
@@ -366,27 +433,23 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     }
     
     // 🧠 Native Mapping to the new Relational UI Database
-    protected int getCardColor() { 
-        int start = getGradientStart();
-        String mAlpha = ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
-        return Color.parseColor("#" + mAlpha + String.format("%06X", (0xFFFFFF & start)));
+    public int getCardColor() { 
+        return ThemeManager.getCardBackgroundColor(getResolvedThemeId());
     }
-    protected int getSecondaryTextColor() { return ThemeManager.getTextSecondaryColor(getResolvedThemeId()); }
+    public int getSecondaryTextColor() { return ThemeManager.getTextSecondaryColor(getResolvedThemeId()); }
     public int getGradientStart() { return ThemeManager.getGradientStart(getResolvedThemeId()); }
-    protected int getGradientEnd() { return ThemeManager.getGradientEnd(getResolvedThemeId()); }
+    public int getGradientEnd() { return ThemeManager.getGradientEnd(getResolvedThemeId()); }
     public int getGradientMid() { return ThemeManager.getGradientMid(getResolvedThemeId()); }
-    protected int getGradientOverlayText() { return ThemeManager.getGradientOverlayColor(getResolvedThemeId()); }
+    public int getGradientOverlayText() { return ThemeManager.getBrightenedGradientOverlayColor(getResolvedThemeId()); }
 
-    // 🧠 QA Fix: Nav Footer Color (Gradient End Override)
+    // 🧠 QA Fix: Nav Footer Color (Frosted Pottery Match)
     public int getNavCardColor() {
-        int end = getGradientEnd();
-        String mAlpha = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES[getResolvedThemeId()][1].substring(1, 3);
-        return android.graphics.Color.parseColor("#" + mAlpha + String.format("%06X", (0xFFFFFF & end)));
+        return ThemeManager.getCardBackgroundColor(getResolvedThemeId());
     }
     
-    // 🧠 QA Fix: High-Density Popup Alpha (85% Opacity Override)
+    // 🧠 QA Fix: High-Density Popup Alpha (Frosted Ceramic Wash)
     protected int getPopupColor() {
-        return Color.parseColor("#99000000"); // 🧱 Tier III: Solid Glass (60% Wash)
+        return ThemeManager.isDarkTheme(getResolvedThemeId()) ? Color.parseColor("#E6111A28") : Color.parseColor("#F2FFFFFF");
     }
     
     // 🚀 Native Access to Configured Widget Tints for Checkboxes & Radios
@@ -402,6 +465,125 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
             default: return getGradientStart();
         }
     }
+    protected View createCompactIconButton(String text, int iconRes, View.OnClickListener listener) {
+        return createCompactIconButton(text, iconRes, false, listener);
+    }
+
+    protected View createCompactIconButton(String text, int iconRes, boolean isPrimary, View.OnClickListener listener) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.HORIZONTAL);
+        tile.setGravity(Gravity.CENTER);
+        
+        int sidePad = scale(12);
+        int vertPad = scale(8);
+        tile.setPadding(sidePad, vertPad, sidePad, vertPad);
+        
+        tile.setFocusable(true);
+        tile.setClickable(true);
+        tile.setOnClickListener(listener);
+
+        UiArchitect.applyCardWithOverride(this, tile, isPrimary ? "CARD_CAPSULE_BUTTON" : "CARD_STANDARD");
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(isPrimary ? getGradientOverlayText() : getGradientMid()); 
+        
+        int iconSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        tile.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
+
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setGravity(Gravity.CENTER);
+        tv.setTextColor(isPrimary ? getGradientOverlayText() : getTextColor());
+        tv.setTextSize(12);
+        tv.setTypeface(null, Typeface.BOLD);
+        tv.setSingleLine(true);
+        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tv.setPadding(scale(6), 0, 0, 0);
+        tile.addView(tv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        applyAccessibility(tile, text); 
+        tile.setFocusableInTouchMode(false);
+
+        tile.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && 
+                (keyCode == android.view.KeyEvent.KEYCODE_ENTER || keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER)) {
+                v.performClick();
+                return true;
+            }
+            return false;
+        });
+
+        return tile;
+    }
+
+    private View offlineBorderOverlay;
+    private android.net.ConnectivityManager.NetworkCallback networkCallback;
+
+    public boolean isNetworkConnected() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return true;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                android.net.Network activeNet = cm.getActiveNetwork();
+                if (activeNet == null) return false;
+                android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(activeNet);
+                return caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            } else {
+                android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+                return info != null && info.isConnected();
+            }
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    public void updateNetworkBorderState() {
+        boolean isConnected = isNetworkConnected();
+        runOnUiThread(() -> {
+            if (offlineBorderOverlay != null) {
+                offlineBorderOverlay.setVisibility(isConnected ? View.GONE : View.VISIBLE);
+            }
+        });
+    }
+
+    private void registerNetworkMonitor() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                if (networkCallback == null) {
+                    networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                        @Override
+                        public void onAvailable(android.net.Network network) {
+                            updateNetworkBorderState();
+                        }
+                        @Override
+                        public void onLost(android.net.Network network) {
+                            updateNetworkBorderState();
+                        }
+                        @Override
+                        public void onCapabilitiesChanged(android.net.Network network, android.net.NetworkCapabilities networkCapabilities) {
+                            updateNetworkBorderState();
+                        }
+                    };
+                    cm.registerDefaultNetworkCallback(networkCallback);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void unregisterNetworkMonitor() {
+        try {
+            if (networkCallback != null) {
+                android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(networkCallback);
+                }
+                networkCallback = null;
+            }
+        } catch (Exception ignored) {}
+    }
+
     /**
      * 🚀 PILLAR 1: Global Theme & Geometry Subsystem Access
      */
@@ -416,9 +598,9 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
         
-        // 🚀 L7 Optimization: Fluid Padding Response
-        int sidePad = UiScalingMatrixTable.scalePadding(stage, 40);
-        int vertPad = UiScalingMatrixTable.scalePadding(stage, 30);
+        // 🚀 L7 Optimization: Fluid Best-Fit Padding Response
+        int sidePad = UiScalingMatrixTable.scalePadding(stage, 20);
+        int vertPad = UiScalingMatrixTable.scalePadding(stage, 14);
         tile.setPadding(sidePad, vertPad, sidePad, vertPad);
         
         tile.setFocusable(true);
@@ -445,8 +627,8 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         tv.setMaxLines(2);
         tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         
-        // 🚀 L7 Relational Auto-Calibration: Correct the '14sp' feel into the '18f' Standard
-        UiArchitect.calibrateText(this, tv, "TEXT_TITLE");
+        // 🚀 L7 Relational Auto-Calibration: Correct font sizing for optimal density
+        UiArchitect.calibrateText(this, tv, "TEXT_LABEL");
         
         tv.setPadding(sidePad/2, 0, 0, 0);
         tile.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
@@ -594,15 +776,17 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     }
 
     protected android.graphics.drawable.GradientDrawable createPopupBackground() {
-        int nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        boolean isDark = nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        
-        int color = isDark ? Color.argb(230, 15, 15, 15) : Color.argb(230, 255, 255, 255);
-        
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(color); // 🧪 Forensic Glassmorphism (230 Alpha)
-        bg.setCornerRadius(40f); 
-        bg.setStroke(4, getGradientStart()); // Clinical Stroke Sync
+        int themeId = getResolvedThemeId();
+        int startColor = ThemeManager.getBrightenedGradientStart(themeId);
+        int endColor = ThemeManager.getBrightenedGradientEnd(themeId);
+        int overlayColor = ThemeManager.getBrightenedGradientOverlayColor(themeId);
+
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{startColor, endColor}
+        );
+        bg.setCornerRadius(scale(18)); 
+        bg.setStroke(scale(2), overlayColor == Color.WHITE ? Color.parseColor("#66FFFFFF") : Color.parseColor("#44000000")); // Radiant Vibrant Glow Halo
         return bg;
     }
 
@@ -610,7 +794,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
      * 🚀 Master QA Fix: Unified Theme-Aware Forensic Dialog!
      * Ensures all 'Pop Up Messages' synchronize their text colors with the L7 Design Registry.
      */
-    protected void showForensicDialog(String title, String message) {
+    public void showForensicDialog(String title, String message) {
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
@@ -620,39 +804,113 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         applyDialogTheme(dialog);
     }
 
-    protected void applyDialogTheme(android.app.AlertDialog dialog) {
+    /**
+     * 🛡️ Closed-Loop Interactive Confirmation Dialog (Human-in-the-Loop Safeguard)
+     * For destructive or critical state changes (Unpair, Remove Geofence, Reset, Signout).
+     */
+    public void showThemedConfirmationDialog(String title, String message, String positiveText, String negativeText, Runnable onConfirm, Runnable onCancel) {
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(positiveText != null ? positiveText : "Confirm", (d, w) -> {
+                if (onConfirm != null) onConfirm.run();
+            })
+            .setNegativeButton(negativeText != null ? negativeText : "Cancel", (d, w) -> {
+                if (onCancel != null) onCancel.run();
+            })
+            .show();
+
+        applyDialogTheme(dialog);
+    }
+
+    /**
+     * 🛡️ Themed Action Dialog with single closed-loop callback
+     */
+    public void showThemedActionDialog(String title, String message, String positiveText, Runnable onConfirm) {
+        showThemedConfirmationDialog(title, message, positiveText, "Cancel", onConfirm, null);
+    }
+
+    public void applyDialogTheme(android.app.AlertDialog dialog) {
         if (dialog == null) return;
         
-        int start = getGradientStart();
-        int end = getGradientEnd();
+        int themeId = getResolvedThemeId();
+        int overlayColor = ThemeManager.getBrightenedGradientOverlayColor(themeId);
         
-        // 🧱 TITLE LAYER: Dynamic Injection (Gradient End)
+        // 🧱 TITLE LAYER: Dynamic Glowing Header Text
         int titleId = getResources().getIdentifier("alertTitle", "id", "android");
         TextView titleTv = dialog.findViewById(titleId);
         if (titleTv != null) {
-            titleTv.setTextColor(end);
+            titleTv.setTextColor(overlayColor);
             titleTv.setTypeface(null, Typeface.BOLD);
         }
         
-        // 🧱 MESSAGE LAYER: Dynamic Injection (Gradient Start)
+        // 🧱 MESSAGE LAYER: Dynamic Glowing Secondary Text
         TextView messageTv = dialog.findViewById(android.R.id.message);
         if (messageTv != null) {
-            messageTv.setTextColor(start);
+            messageTv.setTextColor(overlayColor);
+            messageTv.setAlpha(0.92f);
+            messageTv.setLineSpacing(4f, 1.15f);
         }
         
-        // 🧱 BUTTON LAYER: Action Node (Gradient End)
+        // 🧱 BUTTON LAYER: Action Node
         android.widget.Button btnPos = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
         if (btnPos != null) {
-            btnPos.setTextColor(end);
+            btnPos.setTextColor(overlayColor);
             btnPos.setTypeface(null, Typeface.BOLD);
         }
         android.widget.Button btnNeg = dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE);
-        if (btnNeg != null) btnNeg.setTextColor(Color.GRAY);
+        if (btnNeg != null) {
+            btnNeg.setTextColor(overlayColor);
+            btnNeg.setAlpha(0.85f);
+        }
+        android.widget.Button btnNeu = dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL);
+        if (btnNeu != null) {
+            btnNeu.setTextColor(overlayColor);
+            btnNeu.setAlpha(0.85f);
+        }
         
-        // 🧱 BACKGROUND: Forensic Glassmorphism (Universal System Match)
+        // 🧱 LIST VIEW LAYER: Options / Selection List Styling
+        android.widget.ListView listView = dialog.getListView();
+        if (listView != null) {
+            listView.setBackgroundColor(Color.TRANSPARENT);
+            listView.setCacheColorHint(Color.TRANSPARENT);
+            android.graphics.drawable.ColorDrawable dividerColor = new android.graphics.drawable.ColorDrawable(
+                overlayColor == Color.WHITE ? Color.parseColor("#33FFFFFF") : Color.parseColor("#33000000")
+            );
+            listView.setDivider(dividerColor);
+            listView.setDividerHeight(scale(1));
+        }
+
+        // 🧱 BACKGROUND: Glowing Theme Gradient directly applied to parentPanel & Window
         if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setDimAmount(0.60f); // Enhanced Glowing Ambience
+        }
+
+        int parentPanelId = getResources().getIdentifier("parentPanel", "id", "android");
+        View parentPanel = dialog.findViewById(parentPanelId);
+        if (parentPanel != null) {
+            parentPanel.setBackground(createPopupBackground());
+            int pad = scale(12);
+            parentPanel.setPadding(pad, pad, pad, pad);
+        } else if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(createPopupBackground());
-            dialog.getWindow().setDimAmount(0.6f); // Enhanced Forensic Shadowing
+        }
+
+        // Clear system default background from child containers
+        int[] subPanelIds = new int[]{
+            getResources().getIdentifier("topPanel", "id", "android"),
+            getResources().getIdentifier("contentPanel", "id", "android"),
+            getResources().getIdentifier("buttonPanel", "id", "android"),
+            getResources().getIdentifier("customPanel", "id", "android")
+        };
+        for (int pId : subPanelIds) {
+            if (pId != 0) {
+                View panel = dialog.findViewById(pId);
+                if (panel != null) {
+                    panel.setBackgroundColor(Color.TRANSPARENT);
+                }
+            }
         }
     }
 
@@ -685,5 +943,27 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         
         applyDialogTheme(dialog);
     }
+
+    /**
+     * 👑 Universal Validation Alert Popup
+     */
+    public void showValidationDialog(String title, String message) {
+        UiArchitect.showActionableValidationDialog(this, title, message, "OK", null, null, null);
+    }
+
+    /**
+     * 👑 Universal Action Confirmation Dialog with Options
+     */
+    public void showConfirmationDialog(String title, String message, String confirmBtn, String cancelBtn, Runnable onConfirm, Runnable onCancel) {
+        UiArchitect.showActionableValidationDialog(this, title, message, confirmBtn, cancelBtn, onConfirm, onCancel);
+    }
+
+    /**
+     * 👑 Universal Popup Notification with Selectable Options
+     */
+    public void showNotificationOptionsDialog(String title, String message, String[] options, UiArchitect.OnOptionSelectListener listener) {
+        UiArchitect.showPopupNotificationWithOptions(this, title, message, options, listener);
+    }
 }
+
 

@@ -30,11 +30,11 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
             // For stability bridging, we are just executing the Network Keep-Alive metric.
             
             val timestamp = System.currentTimeMillis()
-            FirebaseDatabase.getInstance().reference
-                .child("users")
-                .child(user.uid)
-                .child("last_heartbeat")
-                .setValue(timestamp)
+            com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(user.uid) { agentId ->
+                val finalId = agentId ?: user.uid
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getTelemetryRef(finalId).child("last_heartbeat").setValue(timestamp)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.lookupIndicesRef.child("active_monitors").child(finalId).setValue(timestamp)
+            }
 
             SystemLogger.i(TAG, "Watchdog successful. Background heartbeat recorded.")
             Result.success()

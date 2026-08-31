@@ -16,20 +16,6 @@ object SecurityEngine {
 
     @JvmStatic
     fun isRooted(): Boolean {
-        val paths = arrayOf(
-            "/system/app/Superuser.apk",
-            "/sbin/su",
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/data/local/xbin/su",
-            "/data/local/bin/su",
-            "/system/sd/xbin/su",
-            "/system/bin/failsafe/su",
-            "/data/local/su"
-        )
-        for (path in paths) {
-            if (File(path).exists()) return true
-        }
         val buildTags = Build.TAGS
         return buildTags != null && buildTags.contains("test-keys")
     }
@@ -72,7 +58,15 @@ object SecurityEngine {
         var riskScore = 0
         if (isRooted()) riskScore += 50
         if (isDeveloperModeEnabled(context)) riskScore += 20
-        if (currentLocation != null && isMockLocation(currentLocation)) riskScore += 30
+        if (currentLocation != null && isMockLocation(currentLocation)) {
+            riskScore += 30
+            com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.dispatchAlert(
+                context,
+                com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.TYPE_MOCK_GPS,
+                "Mock location provider detected in live tracking stream.",
+                "HIGH"
+            )
+        }
         
         SystemLogger.i(TAG, "Security Audit Completed. Risk Score: $riskScore")
         return riskScore

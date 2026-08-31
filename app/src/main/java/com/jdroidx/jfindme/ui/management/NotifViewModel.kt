@@ -32,9 +32,12 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
         _alerts.postValue(list)
     }
 
+    private var activeAgentId: String? = null
+
     private fun listenToPendingRequests() {
-        val uid = auth.uid ?: return
-        val ref = FirebaseDatabase.getInstance().getReference("users").child(uid).child("geofence_sync_requests")
+        val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+        activeAgentId = finalId
+        val ref = com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalId).child("Identity").child("geofence_sync_requests")
         ref.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<Map<String, String>>()
@@ -43,8 +46,12 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
                     if ("PENDING_ACCEPTANCE" == status) {
                         val map = mutableMapOf<String, String>()
                         map["id"] = snap.key ?: ""
+                        map["zone_id"] = snap.child("zone_id").getValue(String::class.java) ?: snap.key ?: ""
                         map["zone_name"] = snap.child("zone_name").getValue(String::class.java) ?: "Unknown"
                         map["group_id"] = snap.child("group_id").getValue(String::class.java) ?: ""
+                        map["lat"] = snap.child("lat").value?.toString() ?: ""
+                        map["lng"] = snap.child("lng").value?.toString() ?: ""
+                        map["radius"] = snap.child("radius").value?.toString() ?: "100"
                         list.add(map)
                     }
                 }

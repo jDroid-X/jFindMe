@@ -27,11 +27,12 @@ class App {
         window.log("SYSTEM: Establishing Matrix Bridge...", "system");
         let retryCount = 0;
         const maxRetries = 10;
+        const apiBase = window.API_BASE_URL || (window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:3000');
 
         const connect = async () => {
             try {
-                // 1. Discovery Handshake - Use 127.0.0.1 for IPv4 stability
-                const configRes = await fetch("http://127.0.0.1:3000/api/config");
+                // 1. Discovery Handshake - Dynamic API Endpoint
+                const configRes = await fetch(`${apiBase}/api/config`);
                 const config = await configRes.json();
                 
                 window.log(`HANDSHAKE: Cluster matched [${config.projectId}]`, "success");
@@ -39,7 +40,7 @@ class App {
                 document.getElementById('project-id-label').classList.replace('text-accent', 'text-success');
 
                 // 2. Load Initial Collections
-                const dataRes = await fetch("http://127.0.0.1:3000/api/data?path=/");
+                const dataRes = await fetch(`${apiBase}/api/data?path=/`);
                 if (!dataRes.ok) throw new Error("UPSTREAM_OFFLINE");
                 
                 const data = await dataRes.json();

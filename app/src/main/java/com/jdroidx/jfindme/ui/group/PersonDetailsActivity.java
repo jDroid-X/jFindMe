@@ -1,5 +1,6 @@
 package com.jdroidx.jfindme.ui.group;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -14,12 +15,14 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.AutoCompleteTextView;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+import com.jdroidx.jfindme.utils.ValidationEngine;
 
 /**
  * 📝 Phase 5 Profile Details System
@@ -29,6 +32,7 @@ import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 public class PersonDetailsActivity extends BaseActivityJava {
 
     private String targetUid;
+    private String targetAgentId; // 🧬 Resolved Forensic Anchor
     private String targetRoleTitle;
     private android.content.SharedPreferences prefs;
     private PersonDetailsViewModel viewModel;
@@ -42,6 +46,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private android.widget.CheckBox cbAclBiometrics;
     private android.widget.CheckBox cbGlobalCloudSync;
     private boolean isSelf = false;
+    private String currentRoleFamily = "None";
+    private String currentRoleFriend = "None";
     private android.widget.ImageView headerAvatar;
     private android.widget.LinearLayout dynamicTaggingContainer;
     private android.widget.LinearLayout formBox;
@@ -49,14 +55,23 @@ public class PersonDetailsActivity extends BaseActivityJava {
     @Override
     protected void onResume() {
         super.onResume();
-        if (headerAvatar != null) com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+        if (headerAvatar != null && isSelf) {
+            com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+        }
     }
 
     @Override
     protected View createLayout() {
         targetUid = getIntent().getStringExtra("TARGET_UID");
+        if (targetUid == null) targetUid = getIntent().getStringExtra("target_uid");
         targetRoleTitle = getIntent().getStringExtra("TARGET_ROLE");
+        if (targetRoleTitle == null) targetRoleTitle = getIntent().getStringExtra("target_role");
         prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        
+        // 🧬 Forensic Anchor: Resolve Auth UID to Agent ID early to prevent lookup failures
+        com.jdroidx.jfindme.data.local.DatabaseHelper dbLocal = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        targetAgentId = (targetUid != null) ? dbLocal.resolveAgentIdLocally(targetUid) : null;
+        if (targetAgentId == null) targetAgentId = targetUid; // Fallback to raw UID
         
         // 🚀 CRITICAL FIX: Identity Resolve must happen BEFORE Header construction
         isSelf = targetUid != null && targetUid.equals(com.google.firebase.auth.FirebaseAuth.getInstance().getUid());
@@ -91,16 +106,15 @@ public class PersonDetailsActivity extends BaseActivityJava {
         int sideMargin = getResponsivePaddingQuota();
         ownerTile.setPadding(sideMargin, sideMargin, sideMargin, sideMargin);
         
-        // 🚀 Premium Circular Avatar (Matching Network Gateway Style)
+        // 🚀 Premium Avatar (Double Size & Smart Fit)
         headerAvatar = new android.widget.ImageView(this);
         com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
-        
-        int iSize = getResponsiveIconQuota();
-        android.graphics.drawable.GradientDrawable halo = new android.graphics.drawable.GradientDrawable();
-        halo.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        halo.setColor(android.graphics.Color.TRANSPARENT);
-        halo.setStroke(UiScalingMatrixTable.scalePadding(UiArchitect.getStage(this), 4), getGradientStart());
-        headerAvatar.setBackground(halo);
+        headerAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+        ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        ring.setStroke(scale(3), getGradientStart());
+        headerAvatar.setBackground(ring);
+        int iSize = UiArchitect.getUniversalAvatarSize(this);
         
         // --- 🚀 AVATAR CLICK: Open Profile ---
         headerAvatar.setFocusable(true);
@@ -120,15 +134,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
         String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         String agentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
-        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : "OWNER_001");
+        String fallbackOwner = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getOwnerAgentId(this);
+        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : fallbackOwner);
         
         String ownerName = (myDos != null) ? myDos.get("owner_name") : null;
         String fullName = (myDos != null) ? myDos.get("fullName") : null;
         
-        String nameStr = "User Identity";
-        if (ownerName != null && !ownerName.isEmpty()) nameStr = ownerName;
-        else if (fullName != null && !fullName.isEmpty()) nameStr = fullName;
-        else if (prefs != null) nameStr = prefs.getString("user_nickname", "User Identity");
+        String nameStr = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
                 
         gatewayTitle.setText("👤 Owner: " + nameStr);
         gatewayTitle.setTextColor(getTextColor());
@@ -195,6 +207,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         etPhone = createFormField("Mobile Number", "Enterprise contact link...", InputType.TYPE_CLASS_PHONE, android.R.drawable.ic_menu_call, true, true);
         etEmailId = createFormField("Email Identity", "Forensic unique key...", InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, android.R.drawable.ic_dialog_email, true, true);
         etDob = createFormField("BirthDay", "DD/MM/YYYY Protocol", InputType.TYPE_CLASS_DATETIME, android.R.drawable.ic_menu_today, true, true);
+        etDob.setFocusable(false);
+        etDob.setClickable(true);
+        etDob.setOnClickListener(v -> showDatePicker(etDob));
         
         // 🚀 QA Fix: Master Dropdown Matrix (Adaptive Waterfall MVVM)
         etGender = createDropdownField("Gender", "Select biological protocol", android.R.drawable.ic_menu_myplaces, true, true);
@@ -225,6 +240,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
             android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
             i.putExtra("ESTABLISH_DOMAIN_ADDRESS", addr);
             i.putExtra("ESTABLISH_DOMAIN_NAME", name.isEmpty() ? "New Zone" : name);
+            if (targetRoleTitle != null) i.putExtra("TARGET_UID", targetRoleTitle);
+            if (etFullName != null && !etFullName.getText().toString().isEmpty()) i.putExtra("TARGET_NAME", etFullName.getText().toString());
             startActivity(i);
         });
         formBox.addView(btnEstablish, btnLpD);
@@ -290,26 +307,45 @@ public class PersonDetailsActivity extends BaseActivityJava {
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
             View syncBtn = createIconButton("REQUEST DEVICE SYNC", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
                     .child("force_cloud_sync_trigger")
                     .setValue(System.currentTimeMillis());
                 android.widget.Toast.makeText(this, "Sync Pull Request sent to Target Device network edge...", android.widget.Toast.LENGTH_LONG).show();
             });
             formBox.addView(syncBtn, btnLp);
+
+            View ringBtn = createIconButton("🔊 RING DEVICE (ACOUSTIC SIREN - 30S)", android.R.drawable.ic_lock_idle_alarm, v -> {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
+                android.widget.Toast.makeText(this, "🔊 Acoustic Siren dispatched to " + (etFullName != null ? etFullName.getText().toString() : "Target") + " (30s)", android.widget.Toast.LENGTH_LONG).show();
+            });
+            formBox.addView(ringBtn, btnLp);
+
+            View trackMapBtn = createIconButton("📍 TRACK ON LIVE MAP", android.R.drawable.ic_dialog_map, v -> {
+                Intent mapIntent = new Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class);
+                mapIntent.putExtra("TARGET_UID", targetAgentId);
+                mapIntent.putExtra("target_uid", targetAgentId);
+                startActivity(mapIntent);
+            });
+            formBox.addView(trackMapBtn, btnLp);
+
+            View unlinkBtn = createIconButton("❌ UNLINK / DELETE DEVICE", android.R.drawable.ic_menu_delete, v -> {
+                showUnlinkDeviceDialog();
+            });
+            formBox.addView(unlinkBtn, btnLp);
         } else {
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
             View saveDossierBtn = createIconButton("Save Profile", android.R.drawable.ic_menu_edit, true, v -> saveCitizenData());
             formBox.addView(saveDossierBtn, btnLp);
             
-            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).child("force_cloud_sync_trigger")
+            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger")
                 .addValueEventListener(new com.google.firebase.database.ValueEventListener() {
                     @Override
                     public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
                         if (snapshot.exists()) {
                             saveCitizenData();
                             android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).child("force_cloud_sync_trigger").removeValue();
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeValue();
                         }
                     }
                     @Override public void onCancelled(com.google.firebase.database.DatabaseError e) {}
@@ -358,10 +394,10 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 String rUid = (String) node.get("uid_1");
                 if (rTitle == null || rName == null || rUid == null) continue;
                 
-                if (rTitle.contains("SPOUSE")) pairedSpouses.put(rUid, rName);
-                else if (rTitle.contains("CHILD")) pairedChildren.put(rUid, rName);
-                else if (rTitle.contains("FRIEND")) pairedFriends.put(rUid, rName);
-                else if (rTitle.contains("FATHER") || rTitle.contains("MOTHER")) pairedParents.put(rUid, rTitle + " (" + rName + ")");
+                if (rTitle.contains("SPOUSE") || rTitle.contains("WIFE") || rTitle.contains("HUSBAND")) pairedSpouses.put(rUid, rName);
+                else if (rTitle.contains("CHILD") || rTitle.contains("SON") || rTitle.contains("DAUGHTER")) pairedChildren.put(rUid, rName);
+                else if (rTitle.contains("FRIEND") || rTitle.contains("PEER") || rTitle.contains("COLLEAGUE")) pairedFriends.put(rUid, rName);
+                else if (rTitle.contains("FATHER") || rTitle.contains("MOTHER") || rTitle.contains("GUARDIAN") || rTitle.contains("PARENT")) pairedParents.put(rUid, rTitle + " (" + rName + ")");
             }
         }
 
@@ -372,8 +408,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         // 🚀 PRIME DIRECTIVE: Universal Single Source of Truth
         dynamicTaggingContainer.addView(createSectionHeader("UNIVERSAL DEVICE NETWORK"));
-        // Guardian Detail removed per Forensic Parity Update
-        // dynamicTaggingContainer.addView(createTaggedTreeItem("GUARDIAN", pairedParents));
+        dynamicTaggingContainer.addView(createTaggedTreeItem("GUARDIAN", pairedParents));
         dynamicTaggingContainer.addView(createTaggedTreeItem("SPOUSE", pairedSpouses));
         dynamicTaggingContainer.addView(createTaggedTreeItem("CHILD", pairedChildren));
         dynamicTaggingContainer.addView(createTaggedTreeItem("FRIEND", pairedFriends));
@@ -406,8 +441,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     .setTitle("Initialize " + roleName + " Scope")
                     .setMessage("Entering physical pairing loop. The QR Scanner will now open specifically locking targets as a [" + intentRole + "].")
                     .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
-                        android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class);
-                        i.putExtra("REQUESTED_TAB", 2);
+                        android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.NetworkGatewayActivity.class);
                         i.putExtra("requested_network_role", intentRole);
                         startActivity(i);
                     })
@@ -440,18 +474,35 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 } return false;
             });
             branch.setOnClickListener(v -> {
-                String[] roles = {"Spouse", "Child", "Friend", "Unassign Role"};
+                String[] rolesDisplay = {
+                    "👑  Father",
+                    "👑  Mother",
+                    "🛡️  Guardian",
+                    "💍  Spouse",
+                    "🧸  Child",
+                    "🤝  Friend",
+                    "🚫  Unassign Role"
+                };
+                String[] rolesRaw = {"Father", "Mother", "Guardian", "Spouse", "Child", "Friend", "Unassign Role"};
                 new android.app.AlertDialog.Builder(this)
-                    .setTitle("Reassign: " + childName)
-                    .setItems(roles, (dialog, which) -> {
-                        String selected = roles[which];
+                    .setTitle("🏷️ Reassign: " + childName)
+                    .setItems(rolesDisplay, (dialog, which) -> {
+                        String selected = rolesRaw[which];
                         String famRole = "None";
                         String frRole = "None";
-                        if (selected.equals("Spouse")) { famRole = "Spouse"; frRole = "None"; }
-                        else if (selected.equals("Child")) { famRole = "Child"; frRole = "None"; }
-                        else if (selected.equals("Friend")) { famRole = "Child"; frRole = "Friend (Team)"; } 
+                        if (selected.equals("Father") || selected.equals("Mother") || selected.equals("Guardian") || selected.equals("Spouse") || selected.equals("Child")) {
+                            famRole = selected;
+                            frRole = "None";
+                        } else if (selected.equals("Friend")) {
+                            famRole = "None";
+                            frRole = "Friends";
+                        } else if (selected.equals("Unassign Role")) {
+                            famRole = "None";
+                            frRole = "None";
+                        }
                         
-                        viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, frRole.contains("Friend"));
+                        boolean isFriendRole = frRole.equals("Friends") || frRole.contains("Friend");
+                        viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, isFriendRole);
                         
                         String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
@@ -459,8 +510,11 @@ public class PersonDetailsActivity extends BaseActivityJava {
                             cp.put("role_family", famRole);
                             cp.put("role_friend", frRole);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(nodeUid).updateChildren(cp);
+                            String effectiveRole = isFriendRole ? "Friends" : (famRole.equals("None") ? "Member" : famRole);
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(nodeUid).child("role").setValue(effectiveRole);
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                         }
-                        android.widget.Toast.makeText(this, "Network Array Re-Mapped! Hit Save.", android.widget.Toast.LENGTH_SHORT).show();
+                        android.widget.Toast.makeText(this, "Network Array Re-Mapped! Role: " + selected, android.widget.Toast.LENGTH_SHORT).show();
                     }).show();
             });
             categoryGroup.addView(branch);
@@ -490,18 +544,18 @@ public class PersonDetailsActivity extends BaseActivityJava {
         });
         cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                new android.app.AlertDialog.Builder(this)
+                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                     .setTitle("Device Pairing Sequence")
                     .setMessage("This will launch the QR Handshake Scanner to tag a " + targetRole + " device to the network. Proceed?")
                     .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
-                        android.content.Intent intent = new android.content.Intent(this, FamilyFriendsActivity.class);
-                        intent.putExtra("REQUESTED_TAB", 2);
+                        android.content.Intent intent = new android.content.Intent(this, NetworkGatewayActivity.class);
                         intent.putExtra("requested_network_role", targetRole);
                         startActivity(intent);
                         buttonView.setChecked(false); // Resets tick to allow multiple loops
                     })
                     .setNegativeButton("SAVE LATER", (d, w) -> buttonView.setChecked(false))
                     .show();
+                applyDialogTheme(dialog);
             }
         });
         return cb;
@@ -541,11 +595,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                   "Only basic tracking elements (Name Token, Current GPS Coordinates, Role Status, and Geofence Radii) are permitted to transmit externally.";
         }
         
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("Cloud Privacy Inspector")
-            .setMessage(msg)
-            .setPositiveButton("Understood", null)
-            .show();
+        UiArchitect.showValidationDialog(this, "Cloud Privacy Inspector", msg, null);
     }
 
     private View createSectionHeader(String text) {
@@ -666,6 +716,24 @@ public class PersonDetailsActivity extends BaseActivityJava {
     protected void setupLogic() {
         viewModel = new androidx.lifecycle.ViewModelProvider(this).get(PersonDetailsViewModel.class);
         
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                UiArchitect.showConfirmationDialog(PersonDetailsActivity.this, 
+                    "Exit Dossier?", 
+                    "Do you want to save any pending modifications before exiting?", 
+                    "SAVE & EXIT", "DISCARD", 
+                    () -> { saveCitizenData(); finish(); }, 
+                    () -> finish());
+            }
+        });
+
+        viewModel.getSaveStatus().observe(this, success -> {
+            if (Boolean.TRUE.equals(success)) {
+                Toast.makeText(this, "Dossier Successfully Synchronized!", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
         if (targetUid == null) {
             Toast.makeText(this, "Awaiting Target Matrix. Internal Storage Blocked.", Toast.LENGTH_SHORT).show();
             return;
@@ -674,6 +742,17 @@ public class PersonDetailsActivity extends BaseActivityJava {
         // 🚀 LIVE OBSERVATION PROTOCOL: UI reacts natively to Data Source (Offline SQL & Cloud)
         viewModel.getDossierLiveData().observe(this, data -> {
             if (data == null) return;
+            String avId = data.get("avatar_id");
+            if (headerAvatar != null) {
+                if (isSelf) {
+                    com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+                } else {
+                    if (avId == null || avId.isEmpty() || avId.equals("1")) {
+                        avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+                    }
+                    com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, avId);
+                }
+            }
             etFullName.setText(data.get("fullName"));
             etPhone.setText(data.get("phone"));
             etEmailId.setText(data.get("email_id"));
@@ -687,6 +766,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
             etEmergencyNote.setText(data.get("emergencyNote"));
             etSafeZoneName.setText(data.get("safeZoneName"));
             etSafeZoneRadius.setText(data.get("safeZoneRadius"));
+            
+            if (data.containsKey("role_family") && data.get("role_family") != null) currentRoleFamily = data.get("role_family");
+            if (data.containsKey("role_friend") && data.get("role_friend") != null) currentRoleFriend = data.get("role_friend");
             
             // ACL MVVM Matrix Restore
             cbAclLiveTracking.setChecked("GRANTED".equals(data.get("acl_live_tracking")));
@@ -749,11 +831,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
             for (String l : logs) {
                 sb.append(l).append("\n\n");
             }
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Dossier Change History")
-                .setMessage(sb.toString())
-                .setPositiveButton("Close Archive", null)
-                .show();
+            UiArchitect.showValidationDialog(this, "Dossier Change History", sb.toString(), null);
         });
 
         viewModel.getSaveStatus().observe(this, success -> {
@@ -862,21 +940,84 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
     }
 
+    private void showDatePicker(EditText target) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        int y = cal.get(java.util.Calendar.YEAR) - 20; // Default to 20 years ago
+        int m = cal.get(java.util.Calendar.MONTH);
+        int d = cal.get(java.util.Calendar.DAY_OF_MONTH);
+
+        String current = target.getText().toString().trim();
+        if (!current.isEmpty() && current.contains("/")) {
+            try {
+                String[] parts = current.split("/");
+                d = Integer.parseInt(parts[0]);
+                m = Integer.parseInt(parts[1]) - 1;
+                y = Integer.parseInt(parts[2]);
+            } catch (Exception ignored) {}
+        }
+
+        android.app.DatePickerDialog dp = new android.app.DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            target.setText(String.format(java.util.Locale.getDefault(), "%02d/%02d/%04d", dayOfMonth, month + 1, year));
+        }, y, m, d);
+        dp.show();
+        applyDialogTheme(dp);
+    }
+
     private void saveCitizenData() {
         if (targetUid == null) {
             Toast.makeText(this, "Cannot synchronize Ghost target.", Toast.LENGTH_SHORT).show();
             return;
         }
         
+        String inputName = etFullName != null ? etFullName.getText().toString().trim() : "";
+        ValidationEngine.ValidationResult nameResult = ValidationEngine.INSTANCE.validateFullName(inputName);
+        if (!nameResult.isValid()) {
+            UiArchitect.showConditionActionDialog(this, "Name Required", nameResult.getErrorMessage(),
+                "FIX INPUT", "DISMISS",
+                () -> { if (etFullName != null) { etFullName.requestFocus(); } }, null);
+            return;
+        }
+
+        String phone = etPhone != null ? etPhone.getText().toString().trim() : "";
+        ValidationEngine.ValidationResult phoneResult = ValidationEngine.INSTANCE.validatePhone(phone);
+        if (!phoneResult.isValid()) {
+            UiArchitect.showConditionActionDialog(this, "Invalid Phone", phoneResult.getErrorMessage(),
+                "FIX PHONE", "DISMISS",
+                () -> { if (etPhone != null) { etPhone.requestFocus(); } }, null);
+            return;
+        }
+
+        String email = etEmailId != null ? etEmailId.getText().toString().trim() : "";
+        if (!email.isEmpty()) {
+            ValidationEngine.ValidationResult emailResult = ValidationEngine.INSTANCE.validateEmail(email);
+            if (!emailResult.isValid()) {
+                UiArchitect.showConditionActionDialog(this, "Invalid Email", emailResult.getErrorMessage(),
+                    "FIX EMAIL", "DISMISS",
+                    () -> { if (etEmailId != null) { etEmailId.requestFocus(); } }, null);
+                return;
+            }
+        }
+
+        String pincode = etPincode != null ? etPincode.getText().toString().trim() : "";
+        if (!pincode.isEmpty()) {
+            ValidationEngine.ValidationResult pinResult = ValidationEngine.INSTANCE.validatePincode(pincode, "");
+            if (!pinResult.isValid()) {
+                UiArchitect.showConditionActionDialog(this, "Invalid Pincode", pinResult.getErrorMessage(),
+                    "FIX PINCODE", "DISMISS",
+                    () -> { if (etPincode != null) { etPincode.requestFocus(); } }, null);
+                return;
+            }
+        }
+
         java.util.Map<String, String> payload = new java.util.HashMap<>();
         
         // 🚀 QA Fix: Fetch current data from ViewModel if UI field is removed
         String currentName = (viewModel.getDossierLiveData().getValue() != null) ? 
                              viewModel.getDossierLiveData().getValue().get("fullName") : "";
-        payload.put("fullName", (etFullName != null && etFullName.getParent() != null) ? etFullName.getText().toString() : currentName);
+        payload.put("fullName", inputName.isEmpty() ? currentName : inputName);
         
-        payload.put("phone", etPhone.getText().toString());
-        payload.put("email_id", etEmailId.getText().toString());
+        payload.put("phone", phone);
+        payload.put("email_id", email);
         payload.put("dob", etDob.getText().toString());
         payload.put("gender", etGender.getText().toString());
         payload.put("address", etAddress.getText().toString());
@@ -901,8 +1042,14 @@ public class PersonDetailsActivity extends BaseActivityJava {
         // Core Cloud Privacy Setting Extraction
         payload.put("cloud_sync_enabled", cbGlobalCloudSync.isChecked() ? "TRUE" : "FALSE");
         
-        payload.put("role_family", "None"); 
-        payload.put("role_friend", "None");
+        String existingFam = (currentRoleFamily != null && !currentRoleFamily.isEmpty() && !currentRoleFamily.equals("None")) ? currentRoleFamily : getIntent().getStringExtra("TARGET_ROLE_FAMILY");
+        String existingFri = (currentRoleFriend != null && !currentRoleFriend.isEmpty() && !currentRoleFriend.equals("None")) ? currentRoleFriend : getIntent().getStringExtra("TARGET_ROLE_FRIEND");
+        String fallbackRole = getIntent().getStringExtra("TARGET_ROLE");
+        if (existingFam == null && fallbackRole != null && !fallbackRole.toLowerCase().contains("friend")) existingFam = fallbackRole;
+        if (existingFri == null && fallbackRole != null && fallbackRole.toLowerCase().contains("friend")) existingFri = fallbackRole;
+
+        payload.put("role_family", existingFam != null ? existingFam : "None"); 
+        payload.put("role_friend", existingFri != null ? existingFri : "None");
         
         // 🚀 MVVM Architecture: Route payload down into exactly one Repository ViewModel layer!
         if (isSelf) {
@@ -929,6 +1076,116 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
         
         viewModel.saveDossier(this, groupId, targetUid, payload);
+    }
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null) return;
+        if (etFullName != null) outState.putString("SAVED_FULL_NAME", etFullName.getText().toString());
+        if (etPhone != null) outState.putString("SAVED_PHONE", etPhone.getText().toString());
+        if (etEmailId != null) outState.putString("SAVED_EMAIL", etEmailId.getText().toString());
+        if (etDob != null) outState.putString("SAVED_DOB", etDob.getText().toString());
+        if (etGender != null) outState.putString("SAVED_GENDER", etGender.getText().toString());
+        if (etCountry != null) outState.putString("SAVED_COUNTRY", etCountry.getText().toString());
+        if (etState != null) outState.putString("SAVED_STATE", etState.getText().toString());
+        if (etCity != null) outState.putString("SAVED_CITY", etCity.getText().toString());
+        if (etPincode != null) outState.putString("SAVED_PINCODE", etPincode.getText().toString());
+        if (etAddress != null) outState.putString("SAVED_ADDRESS", etAddress.getText().toString());
+        if (etEmergencyNote != null) outState.putString("SAVED_EMERGENCY", etEmergencyNote.getText().toString());
+        if (etOrgName != null) outState.putString("SAVED_ORG", etOrgName.getText().toString());
+        if (etDeptName != null) outState.putString("SAVED_DEPT", etDeptName.getText().toString());
+        if (etSafeZoneName != null) outState.putString("SAVED_SZ_NAME", etSafeZoneName.getText().toString());
+        if (etSafeZoneRadius != null) outState.putString("SAVED_SZ_RADIUS", etSafeZoneRadius.getText().toString());
+        
+        if (cbAclLiveTracking != null) outState.putBoolean("SAVED_ACL_LIVE", cbAclLiveTracking.isChecked());
+        if (cbAclHistoryAudit != null) outState.putBoolean("SAVED_ACL_HIST", cbAclHistoryAudit.isChecked());
+        if (cbAclGeofence != null) outState.putBoolean("SAVED_ACL_GEO", cbAclGeofence.isChecked());
+        if (cbAclAdminStatus != null) outState.putBoolean("SAVED_ACL_ADMIN", cbAclAdminStatus.isChecked());
+        if (cbAclGhostOverride != null) outState.putBoolean("SAVED_ACL_GHOST", cbAclGhostOverride.isChecked());
+        if (cbAclBiometrics != null) outState.putBoolean("SAVED_ACL_BIO", cbAclBiometrics.isChecked());
+        if (cbGlobalCloudSync != null) outState.putBoolean("SAVED_CLOUD_SYNC", cbGlobalCloudSync.isChecked());
+    }
+
+    @Override
+    protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState == null) return;
+        if (etFullName != null && savedState.containsKey("SAVED_FULL_NAME")) etFullName.setText(savedState.getString("SAVED_FULL_NAME", ""));
+        if (etPhone != null && savedState.containsKey("SAVED_PHONE")) etPhone.setText(savedState.getString("SAVED_PHONE", ""));
+        if (etEmailId != null && savedState.containsKey("SAVED_EMAIL")) etEmailId.setText(savedState.getString("SAVED_EMAIL", ""));
+        if (etDob != null && savedState.containsKey("SAVED_DOB")) etDob.setText(savedState.getString("SAVED_DOB", ""));
+        if (etGender != null && savedState.containsKey("SAVED_GENDER")) etGender.setText(savedState.getString("SAVED_GENDER", ""));
+        if (etCountry != null && savedState.containsKey("SAVED_COUNTRY")) etCountry.setText(savedState.getString("SAVED_COUNTRY", ""));
+        if (etState != null && savedState.containsKey("SAVED_STATE")) etState.setText(savedState.getString("SAVED_STATE", ""));
+        if (etCity != null && savedState.containsKey("SAVED_CITY")) etCity.setText(savedState.getString("SAVED_CITY", ""));
+        if (etPincode != null && savedState.containsKey("SAVED_PINCODE")) etPincode.setText(savedState.getString("SAVED_PINCODE", ""));
+        if (etAddress != null && savedState.containsKey("SAVED_ADDRESS")) etAddress.setText(savedState.getString("SAVED_ADDRESS", ""));
+        if (etEmergencyNote != null && savedState.containsKey("SAVED_EMERGENCY")) etEmergencyNote.setText(savedState.getString("SAVED_EMERGENCY", ""));
+        if (etOrgName != null && savedState.containsKey("SAVED_ORG")) etOrgName.setText(savedState.getString("SAVED_ORG", ""));
+        if (etDeptName != null && savedState.containsKey("SAVED_DEPT")) etDeptName.setText(savedState.getString("SAVED_DEPT", ""));
+        if (etSafeZoneName != null && savedState.containsKey("SAVED_SZ_NAME")) etSafeZoneName.setText(savedState.getString("SAVED_SZ_NAME", ""));
+        if (etSafeZoneRadius != null && savedState.containsKey("SAVED_SZ_RADIUS")) etSafeZoneRadius.setText(savedState.getString("SAVED_SZ_RADIUS", ""));
+        
+        if (cbAclLiveTracking != null && savedState.containsKey("SAVED_ACL_LIVE")) cbAclLiveTracking.setChecked(savedState.getBoolean("SAVED_ACL_LIVE"));
+        if (cbAclHistoryAudit != null && savedState.containsKey("SAVED_ACL_HIST")) cbAclHistoryAudit.setChecked(savedState.getBoolean("SAVED_ACL_HIST"));
+        if (cbAclGeofence != null && savedState.containsKey("SAVED_ACL_GEO")) cbAclGeofence.setChecked(savedState.getBoolean("SAVED_ACL_GEO"));
+        if (cbAclAdminStatus != null && savedState.containsKey("SAVED_ACL_ADMIN")) cbAclAdminStatus.setChecked(savedState.getBoolean("SAVED_ACL_ADMIN"));
+        if (cbAclGhostOverride != null && savedState.containsKey("SAVED_ACL_GHOST")) cbAclGhostOverride.setChecked(savedState.getBoolean("SAVED_ACL_GHOST"));
+        if (cbAclBiometrics != null && savedState.containsKey("SAVED_ACL_BIO")) cbAclBiometrics.setChecked(savedState.getBoolean("SAVED_ACL_BIO"));
+        if (cbGlobalCloudSync != null && savedState.containsKey("SAVED_CLOUD_SYNC")) cbGlobalCloudSync.setChecked(savedState.getBoolean("SAVED_CLOUD_SYNC"));
+    }
+
+    private void showUnlinkDeviceDialog() {
+        String peerName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : targetAgentId;
+        UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
+            new UiArchitect.OptionItem("❌ Standard Unlink Device", "Safely uncouple this device from your active tracking circle", android.R.drawable.ic_menu_delete),
+            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with password 'jbutterfly@123' to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
+        };
+
+        UiArchitect.showRichOptionsDialog(this, "Remove " + peerName + "?", unlinkOptions, (idx, label) -> {
+            if (idx == 0) {
+                // Standard Unlink
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                db.deleteRosterNode(targetAgentId);
+                String myGrp = prefs.getString("active_group", null);
+                if (myGrp != null) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
+                }
+                String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(targetAgentId).child(finalMyId).removeValue();
+                Toast.makeText(this, "Device " + peerName + " unlinked successfully.", Toast.LENGTH_SHORT).show();
+                finish();
+            } else {
+                // Master Password Purge
+                UiArchitect.showInputPromptDialog(this,
+                    "Master Admin Authorization",
+                    "Enter master security password to force purge '" + peerName + "' (" + targetAgentId + "):",
+                    "",
+                    inputPass -> {
+                        if ("jbutterfly@123".equals(inputPass != null ? inputPass.trim() : "")) {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                            db.deleteRosterNode(targetAgentId);
+                            String myGrp = prefs.getString("active_group", null);
+                            if (myGrp != null) {
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
+                            }
+                            String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(targetAgentId).child(finalMyId).removeValue();
+                            Toast.makeText(this, "🛡️ Force Administrative Purge Completed for " + peerName, Toast.LENGTH_LONG).show();
+                            finish();
+                        } else {
+                            UiArchitect.showValidationDialog(this, "Authorization Denied", "Incorrect master password. Device deletion was blocked.", null);
+                        }
+                    });
+            }
+        });
+    }
+
+    @Override
+    public void onBackPressed() {
+        super.onBackPressed();
     }
 }
 

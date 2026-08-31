@@ -25,7 +25,7 @@ object HeatmapEngine {
     private var activeTileOverlay: TileOverlay? = null
     
     // Abstract hook to our backend Spatial Firebase structure
-    private val liveUsersEndpoint = FirebaseDatabase.getInstance().getReference("locations")
+    private val liveUsersEndpoint = com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef
 
     // The thermal color visual settings fading from transparent green to intense red
     private val thermalGradientColors = intArrayOf(
@@ -48,13 +48,17 @@ object HeatmapEngine {
                 val boundsBuilder = com.google.android.gms.maps.model.LatLngBounds.Builder()
                 var hasValidPoints = false
 
-                // Rapidly scrape the generic `lat/lng` vectors ignoring the heavy 3D strings
+                // Rapidly scrape coordinates from device/live or device nodes
                 for (userNode in snapshot.children) {
-                    val lat = userNode.child("latitude").getValue(Double::class.java)
-                    val lng = userNode.child("longitude").getValue(Double::class.java)
+                    val liveNode = userNode.child("device").child("live")
+                    val lat = liveNode.child("latitude").getValue(Double::class.java)
+                        ?: userNode.child("device").child("latitude").getValue(Double::class.java)
+                    val lng = liveNode.child("longitude").getValue(Double::class.java)
+                        ?: userNode.child("device").child("longitude").getValue(Double::class.java)
                     
                     // Ignore users actively executing Ghost Mode/Privacy controls
-                    val isSos = userNode.child("isSosActive").getValue(Boolean::class.java)
+                    val isSos = liveNode.child("isSosActive").getValue(Boolean::class.java)
+                        ?: userNode.child("device").child("isSosActive").getValue(Boolean::class.java)
                     if (lat != null && lng != null && lat != 0.0) {
                         val pos = LatLng(lat, lng)
                         crowdCoordinates.add(pos)

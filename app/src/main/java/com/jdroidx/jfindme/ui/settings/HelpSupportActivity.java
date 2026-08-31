@@ -22,6 +22,7 @@ import java.util.List;
 public class HelpSupportActivity extends BaseActivityJava {
     private LinearLayout listContainer;
     private List<View> faqViews = new ArrayList<>();
+    private EditText searchBar;
 
     @Override
     protected View createLayout() {
@@ -57,7 +58,7 @@ public class HelpSupportActivity extends BaseActivityJava {
         wrapper.setPadding(40, 40, 40, 100);
 
         // 1. Search Bar
-        EditText searchBar = new EditText(this);
+        searchBar = new EditText(this);
         searchBar.setHint("Search Knowledge Base (e.g., 'Pairing', 'Map')...");
         searchBar.setHintTextColor(getSecondaryTextColor());
         searchBar.setTextColor(getTextColor());
@@ -101,12 +102,51 @@ public class HelpSupportActivity extends BaseActivityJava {
         contactCard.addView(cTitle);
         
         TextView cBody = new TextView(this);
-        cBody.setText("Direct Line: 1-800-FINDME-CORP\nEmail: enterprise-support@jfindme.net\nHours: 24/7 Global Matrix Coverage");
+        String phone = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getSupportPhone(this);
+        String email = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getSupportEmail(this);
+        cBody.setText("Direct Line: " + phone + "\nEmail: " + email + "\nHours: 24/7 Global Matrix Coverage");
         cBody.setTextColor(getTextColor());
         cBody.setTextSize(12);
-        cBody.setPadding(0, 20, 0, 0);
+        cBody.setPadding(0, 20, 0, 15);
         cBody.setLineSpacing(5f, 1f);
         contactCard.addView(cBody);
+
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        btnRow.addView(com.jdroidx.jfindme.ui.base.UiArchitect.createCapsuleChipButton(this, "CALL SUPPORT", getGradientStart(), v -> {
+            try {
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_DIAL);
+                i.setData(android.net.Uri.parse("tel:" + phone));
+                startActivity(i);
+            } catch (Exception ex) {
+                android.widget.Toast.makeText(this, "Phone: " + phone, android.widget.Toast.LENGTH_SHORT).show();
+            }
+        }));
+
+        btnRow.addView(com.jdroidx.jfindme.ui.base.UiArchitect.createCapsuleChipButton(this, "SEND EMAIL", Color.parseColor("#455A64"), v -> {
+            try {
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_SENDTO);
+                i.setData(android.net.Uri.parse("mailto:" + email));
+                i.putExtra(android.content.Intent.EXTRA_SUBJECT, "jFindMe Enterprise Support Inquiry");
+                startActivity(i);
+            } catch (Exception ex) {
+                android.widget.Toast.makeText(this, "Email: " + email, android.widget.Toast.LENGTH_SHORT).show();
+            }
+        }));
+
+        btnRow.addView(com.jdroidx.jfindme.ui.base.UiArchitect.createCapsuleChipButton(this, "SUBMIT TICKET", Color.parseColor("#00897B"), v -> {
+            com.jdroidx.jfindme.ui.base.UiArchitect.showInputPromptDialog(this, "Submit Support Ticket", "Describe the issue or diagnostic query...", "", desc -> {
+                if (desc.isEmpty()) {
+                    com.jdroidx.jfindme.ui.base.UiArchitect.showActionableValidationDialog(this, "Empty Description", "Please enter a brief description of the issue.", "OK", "DISMISS", null, null);
+                } else {
+                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).saveSysLog("I", "SUPPORT_TICKET", desc);
+                    com.jdroidx.jfindme.ui.base.UiArchitect.showActionableValidationDialog(this, "Ticket Submitted", "Diagnostic ticket archived successfully! Ticket Reference ID: #" + System.currentTimeMillis() % 100000, "CONFIRMED", "CLOSE", null, null);
+                }
+            });
+        }));
+
+        contactCard.addView(btnRow);
 
         LinearLayout.LayoutParams contactLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         contactLp.setMargins(0, 0, 0, 40);
@@ -255,21 +295,20 @@ public class HelpSupportActivity extends BaseActivityJava {
             "• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App."
         ));
 
-        // 🚀 QA Fix: Master Database Table Architectural Mapping
+        // 🚀 QA Fix: Master Database Table Architectural Mapping (Unified 4-Node RTDB + 5-Tier SQLite)
         faqViews.add(createFaqCard("Database Architecture & Storage Sync Pipeline", 
-            "Functionality: Maps the entire footprint of active databases generated from Login to Logout natively.\n\n" +
-            "☁️ FIREBASE CLOUD TABLES\n" +
-            "• users (MASTER): Primary Identity truth, physical node avatars, and strict 1-to-1 friend_matrix.\n" +
-            "• citizen_dossiers / isolated_dossiers (MASTER): Stores medical data & hardware access constraint ACLs.\n" +
-            "• groups (MASTER): Secure network sandbox natively tracking isolated 1-to-1 Geofences offline.\n" +
-            "• locations (TRANSACTIONAL): Continually records high-velocity physical GPS telemetry coordinates via TrackingService.\n" +
-            "• citizen_dossier_logs (TRANSACTIONAL): Persistent Audit Trail timeline plotting exactly who edited which toggles.\n" +
-            "• pairing_requests (TRANSACTIONAL): Volatile QR code handshake hashes cleanly eradicated after 3.5 seconds automatically.\n\n" +
+            "Functionality: Master data architecture mapping online cloud and offline local storage.\n\n" +
+            "☁️ FIREBASE CLOUD REALTIME DATABASE (UNIFIED 4-NODE SCHEMA)\n" +
+            "• /devices/{deviceId} (MASTER): Device-centric hub grouping Identity, profile (SSOT), telemetry, device/live, history (latest point), safe_zones, relationships, and alerts.\n" +
+            "• /lookup_indices (INDEX): Shallow O(1) reverse resolution (auth_to_device, active_monitors).\n" +
+            "• /pairing_requests (HANDSHAKE): Transient QR code pairing handshake buffer.\n" +
+            "• /History/{deviceId} (TIME-SERIES): Deep inverted-key historical breadcrumbs archive.\n\n" +
             "💽 LOCAL SQLITE NATIVE TABLES (JFindMe_CitizenData.db)\n" +
-            "• personal_table (MASTER): Local physical mirror of Cloud Dossier ensuring zero-network read availability.\n" +
-            "• roster_table (MASTER): Native hardware cache of friend_matrix connections mapped directly to silicon memory.\n" +
-            "• safezone_table (MASTER): Structural memory of boundary radius constraints powering the Android background OS Geofencing API.\n" +
-            "• alerts_table (TRANSACTIONAL): High-speed logging ledger of boundary/siren Push Notifications fired directly to the display."
+            "• user_identity (TIER 1): Master hardware identity, auth UID, and status.\n" +
+            "• user_profile (TIER 2): Single Source of Truth for avatars, names, contact, and organization.\n" +
+            "• devices (TIER 3): Hardware fingerprints, model, and live coordinates.\n" +
+            "• location_event (TIER 4): Immutable local time-series GPS route history.\n" +
+            "• safe_zones / alerts (TIER 5): Geofence boundary definitions and security alert ledgers."
         ));
     }
 
@@ -305,4 +344,21 @@ public class HelpSupportActivity extends BaseActivityJava {
 
     @Override
     protected void setupLogic() {}
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null) return;
+        if (searchBar != null) {
+            outState.putString("SAVED_SEARCH_QUERY", searchBar.getText().toString());
+        }
+    }
+
+    @Override
+    protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState == null) return;
+        String query = savedState.getString("SAVED_SEARCH_QUERY", "");
+        if (searchBar != null && !query.isEmpty()) {
+            searchBar.setText(query);
+        }
+    }
 }

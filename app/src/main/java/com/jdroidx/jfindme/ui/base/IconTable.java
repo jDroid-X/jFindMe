@@ -54,15 +54,18 @@ public class IconTable {
     static {
         // [Stage 1: Enterprise Registry] - Initializing the "Master Map Mirror"
         // Properties: ID, ResID, TalkBack, Elev, Pad, Glow, Haptic, Dynamic, Fallback, Route
-        registry.put("ACTION_EXPAND", new IconRecord("ACTION_EXPAND", android.R.drawable.ic_dialog_map, "Enlarge Live Viewport", 35f, 25, 0.8f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_BOUNDS"));
-        registry.put("ACTION_LOCATE", new IconRecord("ACTION_LOCATE", android.R.drawable.ic_dialog_map, "Recenter Satellite Tracker", 35f, 25, 0.6f, "HEAVY", true, Color.WHITE, "MAP_RECENTER"));
-        registry.put("ACTION_ADD",    new IconRecord("ACTION_ADD",    android.R.drawable.ic_input_add, "Pair New Device Node", 35f, 25, 0.5f, "LIGHT", true, Color.WHITE, "ROUTE_PAIRING"));
-        registry.put("ACTION_MINUS",  new IconRecord("ACTION_MINUS",  R.drawable.ic_minus, "Reduce Map Bounds", 25f, 20, 0.4f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_OUT"));
-        registry.put("ACTION_LAYERS", new IconRecord("ACTION_LAYERS", android.R.drawable.ic_dialog_dialer, "Switch Visual Layers", 35f, 25, 0.6f, "LIGHT", true, Color.WHITE, "MAP_TOGGLE_SATELLITE"));
-        registry.put("ACTION_ZONES",  new IconRecord("ACTION_ZONES",  android.R.drawable.ic_dialog_map, "Define Geo-Bounds", 35f, 25, 0.7f, "HEAVY", true, Color.WHITE, "ROUTE_GEOFENCE"));
-        registry.put("ACTION_GHOST",  new IconRecord("ACTION_GHOST",  android.R.drawable.ic_dialog_info, "Stealth Visibility Mask", 35f, 25, 0.5f, "LIGHT", true, Color.WHITE, "TOGGLE_CALLOUTS"));
-        registry.put("ACTION_SEARCH", new IconRecord("ACTION_SEARCH", android.R.drawable.ic_dialog_map, "Query Target Array", 35f, 25, 0.6f, "LIGHT", true, Color.WHITE, "MAP_SEARCH_NODES"));
-        registry.put("ACTION_WATCHDOG", new IconRecord("ACTION_WATCHDOG", R.drawable.ic_watchdog, "WatchDog Security Heartbeat", 45f, 20, 0.9f, "HEAVY", true, Color.WHITE, "ROUTE_WATCHDOG"));
+        registry.put("ACTION_EXPAND",   new IconRecord("ACTION_EXPAND",   R.drawable.ic_map_expand,   "Enlarge Live Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_BOUNDS"));
+        registry.put("ACTION_MINIMIZE", new IconRecord("ACTION_MINIMIZE", R.drawable.ic_map_minimize, "Minimize Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_MINIMIZE"));
+        registry.put("ACTION_LOCATE",   new IconRecord("ACTION_LOCATE",   R.drawable.ic_map_locate,   "Recenter GPS Target", 35f, 20, 0.6f, "HEAVY", true, Color.WHITE, "MAP_RECENTER"));
+        registry.put("ACTION_ADD",      new IconRecord("ACTION_ADD",      R.drawable.ic_map_zoom_in,  "Zoom In Map", 35f, 20, 0.5f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_IN"));
+        registry.put("ACTION_MINUS",    new IconRecord("ACTION_MINUS",    R.drawable.ic_map_zoom_out, "Zoom Out Map", 25f, 20, 0.4f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_OUT"));
+        registry.put("ACTION_LAYERS",   new IconRecord("ACTION_LAYERS",   R.drawable.ic_map_layers,   "Switch Map Satellite Layers", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_TOGGLE_SATELLITE"));
+        registry.put("ACTION_ALERT",    new IconRecord("ACTION_ALERT",    R.drawable.ic_nav_notice,   "Emergency SOS Sentinel", 45f, 20, 0.9f, "HEAVY", true, Color.RED, "SOS_TRIGGER"));
+        registry.put("ACTION_SAFE_ZONE",new IconRecord("ACTION_SAFE_ZONE",R.drawable.ic_safe_zone,    "Toggle Safe Zone Overlay", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_TOGGLE_ZONES"));
+        registry.put("ACTION_ZONES",    new IconRecord("ACTION_ZONES",    R.drawable.ic_safe_zone,    "Define Geo-Bounds & Safe Zones", 35f, 20, 0.7f, "HEAVY", true, Color.WHITE, "ROUTE_GEOFENCE"));
+        registry.put("ACTION_GHOST",    new IconRecord("ACTION_GHOST",    R.drawable.ic_ghost_mode,   "Stealth Visibility Mask", 35f, 20, 0.5f, "LIGHT", true, Color.WHITE, "TOGGLE_CALLOUTS"));
+        registry.put("ACTION_SEARCH",   new IconRecord("ACTION_SEARCH",   R.drawable.ic_radar,        "Query Target Array & Scanner", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_SEARCH_NODES"));
+        registry.put("ACTION_WATCHDOG", new IconRecord("ACTION_WATCHDOG", R.drawable.ic_watchdog,     "WatchDog Security Heartbeat", 45f, 20, 0.9f, "HEAVY", true, Color.WHITE, "ROUTE_WATCHDOG"));
     }
 
 

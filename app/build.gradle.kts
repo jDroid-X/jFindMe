@@ -1,20 +1,72 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.google.services)
     alias(libs.plugins.chaquopy)
+    alias(libs.plugins.firebase.crashlytics)
 }
+
+// Load Keystore Properties
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+// 📦 Enterprise Version Management System (Auto-Increment on Signed Release)
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = Properties()
+if (versionPropsFile.exists()) {
+    versionProps.load(FileInputStream(versionPropsFile))
+} else {
+    versionProps["VERSION_MAJOR"] = "1"
+    versionProps["VERSION_MINOR"] = "0"
+    versionProps["VERSION_PATCH"] = "1"
+    versionProps["VERSION_CODE"] = "1"
+    versionProps.store(versionPropsFile.writer(), "jFindMe Version Tracker")
+}
+
+val vMajor = versionProps.getProperty("VERSION_MAJOR", "1").toInt()
+val vMinor = versionProps.getProperty("VERSION_MINOR", "0").toInt()
+val vPatch = versionProps.getProperty("VERSION_PATCH", "1").toInt()
+var vCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
+
+// Check if running a release build task (e.g. assembleRelease / bundleRelease)
+val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (isReleaseBuild) {
+    vCode += 1
+    versionProps["VERSION_CODE"] = vCode.toString()
+    versionProps.store(versionPropsFile.writer(), "Auto-incremented on Release Build")
+}
+
+val computedVersionName = "$vMajor.$vMinor.$vPatch"
 
 android {
     namespace = "com.jdroidx.jfindme"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.jdroidx.jfindme"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = vCode
+        versionName = computedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -26,10 +78,31 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+    splits {
+        abi {
+            isEnable = isReleaseBuild
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/DEPENDENCIES"
         }
     }
     buildFeatures {
@@ -42,6 +115,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     // 🚀 QA Fix: Force the Compiler to ignore missing string translations / layout warnings during Release APK Generation!
@@ -83,6 +160,9 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-database")
     implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-crashlytics")
     
     // 🦋 Premium UX: Lottie Vector Graphics for Butterfly Angel Loader
     implementation("com.airbnb.android:lottie:6.4.0")

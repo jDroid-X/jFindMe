@@ -40,3 +40,23 @@
     fun *(...);
     var *;
 }
+
+# Hardened Firebase & Telemetry Model Keep Rules
+-keep class com.jdroidx.jfindme.data.model.** { *; }
+-keepclassmembers class com.jdroidx.jfindme.data.model.** {
+    <fields>;
+    <methods>;
+}
+
+# Keep SystemLogger completely intact for dynamic logging & reflection
+-keep class com.jdroidx.jfindme.utils.SystemLogger { *; }
+
+# ZXing Barcode & QR Scanner Engine
+-keep class com.journeyapps.barcodescanner.** { *; }
+-keep class com.google.zxing.** { *; }
+-dontwarn com.journeyapps.barcodescanner.**
+-dontwarn com.google.zxing.**
+
+# AndroidX WorkManager & Coroutines
+-keep class androidx.work.** { *; }
+-keep class kotlinx.coroutines.** { *; }

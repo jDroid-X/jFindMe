@@ -44,18 +44,35 @@ public class OrgActivity extends BaseActivityJava {
         header.setOrientation(LinearLayout.VERTICAL);
         applyGlobalHeaderGeometry(header);
 
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView backBtn = new ImageView(this);
+        backBtn.setImageResource(android.R.drawable.ic_menu_revert);
+        backBtn.setColorFilter(getGradientOverlayText());
+        int bS = scale(60);
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(bS, bS);
+        bLp.setMargins(0, 0, scale(20), 0);
+        backBtn.setLayoutParams(bLp);
+        backBtn.setOnClickListener(v -> getOnBackPressedDispatcher().onBackPressed());
+        topRow.addView(backBtn);
+
         TextView title = new TextView(this);
         title.setText("PROFESSIONAL IDENTITY HUB");
         title.setTextColor(getGradientOverlayText());
         UiArchitect.applyText(this, title, "TEXT_HEADER");
         title.setTypeface(null, Typeface.BOLD);
-        header.addView(title);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        topRow.addView(title);
+        header.addView(topRow);
 
         TextView subtitle = new TextView(this);
         subtitle.setText("Forensic Organization Dossier | Authority: Enterprise");
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.75f);
         UiArchitect.applyText(this, subtitle, "TEXT_SUB");
+        subtitle.setPadding(0, scale(5), 0, 0);
         header.addView(subtitle);
 
         mainRoot.addView(header);
@@ -168,7 +185,7 @@ public class OrgActivity extends BaseActivityJava {
         row.setPadding(40, 15, 40, 15);
         
         android.graphics.drawable.GradientDrawable fieldBg = new android.graphics.drawable.GradientDrawable();
-        fieldBg.setColor(Color.argb(15, 150, 150, 150)); // Glass Tint
+        fieldBg.setColor(getCardColor()); // Floating pottery/ceramic card color
         fieldBg.setStroke(2, getGradientStart()); 
         fieldBg.setCornerRadius(scaleRadius(12));
         row.setBackground(fieldBg);
@@ -180,6 +197,17 @@ public class OrgActivity extends BaseActivityJava {
 
     @Override
     protected void setupLogic() {
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                UiArchitect.showConfirmationDialog(OrgActivity.this, 
+                    "Exit Professional Hub?", 
+                    "Would you like to save your organization details before exiting?", 
+                    "SAVE & EXIT", "DISCARD", 
+                    () -> { handleOrgSave(); finish(); }, 
+                    () -> finish());
+            }
+        });
         loadActiveOrgDossier();
     }
 
@@ -207,29 +235,79 @@ public class OrgActivity extends BaseActivityJava {
             return;
         }
 
+        String orgName = fieldMap.containsKey("org_name") && fieldMap.get("org_name") != null ? fieldMap.get("org_name").getText().toString().trim() : "";
+        if (orgName.isEmpty()) {
+            UiArchitect.showActionableValidationDialog(this, "Organization Name Required", 
+                "Please enter an Organization or Company name to bind your enterprise profile.", 
+                "OK", "DISMISS", null, null);
+            return;
+        }
+
         ContentValues v = new ContentValues();
         Map<String, Object> cloudMap = new HashMap<>();
+        android.content.SharedPreferences.Editor editor = getSharedPreferences("system_registry", MODE_PRIVATE).edit();
         
         for (String key : fieldMap.keySet()) {
             String val = fieldMap.get(key).getText().toString().trim();
             v.put(key, val);
             cloudMap.put(key, val);
+            if ("org_name".equals(key)) {
+                editor.putString("org_name", val);
+            } else if ("department".equals(key)) {
+                editor.putString("department", val);
+            }
         }
+        editor.apply();
         
         v.put("uid", safeUid);
 
         try {
-            // ≡ƒÜÇ Phase 1: Local Forensic Commit
+            // 🚀 Phase 1: Local Forensic Commit
             db.saveOrgDossier(v);
             
-            // ≡ƒÜÇ Phase 2: Waterfall Cloud Sync (Absolute Parity)
-            FirebaseDatabase.getInstance().getReference("users").child(safeUid).child("org").updateChildren(cloudMap);
+            // 🚀 Phase 2: Waterfall Cloud Sync (Absolute Parity with SSOT Profile)
+            com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(safeUid, agentId -> {
+                if (agentId == null || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(agentId)) return null;
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(agentId).child("org").updateChildren(cloudMap);
+                
+                // Keep top-level SSOT profile fields in sync
+                Map<String, Object> topLevelUpdates = new HashMap<>();
+                if (cloudMap.containsKey("org_name")) topLevelUpdates.put("org_name", cloudMap.get("org_name"));
+                if (cloudMap.containsKey("department")) topLevelUpdates.put("dept_name", cloudMap.get("department"));
+                if (!topLevelUpdates.isEmpty()) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(agentId).updateChildren(topLevelUpdates);
+                }
+                return null;
+            });
             
             Toast.makeText(this, "Organization Timeline Secured Locally & Cloud.", Toast.LENGTH_SHORT).show();
             SystemLogger.INSTANCE.i("OrgActivity", "Corporate Matrix Hardened for ID: " + safeUid);
             finish();
         } catch (Exception e) {
             Toast.makeText(this, "Forensic Transaction Error.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null || fieldMap == null) return;
+        for (String key : fieldMap.keySet()) {
+            EditText et = fieldMap.get(key);
+            if (et != null) {
+                outState.putString("ORG_FIELD_" + key, et.getText().toString());
+            }
+        }
+    }
+
+    @Override
+    protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState == null || fieldMap == null) return;
+        for (String key : fieldMap.keySet()) {
+            String savedVal = savedState.getString("ORG_FIELD_" + key);
+            if (savedVal != null) {
+                EditText et = fieldMap.get(key);
+                if (et != null) et.setText(savedVal);
+            }
         }
     }
 }

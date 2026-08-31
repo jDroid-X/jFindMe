@@ -96,8 +96,8 @@ public class DashboardTileTable {
         float labelSize = 11f;
 
         // 🚀 MASTER SCALING INTERCEPTOR: Single Source of Truth Override (L7 Matrix)
-        iconInternalPadding = UiScalingMatrixTable.scalePadding(stage, 20);
-        labelSize = UiArchitect.getResponsiveTextSize(activity, "TEXT_MINI");
+        iconInternalPadding = UiScalingMatrixTable.scalePadding(stage, 10);
+        labelSize = UiArchitect.getResponsiveTextSize(activity, "TEXT_MINI") * 1.10f; // 🚀 +10% Scale Factor
 
         // Layout Parameters with Weights for Row Integrity
         LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -112,8 +112,8 @@ public class DashboardTileTable {
         int tintEnd = activity.getGradientEnd();
         
         if (record.usesDynamicTheme) {
-            // [MODIFIED] Using Gradient End shade for the 15.6% background tint as requested.
-            bg.setColor(Color.argb(40, Color.red(tintEnd), Color.green(tintEnd), Color.blue(tintEnd))); 
+            bg.setColor(activity.getCardColor());
+            bg.setStroke(2, tintStart);
         } else {
             bg.setColor(record.fallbackColor);
         }
@@ -123,7 +123,18 @@ public class DashboardTileTable {
 
         // 🚀 MASTER SCALING INTERCEPTOR: Single Source of Truth
         float responsiveElevation = UiScalingMatrixTable.scaleElevation(stage, record.elevation);
-        UiArchitect.applyNeutralShadow(activity, iconBg, responsiveElevation);
+        iconBg.setElevation(responsiveElevation);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            iconBg.setOutlineSpotShadowColor(Color.argb(160, 0, 0, 0));
+            iconBg.setOutlineAmbientShadowColor(Color.argb(160, 0, 0, 0));
+        }
+        iconBg.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View v, android.graphics.Outline outline) {
+                outline.setOval(0, 0, v.getWidth(), v.getHeight());
+                outline.setAlpha(1.0f);
+            }
+        });
         iconBg.setClipToOutline(true);
 
         ImageView icon = new ImageView(activity);
@@ -140,7 +151,9 @@ public class DashboardTileTable {
         tv.setTextSize(labelSize);
         tv.setGravity(Gravity.CENTER);
         tv.setTypeface(null, Typeface.BOLD);
-        tv.setPadding(0, 20, 0, 0);
+        tv.setMaxLines(2);
+        tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tv.setPadding(0, UiScalingMatrixTable.scalePadding(stage, 3), 0, 0);
         cell.addView(tv);
 
         // [Stage 4: Haptic Interaction Matrix]

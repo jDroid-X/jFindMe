@@ -130,7 +130,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
 
                 // TIER 2: Hardware Matrix Alignment (Waterfall Heartbeat)
                 val authUid = FirebaseAuth.getInstance().uid ?: return@launch
-                val hardwareId = fullPayload["uid_2"]?.toString() ?: ("HW_" + (Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "NULL").uppercase())
+                val hardwareId = fullPayload["uid_2"]?.toString()?.takeIf { it.isNotBlank() } ?: ("HW_" + (Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "NULL").uppercase())
                 
                 FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
                 db.syncDeviceAnalytical(finalAgentId, hardwareId, hardwareMetadata["model"]?.toString(), "REDACTED", false, hardwareMetadata["fingerprint"]?.toString())
@@ -174,14 +174,19 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
             viewModelScope.launch(Dispatchers.Main) {
                 val db = DatabaseHelper.getInstance(context)
                 val existingTruth = withContext(Dispatchers.IO) { db.getForensicDossierComplete(safeUid) }
-                
-                val avatarId = prefs.getInt("equipped_avatar_id", 1).toString()
+                val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
+                val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
+                val avatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
                 val hardwareId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "HW_$safeUid"
                 
                 val profilePayload = existingTruth.toMutableMap()
                 profilePayload.putAll(mapOf(
                     "name" to nameVal, 
-                    "avatar_id" to avatarId, 
+                    "fullName" to nameVal,
+                    "userName" to nameVal,
+                    "owner_name" to nameVal,
+                    "avatar_id" to avatarId,
+                    "equipped_avatar_id" to rawBaseId,
                     "phone" to phoneVal, 
                     "dob" to dobVal, 
                     "gender" to genderVal, 
@@ -196,36 +201,41 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     "updated_at" to FirebaseComm.getForensicTimestamp()
                 ))
 
-                // 🧬 V69.8: ALWAYS EXECUTE HYDRATED SYNC (Partial Save to Cloud)
+                prefs.edit()
+                    .putString("user_nickname", nameVal)
+                    .putString("fullName", nameVal)
+                    .putString("userName", nameVal)
+                    .putString("owner_name", nameVal)
+                    .apply()
+
                 val activeGrp = _profileData.value?.get("active_group") as? String
                 FirebaseComm.syncForensicHeartbeat(authUid, safeUid, hardwareId, profilePayload, activeGrp)
+                FirebaseComm.devicesRef.child(safeUid).child("device").child("live").child("avatar_id").setValue(avatarId)
                 
                 launch(Dispatchers.IO) {
                     val dossier = profilePayload.mapValues { (_, value) -> value.toString() }
                     val orgDossier = mapOf("orgName" to orgName, "deptName" to deptName, "userAddress" to addressVal, "designation" to "Professional")
-                    val groupData = mapOf("group_id" to "DEFAULT_GROUP", "group_name" to "Family Circle")
+                    val effectiveGrp = if (!activeGrp.isNullOrBlank() && activeGrp != "DEFAULT_GROUP") activeGrp else "GRP_$safeUid"
+                    val groupData = mapOf("group_id" to effectiveGrp, "group_name" to "My Circle")
                     
-                    // Save to Local Ledger
                     db.executeTieredHandshake(
                         authUid, safeUid, "HW_${hardwareId.uppercase()}", hardwareId,
                         dossier, orgDossier, null, groupData, null, null, null
                     )
                     
-                    launch(Dispatchers.Main) {
-                        _isLoading.value = false
-                        
-                        // 🚀 QA Fix: Conditional Success Hub
-                        if (missingFields.isEmpty()) {
-                            // All mandatory fields present -> Move to Dashboard
-                            _saveSuccess.value = true
-                        } else if (!ignoreValidation) {
-                            // Mandatory fields missing -> Partial Save Success, but Stay on Page
-                            _saveSuccess.value = false
-                            _errorMessage.value = "MULTIPLE_ERRORS:" + missingFields.joinToString("\n")
-                        } else {
-                            // Ignore validation (Back Press Exit) -> Save Partially and Exit
-                            _saveSuccess.value = true 
-                        }
+                    FirebaseComm.logChange(safeUid, FirebaseComm.LOG_ITEM_PROFILE, "PROFILE_SAVE", safeUid, profilePayload)
+                    com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.propagateAvatarUpdate(safeUid, avatarId, nameVal)
+                }
+                    
+                launch(Dispatchers.Main) {
+                    _isLoading.value = false
+                    if (missingFields.isEmpty()) {
+                        _saveSuccess.value = true
+                    } else if (!ignoreValidation) {
+                        _saveSuccess.value = false
+                        _errorMessage.value = "MULTIPLE_ERRORS:" + missingFields.joinToString("\n")
+                    } else {
+                        _saveSuccess.value = true
                     }
                 }
             }
@@ -233,7 +243,6 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     }
 
     init {
-        // 🧬 Initialize Global Geo-Registry (Majors)
         _countriesList.value = listOf(
             "India", "USA", "Indonesia", "UK", "Canada", "Australia", 
             "UAE", "Singapore", "Japan", "Germany", "France", "Brazil", "Russia"
@@ -242,49 +251,65 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         _citiesList.value = listOf("Select State First")
     }
 
+    fun onCountrySelected(country: String) {
+        val list = when (country) {
+            "India" -> listOf("Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Other")
+            "USA" -> listOf("California", "Texas", "New York", "Florida", "Illinois", "Other")
+            "UK" -> listOf("England", "Scotland", "Wales", "Northern Ireland", "Other")
+            else -> listOf("State 1", "State 2", "Select Other")
+        }
+        _statesList.value = list
+        _citiesList.value = emptyList()
+    }
+
+    fun onStateSelected(state: String) {
+        val list = when (state) {
+            "Maharashtra" -> listOf("Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad", "Other")
+            "California" -> listOf("Los Angeles", "San Francisco", "San Diego", "San Jose", "Other")
+            "Texas" -> listOf("Houston", "Austin", "Dallas", "San Antonio", "Other")
+            "England" -> listOf("London", "Manchester", "Birmingham", "Liverpool", "Other")
+            "Delhi" -> listOf("New Delhi", "North Delhi", "South Delhi", "West Delhi", "East Delhi", "Other")
+            "Karnataka" -> listOf("Bengaluru", "Mysuru", "Mangaluru", "Hubballi", "Belagavi", "Other")
+            "Tamil Nadu" -> listOf("Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Other")
+            "Gujarat" -> listOf("Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Other")
+            else -> listOf("City Zone 1", "City Zone 2", "Select Other")
+        }
+        _citiesList.value = list
+    }
+
     fun fetchStatesList(country: String) {
         val list = when (country) {
             "India" -> listOf("Maharashtra", "Delhi", "Karnataka", "Tamil Nadu", "Gujarat", "Uttar Pradesh", "West Bengal", "Telangana", "Rajasthan", "Punjab", "Haryana", "Bihar", "Madhya Pradesh")
-            "USA" -> listOf("California", "Texas", "New York", "Florida", "Illinois", "Washington", "Pennsylvania", "Ohio", "Georgia", "Michigan")
-            "Indonesia" -> listOf("DKI Jakarta", "Jawa Barat", "Jawa Timur", "Jawa Tengah", "Bali", "Banten", "Sumatera Utara", "Sulawesi Selatan")
+            "USA" -> listOf("California", "Texas", "New York", "Florida", "Illinois", "Washington", "Pennsylvania", "Ohio", "Georgia", "North Carolina", "Michigan")
+            "Indonesia" -> listOf("DKI Jakarta", "Jawa Barat", "Jawa Timur", "Jawa Tengah", "Banten", "Sumatera Utara", "Bali", "Sulawesi Selatan")
             "UK" -> listOf("England", "Scotland", "Wales", "Northern Ireland")
-            else -> listOf("State Registry A", "State Registry B", "International Zone 1")
+            else -> listOf("State 1", "State 2", "Select Other")
         }
         _statesList.value = list
     }
 
     fun fetchCitiesList(country: String, state: String) {
         val list = when (state) {
-            // --- INDIA ---
             "Maharashtra" -> listOf("Mumbai", "Pune", "Nagpur", "Nashik", "Aurangabad", "Thane")
             "Delhi" -> listOf("New Delhi", "North Delhi", "South Delhi", "West Delhi", "East Delhi")
             "Karnataka" -> listOf("Bengaluru", "Mysuru", "Hubballi", "Mangaluru", "Belagavi")
             "Gujarat" -> listOf("Ahmedabad", "Surat", "Vadodara", "Rajkot")
             "Tamil Nadu" -> listOf("Chennai", "Coimbatore", "Madurai", "Tiruchirappalli")
-            
-            // --- USA ---
             "California" -> listOf("Los Angeles", "San Francisco", "San Diego", "San Jose", "Sacramento")
             "Texas" -> listOf("Houston", "Dallas", "Austin", "San Antonio", "Fort Worth")
             "New York" -> listOf("New York City", "Buffalo", "Rochester", "Yonkers", "Syracuse")
-            "Florida" -> listOf("Miami", "Orlando", "Tampa", "Jacksonville", "Tallahassee")
-            
-            // --- INDONESIA ---
             "DKI Jakarta" -> listOf("Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara")
             "Jawa Barat" -> listOf("Bandung", "Bekasi", "Depok", "Bogor", "Cimahi")
             "Jawa Timur" -> listOf("Surabaya", "Malang", "Sidoarjo", "Gresik", "Kediri")
-            "Bali" -> listOf("Denpasar", "Badung", "Gianyar", "Tabanan")
             "Banten" -> listOf("Tangerang", "Serang", "Cilegon")
-            
             else -> listOf("City Zone 1", "City Zone 2", "Select Other")
         }
         _citiesList.value = list
     }
 
     fun fetchNetworkLocation() {
-        // 🧬 Forensic Auto-Discovery: Simulate network geo-lookup
         viewModelScope.launch {
             kotlinx.coroutines.delay(1000)
-            // Auto-detect logic would go here
         }
     }
 
@@ -293,14 +318,36 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         if (vrmPath != null) editor.putString("equipped_vrm_string", vrmPath)
         editor.apply()
         
+        val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(id)
+        val resolvedAvatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
+        
         val authUid = FirebaseAuth.getInstance().uid ?: return
         FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
             val finalId = agentId ?: return@resolveHardwareIdentity
-            val updates = mutableMapOf<String, Any>("equipped_avatar_id" to id)
+            val updates = mutableMapOf<String, Any>(
+                "equipped_avatar_id" to id,
+                "avatar_id" to resolvedAvatarId,
+                "updated_at" to FirebaseComm.getForensicTimestamp()
+            )
             if (vrmPath != null) updates["equipped_vrm_string"] = vrmPath
             
-            // 📡 Profile Anchor: Avatar identity belongs to the persistent Agent, not the session
             FirebaseComm.devicesRef.child(finalId).child("profile").updateChildren(updates)
+            FirebaseComm.devicesRef.child(finalId).child("device").child("live").child("avatar_id").setValue(resolvedAvatarId)
+            
+            try {
+                val db = DatabaseHelper.getInstance(getApplication())
+                val nick = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
+                db.updateDeviceIdentityAndAvatar(finalId, nick, resolvedAvatarId)
+            } catch (e: Exception) {}
+
+            com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+
+            com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.propagateAvatarUpdate(
+                finalId, 
+                resolvedAvatarId, 
+                prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
+            )
+            FirebaseComm.logChange(finalId, FirebaseComm.LOG_ITEM_PROFILE, "AVATAR_EQUIP", finalId, updates)
         }
     }
 
@@ -321,8 +368,8 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     val currentUserId: String? get() = FirebaseAuth.getInstance().uid
 
     fun equipCustomAvatar(prefs: SharedPreferences) {
-        // Equip special ID 999 for custom hardware photos
-        equipAvatar(prefs, 999, null)
+        // Equip standard ID -1 for custom hardware photos
+        equipAvatar(prefs, -1, null)
     }
 
     /**

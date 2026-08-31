@@ -1,6 +1,7 @@
 package com.jdroidx.jfindme.ui.management;
 
 import com.google.firebase.auth.FirebaseAuth;
+import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 
@@ -77,6 +78,9 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private boolean isReplaying = false;
     private String currentTargetUid;
     private String currentTargetName;
+    private String currentTargetAvatarId = "avatar_custom_1";
+    private ImageView targetAvatarView;
+    private TextView tvSelectTarget;
     private int selectedTimeIndex = 0;
     private List<Map<String, Object>> currentSessions = new ArrayList<>();
     
@@ -202,21 +206,20 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         int mapHeight = scale(600);
         mapStack.addView(mapContainer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, mapHeight));
         
-        // Embedded Distance Footer (L7 Aesthetic - White Pill)
+        // Embedded Distance Footer (Theme Aware Capsule)
         LinearLayout distFooterWrap = new LinearLayout(this);
         distFooterWrap.setGravity(Gravity.CENTER);
         distFooterWrap.setPadding(0, 0, 0, scale(20));
         
         LinearLayout distFooter = new LinearLayout(this);
         distFooter.setOrientation(LinearLayout.VERTICAL);
-        // Using a white capsule background with shadow
-        distFooter.setBackground(getSolidDrawable(Color.WHITE, 60));
-        int dfPadHorizontal = scale(60);
-        int dfPadVertical = scale(20);
+        distFooter.setBackground(createPopupBackground());
+        int dfPadHorizontal = scale(40);
+        int dfPadVertical = scale(14);
         distFooter.setPadding(dfPadHorizontal, dfPadVertical, dfPadHorizontal, dfPadVertical);
         
         tvDistance = new TextView(this);
-        tvDistance.setTextColor(Color.BLACK);
+        tvDistance.setTextColor(getGradientOverlayText());
         UiArchitect.applyText(this, tvDistance, "TEXT_BODY");
         tvDistance.setText("TOTAL DISTANCE: 0 m");
         tvDistance.setTypeface(null, Typeface.BOLD);
@@ -255,25 +258,50 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         targetSelectorWrap.setOrientation(LinearLayout.HORIZONTAL);
         targetSelectorWrap.setGravity(Gravity.CENTER_VERTICAL);
         
-        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, targetSelectorWrap, "CARD_STANDARD", 1.2f);
         targetSelectorWrap.setOnClickListener(v -> showTargetSelector());
+        targetSelectorWrap.setFocusable(true);
+        targetSelectorWrap.setClickable(true);
         
-        int tsPad = scale(25);
+        int tsPad = scale(14);
         targetSelectorWrap.setPadding(tsPad, tsPad, tsPad, tsPad);
         
-        ImageView targetIcon = new ImageView(this);
-        targetIcon.setImageResource(android.R.drawable.ic_menu_search);
-        targetIcon.setColorFilter(Color.parseColor("#FF5722"));
-        targetSelectorWrap.addView(targetIcon, new LinearLayout.LayoutParams(scale(55), scale(55)));
+        targetAvatarView = new ImageView(this);
+        int avSize = scale(48);
+        targetAvatarView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        android.graphics.drawable.GradientDrawable gRing = new android.graphics.drawable.GradientDrawable();
+        gRing.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        gRing.setColor(Color.parseColor("#1A000000"));
+        gRing.setStroke(scale(2), getGradientStart());
+        targetAvatarView.setBackground(gRing);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, targetAvatarView);
+        targetSelectorWrap.addView(targetAvatarView, new LinearLayout.LayoutParams(avSize, avSize));
         
-        TextView tvSelect = new TextView(this);
-        tvSelect.setText("SELECT TRACKING TARGET");
-        tvSelect.setTextColor(Color.BLACK);
-        tvSelect.setTypeface(null, Typeface.BOLD);
-        UiArchitect.applyText(this, tvSelect, "TEXT_TITLE");
-        tvSelect.setPadding(scale(30), 0, 0, 0);
-        targetSelectorWrap.addView(tvSelect);
+        LinearLayout targetInfoLayout = new LinearLayout(this);
+        targetInfoLayout.setOrientation(LinearLayout.VERTICAL);
+        targetInfoLayout.setPadding(scale(14), 0, 0, 0);
+        targetInfoLayout.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        tvSelectTarget = new TextView(this);
+        tvSelectTarget.setText("SELECT TRACKING TARGET");
+        tvSelectTarget.setTextColor(getTextColor());
+        tvSelectTarget.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvSelectTarget, "TEXT_TITLE");
+        targetInfoLayout.addView(tvSelectTarget);
+
+        TextView tvTapHint = new TextView(this);
+        tvTapHint.setText("Tap to switch tracking target");
+        tvTapHint.setTextColor(getSecondaryTextColor());
+        UiArchitect.applyText(this, tvTapHint, "TEXT_MINI");
+        targetInfoLayout.addView(tvTapHint);
+
+        targetSelectorWrap.addView(targetInfoLayout);
+
+        ImageView switchIcon = new ImageView(this);
+        switchIcon.setImageResource(android.R.drawable.ic_menu_more);
+        switchIcon.setColorFilter(getGradientStart());
+        int icSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
+        targetSelectorWrap.addView(switchIcon, new LinearLayout.LayoutParams(icSize, icSize));
         
         applyAccessibility(targetSelectorWrap, "SELECT TRACKING TARGET");
         replayCard.addView(targetSelectorWrap);
@@ -354,22 +382,20 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         btn.setOrientation(LinearLayout.HORIZONTAL);
         btn.setGravity(Gravity.CENTER);
         
-        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, btn, "CARD_STANDARD", 1.2f);
-        // ≡ƒº⌐ Note: We rely on applyCard's themed background to preserve outline provider
         
         int p = scale(25);
         btn.setPadding(p, p, p, p);
         
         ImageView icon = new ImageView(this);
         icon.setImageResource(resId);
-        icon.setColorFilter(android.graphics.Color.parseColor("#FF5722")); // Orange-Red 
+        icon.setColorFilter(getGradientStart()); 
         int s = scale(55);
         btn.addView(icon, new LinearLayout.LayoutParams(s, s));
         
         TextView tv = new TextView(this);
         tv.setText(text.toUpperCase());
-        tv.setTextColor(android.graphics.Color.BLACK); 
+        tv.setTextColor(getTextColor()); 
         tv.setTypeface(null, android.graphics.Typeface.BOLD);
         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, scaleText(26));
         tv.setPadding(scale(20), 0, 0, 0);
@@ -384,9 +410,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         tile.setOrientation(LinearLayout.HORIZONTAL);
         tile.setGravity(Gravity.CENTER_VERTICAL);
         
-        // ≡ƒº▒ L7 Aesthetic Sync: Upgraded to High-Elevation Tile with Shadow
         UiArchitect.applyCardWithOverride(this, tile, "CARD_STANDARD", 1.0f);
-        // ≡ƒº⌐ Note: Preserving card geometry base for shadow fidelity
 
         int p = scale(25);
         tile.setPadding(p, p, p, p);
@@ -421,16 +445,23 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             View v = timeButtons.get(i);
             if (v instanceof LinearLayout) {
                 LinearLayout layout = (LinearLayout) v;
-                layout.setBackground(selected ? getSolidDrawable(Color.argb(40, 255, 87, 34), 30) : null);
-                if (!selected) UiArchitect.applyCard(this, layout, "CARD_STANDARD");
-                
+                if (selected) {
+                    android.graphics.drawable.GradientDrawable selBg = new android.graphics.drawable.GradientDrawable();
+                    selBg.setColor(ThemeManager.isDarkTheme(getResolvedThemeId()) ? Color.parseColor("#330EA5E9") : Color.parseColor("#331B4332"));
+                    selBg.setCornerRadius(scale(14));
+                    selBg.setStroke(scale(2), getGradientStart());
+                    layout.setBackground(selBg);
+                } else {
+                    layout.setBackground(null);
+                    UiArchitect.applyCard(this, layout, "CARD_STANDARD");
+                }
 
                 for (int j = 0; j < layout.getChildCount(); j++) {
                     View child = layout.getChildAt(j);
                     if (child instanceof ImageView) {
                         ((ImageView) child).setAlpha(selected ? 1.0f : 0.7f);
                     } else if (child instanceof TextView) {
-                        ((TextView) child).setTextColor(selected ? Color.BLACK : getTextColor());
+                        ((TextView) child).setTextColor(selected ? getGradientStart() : getTextColor());
                     }
                 }
             }
@@ -456,21 +487,27 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     }
 
     private void loadHistoryData(long durationMs) {
-        if (currentTargetUid == null || currentTargetUid.equals(FirebaseAuth.getInstance().getUid())) {
-            // ≡ƒÜÇ QA Rule: Battery Guard (Rule 5)
-            // Block self-tracking fetch. 
+        if (currentTargetUid == null || currentTargetUid.isEmpty()) {
             if (tvStatus != null) tvStatus.setText("SELECT A TARGET TO START FETCH");
             return;
         }
         
-        // ≡ƒÜÇ QA Rule: Redundancy Guard (The 'Warm' Registry)
+        String myUid = FirebaseAuth.getInstance().getUid();
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        if (currentTargetUid.equals(selfAgentId) || (myUid != null && currentTargetUid.equals(myUid))) {
+            // Load local offline records for self
+            viewModel.loadHistorySessions(this, currentTargetUid, durationMs);
+            if (tvStatus != null) tvStatus.setText("READY • LOCAL LOGS LOADED");
+            return;
+        }
+
+        // Redundancy Guard (The 'Warm' Registry)
         String lockKey = currentTargetUid + "_" + durationMs;
         if (warmedVaults.contains(lockKey)) {
             viewModel.loadHistorySessions(this, currentTargetUid, durationMs);
             return;
         }
 
-        // ≡ƒªï QA Fix: The Guardian Angel Loading Matrix (3s Mandatory Guard)
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Retrieving the History Data");
         minLoadTimerExpired = false;
@@ -480,12 +517,12 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             warmedVaults.add(lockKey);
         }
 
-        new android.os.Handler().postDelayed(() -> {
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
              minLoadTimerExpired = true;
-             if (viewModel.isLoading().getValue() != Boolean.TRUE) {
+             if (viewModel != null && viewModel.isLoading().getValue() != Boolean.TRUE) {
                  com.jdroidx.jfindme.utils.AngelLoader.hide(this);
              }
-        }, 3000);
+        }, 2000);
     }
 
 
@@ -507,6 +544,15 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
     @Override
     protected void onUiRebuilt(android.os.Bundle savedState) {
+        if (savedState != null) {
+            String tUid = savedState.getString("SAVED_TARGET_UID");
+            if (tUid != null) currentTargetUid = tUid;
+            String tName = savedState.getString("SAVED_TARGET_NAME");
+            if (tName != null) currentTargetName = tName;
+            selectedTimeIndex = savedState.getInt("SAVED_TIME_INDEX", 0);
+            isReplaying = savedState.getBoolean("SAVED_IS_REPLAYING", false);
+        }
+        
         updateTrackLabel();
         updateTimeTileStyles(selectedTimeIndex);
         updateHistoryTable(currentSessions);
@@ -514,51 +560,115 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         if (!historyPoints.isEmpty()) {
             calculateAnalytics(historyPoints);
             tvWaypointsCount.setText(historyPoints.size() + " WAYPOINTS LOADED SECURELY");
+            drawStaticPath(historyPoints);
         }
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
         if (mapFragment != null) {
             mapFragment.getMapAsync(this);
-        } else {
-            mapFragment = SupportMapFragment.newInstance();
-            getSupportFragmentManager().beginTransaction().replace(ID_MAP_FRAGMENT, mapFragment).commit();
-            mapFragment.getMapAsync(this);
         }
     }
 
+    private com.google.android.gms.maps.model.BitmapDescriptor getSelectedTargetAvatarDescriptor(int sizeDp) {
+        try {
+            String myUid = FirebaseAuth.getInstance().getUid();
+            String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+            boolean isSelf = (currentTargetUid == null || currentTargetUid.equals(selfAgentId) || (myUid != null && currentTargetUid.equals(myUid)));
+            
+            android.graphics.Bitmap rawBmp;
+            if (isSelf) {
+                rawBmp = com.jdroidx.jfindme.utils.AvatarLoader.getCurrentUserAvatarBitmap(this, sizeDp);
+            } else {
+                rawBmp = com.jdroidx.jfindme.utils.AvatarLoader.getRemoteAvatarBitmap(this, currentTargetAvatarId, sizeDp);
+            }
+            
+            if (rawBmp != null) {
+                int px = scale(sizeDp);
+                android.graphics.Bitmap circular = com.jdroidx.jfindme.utils.AvatarLoader.createCircularBitmap(rawBmp, px);
+                if (circular != null) {
+                    return BitmapDescriptorFactory.fromBitmap(circular);
+                }
+            }
+        } catch (Exception e) {
+            SystemLogger.e(TAG, "Failed to build avatar descriptor for history map", e);
+        }
+        return BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE);
+    }
+
     private void drawStaticPath(List<UserLocation> points) {
-        if (googleMap == null) return;
+        if (googleMap == null || points == null || points.isEmpty()) return;
         googleMap.clear();
         
         int accent = getGradientStart();
-        int semiTransparentColor = Color.argb(153, Color.red(accent), Color.green(accent), Color.blue(accent));
+        int semiTransparentColor = Color.argb(180, Color.red(accent), Color.green(accent), Color.blue(accent));
         
         PolylineOptions options = new PolylineOptions()
             .color(semiTransparentColor)
-            .width(12);
+            .width(14)
+            .geodesic(true);
             
         for (UserLocation p : points) {
             options.add(new LatLng(p.getLatitude(), p.getLongitude()));
         }
         googleMap.addPolyline(options);
         
-        if (!points.isEmpty()) {
-            LatLng first = new LatLng(points.get(0).getLatitude(), points.get(0).getLongitude());
-            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(first, 15f));
+        // 1. Start Landmark Marker (Green Beacon)
+        UserLocation first = points.get(0);
+        LatLng startPos = new LatLng(first.getLatitude(), first.getLongitude());
+        String startTimeStr = first.getResolvedTimestamp();
+        googleMap.addMarker(new MarkerOptions()
+            .position(startPos)
+            .title("🏁 JOURNEY START")
+            .snippet("Recorded: " + startTimeStr)
+            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)));
+
+        // 2. Finish / Latest Fix Marker (Selected Target's Custom Avatar Pin!)
+        UserLocation last = points.get(points.size() - 1);
+        LatLng endPos = new LatLng(last.getLatitude(), last.getLongitude());
+        String endTimeStr = last.getResolvedTimestamp();
+        
+        com.google.android.gms.maps.model.BitmapDescriptor avatarDesc = getSelectedTargetAvatarDescriptor(48);
+        googleMap.addMarker(new MarkerOptions()
+            .position(endPos)
+            .title("📍 " + (currentTargetName != null ? currentTargetName.toUpperCase() : "TARGET"))
+            .snippet("Latest Fix: " + endTimeStr)
+            .anchor(0.5f, 0.5f)
+            .icon(avatarDesc));
+
+        // 3. Smooth Camera Bounds Fit
+        if (points.size() == 1) {
+            googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(startPos, 16f));
+        } else {
+            com.google.android.gms.maps.model.LatLngBounds.Builder builder = new com.google.android.gms.maps.model.LatLngBounds.Builder();
+            for (UserLocation p : points) {
+                builder.include(new LatLng(p.getLatitude(), p.getLongitude()));
+            }
+            try {
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), scale(60)));
+            } catch (Exception e) {
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(endPos, 15f));
+            }
         }
     }
 
     private void startPathReplay() {
-        if (historyPoints.size() < 2 || googleMap == null) return;
+        if (googleMap == null) return;
+        if (historyPoints.size() < 2) {
+            UiArchitect.showValidationDialog(this, "Insufficient Route Data", "At least 2 GPS waypoints are required to simulate a route replay. Please select a time or date with recorded movement.", null);
+            return;
+        }
         
         isReplaying = true;
         if (replayAvatar != null) replayAvatar.remove();
         
         UserLocation first = historyPoints.get(0);
+        com.google.android.gms.maps.model.BitmapDescriptor avatarDesc = getSelectedTargetAvatarDescriptor(52);
+        
         replayAvatar = googleMap.addMarker(new MarkerOptions()
                 .position(new LatLng(first.getLatitude(), first.getLongitude()))
                 .anchor(0.5f, 0.5f)
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+                .title("TRACING: " + (currentTargetName != null ? currentTargetName.toUpperCase() : "TARGET"))
+                .icon(avatarDesc));
                 
         updateReplayStatusAddress(first.getLatitude(), first.getLongitude());
         animateReplay(0);
@@ -605,7 +715,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             double lng = v * end.getLongitude() + (1 - v) * start.getLongitude();
             LatLng current = new LatLng(lat, lng);
             if (replayAvatar != null) replayAvatar.setPosition(current);
-            googleMap.moveCamera(CameraUpdateFactory.newLatLng(current));
+            if (googleMap != null) googleMap.moveCamera(CameraUpdateFactory.newLatLng(current));
         });
         
         animator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -649,46 +759,103 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                 tvStatus.setText(loading ? "SYNCING CLOUD DATA..." : "READY FOR SYNC");
             }
             
-            // ≡ƒªï QA Fix: Post-Commit Butterfly Dismissal (Dynamic Guard)
-            // Rule: Hide only if the 3S Mandatory Timer AND the Cloud Sync are both finished.
             if (!loading && minLoadTimerExpired) {
-                new android.os.Handler().postDelayed(() -> {
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     com.jdroidx.jfindme.utils.AngelLoader.hide(this);
-                }, 800);
+                }, 400);
+            }
+        });
+
+        viewModel.getTrackingTargets().observe(this, targets -> {
+            if (targets != null && !targets.isEmpty()) {
+                if (currentTargetUid == null || currentTargetUid.isEmpty()) {
+                    HistoryViewModel.TrackingTarget firstT = targets.get(0);
+                    currentTargetUid = firstT.getUid();
+                    currentTargetName = firstT.getName();
+                    currentTargetAvatarId = firstT.getAvatarId();
+                    updateTrackLabel();
+                    loadHistoryData(DURATIONS[selectedTimeIndex]);
+                } else {
+                    for (HistoryViewModel.TrackingTarget t : targets) {
+                        if (currentTargetUid.equals(t.getUid())) {
+                            currentTargetAvatarId = t.getAvatarId();
+                            if (currentTargetName == null || currentTargetName.isEmpty()) currentTargetName = t.getName();
+                            updateTrackLabel();
+                            break;
+                        }
+                    }
+                }
             }
         });
 
         viewModel.fetchTrackingTargets(this);
         
-        // --- ≡ƒÜÇ Intent Linkage Protocol (V40 Standard) ---
+        // --- Intent Linkage Protocol (Case Insensitive) ---
         currentTargetUid = getIntent().getStringExtra("TARGET_UID");
+        if (currentTargetUid == null || currentTargetUid.isEmpty()) {
+            currentTargetUid = getIntent().getStringExtra("target_uid");
+        }
         currentTargetName = getIntent().getStringExtra("TARGET_NAME");
+        if (currentTargetName == null || currentTargetName.isEmpty()) {
+            currentTargetName = getIntent().getStringExtra("target_name");
+        }
         
-        if (currentTargetUid != null && !currentTargetUid.equals(FirebaseAuth.getInstance().getUid())) {
-            // Initial Waterfall Trigger (Cloud Sync)
+        if (currentTargetUid != null && !currentTargetUid.isEmpty()) {
             loadHistoryData(DURATIONS[0]); 
             updateTimeTileStyles(0);
         } else {
             updateTrackLabel();
-            if (tvStatus != null) tvStatus.setText("READY FOR SYNC ΓÇó SELECT TARGET");
+            if (tvStatus != null) tvStatus.setText("READY FOR SYNC • SELECT TARGET");
         }
 
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
-        if (mapFragment == null) {
-            mapFragment = SupportMapFragment.newInstance();
-            getSupportFragmentManager().beginTransaction().add(ID_MAP_FRAGMENT, mapFragment).commit();
+        // Clean up stale map fragment to support robust landscape/portrait rotation
+        SupportMapFragment oldFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
+        if (oldFragment != null) {
+            getSupportFragmentManager().beginTransaction().remove(oldFragment).commitNowAllowingStateLoss();
         }
+
+        SupportMapFragment mapFragment = SupportMapFragment.newInstance();
+        getSupportFragmentManager().beginTransaction()
+                .add(ID_MAP_FRAGMENT, mapFragment)
+                .commitNowAllowingStateLoss();
         mapFragment.getMapAsync(this);
     }
 
-
     private void updateTrackLabel() {
+        String myUid = FirebaseAuth.getInstance().getUid();
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        boolean isSelf = (currentTargetUid == null || currentTargetUid.equals(selfAgentId) || (myUid != null && currentTargetUid.equals(myUid)));
+        
+        if ((currentTargetName == null || currentTargetName.isEmpty() || currentTargetName.equalsIgnoreCase("UNKNOWN NODE")) && currentTargetUid != null && !isSelf) {
+            try {
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                Map<String, String> dos = db.getLocalDossier(currentTargetUid);
+                String resolved = dos.get("fullName");
+                if (resolved != null && !resolved.isEmpty()) currentTargetName = resolved;
+                String av = dos.get("avatar_id");
+                if (av != null && !av.isEmpty()) currentTargetAvatarId = av;
+            } catch (Exception ignored) {}
+        }
+
+        String name = (currentTargetName != null && !currentTargetName.isEmpty()) ? 
+            currentTargetName.toUpperCase() : 
+            (isSelf ? "MY DEVICE (LOCAL LOGS)" : ("AGENT_" + currentTargetUid));
+
         if (tvTrackLabel != null) {
-            String myUid = FirebaseAuth.getInstance().getUid();
-            boolean isSelf = (currentTargetUid == null || currentTargetUid.equals(myUid));
-            String name = isSelf ? "NO SELECTION" : (currentTargetName != null ? currentTargetName.toUpperCase() : "UNKNOWN PLAYER");
             tvTrackLabel.setText("CURRENT TRACK: " + name);
-            tvTrackLabel.setAlpha(isSelf ? 0.6f : 1.0f);
+            tvTrackLabel.setAlpha(1.0f);
+        }
+
+        if (tvSelectTarget != null) {
+            tvSelectTarget.setText(name);
+        }
+
+        if (targetAvatarView != null) {
+            if (isSelf) {
+                com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, targetAvatarView);
+            } else {
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, targetAvatarView, currentTargetAvatarId);
+            }
         }
     }
 
@@ -701,39 +868,44 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             return;
         }
 
-        String[] names = new String[targets.size()];
-        String[] uids = new String[targets.size()];
-        
+        UiArchitect.OptionItem[] options = new UiArchitect.OptionItem[targets.size()];
         for (int i = 0; i < targets.size(); i++) {
-            names[i] = targets.get(i).getName();
-            uids[i] = targets.get(i).getUid();
+            HistoryViewModel.TrackingTarget t = targets.get(i);
+            int iconRes = com.jdroidx.jfindme.R.drawable.ic_family_friends;
+            if (t.getRole().equalsIgnoreCase("Host")) {
+                iconRes = android.R.drawable.ic_menu_myplaces;
+            } else if (t.getRole().toUpperCase().contains("CHILD") || t.getRole().toUpperCase().contains("SON") || t.getRole().toUpperCase().contains("DAUGHTER")) {
+                iconRes = com.jdroidx.jfindme.R.drawable.ic_user_profile;
+            }
+            options[i] = new UiArchitect.OptionItem("👤 " + t.getName(), "Role: " + t.getRole() + " • Node: " + t.getUid(), iconRes);
         }
 
-        new android.app.AlertDialog.Builder(this)
-            .setTitle("Select Tracking Target")
-            .setItems(names, (dialog, index) -> {
-                currentTargetUid = uids[index];
-                currentTargetName = names[index];
-                updateTrackLabel();
-                Toast.makeText(this, "Target Synchronized: " + currentTargetName, Toast.LENGTH_SHORT).show();
-            })
-            .show();
+        UiArchitect.showRichOptionsDialog(this, "Select Tracking Target", options, (index, label) -> {
+            HistoryViewModel.TrackingTarget selected = targets.get(index);
+            currentTargetUid = selected.getUid();
+            currentTargetName = selected.getName();
+            currentTargetAvatarId = selected.getAvatarId();
+            updateTrackLabel();
+            loadHistoryData(DURATIONS[selectedTimeIndex]);
+            updateTimeTileStyles(selectedTimeIndex);
+            Toast.makeText(this, "Target Synchronized: " + currentTargetName, Toast.LENGTH_SHORT).show();
+        });
     }
-
 
     private void updateHistoryTable(List<Map<String, Object>> sessions) {
         if (logsContainer == null) return;
         logsContainer.removeAllViews();
         
         if (sessions == null || sessions.isEmpty()) {
-            TextView emptyTv = new TextView(this);
-            emptyTv.setText("No chronological data sessions found in local DB.");
-            emptyTv.setTextColor(getSecondaryTextColor());
-            emptyTv.setGravity(Gravity.CENTER);
-            UiArchitect.applyText(this, emptyTv, "TEXT_MINI");
-            int p = scale(40);
-            emptyTv.setPadding(p, p, p, p);
-            logsContainer.addView(emptyTv);
+            View emptyCard = UiArchitect.createEmptyStateCard(
+                this,
+                "No Location History Recorded",
+                "Historical breadcrumbs will automatically populate here as location points are tracked over time.",
+                android.R.drawable.ic_menu_recent_history,
+                null,
+                null
+            );
+            logsContainer.addView(emptyCard);
             return;
         }
 
@@ -745,10 +917,8 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private View createSessionTile(Map<String, Object> session) {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
-        // ≡ƒº▒ L7 Aesthetic Sync: Applying High-Contrast shadow to log segments
         UiArchitect.applyCardWithOverride(this, outer, "CARD_STANDARD", 1.2f);
         
-        // ≡ƒÜÇ Baseline Synchronization: Margin between tiles set to 45px Universal Gap
         int margin = com.jdroidx.jfindme.ui.base.UiScalingMatrixTable.getUniversalGap(com.jdroidx.jfindme.ui.base.UiArchitect.getStage(this));
         
         LinearLayout.LayoutParams outerLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -759,81 +929,102 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         row1.setOrientation(LinearLayout.HORIZONTAL);
         row1.setGravity(Gravity.CENTER_VERTICAL);
         int p = scale(25);
-        row1.setPadding(p, p, p, 0); // Reduced bottom padding
+        row1.setPadding(p, p, p, 0);
 
-        // Session Label (ΓÅ▒∩╕Å Inline Character Logic for 100% Forensic Parity)
         TextView tvLabel = new TextView(this);
         Object pingObj = session.get("ping_count");
-        int pings = (pingObj instanceof Integer) ? (Integer) pingObj : 0;
+        long pings = (pingObj instanceof Number) ? ((Number) pingObj).longValue() : 1L;
         
-        Object fromObj = session.get("from_datetime");
-        long from = (fromObj instanceof Long) ? (Long) fromObj : 0L;
+        Object fromObj = session.get("from_datetime") != null ? session.get("from_datetime") : session.get("ts_start");
+        long from = parseEpochMillis(fromObj);
         
-        Object toObj = session.get("to_datetime");
-        long to = (toObj instanceof Long) ? (Long) toObj : 0L;
+        Object toObj = session.get("to_datetime") != null ? session.get("to_datetime") : session.get("ts_end");
+        long to = parseEpochMillis(toObj);
+        if (to < from) to = from;
         
-        String dateStr = new java.text.SimpleDateFormat("MMM dd, yyyy | hh:mm:ss a", java.util.Locale.getDefault()).format(new java.util.Date(from));
-        String toStr = new java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(new java.util.Date(to));
+        String fromDateStr = new java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault()).format(new java.util.Date(from));
+        String fromTimeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(from));
+        String toTimeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(to));
         
-        tvLabel.setText("ΓÅ▒∩╕Å SESSION (" + pings + " PINGS) ΓÇó " + dateStr + " TO " + toStr);
-        tvLabel.setTextColor(android.graphics.Color.parseColor("#A34121")); // Brown-Orange
+        long durationMs = to - from;
+        String stayDurationStr;
+        if (durationMs >= 3600000L) {
+            long hours = durationMs / 3600000L;
+            long mins = (durationMs % 3600000L) / 60000L;
+            stayDurationStr = hours + "h " + mins + "m stay";
+        } else if (durationMs >= 60000L) {
+            long mins = durationMs / 60000L;
+            stayDurationStr = mins + "m stay";
+        } else {
+            stayDurationStr = "Stop / Point";
+        }
+        
+        tvLabel.setText("📍 " + fromDateStr + " • " + fromTimeStr + " - " + toTimeStr + " (" + stayDurationStr + ")");
+        tvLabel.setTextColor(getGradientStart());
         tvLabel.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tvLabel, "TEXT_MINI");
-        // Adjusted padding for the absence of the separate icon
         tvLabel.setPadding(0, 0, 0, 0); 
         row1.addView(tvLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        // Right Target Icon
         ImageView icTarget = new ImageView(this);
         icTarget.setImageResource(android.R.drawable.ic_menu_mylocation);
-        icTarget.setColorFilter(android.graphics.Color.parseColor("#FF5722"));
+        icTarget.setColorFilter(getGradientStart());
         row1.addView(icTarget, new LinearLayout.LayoutParams(scale(55), scale(55)));
 
         outer.addView(row1);
 
         // Address
         TextView tvAddr = new TextView(this);
-        tvAddr.setText(session.get("address").toString());
-        tvAddr.setTextColor(android.graphics.Color.BLACK); // Bold black as per image
+        Object addrObj = session.get("address") != null ? session.get("address") : session.get("geo_address");
+        String safeAddr = (addrObj != null && !addrObj.toString().trim().isEmpty()) ? addrObj.toString() : "Recorded Coordinate Fix";
+        tvAddr.setText(safeAddr);
+        tvAddr.setTextColor(getTextColor());
         tvAddr.setTypeface(null, Typeface.BOLD);
-        UiArchitect.applyText(this, tvAddr, "TEXT_MINI");
-        tvAddr.setPadding(p + scale(65), 0, p, scale(15));
+        UiArchitect.applyText(this, tvAddr, "TEXT_TITLE");
+        tvAddr.setPadding(p, scale(6), p, scale(8));
         outer.addView(tvAddr);
 
         // Stats Row
         LinearLayout rowStats = new LinearLayout(this);
         rowStats.setOrientation(LinearLayout.HORIZONTAL);
-        rowStats.setPadding(p + scale(65), 0, p, p);
+        rowStats.setPadding(p, 0, p, p);
         
-        // ≡ƒº▒ QA Hardening: Null-Safety for Forensic Stats (Anti-Rebound)
-        String speed = session.get("speed") != null ? session.get("speed").toString() : "0";
-        String battery = session.get("battery") != null ? session.get("battery").toString() : "--";
+        Object speedObj = session.get("speed");
+        float spdVal = (speedObj instanceof Number) ? ((Number) speedObj).floatValue() : 0f;
+        String speedStr = (spdVal > 0) ? String.format(java.util.Locale.US, "%.1f km/h", spdVal * 3.6f) : "Resting";
         
-        rowStats.addView(createMiniStat("≡ƒÜù", speed + " km/h"));
-        rowStats.addView(createMiniStat("≡ƒöï", battery + "%"));
-        rowStats.addView(createMiniStat("≡ƒôì", pings + " Pings"));
+        Object batObj = session.get("battery");
+        int batVal = (batObj instanceof Number) ? ((Number) batObj).intValue() : -1;
+        String battery = (batVal >= 0) ? (batVal + "%") : "--";
+        
+        rowStats.addView(createMiniStat("📍", pings + " Fixes"));
+        rowStats.addView(createMiniStat("🚗", speedStr));
+        rowStats.addView(createMiniStat("🔋", battery));
         
         outer.addView(rowStats);
 
         outer.setOnClickListener(v -> {
             if (googleMap != null) {
-                LatLng pos = new LatLng((double)session.get("lat"), (double)session.get("lng"));
+                Object latObj = session.get("lat");
+                Object lngObj = session.get("lng");
+                double lat = latObj instanceof Double ? (Double) latObj : (latObj instanceof Number ? ((Number) latObj).doubleValue() : 0.0);
+                double lng = lngObj instanceof Double ? (Double) lngObj : (lngObj instanceof Number ? ((Number) lngObj).doubleValue() : 0.0);
+                
+                LatLng pos = new LatLng(lat, lng);
                 googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos, 16f));
                 
-                // --- ≡ƒÜÇ QA Fix: Force Avatar Display on Node Inspection ---
                 if (replayAvatar != null) replayAvatar.remove();
                 
-                String addr = session.get("address").toString();
                 replayAvatar = googleMap.addMarker(new MarkerOptions()
                         .position(pos)
                         .title("INSPECTING NODE")
-                        .snippet(addr)
+                        .snippet(safeAddr)
                         .anchor(0.5f, 0.5f)
                         .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET)));
                         
                 replayAvatar.showInfoWindow();
                 
-                if (tvStatus != null) tvStatus.setText("NODE: " + addr);
+                if (tvStatus != null) tvStatus.setText("NODE: " + safeAddr);
                 Toast.makeText(this, "Inspecting Node: " + pings + " Pings at this Radius", Toast.LENGTH_SHORT).show();
             }
         });
@@ -841,14 +1032,67 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         return outer;
     }
 
+    private long parseEpochMillis(Object obj) {
+        if (obj == null) return System.currentTimeMillis();
+        if (obj instanceof Number) {
+            long val = ((Number) obj).longValue();
+            if (val >= 1000000000000L && val <= 4102444800000L) {
+                return val;
+            }
+            if (val >= 1000000000L && val <= 4102444800L) {
+                return val * 1000L;
+            }
+            return parseForensicString(String.valueOf(val));
+        }
+        return parseForensicString(obj.toString());
+    }
+
+    private long parseForensicString(String str) {
+        if (str == null || str.trim().isEmpty() || "0".equals(str.trim())) return System.currentTimeMillis();
+        String s = str.trim();
+        try {
+            if (s.matches("^\\d{13}$")) {
+                return Long.parseLong(s);
+            }
+            if (s.matches("^\\d{10}$")) {
+                return Long.parseLong(s) * 1000L;
+            }
+            String[] patterns = new String[]{"yyyyMMddHHmmssSS", "yyyyMMddHHmmss", "yyyyMMdd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss"};
+            for (String p : patterns) {
+                try {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(p, java.util.Locale.US);
+                    java.util.Date d = sdf.parse(s.length() > p.length() ? s.substring(0, p.length()) : s);
+                    if (d != null) return d.getTime();
+                } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return System.currentTimeMillis();
+    }
+
     private View createMiniStat(String icon, String text) {
         TextView tv = new TextView(this);
         tv.setText(icon + " " + text);
-        tv.setTextColor(android.graphics.Color.parseColor("#2E7D32")); // Success Green
+        tv.setTextColor(getSecondaryTextColor());
         tv.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tv, "TEXT_MINI");
-        tv.setPadding(0, 0, scale(40), 0);
+        tv.setPadding(0, 0, scale(35), 0);
         return tv;
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isReplaying = false;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        isReplaying = false;
+        if (replayAvatar != null) {
+            replayAvatar.remove();
+            replayAvatar = null;
+        }
     }
 
     @Override
@@ -877,11 +1121,22 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                         return;
                     }
                 }
-                // Fallback to Headquarters if admin location is unknown
+                // Fallback to Headquarters/Dynamic default if admin location is unknown
                 runOnUiThread(() -> {
-                    this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(18.5204, 73.8567), 12f));
+                    double defLat = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLatitude(this);
+                    double defLng = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLongitude(this);
+                    this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(defLat, defLng), 12f));
                 });
             }).start();
         }
+    }
+
+    @Override
+    protected void onSaveCurrentState(android.os.Bundle outState) {
+        if (outState == null) return;
+        outState.putString("SAVED_TARGET_UID", currentTargetUid);
+        outState.putString("SAVED_TARGET_NAME", currentTargetName);
+        outState.putInt("SAVED_TIME_INDEX", selectedTimeIndex);
+        outState.putBoolean("SAVED_IS_REPLAYING", isReplaying);
     }
 }

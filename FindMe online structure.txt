@@ -1,0 +1,246 @@
+FindMe online structure
+
+https://jfindme-3b15c-default-rtdb.asia-southeast1.firebasedatabase.app/
+  ├── History
+  ├── devices
+  ├── lookup_indices
+  ├── relationships
+  └── Geofencing/                                                    <-- NEW TOP-LEVEL HEADER
+        └── {creatorDeviceId}  (Initiator / Host UID)
+              ├── device_name: "Host Alpha"
+              ├── updated_at: 1787900000000
+              └── safe_zones/
+                    └── {safeZoneId}/  (e.g. "ZONE_HOME_001")
+                          ├── zone_id: "ZONE_HOME_001"
+                          ├── zone_name: "Home Domain"
+                          ├── lat: 28.6139
+                          ├── lng: 77.2090
+                          ├── radius: 100.0
+                          ├── is_active: true
+                          ├── alerts_enabled: true
+                          ├── startTime: 0
+                          ├── endTime: 2359
+                          ├── activeDays: "1,2,3,4,5,6,0"
+                          ├── created_on: "2026-08-28 14:00:00"
+                          └── connected_devices/
+                                └── {targetDeviceId}/  (e.g. "DEV_CHILD_01")
+                                      ├── device_id: "DEV_CHILD_01"
+                                      ├── device_name: "Child Phone"
+                                      ├── role: "CHILD"
+                                      ├── current_state: "IN" | "OUT"
+                                      ├── last_transition_ts: 1787900123456
+                                      ├── last_transition_readable: "28 Aug 2026, 02:00 PM"
+                                      └── notifications/
+                                            └── {YYYY-MM-DD}/  (Grouped by Date)
+                                                  └── {eventId}/
+                                                        ├── event_id: "EVT_1787900123456_01a2"
+                                                        ├── transition: "IN" | "OUT"
+                                                        ├── event_type: "ENTER" | "EXIT"
+                                                        ├── timestamp: 1787900123456
+                                                        ├── date: "2026-08-28"
+                                                        ├── time: "02:00:15 PM"
+                                                        ├── readable_time: "28 Aug 2026, 02:00 PM"
+                                                        ├── state_latch: "IN" | "OUT"
+                                                        ├── target_uid: "DEV_CHILD_01"
+                                                        ├── target_name: "Child Phone"
+                                                        ├── zone_id: "ZONE_HOME_001"
+                                                        ├── zone_name: "Home Domain"
+                                                        ├── creator_uid: "{creatorDeviceId}"
+                                                        ├── lat: 28.6139
+                                                        └── lng: 77.2090
+
+jfindme-3b15c-default-rtdb (Root)
+│
+├── 📁 devices/
+│   └── 📁 {agentId}/                         [Canonical 8-Character Key e.g., 2B75E1E9]
+│       │
+│       ├── 📄 Identity/                      [Authentication & Suffix Identity Anchor]
+│       │   ├── auth_uid: "a1b2c3d4e5f6..."
+│       │   ├── uid_1: "2B75E1E9"
+│       │   ├── uid_2: "HW_7A9F"
+│       │   ├── node_index: 1
+│       │   ├── fcm_token: "eX0-abc123xyz..."
+│       │   ├── st_session_state: "ONLINE"
+│       │   ├── active_group: "GRP_ALPHA_01"
+│       │   ├── valid_linked_agents: "3C86F2A0,4D97A1B2"
+│       │   ├── created_on: "2026082821510000"
+│       │   └── updated_at: 1724860260000
+│       │
+│       ├── 📄 device/                        [Hardware Specifications & Static Identifiers]
+│       │   ├── deviceId: "HW_2B75E1E9"
+│       │   ├── agentId: "2B75E1E9"
+│       │   ├── deviceName: "Samsung Galaxy S24"
+│       │   ├── imei: "860123456789012"
+│       │   ├── os_version: "Android 14 (API 34)"
+│       │   ├── build_fingerprint: "google/cheetah/..."
+│       │   ├── isPrimary: true
+│       │   ├── is_rooted: false
+│       │   └── lastActive: "2026082821510000"
+│       │
+│       ├── 📄 profile/                       [Single Source of Truth: Persona & Org Dossier]
+│       │   ├── name: "John Citizen"
+│       │   ├── email: "john.citizen@domain.com"
+│       │   ├── phone: "+15550192834"
+│       │   ├── avatar_id: "avatar_custom_3"
+│       │   ├── dob: "1990-05-15"
+│       │   ├── gender: "Male"
+│       │   ├── country: "United States"
+│       │   ├── state: "California"
+│       │   ├── city: "San Francisco"
+│       │   ├── pincode: "94105"
+│       │   ├── address: "123 Market St"
+│       │   ├── org_name: "Enterprise Security Corp"
+│       │   ├── department: "Field Operations"
+│       │   ├── emergency_note: "Blood Group O+, Allergies: None"
+│       │   └── updated_at: "2026082821510000"
+│       │
+│       ├── 📄 telemetry/                     [High-Frequency Hardware Health Diagnostics]
+│       │   ├── battery_pct: 87
+│       │   ├── is_charging: false
+│       │   ├── is_mock_gps: false
+│       │   ├── is_airplane_mode: false
+│       │   ├── network_type: "WIFI"
+│       │   ├── speed_mps: 1.4
+│       │   └── last_seen: 1724860260000
+│       │
+│       ├── 📄 device/live/                   [O(1) Shallow Live GPS Coordinates]
+│       │   ├── latitude: 37.774929
+│       │   ├── longitude: -122.419416
+│       │   ├── accuracy: 4.5
+│       │   ├── altitude: 15.2
+│       │   ├── bearing: 182.5
+│       │   ├── speed: 1.4
+│       │   ├── geo_address: "Market St & 4th, San Francisco, CA"
+│       │   └── timestamp: 1724860260000
+│       │
+│       ├── 📁 relationships/                 [Device-Centric Peer Mesh Graph]
+│       │   └── 📁 {targetAgentId}/           [e.g., 3C86F2A0]
+│       │       ├── role: "GUARDIAN"
+│       │       ├── group: "GRP_ALPHA_01"
+│       │       └── linked_at: "2026082821510000"
+│       │
+│       └── 📁 safe_zones/
+│       │    └── 📁 {zoneId}/                  [e.g., ZONE_HOME_01]
+│       │        ├── zone_id: "ZONE_HOME_01"
+│       │        ├── zone_name: "Home Perimeter"
+│       │        ├── lat: 37.7749
+│       │        ├── lng: -122.4194
+│       │        ├── radius: 150.0
+│       │        ├── is_active: true
+│       │        ├── alerts_enabled: true
+│       │        ├── startTime: 800
+│       │        ├── endTime: 2000
+│       │        ├── activeDays: "1,2,3,4,5"
+│       │        ├── 📁 connected_devices/
+│       │            └── 📁 {targetDeviceId}/  [e.g., 3C86F2A0]
+│       │             │       ├── device_id: "3C86F2A0"
+│       │             │       ├── device_name: "Jane Citizen"
+│       │             │       ├── role: "SPOUSE"
+│       │             │       └── avatar_id: "avatar_custom_2"
+│       │             └── 📁 notifications/
+│       │                 └── 📁 {YYYYMMDD}/
+│       │                     └── 📁 {notifId}/ (only latest entry)
+│       │                          ├── event_type: "ENTRY" / "EXIT"
+│       │                          ├── timestamp: 1724860260000
+│       │                          └── device_name: "Jane Citizen"     
+│       ├── 📁 history/                       [Latest-1 Instant Point Buffer]
+│       │   └── 📄 latest: { lat: 37.7749, lng: -122.4194, speed: 1.4, ts: 1724860260000 }
+│       │
+│       └── 📁 Change_Log/                    ⭐ [MASTER FORENSIC AUDIT LEDGER]
+│           │
+│           ├── 📁 Profile/                   [Item 1: Profile & Avatar Mutations]
+│           │   └── 📁 {logId}/               [e.g., 1724861580000_A1B2C3]
+│           │       ├── log_id: "1724861580000_A1B2C3"
+│           │       ├── category: "Profile"
+│           │       ├── action: "AVATAR_UPDATE" / "DOSSIER_SAVE"
+│           │       ├── entity_id: "2B75E1E9"
+│           │       ├── changed_by: "2B75E1E9"
+│           │       ├── timestamp: "2026082822153000"
+│           │       ├── epoch_ms: 1724861580000
+│           │       └── metadata: { avatar_id: "avatar_custom_3", name: "John Citizen" }
+│           │
+│           ├── 📁 Pairing_Devices/           [Item 2: Hardware Registration & Handshakes]
+│           │   └── 📁 {logId}/               [e.g., 1724861581000_D4E5F6]
+│           │       ├── log_id: "1724861581000_D4E5F6"
+│           │       ├── category: "Pairing_Devices"
+│           │       ├── action: "DEVICE_REGISTER" / "DEVICE_PAIR_LINK"
+│           │       ├── entity_id: "HW_2B75E1E9"
+│           │       ├── changed_by: "2B75E1E9"
+│           │       ├── timestamp: "2026082822153100"
+│           │       ├── epoch_ms: 1724861581000
+│           │       └── metadata: { deviceId: "HW_2B75E1E9", target_agent: "3C86F2A0" }
+│           │
+│           ├── 📁 Family_and_Friends/        [Item 3: Role & Relationship Changes]
+│           │   └── 📁 {logId}/               [e.g., 1724861582000_G7H8I9]
+│           │       ├── log_id: "1724861582000_G7H8I9"
+│           │       ├── category: "Family_and_Friends"
+│           │       ├── action: "MEMBER_LINK" / "ROLE_UPDATE"
+│           │       ├── entity_id: "3C86F2A0"
+│           │       ├── changed_by: "2B75E1E9"
+│           │       ├── timestamp: "2026082822153200"
+│           │       ├── epoch_ms: 1724861582000
+│           │       └── metadata: { role_family: "Spouse", isFriend: false }
+│           │
+│           └── 📁 Safehouse/                 [Item 4: Geofence Zones & Assignments]
+│               └── 📁 {logId}/               [e.g., 1724861583000_J1K2L3]
+│                   ├── log_id: "1724861583000_J1K2L3"
+│                   ├── category: "Safehouse"
+│                   ├── action: "ZONE_UPDATE" / "ZONE_MUTATION"
+│                   ├── entity_id: "ZONE_HOME_01"
+│                   ├── changed_by: "2B75E1E9"
+│                   ├── timestamp: "2026082822153300"
+│                   ├── epoch_ms: 1724861583000
+│                   └── metadata: { zone_name: "Home", radius: 150.0, lat: 37.77, lng: -122.41 }
+│
+├── 📁 History/                               [Partitioned Historical Breadcrumb Streams]
+│   └── 📁 {agentId}/
+│       └── 📁 history/
+│           └── 📁 {timestampKey}/            [e.g., 2026082812000000]
+│               ├── lat: 37.774929
+│               ├── lng: -122.419416
+│               ├── speed: 1.4
+│               ├── battery: 85
+│               ├── sos_flag: 0
+│               └── geo_address: "Market St, San Francisco"
+│
+├── 📁 Geofencing/                            [Multi-Tenant Geofence Registry & Event Logs]
+│   └── 📁 {creatorId}/
+│       └── 📁 safe_zones/
+│           └── 📁 {zoneId}/                  [e.g., ZONE_HOME_01]
+│               ├── zone_id: "ZONE_HOME_01"
+│               ├── zone_name: "Home Perimeter"
+│               ├── lat: 37.7749
+│               ├── lng: -122.4194
+│               ├── radius: 150.0
+│               ├── is_active: true
+│               ├── alerts_enabled: true
+│               ├── startTime: 800
+│               ├── endTime: 2000
+│               ├── activeDays: "1,2,3,4,5"
+│               ├── 📁 connected_devices/
+│                   └── 📁 {targetDeviceId}/  [e.g., 3C86F2A0]
+│                    │       ├── device_id: "3C86F2A0"
+│                    │       ├── device_name: "Jane Citizen"
+│                    │       ├── role: "SPOUSE"
+│                    │       └── avatar_id: "avatar_custom_2"
+│                    └── 📁 notifications/
+│                        └── 📁 {YYYYMMDD}/
+│                            └── 📁 {notifId}/
+│                                 ├── event_type: "ENTRY" / "EXIT"
+│                                 ├── timestamp: 1724860260000
+│                                 └── device_name: "Jane Citizen"
+│
+├── 📁 lookup_indices/                        [O(1) Shallow Inverted Indices]
+│   ├── 📁 auth_to_device/
+│   │   └── {authUid}: "2B75E1E9"             [Maps Auth UID -> 8-Char Agent ID]
+│        ├── Device Live : "True" / "False"
+│        ├── timestamp: 1724860260000
+│   └── 📁 device_to_hw/
+│       └── {agentId}: "HW_2B75E1E9"          [Maps Agent ID -> Hardware ID]
+│
+└── 📁 pairing_requests/                      [Ephemeral Handshake Buffer]
+    └── 📁 {requestId}/
+        ├── initiatorId: "2B75E1E9"
+        ├── status: "PENDING" / "CONFIRMED"
+        ├── expiresAt: 1724860560000
+        └── qr_ref: "QR_7A8B9C"
