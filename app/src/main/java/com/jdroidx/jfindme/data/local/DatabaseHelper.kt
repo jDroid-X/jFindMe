@@ -599,6 +599,61 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
+    fun isDevicePendingUnlink(uid1: String): Boolean {
+        return try {
+            val db = readableDatabase
+            val cursor = db.query(
+                UserIdentityTable.TABLE_NAME,
+                arrayOf(UserIdentityTable.COL_STATUS),
+                "(${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?) AND ${UserIdentityTable.COL_STATUS} = 'PENDING_UNLINK'",
+                arrayOf(uid1, uid1), null, null, null
+            )
+            cursor.use {
+                it.moveToFirst()
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun parkRosterNode(uid1: String): Boolean {
+        return try {
+            val db = writableDatabase
+            val cv = ContentValues().apply {
+                put(UserIdentityTable.COL_STATUS, "PENDING_UNLINK")
+                put(UserIdentityTable.COL_UPDATED_AT, com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(System.currentTimeMillis()))
+            }
+            val rows = db.update(
+                UserIdentityTable.TABLE_NAME,
+                cv,
+                "${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?",
+                arrayOf(uid1, uid1)
+            )
+            rows > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun restoreRosterNode(uid1: String): Boolean {
+        return try {
+            val db = writableDatabase
+            val cv = ContentValues().apply {
+                put(UserIdentityTable.COL_STATUS, "Active")
+                put(UserIdentityTable.COL_UPDATED_AT, com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(System.currentTimeMillis()))
+            }
+            val rows = db.update(
+                UserIdentityTable.TABLE_NAME,
+                cv,
+                "${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?",
+                arrayOf(uid1, uid1)
+            )
+            rows > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun deleteRosterNode(uid1: String): Boolean {
         markRosterNodeDeleted(uid1)
         return try {
@@ -1379,7 +1434,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     MAX(e.${LocationEventTable.COL_TIMESTAMP}) as ts_day_end,
                     MIN(e.${LocationEventTable.COL_TIMESTAMP}) as ts_day_start,
                     e.${LocationEventTable.COL_DAY_KEY} as day_key,
-                    e.${LocationEventTable.COL_ADDRESS} as address,
+                    MAX(COALESCE(NULLIF(e.${LocationEventTable.COL_ADDRESS}, ''), 'Recorded Location Fix')) as address,
                     AVG(e.${LocationEventTable.COL_SPEED}) as speed,
                     MAX(e.${LocationEventTable.COL_BATTERY}) as battery,
                     MAX(e.${LocationEventTable.COL_EVENT_ID}) as log_id
@@ -1403,8 +1458,9 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val tsStartStr = it.getString(it.getColumnIndexOrThrow("ts_day_start"))
                     val tsEndStr = it.getString(it.getColumnIndexOrThrow("ts_day_end")) ?: tsStartStr
                     
-                    val tsStart = parseForensicStringToMillis(tsStartStr)
-                    val tsEnd = parseForensicStringToMillis(tsEndStr)
+                    var tsStart = parseForensicStringToMillis(tsStartStr)
+                    var tsEnd = parseForensicStringToMillis(tsEndStr)
+                    if (tsEnd < tsStart) tsEnd = tsStart
                     
                     map["ts_start"] = tsStart
                     map["ts_end"] = tsEnd
@@ -1427,8 +1483,67 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     list.add(map)
                 }
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) { 
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "getHistoryLogsFiltered failed for $uid1", e)
+        }
         return list
+    }
+
+    /**
+     * 🛡️ Multi-Device Zombie Node Pruner: De-duplicates stale instances of the same phone/model
+     * on fresh app reinstalls (Solves Redmi Reinstall Zombie Leak #12).
+     */
+    fun pruneZombieNodes(currentCanonicalId: String, phoneOrModel: String?): Int {
+        if (currentCanonicalId.isBlank()) return 0
+        var pruned = 0
+        try {
+            val db = writableDatabase
+            val cursor = db.rawQuery(
+                """
+                SELECT id, uid_1 FROM ${UserIdentityTable.TABLE_NAME}
+                WHERE (phone_model = ? OR phone_number = ?) AND uid_1 != ? AND status != 'DELETED'
+                """.trimIndent(),
+                arrayOf(phoneOrModel ?: "", phoneOrModel ?: "", currentCanonicalId)
+            )
+            cursor.use {
+                while (it.moveToNext()) {
+                    val orphanUid = it.getString(1)
+                    if (!orphanUid.isNullOrBlank()) {
+                        markRosterNodeDeleted(orphanUid)
+                        pruned++
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "pruneZombieNodes error", e)
+        }
+        return pruned
+    }
+
+    /**
+     * 🛡️ Inactivity TTL Decay: Automatically transitions devices with zero heartbeat
+     * for > 7 days into ARCHIVED_GHOST state so active family rosters stay clean (Amber #10).
+     */
+    fun applyTtlDecay(maxInactiveDays: Int = 7): Int {
+        var decayed = 0
+        try {
+            val db = writableDatabase
+            val cutoffMillis = System.currentTimeMillis() - (maxInactiveDays * 86400000L)
+            val cutoffStr = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(cutoffMillis)
+            
+            val cv = ContentValues().apply {
+                put(UserIdentityTable.COL_STATUS, "ARCHIVED_GHOST")
+            }
+            decayed = db.update(
+                UserIdentityTable.TABLE_NAME,
+                cv,
+                "${UserIdentityTable.COL_UPDATED_AT} < ? AND ${UserIdentityTable.COL_STATUS} = 'LIVE'",
+                arrayOf(cutoffStr)
+            )
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "applyTtlDecay error", e)
+        }
+        return decayed
     }
 
     fun updateHistoryAddress(logId: String, address: String) {
@@ -1783,7 +1898,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * 👑 SSOT: Universal Device Centric Avatar Resolver
      */
     fun getDeviceCentricAvatar(deviceId: String): String {
-        if (deviceId.isBlank()) return "avatar_custom_1"
+        if (deviceId.isBlank()) return "butterfly"
         try {
             val dossier = getLocalDossier(deviceId)
             val av = dossier["avatar_id"]?.takeIf { it.isNotBlank() }
@@ -1797,34 +1912,45 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() }
             if (rAv != null) return rAv.trim()
         } catch (e: Exception) { }
-        return "avatar_custom_1"
+        return "butterfly"
     }
 
     /**
-     * 👑 SSOT: Atomic Closed-Loop Device Identity & Avatar Updater
+     * 👑 SSOT: Atomic Closed-Loop Device Identity & Avatar Updater (3-Tier Master -> Sub-Master Cascade)
      */
     fun updateDeviceIdentityAndAvatar(deviceId: String, name: String?, avatarId: String?) {
+        updateUnifiedEntity(deviceId, name, avatarId, null, null)
+    }
+
+    /**
+     * 👑 3-TIER MASTER -> SUB-MASTER -> TRANSACTIONAL CLOSED-LOOP SYNCHRONIZER
+     * Atomically mutates Master (user_identity), Sub-Masters (user_profile, group_members, pairings),
+     * and triggers Cloud Cascade (Firebase RTDB profile, live device, and group hubs) in a single operation.
+     */
+    fun updateUnifiedEntity(deviceId: String, name: String?, avatarId: String?, role: String?, activeGroup: String?) {
         if (deviceId.isBlank()) return
         val db = writableDatabase
         db.beginTransaction()
         try {
             val iId = resolveInternalId(deviceId)
             val resolvedName = name?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", true) && !it.startsWith("Agent_", true) }
-            val resolvedAvatar = avatarId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedAvatar = (avatarId?.trim()?.takeIf { it.isNotEmpty() }) ?: "butterfly"
+            val resolvedRole = role?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedGroup = activeGroup?.trim()?.takeIf { it.isNotEmpty() }
 
             if (iId != -1L) {
+                // 1. MASTER TIER: user_identity
                 val identityValues = ContentValues()
                 if (resolvedName != null) {
                     identityValues.put(UserIdentityTable.COL_FULL_NAME, resolvedName)
                     identityValues.put(UserIdentityTable.COL_OWNER_NAME, resolvedName)
                 }
-                if (resolvedAvatar != null) {
-                    identityValues.put(UserIdentityTable.COL_QR_REF, resolvedAvatar)
-                }
+                identityValues.put(UserIdentityTable.COL_QR_REF, resolvedAvatar)
                 if (identityValues.size() > 0) {
                     db.update(UserIdentityTable.TABLE_NAME, identityValues, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
                 }
 
+                // 2. SUB-MASTER TIER: user_profile
                 val profileData = mutableMapOf<String, String>()
                 if (resolvedName != null) {
                     profileData["name"] = resolvedName
@@ -1832,21 +1958,40 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     profileData["userName"] = resolvedName
                     profileData["owner_name"] = resolvedName
                 }
-                if (resolvedAvatar != null) {
-                    profileData["avatar_id"] = resolvedAvatar
-                    profileData["equipped_avatar_id"] = resolvedAvatar
+                profileData["avatar_id"] = resolvedAvatar
+                profileData["equipped_avatar_id"] = resolvedAvatar
+                if (resolvedRole != null) {
+                    profileData["role_title"] = resolvedRole
+                    profileData["role_family"] = resolvedRole
                 }
-                if (profileData.isNotEmpty()) {
-                    UserProfileTable.upsert(db, iId, profileData)
+                if (resolvedGroup != null) {
+                    profileData["active_group"] = resolvedGroup
                 }
-            } else if (resolvedName != null || resolvedAvatar != null) {
-                saveRosterNode(deviceId, resolvedName ?: "Target", "Active Tracker", "LIVE", false, true, avatarId = resolvedAvatar)
+                UserProfileTable.upsert(db, iId, profileData)
+
+                // 3. SUB-MASTER TIER: group_members
+                if (resolvedGroup != null || resolvedRole != null) {
+                    val grpId = resolvedGroup ?: profileData["active_group"] ?: "Primary_Circle"
+                    val grpRole = resolvedRole ?: "MEMBER"
+                    com.jdroidx.jfindme.data.local.tables.GroupMemberTable.addMember(db, grpId, iId, grpRole)
+                }
+            } else if (resolvedName != null || avatarId != null) {
+                saveRosterNode(deviceId, resolvedName ?: "Target", resolvedRole ?: "Active Tracker", "LIVE", false, true, avatarId = resolvedAvatar)
             }
             db.setTransactionSuccessful()
         } catch (e: Exception) {
-            SystemLogger.e("DatabaseHelper", "updateDeviceIdentityAndAvatar failed for $deviceId", e)
+            SystemLogger.e("DatabaseHelper", "updateUnifiedEntity failed for $deviceId", e)
         } finally {
             db.endTransaction()
+        }
+
+        // 4. CLOUD MATRIX CASCADE: Propagate across Firebase RTDB
+        try {
+            val finalName = name ?: getDeviceCentricName(deviceId)
+            val finalAvatar = avatarId ?: getDeviceCentricAvatar(deviceId)
+            com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.propagateAvatarUpdate(deviceId, finalAvatar, finalName)
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Cloud cascade propagation skipped: ${e.message}")
         }
     }
 
@@ -2308,5 +2453,50 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             SystemLogger.e("DatabaseHelper", "Error loading active safe zones: ${e.message}")
         }
         return list
+    }
+
+    /**
+     * Retrieves a specific SafeZoneModel by its zoneId.
+     */
+    fun getSafeZoneById(zoneId: String): com.jdroidx.jfindme.data.model.SafeZoneModel? {
+        if (zoneId.isBlank()) return null
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                SafeZoneTable.TABLE_NAME,
+                null,
+                "${SafeZoneTable.COL_ZONE_ID} = ?",
+                arrayOf(zoneId),
+                null,
+                null,
+                null
+            )
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val zId = it.getString(it.getColumnIndexOrThrow(SafeZoneTable.COL_ZONE_ID)) ?: zoneId
+                    val zName = it.getString(it.getColumnIndexOrThrow(SafeZoneTable.COL_NAME)) ?: "Safe Zone"
+                    val lat = it.getDouble(it.getColumnIndexOrThrow(SafeZoneTable.COL_LAT))
+                    val lng = it.getDouble(it.getColumnIndexOrThrow(SafeZoneTable.COL_LNG))
+                    val rad = it.getDouble(it.getColumnIndexOrThrow(SafeZoneTable.COL_RADIUS)).toFloat()
+                    val target = it.getString(it.getColumnIndexOrThrow(SafeZoneTable.COL_TARGET_UID)) ?: "ALL"
+                    val alerts = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ALERTS_ENABLED)) == 1
+                    val active = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ACTIVE)) == 1
+
+                    return com.jdroidx.jfindme.data.model.SafeZoneModel(
+                        zoneId = zId,
+                        name = zName,
+                        lat = lat,
+                        lng = lng,
+                        radius = if (rad > 0f) rad else 100f,
+                        assignedName = target,
+                        alertsEnabled = alerts,
+                        isZoneActive = active
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "getSafeZoneById error: ${e.message}")
+        }
+        return null
     }
 }

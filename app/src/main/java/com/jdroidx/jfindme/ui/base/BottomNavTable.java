@@ -236,12 +236,17 @@ public class BottomNavTable {
         
         switch (action) {
             case "OPEN_NOTIF":
-            case "OPEN_ALERT":
             case "OPEN_EMAIL": // Legacy support
                 if (!activity.getClass().getSimpleName().contains("NotifActivity")) {
                     activity.startActivity(new android.content.Intent(activity, com.jdroidx.jfindme.ui.management.NotifActivity.class)
                         .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
                 }
+                break;
+            case "OPEN_ALERT":
+                // 🚨 HIGH-PRIORITY PANIC / ACOUSTIC SIREN TRIGGER
+                activity.startActivity(new android.content.Intent(activity, com.jdroidx.jfindme.ui.alert.AcousticSirenActivity.class)
+                    .putExtra("MODE", "SOS")
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
                 break;
             case "OPEN_MAP":
                 if (activity.getClass().getSimpleName().contains("MapActivity")) {

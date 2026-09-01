@@ -15,8 +15,8 @@ data class UserLocation(
     val longitude: Double = 0.0,
     val geohash: String = "",
 
-    @get:com.google.firebase.database.PropertyName("timestamp_raw")
-    @set:com.google.firebase.database.PropertyName("timestamp_raw")
+    @get:com.google.firebase.database.PropertyName("timestamp")
+    @set:com.google.firebase.database.PropertyName("timestamp")
     var timestamp: Any? = "",
 
     val bearing: Float = 0f,
@@ -39,15 +39,23 @@ data class UserLocation(
 
     // 🎭 UI IDENTITY FIELDS (Synchronized natively across Firebase cloud matrix)
     var userName: String = "",
-    var avatar_id: String = "avatar_custom_1",
+    var avatar_id: String = "butterfly",
  
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var role_family: String = "None",
  
-
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var role_friend: String = "None"
 ) {
+    @get:com.google.firebase.database.PropertyName("timestamp_raw")
+    @set:com.google.firebase.database.PropertyName("timestamp_raw")
+    var timestamp_raw: Any?
+        get() = timestamp
+        set(value) {
+            if (value != null && value != "") {
+                timestamp = value
+            }
+        }
     // 🛡️ RECOVERY HELPERS: Ensures legacy numerical data doesn't break the UI thread
     @com.google.firebase.database.Exclude
     fun getResolvedUserId(): String = userId?.toString() ?: ""

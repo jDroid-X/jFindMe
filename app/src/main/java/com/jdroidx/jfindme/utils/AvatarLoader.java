@@ -93,7 +93,16 @@ public class AvatarLoader {
         }
 
         int dynIdx = getResolvedAvatarIndex(currentId);
-        int dynRes = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+        int dynRes = 0;
+        if (dynIdx > 0) {
+            dynRes = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+        }
+        if (dynRes == 0) {
+            dynRes = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
+        }
+        if (dynRes == 0) {
+            dynRes = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
+        }
         targetView.setImageResource(dynRes != 0 ? dynRes : android.R.drawable.ic_menu_myplaces);
     }
 
@@ -133,7 +142,11 @@ public class AvatarLoader {
         }
 
         int dynIdx = getResolvedAvatarIndex(currentId);
-        int resId = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+        int resId = 0;
+        if (dynIdx > 0) {
+            resId = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+        }
+        if (resId == 0) resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
         if (resId == 0) resId = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
 
         BitmapFactory.Options resOpts = new BitmapFactory.Options();
@@ -176,7 +189,9 @@ public class AvatarLoader {
             }
 
             boolean isVrm = avatarIdStr.contains(".vrm");
-            if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo")) {
+            if (avatarIdStr.equals("butterfly") || avatarIdStr.equalsIgnoreCase("butterfly_angel") || avatarIdStr.equalsIgnoreCase("AngleButterfly")) {
+                resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
+            } else if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo")) {
                 int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             } else if (avatarIdStr.matches("^\\d+$")) {
@@ -190,6 +205,7 @@ public class AvatarLoader {
             }
         }
 
+        if (resId == 0) resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
         if (resId == 0) resId = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
 
         BitmapFactory.Options resOpts = new BitmapFactory.Options();
@@ -207,15 +223,32 @@ public class AvatarLoader {
     }
 
     /**
-     * 🚀 Centralized Smart-Fit Avatar Binder with Proportional Scaling
+     * 🚀 Centralized Smart-Fit Avatar Binder with Proportional Scaling & Optional Grey Mode
      */
     public static void bindAvatar(Context context, ImageView targetView, String avatarIdStr) {
+        bindAvatar(context, targetView, avatarIdStr, false);
+    }
+
+    public static void bindAvatar(Context context, ImageView targetView, String avatarIdStr, boolean isGreyMode) {
         if (targetView == null || context == null) return;
         targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         targetView.setAdjustViewBounds(true);
 
+        if (isGreyMode) {
+            android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix();
+            cm.setSaturation(0f); // Complete desaturation -> Grey Mode
+            targetView.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
+            targetView.setAlpha(0.60f); // 60% opacity for grey ghost appearance
+        } else {
+            targetView.clearColorFilter();
+            targetView.setAlpha(1.0f);
+        }
+
+        int defaultRes = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
+        if (defaultRes == 0) defaultRes = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
+
         if (avatarIdStr == null || avatarIdStr.isEmpty()) {
-            targetView.setImageResource(android.R.drawable.ic_menu_myplaces);
+            targetView.setImageResource(defaultRes != 0 ? defaultRes : android.R.drawable.ic_menu_myplaces);
             return;
         }
 
@@ -233,7 +266,9 @@ public class AvatarLoader {
         }
 
         int resId = 0;
-        if (avatarIdStr.matches("^\\d+$")) {
+        if (avatarIdStr.equals("butterfly") || avatarIdStr.equalsIgnoreCase("butterfly_angel") || avatarIdStr.equalsIgnoreCase("AngleButterfly")) {
+            resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
+        } else if (avatarIdStr.matches("^\\d+$")) {
             int idVal = Integer.parseInt(avatarIdStr);
             int dynamicIdx = getResolvedAvatarIndex(idVal);
             if (dynamicIdx > 0) {
@@ -247,8 +282,7 @@ public class AvatarLoader {
         }
 
         if (resId == 0) {
-            int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
-            resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
+            resId = defaultRes;
         }
         targetView.setImageResource(resId != 0 ? resId : android.R.drawable.ic_menu_myplaces);
     }

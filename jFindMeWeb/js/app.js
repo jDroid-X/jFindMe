@@ -5,6 +5,12 @@ import { DataGrid } from './components/DataGrid.js';
 import { SchemaView } from './components/SchemaView.js';
 import { SchemaView1 } from './components/SchemaView1.js';
 import { JsonEditor } from './components/JsonEditor.js';
+import { MapController } from './controllers/MapController.js';
+import { DashboardView } from './views/DashboardView.js';
+import { SettingsModel } from './models/SettingsModel.js';
+import { DeviceModel } from './models/DeviceModel.js';
+import { DeviceCardView } from './views/DeviceCardView.js';
+import { MapSettingsView } from './views/MapSettingsView.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -22,6 +28,41 @@ class App {
         this.schema = new SchemaView('workspace-root');
         this.schema1 = new SchemaView1('workspace-root');
         this.editor = new JsonEditor();
+        this.settingsModel = new SettingsModel();
+        this.settingsView = new MapSettingsView({
+            onSave: (updated) => {
+                this.settingsModel = updated;
+                if (window.log) window.log(`SETTINGS_UPDATE: Search Radius set to ${updated.searchRadiusKm}km`, "success");
+                if (document.getElementById('nav-dashboard')?.classList.contains('active')) {
+                    window.showDashboard();
+                }
+            }
+        });
+        this.dashboardView = new DashboardView('workspace-root', {
+            onShowDossier: (agentId) => {
+                const dev = this.cachedDevices?.find(d => d.agentId === agentId);
+                if (dev) {
+                    DeviceCardView.showDossierModal(dev, {
+                        onPoke: (id) => this.mapController?.pokeDevice(id),
+                        onEdit: (id) => this.mapController?.openEditProfileModal(id),
+                        onHistory: (id) => {
+                            window.showLiveMap();
+                            setTimeout(() => this.mapController?.showDeviceHistoryTrail(id), 400);
+                        }
+                    });
+                }
+            },
+            onOpenSettings: () => {
+                this.settingsView.show(this.settingsModel);
+            },
+            onNavigateMap: (agentId) => {
+                window.showLiveMap();
+                setTimeout(() => {
+                    const dev = this.mapController?.deviceController.getDeviceById(agentId);
+                    if (dev) this.mapController?.handleDeviceSelected(dev);
+                }, 400);
+            }
+        });
         
         // Global Logging Engine (Descending Order: Latest First)
         window.log = (msg, type = 'system') => {
@@ -124,14 +165,8 @@ class App {
             
             this.renderSidebar(collections);
 
-            // Default route
-            const lastActive = localStorage.getItem('jFindMe_LastNode');
-            const foundNode = collections.find(c => c.name === lastActive);
-            if (foundNode) {
-                window.loadCollection(foundNode.name, null, foundNode.type);
-            } else if (collections.length > 0) {
-                window.loadCollection(collections[0].name, null, collections[0].type);
-            }
+            // Default Route: Launch Flagship Live Map Radar
+            window.showLiveMap();
             
             this.startHeartbeat();
 
@@ -425,6 +460,110 @@ class App {
 
     bindGlobalHandlers() {
         window.appInstance = this;
+
+        window.showLiveMap = () => {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-live-map')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Live Map Radar (10 km Proximity Matrix)";
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            const workspace = document.getElementById('workspace-root');
+            if (!workspace) return;
+
+            workspace.innerHTML = `
+                <div id="map-workspace" class="flex h-full w-full overflow-hidden relative font-sans">
+                    <!-- Center Map Canvas (Full Viewport) -->
+                    <div id="map-canvas" class="w-full h-full absolute inset-0 z-0"></div>
+
+                    <!-- TOP EMERGENCY ALERT BANNER CONTAINER -->
+                    <div id="map-alert-banner-container" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-[920] w-[90%] max-w-xl hidden"></div>
+
+                    <!-- Floating Google Find Hub Left Sidebar Card Container -->
+                    <div id="device-sidebar" class="absolute top-4 left-4 z-20 pointer-events-none flex items-start gap-3"></div>
+
+                    <!-- Floating Top-Right Clean Google Action Toolbar -->
+                    <div class="absolute top-4 right-4 z-20 flex items-center gap-2 select-none">
+                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.openCreateSafeZone()">
+                            <span>🛡️</span>
+                            <span>+ Safe Zone</span>
+                        </button>
+                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.openSettings()">
+                            <span>⚙️</span>
+                            <span>Settings</span>
+                        </button>
+                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.fitAll()">
+                            <span>🎯</span>
+                            <span>Center Fleet</span>
+                        </button>
+                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.refreshNow()">
+                            <span>🔄</span>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+
+                    <!-- Bottom-Left Realtime Coordinate Tracker -->
+                    <div class="absolute bottom-4 left-4 z-20 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md text-[10px] font-mono text-slate-600 flex items-center gap-2 select-none">
+                        <span class="text-sky-600 font-bold">CURSOR:</span>
+                        <span id="map-cursor-coords" class="text-slate-800 font-bold">--°, --°</span>
+                    </div>
+                </div>
+            `;
+
+            if (this.mapController) {
+                this.mapController.destroy();
+            }
+            this.mapController = new MapController('map-canvas', 'device-sidebar');
+            this.mapController.init();
+
+            window.MatrixApp = {
+                focusDevice: (agentId) => {
+                    const dev = this.mapController.deviceController.getDeviceById(agentId);
+                    if (dev) this.mapController.handleDeviceSelected(dev);
+                },
+                showDossier: (agentId) => {
+                    this.mapController.showDeviceDossier(agentId);
+                },
+                openEditProfile: (agentId) => {
+                    this.mapController.openEditProfileModal(agentId);
+                },
+                openCreateSafeZone: () => {
+                    this.mapController.openCreateSafeZoneModal();
+                },
+                toggleTraffic: () => {
+                    this.mapController.toggleTraffic();
+                },
+                pokeDevice: (agentId) => {
+                    this.mapController.pokeDevice(agentId);
+                },
+                showHistory: (agentId) => {
+                    this.mapController.showDeviceHistoryTrail(agentId);
+                },
+                openSettings: () => {
+                    this.mapController.settingsController.openSettingsModal();
+                },
+                focusStation: () => {
+                    this.mapController.focusStation();
+                },
+                fitAll: () => {
+                    this.mapController.fitAll();
+                },
+                toggleFullscreen: () => {
+                    this.mapController.toggleFullscreen();
+                },
+                refreshNow: async () => {
+                    window.log("RADAR_SYNC: Requesting instantaneous device refresh...", "system");
+                    await Promise.all([
+                        this.mapController.deviceController.fetchLiveDevices(),
+                        this.mapController.safeZoneController.fetchSafeZones()
+                    ]);
+                    window.log("RADAR_SYNC: Devices & Geofences synchronized.", "success");
+                }
+            };
+        };
         
         window.loadCollection = (name, el, type = 'rtdb') => {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
@@ -437,12 +576,27 @@ class App {
             this.loadNode(name, 5, type);
         };
         
-        window.showDashboard = () => {
+        window.showDashboard = async () => {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('nav-dash').classList.add('active');
-            document.querySelector('header h1').textContent = "Enterprise Matrix Analytics";
-            document.getElementById('terminal').style.display = 'none';
-            this.renderAnalytics();
+            document.getElementById('nav-dashboard')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Fleet Proximity & Location Dashboard";
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            // Fetch latest live devices and active settings
+            try {
+                this.settingsModel.load();
+                const res = await fetch('/api/devices-live');
+                const rawDevices = await res.json();
+                this.cachedDevices = rawDevices.map(d => new DeviceModel(d));
+                this.dashboardView.render(this.cachedDevices, this.settingsModel);
+            } catch (err) {
+                console.error("[DASHBOARD] Failed to load devices:", err);
+                this.dashboardView.render([], this.settingsModel);
+            }
         };
 
         window.showUsers = () => {

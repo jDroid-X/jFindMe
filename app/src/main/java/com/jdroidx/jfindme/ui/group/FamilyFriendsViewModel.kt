@@ -179,6 +179,19 @@ class FamilyFriendsViewModel : ViewModel() {
                 }
             }
 
+            val ctxPrefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+            val selfAuthUid = FirebaseAuth.getInstance().uid ?: ""
+            val selfAgentId = ctxPrefs.getString("agent_id", "") ?: ""
+            val selfDevUid = ctxPrefs.getString("device_uid", "") ?: ""
+            val resolvedLocalAgentId = if (selfAuthUid.isNotEmpty()) localDb.resolveAgentIdLocally(selfAuthUid) else null
+
+            // 🛡️ SELF-NODE EXCLUSION: The host device is displayed exclusively in the top Root Anchor
+            if (canonicalAgentId == selfAgentId || canonicalAgentId == selfDevUid || canonicalAgentId == selfAuthUid ||
+                (resolvedLocalAgentId != null && canonicalAgentId == resolvedLocalAgentId) ||
+                rawKey == selfAgentId || rawKey == selfDevUid || rawKey == selfAuthUid) {
+                continue
+            }
+
             if (seenAgentIds.contains(canonicalAgentId)) continue
             seenAgentIds.add(canonicalAgentId)
 
@@ -212,7 +225,7 @@ class FamilyFriendsViewModel : ViewModel() {
                 ?: nodeSnap.child("avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("avatar_id").getValue(String::class.java)
                 ?: ssotAvatar.takeIf { it.isNotEmpty() }
-                ?: "avatar_custom_1"
+                ?: "butterfly"
 
             if (!cloudName.isNullOrBlank() || !avatarId.isNullOrBlank()) {
                 localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName ?: name, avatarId)

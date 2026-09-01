@@ -239,8 +239,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             }
         });
 
-        // Trigger initial background roster fetch (Zero-Latency Local Boot)
+        // Trigger initial background roster fetch (Zero-Latency Local Boot) & Prune Zombie Duplicates
+        db.pruneZombieNodes(forensicAgentId, null);
         viewModel.refreshLocalRoster(db);
+        com.jdroidx.jfindme.utils.MiuiOptimizationHelper.checkAndPromptMiuiOptimization(this);
 
         // Async Cloud Group Sync & Real-time Signal Listener
         String activeGrp = jPrefs.getString("active_group", null);
@@ -1433,7 +1435,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             avatarRef = db.getDeviceCentricAvatar(finalUid);
         }
         if (avatarRef == null || avatarRef.isEmpty()) {
-            avatarRef = "avatar_custom_1";
+            avatarRef = "butterfly";
         }
         com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, avatarRef);
 
@@ -1458,6 +1460,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         else if (rUpper.contains("SPOUSE") || rUpper.contains("WIFE") || rUpper.contains("HUSBAND") || rUpper.contains("PARTNER")) roleIcon = "💍";
         else if (rUpper.contains("CHILD") || rUpper.contains("SON") || rUpper.contains("DAUGHTER") || rUpper.contains("KID")) roleIcon = "🧸";
         else if (rUpper.contains("FRIEND") || rUpper.contains("PEER") || rUpper.contains("COLLEAGUE")) roleIcon = "🤝";
+        final String finalRoleIcon = roleIcon;
 
         String ssotName = db.getDeviceCentricName(finalUid);
         String displayNodeName = (ssotName != null && !ssotName.startsWith("Agent_") && !ssotName.equalsIgnoreCase("null")) ? ssotName : finalName;
@@ -1527,9 +1530,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     if (avId == null) avId = prof.child("equipped_avatar_id").getValue(String.class);
                     if (avId == null) avId = live.child("avatar_id").getValue(String.class);
                     if (avId == null) avId = locSnap.child("avatar_id").getValue(String.class);
-                    if (avId != null && !avId.isEmpty()) {
-                        AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, avId);
-                    }
+                    if (avId == null || avId.isEmpty()) avId = "butterfly";
+                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, avId);
 
                     String cloudName = prof.child("fullName").getValue(String.class);
                     if (cloudName == null) cloudName = prof.child("full_name").getValue(String.class);
@@ -1539,7 +1541,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         tvName.setText("👤 " + cloudName.toUpperCase());
                     }
 
-                    Long ts = null;
+                    long ts = 0L;
                     Object tsObj = live.child("updated_at").getValue();
                     if (tsObj == null) tsObj = locSnap.child("timestamp").getValue();
                     if (tsObj instanceof Number) {
@@ -1555,21 +1557,27 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                                 ts = Long.parseLong(s);
                             }
                         } catch (Exception ignored) {
-                            ts = System.currentTimeMillis();
+                            ts = 0L;
                         }
                     }
 
-                    if (ts != null) {
-                        boolean isOnline = (System.currentTimeMillis() - ts) < 180000;
-                        SimpleDateFormat sdf = new SimpleDateFormat("hh:mm a", Locale.getDefault());
-                        if (isOnline) {
-                            tvStatus.setText("🟢 ONLINE NOW @ " + sdf.format(new Date(ts)));
-                            tvStatus.setTextColor(Color.parseColor("#00E676"));
-                        } else {
-                            tvStatus.setText("⚪ LAST SEEN @ " + sdf.format(new Date(ts)));
-                            tvStatus.setTextColor(getSecondaryTextColor());
-                        }
-                    }
+                    int batt = -1;
+                    Object batObj = live.child("battery").getValue();
+                    if (batObj instanceof Number) batt = ((Number) batObj).intValue();
+
+                    boolean isSos = Boolean.TRUE.equals(live.child("sos").getValue(Boolean.class));
+                    boolean isDeleted = db.isDeviceDeleted(finalUid);
+                    boolean isPendingUnlink = db.isDevicePendingUnlink(finalUid);
+
+                    // 🚦 Evaluate Unified Enterprise RAG Status
+                    com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
+                        com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(ts, batt, isSos, isDeleted, false, isPendingUnlink);
+
+                    tvStatus.setText(finalRoleIcon + " " + finalRole + " • " + rag.getStatusText());
+                    tvStatus.setTextColor(rag.getStatusColor());
+                    card.setAlpha(rag.getCardAlpha());
+                    avBg.setStroke(2, rag.getStrokeColor());
+                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, avId, rag.isDesaturated());
                 }
             }
 
@@ -2129,17 +2137,43 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     private void promptPurgeMemberDialog(String uid, String name) {
         triggerHapticFeedback();
-        new AlertDialog.Builder(this)
-                .setTitle("Purge Node?")
-                .setMessage("Are you sure you want to remove (" + name + ") from your active roster?")
-                .setPositiveButton("PURGE", (d, w) -> {
-                    String grp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
-                    viewModel.deleteMember(uid, grp, DatabaseHelper.getInstance(this), () -> {
-                        Toast.makeText(this, "Node purged successfully.", Toast.LENGTH_SHORT).show();
-                    });
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
+        DatabaseHelper db = DatabaseHelper.getInstance(this);
+        boolean isParked = db.isDevicePendingUnlink(uid);
+        String grp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+
+        if (isParked) {
+            new AlertDialog.Builder(this)
+                    .setTitle("⏳ Manage Parked Unlink")
+                    .setMessage("Device (" + name + ") is currently PARKED for unlinking in Grey state. What would you like to do?")
+                    .setPositiveButton("✅ FINALIZE UNLINK", (d, w) -> {
+                        viewModel.deleteMember(uid, grp, db, () -> {
+                            Toast.makeText(this, "Device unlinked and permanently purged.", Toast.LENGTH_SHORT).show();
+                        });
+                    })
+                    .setNeutralButton("↩️ RESTORE ACTIVE", (d, w) -> {
+                        viewModel.cancelParkedDeletion(uid, grp, db, () -> {
+                            Toast.makeText(this, "Connection restored to Active.", Toast.LENGTH_SHORT).show();
+                        });
+                    })
+                    .setNegativeButton("CLOSE", null)
+                    .show();
+        } else {
+            new AlertDialog.Builder(this)
+                    .setTitle("Manage Connection: " + name)
+                    .setMessage("Choose unlinking method for (" + name + "):")
+                    .setPositiveButton("🔘 PARK & NOTIFY", (d, w) -> {
+                        viewModel.parkMemberForDeletion(uid, grp, db, () -> {
+                            Toast.makeText(this, "Device parked in Grey state & push notification sent.", Toast.LENGTH_LONG).show();
+                        });
+                    })
+                    .setNeutralButton("🗑️ IMMEDIATE PURGE", (d, w) -> {
+                        viewModel.deleteMember(uid, grp, db, () -> {
+                            Toast.makeText(this, "Device purged immediately.", Toast.LENGTH_SHORT).show();
+                        });
+                    })
+                    .setNegativeButton("CANCEL", null)
+                    .show();
+        }
     }
 
     // =========================================================================

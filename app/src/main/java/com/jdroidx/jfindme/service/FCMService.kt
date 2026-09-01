@@ -67,6 +67,22 @@ class FCMService : FirebaseMessagingService() {
                         val pct = data["battery_pct"]?.toIntOrNull() ?: 15
                         AlertManager.showLowBatteryNotification(applicationContext, avatarName.ifEmpty { "Monitored Device" }, pct)
                     }
+                    "PING_LOCATION", "POKE_DEVICE", "REQUEST_LOCATION", "REMOTE_WAKEUP" -> {
+                        SystemLogger.w(TAG, "REMOTE_LOCATION_WAKEUP: High-priority background location ping received.")
+                        requestImmediateLocationAndBroadcast()
+                    }
+                    "UNLINK_REQUEST" -> {
+                        AlertManager.showGeofenceNotification(
+                            applicationContext,
+                            body.ifEmpty { "Connection unlink request received. Tap to review in Network Gateway." }
+                        )
+                    }
+                    "UNLINK_CANCELLED" -> {
+                        AlertManager.showGeofenceNotification(
+                            applicationContext,
+                            body.ifEmpty { "Unlink request was cancelled. Connection restored." }
+                        )
+                    }
                     else -> {
                         AlertManager.showGeofenceNotification(applicationContext, body)
                     }
@@ -99,6 +115,64 @@ class FCMService : FirebaseMessagingService() {
                 val finalId = agentId ?: myUid
                 FirebaseComm.devicesRef.child(finalId).child("Identity").child("fcm_token").setValue(token)
             }
+        }
+    }
+
+    /**
+     * 🛰️ Silent High-Priority Location Wakeup ("Find My Phone" style)
+     * Obtains immediate high-accuracy GPS fix even when the app is backgrounded or screen is locked.
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun requestImmediateLocationAndBroadcast() {
+        try {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::FcmLocationWakeLock")
+            wakeLock.acquire(15000L) // 15-second burst
+
+            val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+            val cts = com.google.android.gms.tasks.CancellationTokenSource()
+            
+            fusedClient.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                .addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        SystemLogger.i(TAG, "IMMEDIATE_GPS_FIX: Lat=${loc.latitude}, Lng=${loc.longitude}")
+                        val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+                        val prefs = getSharedPreferences("system_registry", MODE_PRIVATE)
+                        val userName = prefs.getString("user_nickname", "Agent") ?: "Agent"
+                        val avatarId = prefs.getString("user_avatar_id", "butterfly") ?: "butterfly"
+
+                        val liveMap = mapOf(
+                            "latitude" to loc.latitude,
+                            "longitude" to loc.longitude,
+                            "speed" to loc.speed,
+                            "bearing" to loc.bearing,
+                            "accuracy" to loc.accuracy,
+                            "altitude" to loc.altitude,
+                            "updated_at" to FirebaseComm.getForensicTimestamp(),
+                            "userName" to userName,
+                            "avatar_id" to avatarId
+                        )
+
+                        FirebaseComm.devicesRef.child(agentId).child("device").child("live").updateChildren(liveMap)
+                        FirebaseComm.historyArchiveRef.child(agentId).child("history").push().setValue(
+                            mapOf(
+                                "latitude" to loc.latitude,
+                                "longitude" to loc.longitude,
+                                "timestamp" to FirebaseComm.getForensicTimestamp(),
+                                "userId" to agentId,
+                                "speed" to loc.speed,
+                                "battery" to -1,
+                                "sos" to false
+                            )
+                        )
+                    }
+                    if (wakeLock.isHeld) wakeLock.release()
+                }
+                .addOnFailureListener {
+                    if (wakeLock.isHeld) wakeLock.release()
+                }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Immediate location fetch failed", e)
         }
     }
 }

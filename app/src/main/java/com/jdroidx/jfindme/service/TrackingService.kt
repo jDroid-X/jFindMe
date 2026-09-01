@@ -77,10 +77,26 @@ class TrackingService : Service() {
 
             SystemLogger.d(TAG, "Location updated: ${location.latitude}, ${location.longitude}")
             
-            // 🚀 QA Fix: Force Background Avatar Sync (V8.7)
+            // 🚀 Force Hardware CPU Wakelock Renewal on pulse
+            try {
+                if (cpuWakeLock?.isHeld != true) {
+                    cpuWakeLock?.acquire(15 * 60 * 1000L)
+                }
+            } catch (e: Exception) {}
+
+            // 🚀 Authoritative SSOT Background Avatar Sync
+            val db = DatabaseHelper.getInstance(applicationContext)
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            val ssotAvatar = db.getDeviceCentricAvatar(myAgentId)
             val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
             val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
-            val resolvedAvatarId = if (dynamicIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynamicIdx"
+            val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") {
+                ssotAvatar
+            } else if (dynamicIdx > 0) {
+                "avatar_custom_$dynamicIdx"
+            } else {
+                "butterfly"
+            }
 
             // 🛡️ V59.3 Forensic Pulse Throttle (Responsive 15s Default)
             val frequencyMs = prefs.getLong("pref_tracking_interval", 15000L)
@@ -404,6 +420,46 @@ class TrackingService : Service() {
             )
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        SystemLogger.i(TAG, "onStartCommand received (flags: $flags, startId: $startId)")
+        val notification = getNotification("Live Location Tracking Active")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(SERVICE_NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        } else {
+            startForeground(SERVICE_NOTIFICATION_ID, notification)
+        }
+        
+        if (::locationEngine.isInitialized) {
+            locationEngine.startTracking()
+        }
+        
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        SystemLogger.w(TAG, "Task removed from recent apps. Scheduling auto-resurrect alarm...")
+        try {
+            val restartIntent = Intent(applicationContext, TrackingService::class.java).apply {
+                setPackage(packageName)
+            }
+            val pFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_ONE_SHOT
+            }
+            val pendingIntent = PendingIntent.getService(applicationContext, 1001, restartIntent, pFlags)
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + 1000L,
+                pendingIntent
+            )
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed scheduling service resurrect on task removal", e)
         }
     }
 

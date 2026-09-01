@@ -495,8 +495,9 @@ object MultiMarkerEngine {
         }
 
         val speedKmh = (candidate.speedMps * 3.6f).toInt()
-        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|$speedKmh|${(candidate.bearing / 15).toInt()}|${candidate.batteryLevel}|${candidate.isSos}"
+        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|${candidate.isSos}"
         var customIconConfig = iconCache[deviceId]
+        var iconChanged = false
 
         if (customIconConfig == null || lastRenderedMeta[deviceId] != currentMeta) {
             customIconConfig = AvatarCalloutGenerator.generate(
@@ -515,11 +516,14 @@ object MultiMarkerEngine {
             )
             iconCache[deviceId] = customIconConfig
             lastRenderedMeta[deviceId] = currentMeta
+            iconChanged = true
         }
 
         if (activeDeviceMarkerMap.containsKey(deviceId)) {
             val targetMarker = activeDeviceMarkerMap[deviceId]!!
-            targetMarker.setIcon(customIconConfig)
+            if (iconChanged) {
+                targetMarker.setIcon(customIconConfig)
+            }
             animateMarkerToLocation(targetMarker, targetMarker.position, candidate.dispersedLatLng)
         } else {
             val newMarker = map.addMarker(

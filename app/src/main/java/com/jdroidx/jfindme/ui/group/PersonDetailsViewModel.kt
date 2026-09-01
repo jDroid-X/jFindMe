@@ -296,7 +296,7 @@ class PersonDetailsViewModel : ViewModel() {
         
         // 🚀 Real-time Livemap Sync (Managed Target): Push identity override to the target's location node
         val targetName = crossValidatedPayload["fullName"] ?: "Asset Node"
-        val targetAvatar = crossValidatedPayload["avatar_id"] ?: "avatar_custom_1"
+        val targetAvatar = crossValidatedPayload["avatar_id"] ?: "butterfly"
         val locSync = mapOf("userName" to targetName, "avatar_id" to targetAvatar)
         
         FirebaseComm.resolveHardwareIdentity(targetUid) { resolvedTargetAgent ->

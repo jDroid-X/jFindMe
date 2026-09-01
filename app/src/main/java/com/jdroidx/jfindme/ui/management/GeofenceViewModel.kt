@@ -268,7 +268,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 val cName = node["fullName"]?.toString() ?: ""
                 val cCode = node["uid_1"]?.toString() ?: ""
                 val cRole = node["role_type"]?.toString() ?: "MEMBER"
-                val cAvatar = node["avatar_id"]?.toString() ?: "avatar_custom_1"
+                val cAvatar = node["avatar_id"]?.toString() ?: "butterfly"
                 if (cCode.isNotEmpty()) {
                     if (cName.isNotEmpty()) nameToCodeMap[cName] = cCode
                     nameToCodeMap[cCode] = cCode
@@ -320,7 +320,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                             val cleanTargetCode = FirebaseComm.sanitizePathKey(code)
                             val targetName = codeToNameMap[code] ?: code
                             val targetRole = codeToRoleMap[code] ?: rosterMapping.value?.get(targetName) ?: "MEMBER"
-                            val targetAvatar = codeToAvatarMap[code] ?: "avatar_custom_1"
+                            val targetAvatar = codeToAvatarMap[code] ?: "butterfly"
                             val connectedDeviceData = mapOf(
                                 "device_id" to cleanTargetCode,
                                 "device_name" to targetName,
@@ -732,7 +732,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 val cName = node["fullName"]?.toString() ?: ""
                 val cCode = node["uid_1"]?.toString() ?: ""
                 val cRole = node["role_type"]?.toString() ?: "MEMBER"
-                val cAvatar = node["avatar_id"]?.toString() ?: "avatar_custom_1"
+                val cAvatar = node["avatar_id"]?.toString() ?: "butterfly"
                 if (cCode.isNotEmpty()) {
                     if (cName.isNotEmpty()) nameToCodeMap[cName] = cCode
                     nameToCodeMap[cCode] = cCode
@@ -761,7 +761,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     }
                     val targetName = codeToNameMap[code] ?: code
                     val role = codeToRoleMap[code] ?: rosterMapping.value?.get(targetName) ?: "MEMBER"
-                    val targetAvatar = codeToAvatarMap[code] ?: "avatar_custom_1"
+                    val targetAvatar = codeToAvatarMap[code] ?: "butterfly"
                     val connectedDeviceData = mapOf(
                         "device_id" to cleanTargetCode,
                         "device_name" to targetName,

@@ -4,6 +4,13 @@ const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
 
+process.on("uncaughtException", (err) => {
+    console.error("[FATAL_TRAP] Uncaught Exception:", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+    console.error("[FATAL_TRAP] Unhandled Rejection:", reason);
+});
+
 console.log("[SYSTEM] Initializing jFindMe Forensic Proxy...");
 
 // --- PATH VALIDATION (DYNAMIC RESOLVER) ---
@@ -61,6 +68,535 @@ app.use(express.json());
 app.use((req, res, next) => {
     console.log(`[NETWORK] ${new Date().toLocaleTimeString()} ${req.method} ${req.url}`);
     next();
+});
+
+// Serve Avatar static files
+const AVATAR_ROOT_1 = path.join(__dirname, "../../Avatar");
+const AVATAR_ROOT_2 = path.join(__dirname, "../Avatar");
+if (fs.existsSync(AVATAR_ROOT_1)) {
+    app.use("/Avatar", express.static(AVATAR_ROOT_1));
+    app.use("/avatars", express.static(AVATAR_ROOT_1));
+} else if (fs.existsSync(AVATAR_ROOT_2)) {
+    app.use("/Avatar", express.static(AVATAR_ROOT_2));
+    app.use("/avatars", express.static(AVATAR_ROOT_2));
+}
+
+// Serve Frontend Static Files
+app.use(express.static(path.join(__dirname, "../")));
+
+// In-Memory Short TTL Caches for High-Frequency Polling (Sub-millisecond response)
+let LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+let SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
+const CACHE_TTL_MS = 2000; // 2-second cache window for instant responses
+
+// Live Devices Aggregation Endpoint for Map Radar
+app.get("/api/devices-live", async (req, res) => {
+    const now = Date.now();
+    // Return cached response instantly if within 2-second window
+    if (LIVE_DEVICES_CACHE.data && (now - LIVE_DEVICES_CACHE.timestamp) < CACHE_TTL_MS) {
+        return res.json(LIVE_DEVICES_CACHE.data);
+    }
+
+    try {
+        const [devicesSnap, lookupSnap, geofenceSnap] = await Promise.all([
+            db.ref("devices").once("value"),
+            db.ref("lookup_indices/auth_to_device").once("value").catch(() => null),
+            db.ref("Geofencing").once("value").catch(() => null)
+        ]);
+
+        const devicesData = devicesSnap.val() || {};
+        const authToDevice = (lookupSnap && lookupSnap.val()) || {};
+        const geofenceData = (geofenceSnap && geofenceSnap.val()) || {};
+
+        // Build a map of all Safe Zone coordinates for quick fallback resolution
+        const safeZoneCoords = new Map();
+        for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
+            if (!creatorNode || !creatorNode.safe_zones) continue;
+            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
+                if (zone && zone.lat && zone.lng) {
+                    safeZoneCoords.set(zone.zone_id || zoneId, {
+                        lat: parseFloat(zone.lat),
+                        lng: parseFloat(zone.lng),
+                        name: zone.zone_name || "Safe Zone"
+                    });
+                }
+            }
+        }
+
+        // Merge Auth UID nodes (long 28-char keys) into canonical 8-character device nodes
+        for (const [key, node] of Object.entries(devicesData)) {
+            if (!node || typeof node !== "object") continue;
+            // Only merge if key is a 28-char Auth UID
+            if (key.length > 16) {
+                const targetAgentId = authToDevice[key];
+                if (targetAgentId && devicesData[targetAgentId]) {
+                    const canonical = devicesData[targetAgentId];
+                    if (node.device && node.device.live) {
+                        canonical.device = canonical.device || {};
+                        canonical.device.live = Object.assign({}, canonical.device.live || {}, node.device.live);
+                    }
+                }
+            }
+        }
+
+        const devicesList = [];
+
+        for (const [agentId, node] of Object.entries(devicesData)) {
+            if (!node || typeof node !== "object") continue;
+            // Ignore long 28-char Firebase Auth UID nodes since they have been merged
+            if (agentId.length > 16) continue;
+
+            const profile = node.profile || {};
+            const deviceInfo = node.device || {};
+            const identity = node.Identity || {};
+            const telemetry = node.telemetry || {};
+            const safeZones = node.safe_zones || {};
+            const relationships = node.relationships || {};
+
+            // 1. Determine Live Location from node.device.live or node.live or node.history
+            let liveLoc = deviceInfo.live || node.live || {};
+            if ((!liveLoc.latitude || !liveLoc.longitude) && node.history) {
+                const histEntries = Object.entries(node.history);
+                if (histEntries.length > 0) {
+                    histEntries.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+                    const latestItem = histEntries[0][1];
+                    liveLoc = {
+                        latitude: latestItem.lat || latestItem.latitude,
+                        longitude: latestItem.lng || latestItem.longitude,
+                        speed: latestItem.speed,
+                        address: latestItem.address || latestItem.geo_address,
+                        timestamp: latestItem.timestamp
+                    };
+                }
+            }
+
+            let lat = parseFloat(liveLoc.latitude || liveLoc.lat || deviceInfo.latitude || 0);
+            let lng = parseFloat(liveLoc.longitude || liveLoc.lng || deviceInfo.longitude || 0);
+
+            // 2. Geofence Active Zone Resolution:
+            // If device is currently "IN" a safe zone (e.g. Vibgyor School) and transition is active
+            if (liveLoc.current_safe_zone_state === "IN" && liveLoc.current_safe_zone_id) {
+                const zoneInfo = safeZoneCoords.get(liveLoc.current_safe_zone_id);
+                if (zoneInfo && (lat === 0 || liveLoc.last_geofence_transition_ts > (liveLoc.timestamp || 0))) {
+                    lat = zoneInfo.lat;
+                    lng = zoneInfo.lng;
+                    liveLoc.geo_address = `Inside ${zoneInfo.name} Safe Perimeter`;
+                }
+            }
+
+            // Determine Online State (active in last 10 mins or session ONLINE)
+            const lastSeenTs = telemetry.last_seen || liveLoc.timestamp || identity.updated_at || 0;
+            const isRecent = lastSeenTs && (now - Number(lastSeenTs) < 10 * 60 * 1000);
+            const isOnline = (identity.st_session_state === "ONLINE") || isRecent;
+
+            // Resolve Avatar ID
+            const avatarId = profile.avatar_id || identity.avatar_id || "avatar_custom_1";
+
+            // Resolve Hardware Device Model / Device Name
+            const model = deviceInfo.model || (deviceInfo.fingerprint ? deviceInfo.fingerprint.split('/')[1] : "") || "Android Device";
+            const deviceName = deviceInfo.deviceName || model;
+
+            // Resolve User / Persona / Host Name
+            const name = profile.name || profile.fullName || profile.userName || identity.owner_name || identity.id_full_name || liveLoc.userName || deviceName || agentId;
+            const hostName = identity.owner_name || identity.id_full_name || profile.fullName || profile.name || name;
+
+            // Resolve Roles
+            const role = profile.role_title || profile.role_family || profile.role || "MEMBER";
+            const roleFamily = profile.role_family || "None";
+            const roleFriend = profile.role_friend || "None";
+
+            devicesList.push({
+                agentId,
+                deviceId: deviceInfo.deviceId || identity.uid_2 || `HW_${agentId}`,
+                name,
+                deviceName,
+                model,
+                hostName,
+                avatarId,
+                latitude: lat,
+                longitude: lng,
+                hasValidLocation: !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0,
+                speed: parseFloat(liveLoc.speed || telemetry.speed_mps || 0),
+                bearing: parseFloat(liveLoc.bearing || 0),
+                accuracy: parseFloat(liveLoc.accuracy || 0),
+                altitude: parseFloat(liveLoc.altitude || 0),
+                battery: parseInt(telemetry.battery_pct != null ? telemetry.battery_pct : (liveLoc.battery != null ? liveLoc.battery : -1)),
+                isCharging: Boolean(telemetry.is_charging),
+                isMockGps: Boolean(telemetry.is_mock_gps),
+                isAirplaneMode: Boolean(telemetry.is_airplane_mode),
+                networkType: telemetry.network_type || "UNKNOWN",
+                address: liveLoc.address || liveLoc.geo_address || profile.address || "",
+                lastSeen: lastSeenTs,
+                isOnline,
+                sessionState: identity.st_session_state || (isOnline ? "ONLINE" : "OFFLINE"),
+                email: profile.email || profile.email_id || "",
+                phone: profile.phone || "",
+                role,
+                role_family: roleFamily,
+                role_friend: roleFriend,
+                department: profile.department || profile.org_name || profile.deptName || "",
+                emergencyNote: profile.emergency_note || profile.emergencyNote || "",
+                safeZonesCount: Object.keys(safeZones).length,
+                relationshipsCount: Object.keys(relationships).length,
+                raw: node
+            });
+        }
+
+        const responsePayload = {
+            status: "SUCCESS",
+            total: devicesList.length,
+            withGps: devicesList.filter(d => d.hasValidLocation).length,
+            devices: devicesList,
+            timestamp: now
+        };
+        LIVE_DEVICES_CACHE = { data: responsePayload, timestamp: now };
+        res.json(responsePayload);
+    } catch (err) {
+        console.error("[ERROR] /api/devices-live failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Safe Zones Geofence Aggregation Endpoint
+app.get("/api/safe-zones", async (req, res) => {
+    const now = Date.now();
+    if (SAFE_ZONES_CACHE.data && (now - SAFE_ZONES_CACHE.timestamp) < CACHE_TTL_MS) {
+        return res.json(SAFE_ZONES_CACHE.data);
+    }
+
+    try {
+        const geofenceSnap = await db.ref("Geofencing").once("value").catch(() => null);
+        const geofenceData = (geofenceSnap && geofenceSnap.val()) || {};
+
+        const devicesSnap = await db.ref("devices").once("value").catch(() => null);
+        const devicesData = (devicesSnap && devicesSnap.val()) || {};
+
+        const zonesList = [];
+        const seenZoneIds = new Set();
+
+        // 1. Extract from Geofencing/{creatorId}/safe_zones
+        for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
+            if (!creatorNode || !creatorNode.safe_zones) continue;
+            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
+                if (!zone || typeof zone !== "object") continue;
+                seenZoneIds.add(zoneId);
+                zonesList.push({
+                    zoneId: zone.zone_id || zoneId,
+                    zoneName: zone.zone_name || "Safe Perimeter",
+                    latitude: parseFloat(zone.lat || zone.latitude || 0),
+                    longitude: parseFloat(zone.lng || zone.longitude || 0),
+                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    isActive: zone.is_active !== false,
+                    alertsEnabled: Boolean(zone.alerts_enabled),
+                    creatorId: creatorId,
+                    connectedDevices: Object.keys(zone.connected_devices || {})
+                });
+            }
+        }
+
+        // 2. Extract from devices/{agentId}/safe_zones
+        for (const [agentId, deviceNode] of Object.entries(devicesData)) {
+            if (!deviceNode || !deviceNode.safe_zones) continue;
+            for (const [zoneId, zone] of Object.entries(deviceNode.safe_zones)) {
+                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
+                seenZoneIds.add(zoneId);
+                zonesList.push({
+                    zoneId: zone.zone_id || zoneId,
+                    zoneName: zone.zone_name || "Safe Perimeter",
+                    latitude: parseFloat(zone.lat || zone.latitude || 0),
+                    longitude: parseFloat(zone.lng || zone.longitude || 0),
+                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    isActive: zone.is_active !== false,
+                    alertsEnabled: Boolean(zone.alerts_enabled),
+                    creatorId: agentId,
+                    connectedDevices: Object.keys(zone.connected_devices || {})
+                });
+            }
+        }
+
+        const validZones = zonesList.filter(z => z.latitude !== 0 && z.longitude !== 0);
+        const zonePayload = { status: "SUCCESS", count: validZones.length, safeZones: validZones, timestamp: now };
+        SAFE_ZONES_CACHE = { data: zonePayload, timestamp: now };
+        res.json(zonePayload);
+    } catch (err) {
+        console.error("[ERROR] /api/safe-zones failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create & Save Safe Zone Endpoint (Atomic Multi-Node Write)
+app.post("/api/save-safe-zone", async (req, res) => {
+    const { zoneId, zoneName, latitude, longitude, radius, isActive, alertsEnabled, connectedDevices, creatorId } = req.body;
+    if (!zoneId || !zoneName || !latitude || !longitude) {
+        return res.status(400).json({ error: "MISSING_REQUIRED_SAFE_ZONE_FIELDS" });
+    }
+
+    try {
+        const creator = creatorId || "WEB_ADMIN_HOST";
+        console.log(`[SAFE_ZONES] Saving Safe Zone [${zoneName}] (${zoneId})...`);
+
+        const connMap = {};
+        if (Array.isArray(connectedDevices)) {
+            connectedDevices.forEach(dId => {
+                connMap[dId] = {
+                    device_id: dId,
+                    role: "TARGET",
+                    assigned_at: Date.now()
+                };
+            });
+        }
+
+        const zonePayload = {
+            zone_id: zoneId,
+            zone_name: zoneName,
+            lat: parseFloat(latitude),
+            lng: parseFloat(longitude),
+            radius: parseFloat(radius || 100),
+            is_active: isActive !== false,
+            alerts_enabled: Boolean(alertsEnabled),
+            creator_uid: creator,
+            created_on: new Date().toISOString(),
+            connected_devices: connMap
+        };
+
+        // 1. Write to Geofencing/{creator}/safe_zones/{zoneId}
+        await db.ref(`Geofencing/${creator}/safe_zones/${zoneId}`).set(zonePayload);
+
+        // 2. Multi-cast write to each connected device's safe_zones node
+        if (Array.isArray(connectedDevices)) {
+            for (const targetId of connectedDevices) {
+                await db.ref(`devices/${targetId}/safe_zones/${zoneId}`).set({
+                    zone_id: zoneId,
+                    zone_name: zoneName,
+                    lat: parseFloat(latitude),
+                    lng: parseFloat(longitude),
+                    radius: parseFloat(radius || 100),
+                    is_active: isActive !== false,
+                    alerts_enabled: Boolean(alertsEnabled)
+                }).catch(() => null);
+            }
+        }
+
+        // 3. Log into system audit
+        await db.ref(`system_audit/${Date.now()}_ZONE_CREATE`).set({
+            timestamp: Date.now(),
+            admin_uid: "WEB_ADMIN",
+            action: "CREATE_SAFE_ZONE",
+            target_path: `Geofencing/${creator}/safe_zones/${zoneId}`,
+            zone_name: zoneName
+        }).catch(() => null);
+
+        console.log(`[SAFE_ZONES] Success: Geofence [${zoneName}] stored and synced.`);
+        res.json({ status: "SUCCESS", zoneId, zone: zonePayload });
+    } catch (err) {
+        console.error("[ERROR] /api/save-safe-zone failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 🛡️ Helper: Resolves any raw ID (e.g. 28-char Auth UID) to canonical 8-character Agent ID
+async function resolveCanonicalAgentId(rawId) {
+    if (!rawId) return rawId;
+    const cleanId = String(rawId).trim();
+    if (/^[A-Z0-9]{8}$/.test(cleanId)) {
+        return cleanId;
+    }
+    // Attempt lookup index resolution
+    try {
+        const indexSnap = await db.ref(`lookup_indices/auth_to_device/${cleanId}`).once("value");
+        const indexed = indexSnap.val();
+        if (indexed && /^[A-Z0-9]{8}$/.test(indexed)) {
+            return indexed;
+        }
+        // Attempt search under Identity/auth_uid
+        const querySnap = await db.ref("devices").orderByChild("Identity/auth_uid").equalTo(cleanId).limitToFirst(1).once("value");
+        if (querySnap.exists()) {
+            const matchedKey = Object.keys(querySnap.val())[0];
+            if (matchedKey && /^[A-Z0-9]{8}$/.test(matchedKey)) {
+                return matchedKey;
+            }
+        }
+    } catch (e) {
+        console.warn(`[RESOLVER] Error resolving agentId for [${cleanId}]:`, e.message);
+    }
+    return cleanId;
+}
+
+// Atomic Profile & Avatar Update with Forensic Ledger
+app.post("/api/update-profile", async (req, res) => {
+    let { agentId, profileData } = req.body;
+    if (!agentId || !profileData) {
+        return res.status(400).json({ error: "MISSING_AGENT_ID_OR_PROFILE_DATA" });
+    }
+
+    try {
+        agentId = await resolveCanonicalAgentId(agentId);
+        console.log(`[PROFILE_UPDATE] Updating profile for Agent [${agentId}]...`);
+        const profileRef = db.ref(`devices/${agentId}/profile`);
+        const currentSnap = await profileRef.once("value");
+        const previousState = currentSnap.val() || {};
+
+        const updatedProfile = {
+            ...previousState,
+            ...profileData,
+            fullName: profileData.name || previousState.fullName || previousState.name,
+            name: profileData.name || previousState.name || previousState.fullName,
+            userName: profileData.name || previousState.userName || previousState.name,
+            updated_at: new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 16)
+        };
+
+        // 1. Write atomic profile update
+        await profileRef.update(updatedProfile);
+
+        // 2. Closed-Loop: Synchronize Identity & Live Node
+        const newName = updatedProfile.name;
+        const newAvatar = updatedProfile.avatar_id;
+        
+        await db.ref(`devices/${agentId}/Identity`).update({
+            owner_name: newName,
+            id_full_name: newName,
+            ...(newAvatar ? { avatar_id: newAvatar } : {})
+        }).catch(() => null);
+
+        await db.ref(`devices/${agentId}/device/live`).update({
+            userName: newName,
+            ...(newAvatar ? { avatar_id: newAvatar } : {})
+        }).catch(() => null);
+
+        // 3. Closed-Loop: Synchronize Geofencing Root
+        await db.ref(`Geofencing/${agentId}`).update({
+            device_name: newName
+        }).catch(() => null);
+
+        // 4. Closed-Loop: Propagate Name & Avatar across all peer relationships
+        const allDevicesSnap = await db.ref("devices").once("value").catch(() => null);
+        const allDevices = (allDevicesSnap && allDevicesSnap.val()) || {};
+        
+        for (const [peerId, peerNode] of Object.entries(allDevices)) {
+            if (peerId === agentId || !peerNode) continue;
+            
+            // Peer relationship link
+            if (peerNode.relationships && peerNode.relationships[agentId]) {
+                await db.ref(`devices/${peerId}/relationships/${agentId}`).update({
+                    name: newName
+                }).catch(() => null);
+            }
+
+            // Peer safe zone connected devices
+            if (peerNode.safe_zones) {
+                for (const zoneId of Object.keys(peerNode.safe_zones)) {
+                    if (peerNode.safe_zones[zoneId].connected_devices && peerNode.safe_zones[zoneId].connected_devices[agentId]) {
+                        await db.ref(`devices/${peerId}/safe_zones/${zoneId}/connected_devices/${agentId}`).update({
+                            device_name: newName,
+                            ...(newAvatar ? { avatar_id: newAvatar } : {})
+                        }).catch(() => null);
+                    }
+                }
+            }
+        }
+
+        // 5. Closed-Loop: Propagate across top-level Geofencing tree
+        const geofencingSnap = await db.ref("Geofencing").once("value").catch(() => null);
+        const geofencingData = (geofencingSnap && geofencingSnap.val()) || {};
+        for (const [creatorId, creatorNode] of Object.entries(geofencingData)) {
+            if (!creatorNode || !creatorNode.safe_zones) continue;
+            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
+                if (zone.connected_devices && zone.connected_devices[agentId]) {
+                    await db.ref(`Geofencing/${creatorId}/safe_zones/${zoneId}/connected_devices/${agentId}`).update({
+                        device_name: newName,
+                        ...(newAvatar ? { avatar_id: newAvatar } : {})
+                    }).catch(() => null);
+                }
+            }
+        }
+
+        // 6. Record Forensic Audit in Change_Log
+        const logId = `${Date.now()}_WEB_${agentId.slice(0, 4)}`;
+        const logRef = db.ref(`devices/${agentId}/Change_Log/Profile/${logId}`);
+        await logRef.set({
+            log_id: logId,
+            category: "Profile",
+            action: "PROFILE_WEB_MUTATION",
+            entity_id: agentId,
+            changed_by: "Web_Matrix_Admin",
+            timestamp: new Date().toISOString(),
+            epoch_ms: Date.now(),
+            previous_state: previousState,
+            new_state: updatedProfile
+        }).catch(() => null);
+
+        console.log(`[PROFILE_UPDATE] Success: Closed-loop profile synchronized for ${agentId} (${newName}).`);
+        res.json({ status: "SUCCESS", agentId, profile: updatedProfile });
+    } catch (err) {
+        console.error("[ERROR] /api/update-profile failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Dynamic Reverse Geocoding Proxy with In-Memory Cache
+const GEO_CACHE = new Map();
+app.get("/api/reverse-geocode", async (req, res) => {
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+
+    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+        return res.status(400).json({ error: "INVALID_COORDINATES" });
+    }
+
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (GEO_CACHE.has(key)) {
+        return res.json({ status: "CACHED", address: GEO_CACHE.get(key) });
+    }
+
+    try {
+        const https = require("https");
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+        
+        const reqOpts = {
+            headers: {
+                'User-Agent': 'jFindMe-Enterprise-Radar/2.0 (admin@jfindme.internal)'
+            }
+        };
+
+        https.get(url, reqOpts, (geoRes) => {
+            let data = '';
+            geoRes.on('data', chunk => data += chunk);
+            geoRes.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    const displayName = parsed.display_name || "Unknown Spatial Location";
+                    // Cache up to 1000 items
+                    if (GEO_CACHE.size > 1000) GEO_CACHE.clear();
+                    GEO_CACHE.set(key, displayName);
+                    res.json({ status: "SUCCESS", address: displayName });
+                } catch (e) {
+                    res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+                }
+            });
+        }).on('error', () => {
+            res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+        });
+    } catch (err) {
+        res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+    }
+});
+
+// Poke / Ping Telemetry Trigger Endpoint
+app.post("/api/poke-device", async (req, res) => {
+    let { agentId, pokedBy } = req.body;
+    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
+
+    try {
+        agentId = await resolveCanonicalAgentId(agentId);
+        await db.ref(`devices/${agentId}/telemetry/poke`).set({
+            isPoked: true,
+            pokedBy: pokedBy || "Web_Matrix_Commander",
+            timestamp: Date.now()
+        });
+        res.json({ status: "POKED", agentId, timestamp: Date.now() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.get("/api/ping", (req, res) => res.json({ status: "ALIVE", project: PROJECT_ID }));
@@ -327,6 +863,184 @@ app.post("/api/purge-node", async (req, res) => {
     }
 });
 
+// ============================================================
+// OOPS MVC DEVICE AUDIT & DIAGNOSTIC ENDPOINT
+// ============================================================
+const handleDeviceAudit = async (req, res) => {
+    try {
+        const target = req.params.agentId;
+        const devSnap = await db.ref("devices").once("value");
+        const devices = devSnap.val() || {};
+
+        const results = [];
+        const processDev = async (id, dev) => {
+            const histSnap = await db.ref(`History/${id}`).once("value");
+            const hist = histSnap.val() || {};
+            const monitorSnap = await db.ref(`lookup_indices/active_monitors/${id}`).once("value");
+
+            results.push({
+                agentId: id,
+                name: dev.profile?.name || dev.Identity?.owner_name || dev.device?.live?.userName || id,
+                model: dev.device?.model || "Generic",
+                telemetry: {
+                    status: dev.telemetry?.status || "UNKNOWN",
+                    battery_pct: dev.telemetry?.battery_pct ?? -1,
+                    is_charging: dev.telemetry?.is_charging ?? false,
+                    last_seen: dev.telemetry?.last_seen || null,
+                    last_heartbeat: dev.telemetry?.last_heartbeat || null,
+                    monitor_heartbeat: monitorSnap.val() || null
+                },
+                live: {
+                    latitude: dev.device?.live?.latitude || 0,
+                    longitude: dev.device?.live?.longitude || 0,
+                    address: dev.device?.live?.address || "N/A",
+                    updated_at: dev.device?.live?.updated_at || null,
+                    safe_zone_state: dev.device?.live?.current_safe_zone_state || "OUT",
+                    safe_zone_name: dev.device?.live?.current_safe_zone_name || "None"
+                },
+                safe_zones: Object.keys(dev.safe_zones || {}).map(k => ({
+                    zoneId: k,
+                    name: dev.safe_zones[k].zone_name || k,
+                    state: dev.safe_zones[k].current_state || "UNKNOWN",
+                    alerts: dev.safe_zones[k].alerts_enabled ?? true
+                })),
+                archive_count: hist.history ? Object.keys(hist.history).length : 0
+            });
+        };
+
+        if (target && devices[target]) {
+            await processDev(target, devices[target]);
+        } else {
+            for (const [id, dev] of Object.entries(devices)) {
+                if (id.length <= 16) {
+                    await processDev(id, dev);
+                }
+            }
+        }
+
+        res.json({ success: true, timestamp: new Date().toISOString(), count: results.length, devices: results });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+app.get("/api/device-audit", handleDeviceAudit);
+app.get("/api/device-audit/:agentId", handleDeviceAudit);
+// REAL-TIME GEOFENCE FCM PUSH DISPATCHER & CANONICAL BRIDGE
+// ============================================================
+function initRealtimeSentinelBridge() {
+    console.log("[SENTINEL_BRIDGE] Initializing Geofence Notification & Push Dispatcher...");
+
+    // 1. Listen for new geofence notifications across all groups
+    db.ref("relationships").on("child_added", (groupSnap) => {
+        const groupId = groupSnap.key;
+        if (!groupId) return;
+
+        db.ref(`relationships/${groupId}/notifications`).limitToLast(1).on("child_added", async (notifSnap) => {
+            const notif = notifSnap.val();
+            if (!notif || !notif.timestamp) return;
+
+            // Only process recent notifications (< 5 mins old)
+            if (Date.now() - Number(notif.timestamp) > 5 * 60 * 1000) return;
+
+            const avatarName = notif.avatar_name || notif.target_name || "Device";
+            const zoneName = notif.zone_name || "Safe Zone";
+            const status = notif.status || notif.transition || "ENTERED";
+            const senderUid = notif.uid || notif.target_uid;
+
+            console.log(`[SENTINEL_BRIDGE] 🚨 Geofence Transition Detected: ${avatarName} ${status} [${zoneName}]`);
+
+            try {
+                // Fetch all registered devices to broadcast push notification
+                const devSnap = await db.ref("devices").once("value");
+                const devices = devSnap.val() || {};
+                const tokens = [];
+
+                for (const [id, dev] of Object.entries(devices)) {
+                    // Skip sender device
+                    if (id === senderUid || (dev.Identity && dev.Identity.auth_uid === senderUid)) continue;
+
+                    const token = (dev.Identity && dev.Identity.fcm_token) || (dev.device && dev.device.fcm_token);
+                    if (token && typeof token === "string" && token.length > 20 && !tokens.includes(token)) {
+                        tokens.push(token);
+                    }
+                }
+
+                if (tokens.length > 0) {
+                    const title = `🛡️ Safe Zone ${status === 'ENTERED' ? 'Entry' : 'Exit'} Alert`;
+                    const body = `${avatarName} has ${status === 'ENTERED' ? 'entered' : 'exited'} the ${zoneName} Safe Zone.`;
+
+                    const message = {
+                        tokens: tokens,
+                        notification: { title, body },
+                        data: {
+                            type: status === "ENTERED" || status === "IN" ? "GEOFENCE_ENTER" : "GEOFENCE_EXIT",
+                            title: title,
+                            body: body,
+                            zone_name: zoneName,
+                            avatar_name: avatarName,
+                            timestamp: String(notif.timestamp)
+                        },
+                        android: {
+                            priority: "high",
+                            notification: {
+                                channelId: "geofence_channel",
+                                priority: "high",
+                                sound: "default"
+                            }
+                        }
+                    };
+
+                    const fcmRes = await admin.messaging().sendEachForMulticast(message);
+                    console.log(`[FCM_DISPATCHER] 📲 Push Notification sent to ${fcmRes.successCount}/${tokens.length} connected devices.`);
+                }
+            } catch (fcmErr) {
+                console.error("[FCM_DISPATCHER] Error dispatching push notification:", fcmErr.message);
+            }
+        });
+    });
+
+    // 2. Real-time Canonical Bridge: Mirror Auth UID device/live updates to 8-character device ID
+    db.ref("devices").on("child_changed", async (snap) => {
+        const key = snap.key;
+        if (!key || key.length <= 16) return; // Only process long Auth UIDs
+
+        try {
+            const lookupSnap = await db.ref(`lookup_indices/auth_to_device/${key}`).once("value");
+            const targetAgentId = lookupSnap.val();
+            if (!targetAgentId) return;
+
+            const authNodeData = snap.val() || {};
+            const liveData = (authNodeData.device && authNodeData.device.live) || authNodeData.live;
+            if (!liveData) return;
+
+            console.log(`[CANONICAL_BRIDGE] Syncing Auth UID [${key}] -> Canonical Device [${targetAgentId}]...`);
+
+            // If entering safe zone, resolve coordinates
+            if (liveData.current_safe_zone_state === "IN" && liveData.current_safe_zone_id) {
+                const zoneSnap = await db.ref(`Geofencing`).once("value");
+                const geofences = zoneSnap.val() || {};
+                for (const creator of Object.values(geofences)) {
+                    if (creator.safe_zones && creator.safe_zones[liveData.current_safe_zone_id]) {
+                        const z = creator.safe_zones[liveData.current_safe_zone_id];
+                        if (z.lat && z.lng) {
+                            liveData.latitude = parseFloat(z.lat);
+                            liveData.longitude = parseFloat(z.lng);
+                            liveData.address = `Inside ${z.zone_name || 'Safe Zone'} Safe Perimeter`;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            await db.ref(`devices/${targetAgentId}/device/live`).update(liveData);
+            console.log(`[CANONICAL_BRIDGE] ✅ Successfully updated devices/${targetAgentId}/device/live.`);
+        } catch (bridgeErr) {
+            console.error("[CANONICAL_BRIDGE] Sync failed:", bridgeErr.message);
+        }
+    });
+}
+
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
 app.listen(PORT, HOST, () => {
@@ -334,4 +1048,5 @@ app.listen(PORT, HOST, () => {
     console.log(`   jFindMe FORENSIC PROXY LIVE            `);
     console.log(`   Endpoint: http://${HOST}:${PORT}       `);
     console.log(`==========================================`);
+    initRealtimeSentinelBridge();
 });

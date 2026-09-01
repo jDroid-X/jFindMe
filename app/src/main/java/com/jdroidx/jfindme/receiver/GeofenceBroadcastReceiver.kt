@@ -128,10 +128,14 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
                         // 🌳 GEOFENCING TREE DISPATCH: Creator -> SafeZone -> Target Device -> Notifications (Group by Date)
                         val hostDeviceCode = prefs.getString("agent_id", null)
+                            ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
                             ?: db.resolveAgentIdLocally(myUid)
                             ?: FirebaseComm.sanitizePathKey(groupId)
                         val cleanHostCode = FirebaseComm.sanitizePathKey(hostDeviceCode)
-                        val targetDeviceCode = db.resolveAgentIdLocally(myUid) ?: myUid
+                        val targetDeviceCode = prefs.getString("agent_id", null)
+                            ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                            ?: db.resolveAgentIdLocally(myUid) 
+                            ?: myUid
                         val cleanTargetCode = FirebaseComm.sanitizePathKey(targetDeviceCode)
 
                         val eventId = "EVT_${now}_${cleanTargetCode.takeLast(4)}"
@@ -139,7 +143,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         val rawCleanZone = if (geofence.requestId.contains("___")) geofence.requestId.split("___")[0] else geofence.requestId
                         val cleanZoneId = FirebaseComm.sanitizePathKey(rawCleanZone)
 
-                        val avatarId = prefs.getString("user_avatar_id", "avatar_custom_1") ?: "avatar_custom_1"
+                        val avatarId = prefs.getString("user_avatar_id", "butterfly") ?: "butterfly"
 
                         val treeNotificationPacket = mapOf(
                             "event_id" to eventId,
@@ -172,14 +176,30 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         ))
 
                         // 📱 DEVICE NODE (LATEST FINAL DATA & STATE SNAPSHOT)
-                        val targetDeviceLiveRef = FirebaseComm.getDeviceRef(cleanTargetCode)
-                        targetDeviceLiveRef.child("device").child("live").updateChildren(mapOf(
+                        val liveUpdateMap = mutableMapOf<String, Any>(
                             "current_safe_zone_id" to cleanZoneId,
                             "current_safe_zone_name" to zoneName,
                             "current_safe_zone_state" to transitionTag,
                             "last_geofence_transition_ts" to now,
-                            "last_geofence_transition_readable" to shortDateTime
-                        ))
+                            "last_geofence_transition_readable" to shortDateTime,
+                            "userName" to userName,
+                            "avatar_id" to avatarId
+                        )
+
+                        // If ENTERING safe zone, query zone coordinate from SQLite and update live GPS
+                        if (transitionTag == "IN") {
+                            try {
+                                val zoneModel = db.getSafeZoneById(cleanZoneId)
+                                if (zoneModel != null && zoneModel.lat != 0.0 && zoneModel.lng != 0.0) {
+                                    liveUpdateMap["latitude"] = zoneModel.lat
+                                    liveUpdateMap["longitude"] = zoneModel.lng
+                                    liveUpdateMap["address"] = "Inside $zoneName Safe Perimeter"
+                                }
+                            } catch (e: Exception) {}
+                        }
+
+                        val targetDeviceLiveRef = FirebaseComm.getDeviceRef(cleanTargetCode)
+                        targetDeviceLiveRef.child("device").child("live").updateChildren(liveUpdateMap)
                         targetDeviceLiveRef.child("safe_zones").child(cleanZoneId).updateChildren(mapOf(
                             "current_state" to transitionTag,
                             "last_transition_ts" to now,

@@ -62,8 +62,8 @@ class EnterpriseUnitTestSuite {
 
     @Test
     fun testThemeManagerPalettes() {
-        assertEquals(8, ThemeManager.THEMES.size)
-        for (i in 0..7) {
+        assertEquals(12, ThemeManager.THEMES.size)
+        for (i in 0 until 12) {
             val theme = ThemeManager.THEMES[i]
             assertEquals(7, theme.size)
             for (element in theme) {

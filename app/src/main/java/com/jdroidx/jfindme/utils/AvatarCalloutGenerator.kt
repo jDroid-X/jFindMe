@@ -212,14 +212,16 @@ object AvatarCalloutGenerator {
             canvas.drawPath(arrowPath, arrowPaint)
         }
 
-        // 2. Render Clean Name with 100% Transparent Background (Green if Online, Red if Offline)
+        // Evaluate RAG status
+        val ragResult = if (isSelf) {
+            DeviceRagEngine.evaluate(System.currentTimeMillis(), batteryLevel, isSos)
+        } else {
+            DeviceRagEngine.evaluate(timestamp, batteryLevel, isSos)
+        }
+
+        // 2. Render Clean Name with 100% Transparent Background (Green/Amber/Red per RAG)
         if (hasName) {
-            val isOnline = isSelf || (timestamp > 0L && (System.currentTimeMillis() - timestamp) < 120_000L)
-            val nameColor = when {
-                isSos -> Color.parseColor("#FF1744") // 🚨 Alert Red
-                isOnline -> Color.parseColor("#00E676") // 🟢 Online: Vibrant Emerald Green
-                else -> Color.parseColor("#FF5252") // 🔴 Offline: Clear Tactical Red
-            }
+            val nameColor = ragResult.statusColor
 
             val top = 2f * density
             val textY = top + (bubbleHeight / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
@@ -233,15 +235,27 @@ object AvatarCalloutGenerator {
             }
             canvas.drawText(displayName, cx, textY, outlinePaint)
             
-            // Name Text Color: Green if Online, Red if Offline
+            // Name Text Color: Green if Online, Amber if Stale/LowBatt, Red if Offline/SOS
             textPaint.color = nameColor
             canvas.drawText(displayName, cx, textY, textPaint)
         }
 
-        // 3. Render Clean Avatar Graphic (Zero circles, zero stroke rings around the avatar)
+        // 3. Render Clean Avatar Graphic with Grey Mode desaturation when offline/degraded
         if (avatarBmp != null) {
             val scaledAvatar = Bitmap.createScaledBitmap(avatarBmp, avatarSize, avatarSize, true)
-            canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
+            
+            if (ragResult.isDesaturated && !isSelf) {
+                // 🛡️ Grey Ghost Pin Mode: Desaturate offline node avatar on map
+                val greyPaint = Paint(avatarPaint).apply {
+                    val cm = ColorMatrix()
+                    cm.setSaturation(0f)
+                    colorFilter = ColorMatrixColorFilter(cm)
+                    alpha = (ragResult.cardAlpha * 255).toInt()
+                }
+                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, greyPaint)
+            } else {
+                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
+            }
         }
 
         // 4. Render Motion / Speed / SOS Micro-Badge (Bottom Overlay)

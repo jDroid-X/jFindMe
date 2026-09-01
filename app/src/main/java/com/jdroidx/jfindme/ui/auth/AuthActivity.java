@@ -250,6 +250,34 @@ public class AuthActivity extends BaseActivityJava {
         }));
 
         card.addView(row);
+
+        // --- 🛡️ ENTERPRISE CRYPTOGRAPHIC TRUST BADGES ---
+        LinearLayout trustBadgeRow = new LinearLayout(this);
+        trustBadgeRow.setOrientation(LinearLayout.HORIZONTAL);
+        trustBadgeRow.setGravity(Gravity.CENTER);
+        trustBadgeRow.setPadding(0, scale(30), 0, scale(10));
+
+        TextView tb1 = new TextView(this);
+        tb1.setText("🛡️ AES-256 E2EE");
+        tb1.setTextColor(getSecondaryTextColor());
+        tb1.setTextSize(scaleText(10f));
+        tb1.setTypeface(null, Typeface.BOLD);
+        trustBadgeRow.addView(tb1);
+
+        TextView tbDot = new TextView(this);
+        tbDot.setText("  •  ");
+        tbDot.setTextColor(getSecondaryTextColor());
+        tbDot.setTextSize(scaleText(10f));
+        trustBadgeRow.addView(tbDot);
+
+        TextView tb2 = new TextView(this);
+        tb2.setText("⚡ UNKILLABLE SENTINEL");
+        tb2.setTextColor(getSecondaryTextColor());
+        tb2.setTextSize(scaleText(10f));
+        tb2.setTypeface(null, Typeface.BOLD);
+        trustBadgeRow.addView(tb2);
+
+        card.addView(trustBadgeRow);
         root.addView(card);
 
         scroll.addView(root);

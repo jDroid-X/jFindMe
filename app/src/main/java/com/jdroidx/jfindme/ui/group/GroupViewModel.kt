@@ -111,7 +111,100 @@ class GroupViewModel : ViewModel() {
     }
 
     /**
+     * 🔘 State 1: Park Member for Deletion (Grey Shade & FCM Notification)
+     */
+    fun parkMemberForDeletion(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
+        if (uid.isNullOrEmpty()) return
+        _isLoading.postValue(true)
+        _syncStatus.postValue("PARKING NODE FOR UNLINK...")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (!activeGroup.isNullOrEmpty()) {
+                    // 1. Mark status as PENDING_UNLINK in cloud group hub
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).child("status").setValue("PENDING_UNLINK")
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+
+                    // 2. Dispatch FCM Push Notification payload to target device
+                    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
+                    val myName = if (myUid.isNotEmpty()) db?.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
+                    val cmd = mapOf(
+                        "action" to "UNLINK_REQUEST",
+                        "initiator_uid" to myUid,
+                        "initiator_name" to myName,
+                        "msg" to "$myName requested to unlink your device. Tap to review in Network Gateway.",
+                        "epoch_ms" to System.currentTimeMillis()
+                    )
+                    FirebaseComm.devicesRef.child(uid).child("device").child("remote_command").setValue(cmd)
+                }
+
+                // 3. Mark local SQLite status as PENDING_UNLINK
+                db?.parkRosterNode(uid)
+
+                val updated = db?.getOfflineRoster()
+                _rosterData.postValue(updated ?: emptyList())
+                _syncStatus.postValue("NODE PARKED (GREY)")
+                _isLoading.postValue(false)
+                onComplete?.let {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post(it)
+                }
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Failed to park node $uid", e)
+                _isLoading.postValue(false)
+                _syncStatus.postValue("PARK FAILED")
+            }
+        }
+    }
+
+    /**
+     * ↩️ State 2A: Cancel Parked Deletion (Restore to Active)
+     */
+    fun cancelParkedDeletion(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
+        if (uid.isNullOrEmpty()) return
+        _isLoading.postValue(true)
+        _syncStatus.postValue("RESTORING NODE...")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (!activeGroup.isNullOrEmpty()) {
+                    // 1. Restore status to Active in cloud group hub
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).child("status").setValue("Active")
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+
+                    // 2. Dispatch cancellation notice
+                    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
+                    val myName = if (myUid.isNotEmpty()) db?.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
+                    val cmd = mapOf(
+                        "action" to "UNLINK_CANCELLED",
+                        "initiator_uid" to myUid,
+                        "initiator_name" to myName,
+                        "msg" to "Unlink request was cancelled by $myName. Connection restored.",
+                        "epoch_ms" to System.currentTimeMillis()
+                    )
+                    FirebaseComm.devicesRef.child(uid).child("device").child("remote_command").setValue(cmd)
+                }
+
+                // 3. Restore local SQLite status to Active
+                db?.restoreRosterNode(uid)
+
+                val updated = db?.getOfflineRoster()
+                _rosterData.postValue(updated ?: emptyList())
+                _syncStatus.postValue("NODE RESTORED")
+                _isLoading.postValue(false)
+                onComplete?.let {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post(it)
+                }
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Failed to restore node $uid", e)
+                _isLoading.postValue(false)
+                _syncStatus.postValue("RESTORE FAILED")
+            }
+        }
+    }
+
+    /**
      * 🛡️ Safe Node Deletion (Closed Loop SQLite + Firebase Member Purge)
+     * 🚀 Complete 2-Way Closed-Loop Node Unlinking and Deletion
      */
     fun deleteMember(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
         if (uid.isNullOrEmpty()) return
@@ -120,9 +213,27 @@ class GroupViewModel : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+                val myAgentId = if (myAuthUid != null) db?.resolveAgentIdLocally(myAuthUid) ?: "" else ""
+
                 if (!activeGroup.isNullOrEmpty()) {
+                    // 1. Remove from group hub
                     FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).removeValue()
-                    FirebaseComm.getIdentityRef(uid).child("active_group").removeValue()
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("citizen_dossiers").child(uid).removeValue()
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("direct_pairs").child(uid).removeValue()
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+
+                    // 2. Remove 2-way device relationships
+                    if (myAgentId.isNotEmpty()) {
+                        FirebaseComm.devicesRef.child(myAgentId).child("relationships").child(uid).removeValue()
+                        FirebaseComm.devicesRef.child(uid).child("relationships").child(myAgentId).removeValue()
+                    }
+
+                    // 3. Isolate unlinked member to their own circle
+                    FirebaseComm.devicesRef.child(uid).child("profile").child("active_group").setValue("GRP_$uid")
+                    FirebaseComm.devicesRef.child(uid).child("Identity").child("active_group").setValue("GRP_$uid")
+                    FirebaseComm.relationshipsRef.child("GRP_$uid").child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+
                     FirebaseComm.logChange(activeGroup, FirebaseComm.LOG_ITEM_PAIRING, "MEMBER_UNLINK", uid, mapOf("unlinked_member" to uid))
                 }
 

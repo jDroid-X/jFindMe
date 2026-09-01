@@ -224,6 +224,8 @@ public class SplashActivity extends Activity {
                         profileData, orgData, null, groupData, null, null, null,
                         0.0, 0.0, null, "ADMIN"
                     );
+                    db.pruneZombieNodes(agentId, android.os.Build.MODEL);
+                    db.applyTtlDecay(7);
                     
                     // Save locally to SharedPreferences `"system_registry"`
                     android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);

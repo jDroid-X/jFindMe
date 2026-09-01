@@ -23,7 +23,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     
     <!-- L1.5: Doze Mode Bypass (Unkillable Service Architect) -->
-    <!-- <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" /> -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     
     <!-- L1.6: Hardware Camera Pipeline Priority (Required for Action Image Capture Intents securely) -->
@@ -229,6 +229,16 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.jdroidx.jfindme.ACTION_INSTALL_STATUS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- L5.8: OS PendingIntent Location Wakeup Sentinel -->
+        <receiver
+            android:name=".receiver.LocationReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.jdroidx.jfindme.ACTION_PROCESS_LOCATION" />
             </intent-filter>
         </receiver>
 

@@ -39,7 +39,7 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
         val name: String,
         val uid: String,
         val role: String = "PEER",
-        val avatarId: String = "avatar_custom_1"
+        val avatarId: String = "butterfly"
     )
 
     fun init(context: Context) {
@@ -93,8 +93,9 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
             val avgSpeed = group.map { it.speed.toDouble() }.average().toFloat()
             val maxBattery = group.map { it.batteryLevel }.maxOrNull() ?: -1
             
-            val tsStart = first.getLongTimestamp()
-            val tsEnd = last.getLongTimestamp()
+            var tsStart = first.getLongTimestamp()
+            var tsEnd = last.getLongTimestamp()
+            if (tsEnd < tsStart) tsEnd = tsStart
 
             val map = mutableMapOf<String, Any>(
                 "lat" to avgLat,
@@ -218,7 +219,7 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
                                 val targetName = profSnap.child("name").getValue(String::class.java)
                                     ?: liveSnap.child("userName").getValue(String::class.java)
                                     ?: "Target ($childUid)"
-                                val avatarId = liveSnap.child("avatar_id").getValue(String::class.java) ?: "avatar_custom_1"
+                                val avatarId = liveSnap.child("avatar_id").getValue(String::class.java) ?: "butterfly"
                                 
                                 // If found remotely, save back to SSOT (Persistence Loop)
                                 dbHelper.saveRosterNode(childUid, targetName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,

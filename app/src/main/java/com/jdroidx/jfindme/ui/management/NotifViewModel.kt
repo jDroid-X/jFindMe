@@ -1,6 +1,7 @@
 package com.jdroidx.jfindme.ui.management
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -10,8 +11,11 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.remote.FirebaseComm
+import com.jdroidx.jfindme.utils.SystemLogger
 
 class NotifViewModel(application: Application) : AndroidViewModel(application) {
+    private val TAG = "NotifViewModel"
     private val dbHelper = DatabaseHelper.getInstance(application)
     private val auth = FirebaseAuth.getInstance()
 
@@ -21,15 +25,20 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingRequests = MutableLiveData<List<Map<String, String>>>()
     val pendingRequests: LiveData<List<Map<String, String>>> = _pendingRequests
 
+    private val cloudAlertsList = mutableListOf<Map<String, String>>()
+
     init {
         loadLocalAlerts()
         listenToPendingRequests()
+        listenToCloudNotifications()
     }
 
     fun loadLocalAlerts() {
-        // Fetch from TABLE_ALERTS
         val list = dbHelper.getPagedData(DatabaseHelper.TABLE_ALERTS, 50, 0, null)
-        _alerts.postValue(list)
+        val combined = mutableListOf<Map<String, String>>()
+        combined.addAll(cloudAlertsList)
+        combined.addAll(list)
+        _alerts.postValue(combined)
     }
 
     private var activeAgentId: String? = null
@@ -37,7 +46,7 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
     private fun listenToPendingRequests() {
         val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
         activeAgentId = finalId
-        val ref = com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalId).child("Identity").child("geofence_sync_requests")
+        val ref = FirebaseComm.devicesRef.child(finalId).child("Identity").child("geofence_sync_requests")
         ref.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<Map<String, String>>()
@@ -58,6 +67,39 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
                 _pendingRequests.postValue(list)
             }
             override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    /**
+     * 🛰️ Real-Time Mesh Notification Stream: Listens to incoming cloud notifications
+     */
+    private fun listenToCloudNotifications() {
+        val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+        val groupId = prefs.getString("active_group", null) ?: prefs.getString("current_group_id", null) ?: return
+        val cleanGroupId = FirebaseComm.sanitizePathKey(groupId)
+
+        val notifRef = FirebaseComm.relationshipsRef.child(cleanGroupId).child("notifications")
+        notifRef.limitToLast(30).addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                cloudAlertsList.clear()
+                for (snap in snapshot.children) {
+                    val map = mutableMapOf<String, String>()
+                    map["id"] = snap.key ?: ""
+                    map["avatar_name"] = snap.child("avatar_name").getValue(String::class.java) ?: snap.child("target_name").getValue(String::class.java) ?: "Device"
+                    map["zone_name"] = snap.child("zone_name").getValue(String::class.java) ?: "Safe Zone"
+                    map["status"] = snap.child("status").getValue(String::class.java) ?: snap.child("transition").getValue(String::class.java) ?: "ENTERED"
+                    map["datetime"] = snap.child("datetime").getValue(String::class.java) ?: snap.child("readable_time").getValue(String::class.java) ?: ""
+                    map["time"] = snap.child("time").getValue(String::class.java) ?: ""
+                    map["title"] = "${map["avatar_name"]} ${map["status"]?.lowercase()} ${map["zone_name"]}"
+                    map["msg"] = "Safe zone perimeter transition detected at ${map["datetime"]}."
+                    map["timestamp"] = snap.child("timestamp").value?.toString() ?: ""
+                    cloudAlertsList.add(0, map) // Latest first
+                }
+                loadLocalAlerts()
+            }
+            override fun onCancelled(error: DatabaseError) {
+                SystemLogger.e(TAG, "Cloud notifications stream failed: ${error.message}")
+            }
         })
     }
 }

@@ -306,34 +306,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         }
     }
 
-    protected void  triggerHelpDialog() {
-        String actName = getClass().getSimpleName().replace("Activity", "");
-        String helpText = "Standard Application Screen active. Navigate to Help & Support for the complete Enterprise Matrix.";
-        if (actName.contains("Auth")) helpText = "1. New User? Tap 'AUTO SETUP' below to instantly load default enterprise user details.\n2. Already have a device? Tap 'SYNC DEVICE' to securely pair and bypass manual setup.\n3. Themes: All 9 enterprise vectors sync seamlessly securely across your physical node cluster.";
-        if (actName.equals("FamilyFriends")) helpText = "🛰️ UNIVERSAL SOCIAL HUB (L7 Architect)\n\n" +
-                                                                              "1. MONITORED ROSTER (TABS): View real-time tracking telemetry for Family and Friends.\n\n" +
-                                                                              "2. GATEWAY HUB: Tap [+] to trigger the QR Handshake. Align the target's pairing code to finalize the relational bridge.\n\n" +
-                                                                              "3. CLOUD RECOVERY: Tap [RECLAIM CLOUD ROSTER] below to perform an aggressive backend sweep and restore your existing network after a reinstall.\n\n" +
-                                                                              "4. IDENTITY MIRROR: Your current dossier (Avatar + Name) is automatically mirrored across all connected nodes in milliseconds.";
-        if (actName.equals("Map")) helpText = "• Step 1: Access the Map natively from the top Dashboard.\n• Step 2: Observe Live Avatars. Tap any Pin to pull up exact Geolocation data.\n• Step 3: Expand Map using Action Tiles to render unified Family trace paths.";
-        if (actName.equals("Geofence")) helpText = "• Step 1: Drag Map to drop the target Radius Anchor Pin.\n• Step 2: Adjust the physical Radius (e.g., 200m) required to trigger Sirens.\n• Step 3: Lock the Geofence into Firebase explicitly.";
-        if (actName.equals("Privacy")) helpText = "• Location Services: Authorizes native Android OS GPS and WiFi triangulation.\n\n• Background Scanning: Forces OS tracking while app is sleeping (Android 10+).\n\n• Telemetry Feedback: Sends anonymous crash diagnostics back to network.\n\n• Two-Factor Authentication (2FA): Requires secondary validation via Email/SMS for new device logins.\n\n• Strict Tracking Constraints: Restricts physical tracking specifically to defined geofences/zones.\n\n• Location History Tracking: Archives your live breadcrumbs into the History Database (Default: 7 Days, USER Override supported).";
-        if (actName.equals("SystemLog")) helpText = "• Step 1: Navigate to 'System Audits'.\n• Step 2: Tap any Diagnostic Card (e.g., Battery Health, P2P Matrix).\n• Step 3: View the 7-Day Storage Array generated on your physical drive.\n• Step 4: Tap 'Full Report' to aggregate and export the live tracking logs.";
-        if (actName.equals("History")) helpText = "• Step 1: Storage Limit - Tap the '7 DAYS' value box to manually override how long history logs remain on your physical device.\n• Step 2: Time Selection - Select a forensic window (e.g., 4h, 12h, 24h) to render tracking trails on the map engine.\n• Step 3: Replay Controls - Tap START to physically replay the target's path with real-time speed/battery telemetry.\n• Step 4: Diagnostic Metrics - '0.0 km/h' indicates as Static/Dwell event. 'N/A' indicates missing forensic sensor telemetry at the time of the ping.";
-        if (actName.equals("Notif")) helpText = "• Step 1: Open 'Panic Alerts' (Notifications) from the Dashboard Grid.\n• Step 2: View the chronological history of all emergency sirens triggered.\n• Step 3: Active SOS events bypass Doze mode natively.";
-        if (actName.equals("WatchDogAudit")) helpText = "• MISSION: Real-time silicon monitoring & forensic fault detection.\n\n• STEP 1: MONITORING - Observe the live heartbeat of the application. Red nodes indicate critical security or sync failures.\n\n• STEP 2: FILTERING - Use the level rack (INFO, WARN, ERR) to isolate specific diagnostic threads.\n\n• STEP 3: EXPORTING - Tap 'COPY' to export the 7-day master audit trail for forensic review.\n\n• STEP 4: PROMOTION - Critical errors are automatically promoted to the Alert Dashboard with high-priority sirens.";
-        if (actName.equals("Profile") || actName.equals("AvatarEditor") || actName.equals("AvatarCrop")) helpText = "• Step 1: Access 'Me' or 'Profile'.\n• Step 2: Edit your Display Name or tap your Profile Picture.\n• Step 3: Use the Native Editor to crop and sync an image directly to the Map Engine.";
-        if (actName.equals("FamilyFriends") || actName.equals("PersonDetails")) helpText = "• Step 1: Access individual member dossiers from the roster.\n• Step 2: Configure the Privacy & ACL Matrix (Live Sync, Biometrics).\n\n" +
-                                                                             "PRIVACY PERMISSIONS (PROS vs CONS):\n\n" +
-                                                                             "| State | Pros | Cons |\n" +
-                                                                             "| :--- | :--- | :--- |\n" +
-                                                                             "| ✅ GRANTED | Full recovery sync, real-time safety, remote admin. | Higher data usage, cloud-stored records. |\n" +
-                                                                             "| ❌ DENIED | Absolute local-only privacy, GDPR minimization. | No remote recovery, limited emergency alerts. |\n\n" +
-                                                                             "• Step 3: Enable 'Global Cloud Sync' ONLY if you require multi-device dossier recovery.";
-        if (actName.equals("Settings") || actName.equals("UiConfig")) helpText = "• Step 1: Access 'Settings Hub' from the Map Dashboard.\n• Step 2: Override the 'Tracking Resolution' interval or toggle 'Ghost Mode'.\n• Step 3: Enter the 'GLOBAL UI ARCHITECT' to reprogram the gradient colors physically across the entire App.";
-
-        showForensicDialog("Screen Guide: " + actName, helpText);
-    }
+    // Contract methods and utilities
 
     // 🦋 Master QA Enterprise Fix: OEM-safe theme & UI configuration recreation
     // Uses finish()+startActivity() to bypass Chinese OEM BinderProxy crashes with recreate().
@@ -402,12 +375,16 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         if (prefs == null) {
             prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE);
         }
+        boolean isSystemDefault = prefs.getBoolean("pref_system_default_theme", false);
         currentThemeId = prefs.getInt("theme_id", 0);
         int theme = currentThemeId;
-        if (theme == 8) { // 🧠 System Default Mode
+
+        if (isSystemDefault || theme >= 100 || theme == 88) { // 🧠 System Default Mode
             int nightModeFlags = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-            theme = (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES) ? 1 : 0;
+            boolean isDark = (nightModeFlags == android.content.res.Configuration.UI_MODE_NIGHT_YES);
+            theme = isDark ? 1 : 0; // 1 = Nordic Obsidian (Dark), 0 = Coral Sea Teal (Light)
         }
+
         // 🚀 QA Guard: Ensure we never exceed the matrix bounds
         if (theme < 0 || theme >= ThemeManager.THEMES.length) theme = 0;
         return theme;
@@ -915,33 +892,77 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     }
 
     /**
-     * 🛰️ L7 UNIVERSAL ADVISOR: Contextual Help Portal
+     * 💡 UNIVERSAL CONTEXTUAL HELP ENGINE (Human-in-the-Loop Advisor)
+     * Automatically inspects the current screen context and provides comprehensive guidance, hints, and actionable tips.
      */
-    protected void showHelpDialog(android.content.Context context, String featureKey) {
-        String title = "FORENSIC GUIDANCE";
+    protected void triggerHelpDialog() {
+        String screenClass = getClass().getSimpleName();
+        String title = "💡 HOW THIS SCREEN WORKS";
         StringBuilder msg = new StringBuilder();
 
-        switch (featureKey) {
-            case "GEOFENCE_MAP_HUB":
-                title = "GEOSPATIAL DEPLOYMENT HUB";
-                msg.append("📍 LONG-PRESS: Drop a safezone anchor on the map.\n\n");
-                msg.append("🏷️ IDENTITY: Label the zone (e.g., Home, School).\n\n");
-                msg.append("⭕ RADIUS: Enter the siren range in meters.\n\n");
-                msg.append("🛰️ NODE: Assign this zone to a specific member device.\n\n");
-                msg.append("🚀 DEPLOY: Synchronize the perimeter with the network.");
+        switch (screenClass) {
+            case "FamilyFriendsActivity":
+                title = "👥 FAMILY & FRIENDS GUIDE";
+                msg.append("👑 HIERARCHY TREE:\n• Top card represents your host anchor.\n• Lower cards represent verified family members and friends.\n\n");
+                msg.append("🟢 ONLINE / 🔴 OFFLINE / ⚪ GREY MODE:\n• Online members stream real-time GPS & battery stats.\n• Offline/unlinked members appear in Grey Mode with faded opacity and desaturated avatars.\n\n");
+                msg.append("⚡ 1-TAP QUICK ACTIONS:\n• Tap any card to track on Live Map, trigger acoustic sirens, assign safe zones, edit dossiers, or unlink devices.");
                 break;
+
+            case "NetworkGatewayActivity":
+                title = "🌐 NETWORK GATEWAY & PAIRING GUIDE";
+                msg.append("🔗 ACTIVE ROSTER TAB:\n• Displays all connected nodes and allows instant purging or dossier inspection.\n\n");
+                msg.append("☁️ REMOTE CLOUD TAB:\n• Generates dynamic 6-digit Cloud Pairing PINs & QR codes to link distant family members over the internet.\n\n");
+                msg.append("📶 NEARBY P2P TAB:\n• Generates 8-digit Local Tokens for fast offline Wi-Fi / Bluetooth handshakes.");
+                break;
+
+            case "GeofenceActivity":
+                title = "🛡️ SAFE ZONE & GEOFENCING GUIDE";
+                msg.append("📍 MAP ANCHOR:\n• Tap anywhere on the map to set a perimeter epicenter.\n\n");
+                msg.append("⭕ RADIUS & ROLE:\n• Adjust the slider between 50m to 5000m and assign to a specific device.\n\n");
+                msg.append("🚨 TRANSITION ALERTS:\n• Automatic push alerts and acoustic sirens trigger when assigned devices enter or exit the perimeter.");
+                break;
+
+            case "HistoryActivity":
+                title = "📜 LOCATION HISTORY GUIDE";
+                msg.append("📅 TIMELINE AUDIT:\n• Browse historical paths, timestamps, speed, and battery logs.\n\n");
+                msg.append("🗺️ PATH REPLAY:\n• View continuous movement polylines plotted across the map with time markers.");
+                break;
+
+            case "UiConfigActivity":
+                title = "🎨 THEMES & DISPLAY GUIDE";
+                msg.append("🌈 12 CURATED THEMES:\n• Select from dual-sphere mineral and ceramic color themes.\n\n");
+                msg.append("🌓 SYSTEM DEFAULT SYNC:\n• Check 'System Default Theme' to automatically follow your Android OS Dark / Light mode.");
+                break;
+
+            case "ProfileActivity":
+            case "PersonDetailsActivity":
+                title = "👤 DOSSIER & PROFILE GUIDE";
+                msg.append("🖼️ AVATAR SELECTION:\n• Choose from 50 HD avatars or upload a custom photo.\n\n");
+                msg.append("🛡️ EMERGENCY NOTE:\n• Add emergency contact info and medical notes synced across the circle.");
+                break;
+
             default:
-                msg.append("Operational protocols for this module are currently being de-encrypted. Please contact your forensic administrator for further tactical support.");
+                title = "💡 SENTINEL HELP & GUIDANCE";
+                msg.append("🛡️ jFindMe Sentinel continuously safeguards your circle with AES-256 encrypted peer-to-peer telemetry.\n\n");
+                msg.append("• Use the bottom navigation to jump between Live Map, SafeZones, Roster, and System Logs.\n");
+                msg.append("• For technical assistance or bug reports, visit Help & Support in Settings.");
                 break;
         }
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(context)
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(msg.toString())
-            .setPositiveButton("Understood", null)
+            .setPositiveButton("GOT IT", null)
             .show();
-        
+
         applyDialogTheme(dialog);
+    }
+
+    /**
+     * 🛰️ L7 UNIVERSAL ADVISOR: Contextual Help Portal
+     */
+    protected void showHelpDialog(android.content.Context context, String featureKey) {
+        triggerHelpDialog();
     }
 
     /**

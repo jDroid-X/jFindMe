@@ -315,12 +315,14 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
         String myUid = FirebaseAuth.getInstance().getUid();
         String finalAgentId = RegistryManager.getAgentId(this);
+        SharedPreferences ffPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String myDevUid = ffPrefs.getString("device_uid", "");
         DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
         String resolvedLocalAgentId = (myUid != null) ? dbLocal.resolveAgentIdLocally(myUid) : null;
 
         for (RosterNode n : currentRoster) {
             String uid = n.getUid();
-            if (uid.equals(myUid) || uid.equals(finalAgentId) || (resolvedLocalAgentId != null && uid.equals(resolvedLocalAgentId))) {
+            if (uid.equals(myUid) || uid.equals(finalAgentId) || (!myDevUid.isEmpty() && uid.equals(myDevUid)) || (resolvedLocalAgentId != null && uid.equals(resolvedLocalAgentId))) {
                 continue;
             }
             if (matchesSearch(n) && !n.isFriend()) {
@@ -601,6 +603,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         logCard.setGravity(Gravity.CENTER_VERTICAL);
         UiArchitect.applyCard(this, logCard, "CARD_STANDARD");
 
+        int batt = (node.getBatteryPercent() > 0) ? node.getBatteryPercent() : 100;
+        long lastSeenMs = node.isOnline() ? System.currentTimeMillis() : 0L;
+        com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
+            com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batt, false, false, false);
+
+        logCard.setAlpha(rag.getCardAlpha());
+
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         cardLp.setMargins(scale(4), scale(4), scale(4), scale(4));
         logCard.setLayoutParams(cardLp);
@@ -610,13 +619,15 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         logCard.setFocusable(true);
         logCard.setOnClickListener(v -> showNodeQuickActionsDialog(node));
 
+        String avId = node.getAvatarId();
+        if (avId == null || avId.isEmpty() || avId.equals("avatar_custom_1")) avId = "butterfly";
+
         ImageView avatar = new ImageView(this);
-        AvatarLoader.bindAvatar(this, avatar, node.getAvatarId());
+        AvatarLoader.bindAvatar(this, avatar, avId, rag.isDesaturated());
         GradientDrawable ringDrawable = new GradientDrawable();
         ringDrawable.setShape(GradientDrawable.OVAL);
         ringDrawable.setColor(Color.parseColor("#1A000000"));
-        int ringColor = node.isFriend() ? getGradientMid() : getGradientStart();
-        ringDrawable.setStroke(scale(3), ringColor);
+        ringDrawable.setStroke(scale(3), rag.getStrokeColor());
         avatar.setBackground(ringDrawable);
 
         int universalSize = UiArchitect.getUniversalAvatarSize(this);
@@ -627,20 +638,30 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         textBlock.setPadding(scale(16), 0, 0, 0);
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
+        String display = node.getDisplayName().trim();
+        boolean isRawToken = display.startsWith("HW_") || display.startsWith("Agent_") || display.length() > 18;
+        String friendlyTitle = isRawToken ? "Paired Device (" + (display.length() > 10 ? display.substring(0, 10) + "..." : display) + ")" : display;
+
         TextView tvTitle = new TextView(this);
-        tvTitle.setText(node.getDisplayName().trim());
-        tvTitle.setTextColor(getTextColor());
+        tvTitle.setText(friendlyTitle);
+        tvTitle.setTextColor(rag.isDesaturated() ? getSecondaryTextColor() : getTextColor());
         tvTitle.setTextSize(14);
         tvTitle.setTypeface(null, Typeface.BOLD);
         textBlock.addView(tvTitle);
 
+        if (isRawToken) {
+            TextView tvRenameHint = new TextView(this);
+            tvRenameHint.setText("✏️ Tap to assign custom name");
+            tvRenameHint.setTextColor(getSecondaryTextColor());
+            tvRenameHint.setTextSize(10);
+            tvRenameHint.setPadding(0, scale(1), 0, scale(2));
+            textBlock.addView(tvRenameHint);
+        }
+
         TextView tvDetail = new TextView(this);
-        String statusLabel = node.isOnline() ? "🟢 ONLINE" : "🔴 OFFLINE";
-        int batt = (node.getBatteryPercent() > 0) ? node.getBatteryPercent() : 100;
-        String batteryText = (batt < 20) ? "⚠️ 🔋 " + batt + "% (LOW)" : "🔋 " + batt + "%";
         String roleText = node.getRoleTitle();
-        tvDetail.setText(roleText + "  •  " + statusLabel + "  •  " + batteryText);
-        tvDetail.setTextColor(node.isOnline() ? Color.parseColor("#00E676") : Color.parseColor("#FF5252"));
+        tvDetail.setText(roleText + "  •  " + rag.getStatusText());
+        tvDetail.setTextColor(rag.getStatusColor());
         tvDetail.setTextSize(11);
         textBlock.addView(tvDetail);
 

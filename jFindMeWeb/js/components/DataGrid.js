@@ -118,13 +118,22 @@ export class DataGrid {
                         </div>
                     </div>
                     
-                    <div class="flex items-center gap-6">
-                        <button onclick="window.appInstance.loadNode('${state.navigation.activeNode}', ${this.pageSize}, window.appInstance.activeNodeType)" class="flex items-center gap-2 p-2 px-4 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-secondary transition-all text-[10px] font-bold uppercase tracking-widest">
+                    <div class="flex items-center gap-3">
+                        <button onclick="window.dataGridInstance && window.dataGridInstance.showAddRecordModal()" class="flex items-center gap-1.5 p-2 px-3 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg border border-emerald-500/30 transition-all text-[10px] font-bold uppercase tracking-wider">
+                            <span>➕ Add Record</span>
+                        </button>
+                        <button onclick="window.dataGridInstance && window.dataGridInstance.exportCsv()" class="flex items-center gap-1.5 p-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-secondary hover:text-white transition-all text-[10px] font-bold uppercase tracking-wider">
+                            <span>📥 CSV</span>
+                        </button>
+                        <button onclick="window.dataGridInstance && window.dataGridInstance.exportJson()" class="flex items-center gap-1.5 p-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-secondary hover:text-white transition-all text-[10px] font-bold uppercase tracking-wider">
+                            <span>📥 JSON</span>
+                        </button>
+                        <button onclick="window.appInstance.loadNode('${state.navigation.activeNode}', ${this.pageSize}, window.appInstance.activeNodeType)" class="flex items-center gap-2 p-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-secondary transition-all text-[10px] font-bold uppercase tracking-widest">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                            Reset_View
+                            Refresh
                         </button>
 
-                        <div class="text-right">
+                        <div class="text-right pl-3 border-l border-white/10">
                             <div class="text-[9px] uppercase tracking-widest text-secondary font-bold">Matrix Heartbeat</div>
                             <div class="text-[11px] font-mono text-success/80 animate-pulse">● LIVE SYNC: ${lastSync}</div>
                         </div>
@@ -334,6 +343,155 @@ export class DataGrid {
                 }
             }
         };
+
+        window.dataGridInstance = this;
+    }
+
+    exportCsv() {
+        const state = Store.getState();
+        const records = state.data.records || [];
+        if (records.length === 0) {
+            alert("No records to export.");
+            return;
+        }
+
+        const columns = new Set();
+        records.forEach(r => Object.keys(r).forEach(k => { if (!k.startsWith('_')) columns.add(k); }));
+        const colList = Array.from(columns);
+
+        let csv = colList.map(c => `"${c}"`).join(",") + "\n";
+        records.forEach(row => {
+            csv += colList.map(col => {
+                const val = row[col] !== undefined ? String(row[col]).replace(/"/g, '""') : "";
+                return `"${val}"`;
+            }).join(",") + "\n";
+        });
+
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${state.navigation.activeNode || "export"}_${Date.now()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        if (window.log) window.log(`EXPORT_CSV: Exported ${records.length} records to CSV.`, "success");
+    }
+
+    exportJson() {
+        const state = Store.getState();
+        const records = state.data.records || [];
+        if (records.length === 0) {
+            alert("No records to export.");
+            return;
+        }
+
+        const jsonStr = JSON.stringify(records, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${state.navigation.activeNode || "export"}_${Date.now()}.json`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        if (window.log) window.log(`EXPORT_JSON: Exported ${records.length} records to JSON.`, "success");
+    }
+
+    showAddRecordModal() {
+        const state = Store.getState();
+        const activeNode = state.navigation.activeNode;
+        if (!activeNode) return;
+
+        const records = state.data.records || [];
+        const columns = new Set();
+        records.forEach(r => Object.keys(r).forEach(k => { if (k !== 'id' && !k.startsWith('_')) columns.add(k); }));
+        if (this.SCHEMA_COLS[activeNode]) {
+            this.SCHEMA_COLS[activeNode].forEach(c => columns.add(c));
+        }
+        const colList = Array.from(columns);
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 z-[1100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in font-sans';
+
+        modal.innerHTML = `
+            <div class="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]">
+                <div class="p-5 border-b border-white/10 flex items-center justify-between bg-slate-950/80">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-lg">➕</div>
+                        <div>
+                            <h3 class="text-base font-black tracking-tight text-white uppercase">Add New Record</h3>
+                            <p class="text-xs text-slate-400">Node: /${activeNode}</p>
+                        </div>
+                    </div>
+                    <button id="btn-close-add-rec" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-all text-xl font-mono">✕</button>
+                </div>
+
+                <div class="p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+                    <div>
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-sky-400 block mb-1">Record Key / Document ID *</label>
+                        <input type="text" id="add-rec-id" placeholder="e.g. REC_${Date.now()}" value="REC_${Date.now()}"
+                               class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+                    </div>
+
+                    <div class="space-y-3 pt-2 border-t border-white/5">
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block">Record Attributes</span>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto custom-scrollbar p-2 bg-black/40 rounded-xl border border-white/5">
+                            ${colList.map(col => `
+                                <div>
+                                    <label class="text-[10px] text-slate-400 uppercase font-mono block mb-1 truncate">${col}</label>
+                                    <input type="text" class="add-rec-field w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-white focus:border-sky-500 focus:outline-none font-mono" data-key="${col}">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 border-t border-white/10 bg-slate-950 flex items-center justify-end gap-3">
+                    <button id="btn-cancel-add-rec" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 transition-all">Cancel</button>
+                    <button id="btn-save-add-rec" class="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-600/30">
+                        Create Record
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const close = () => modal.remove();
+        modal.querySelector('#btn-close-add-rec').addEventListener('click', close);
+        modal.querySelector('#btn-cancel-add-rec').addEventListener('click', close);
+
+        modal.querySelector('#btn-save-add-rec').addEventListener('click', async () => {
+            const id = modal.querySelector('#add-rec-id').value.trim();
+            if (!id) {
+                alert("Please specify a Record Key/ID.");
+                return;
+            }
+
+            const data = {};
+            modal.querySelectorAll('.add-rec-field').forEach(input => {
+                const k = input.dataset.key;
+                const v = input.value.trim();
+                if (v !== "") {
+                    // Try parsing numbers / booleans
+                    if (!isNaN(v) && v !== "") data[k] = Number(v);
+                    else if (v.toLowerCase() === "true") data[k] = true;
+                    else if (v.toLowerCase() === "false") data[k] = false;
+                    else data[k] = v;
+                }
+            });
+
+            try {
+                const nodeType = window.appInstance.activeNodeType || 'rtdb';
+                await FBBridge.saveRecord(activeNode, id, data, nodeType);
+                if (window.log) window.log(`RECORD_CREATED: Created [${id}] under /${activeNode}.`, "success");
+                close();
+                window.appInstance.loadNode(activeNode, this.pageSize, nodeType);
+            } catch (e) {
+                alert("Failed to create record: " + e.message);
+            }
+        });
     }
 
     setPage(page) {

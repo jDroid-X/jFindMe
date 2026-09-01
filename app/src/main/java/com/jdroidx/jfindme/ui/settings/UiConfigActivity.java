@@ -811,7 +811,7 @@ public class UiConfigActivity extends BaseActivityJava {
         textLayout.setPadding(12, 0, 0, 0);
         
         TextView tvSystemTitle = new TextView(this);
-        tvSystemTitle.setText("System Default Theme (Auto Light / Dark)");
+        tvSystemTitle.setText("System Default Theme (Auto OS Light / Dark)");
         tvSystemTitle.setTextColor(getTextColor());
         tvSystemTitle.setTextSize(12f);
         tvSystemTitle.setTypeface(null, Typeface.BOLD);
@@ -819,8 +819,8 @@ public class UiConfigActivity extends BaseActivityJava {
 
         TextView tvSystemSub = new TextView(this);
         int nightMode = getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
-        String currentDetected = (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) ? "Dark Mode Detected" : "Light Mode Detected";
-        tvSystemSub.setText(isSystemThemeActive ? "Active: Device Default Applied (" + currentDetected + ")" : "Disabled: Custom Palette Active");
+        String currentDetected = (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) ? "Dark Mode Active" : "Light Mode Active";
+        tvSystemSub.setText(isSystemThemeActive ? "Active: Automatically matching OS theme (" + currentDetected + ")" : "Disabled: Manual Palette Selected");
         tvSystemSub.setTextColor(getSecondaryTextColor());
         tvSystemSub.setTextSize(10f);
         textLayout.addView(tvSystemSub);
@@ -830,10 +830,9 @@ public class UiConfigActivity extends BaseActivityJava {
         View.OnClickListener toggleSystemTheme = v -> {
             boolean nextState = !cbSystemTheme.isChecked();
             cbSystemTheme.setChecked(nextState);
-            int newTheme = nextState ? 8 : 0; // 8 = System Default, 0 = Celadon Sage
-            String msg = nextState ? "APPLYING SYSTEM DEFAULT THEME..." : "APPLYING CUSTOM PALETTE...";
+            prefs.edit().putBoolean("pref_system_default_theme", nextState).apply();
+            String msg = nextState ? "APPLYING OS SYSTEM DEFAULT THEME..." : "DISABLING SYSTEM DEFAULT THEME...";
             AngelLoad.engage(this, msg, () -> {
-                viewModel.updateTheme(newTheme);
                 safeRecreate();
             });
         };
@@ -851,8 +850,9 @@ public class UiConfigActivity extends BaseActivityJava {
 
         String[] themeNames = com.jdroidx.jfindme.ui.base.ThemeManager.THEME_NAMES;
         int tSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+        int totalThemes = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES.length;
         
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < totalThemes; i++) {
             final int themeIndex = i;
             LinearLayout themeItem = new LinearLayout(this);
             themeItem.setOrientation(LinearLayout.VERTICAL);
@@ -873,7 +873,7 @@ public class UiConfigActivity extends BaseActivityJava {
             gd.setOrientation(android.graphics.drawable.GradientDrawable.Orientation.TL_BR);
             
             if (currentThemeId == i && !isSystemThemeActive) {
-                gd.setStroke(8, getGradientStart()); // Professional Highlight
+                gd.setStroke(8, getGradientStart()); // Highlight Selected Theme
             }
             circle.setBackground(gd);
             LinearLayout.LayoutParams circleLp = new LinearLayout.LayoutParams(tSize, tSize);
@@ -892,6 +892,7 @@ public class UiConfigActivity extends BaseActivityJava {
             themeItem.setOnClickListener(v -> {
                 String msg = "APPLYING [" + themeNames[themeIndex].toUpperCase() + "] AESTHETIC...";
                 AngelLoad.engage(this, msg, () -> {
+                    prefs.edit().putBoolean("pref_system_default_theme", false).apply();
                     viewModel.updateTheme(themeIndex);
                     // 🚀 QA Fix: Stay on Screen! Instant repaint of the current hub.
                     safeRecreate();

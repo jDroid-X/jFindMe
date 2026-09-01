@@ -78,7 +78,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private boolean isReplaying = false;
     private String currentTargetUid;
     private String currentTargetName;
-    private String currentTargetAvatarId = "avatar_custom_1";
+    private String currentTargetAvatarId = "butterfly";
     private ImageView targetAvatarView;
     private TextView tvSelectTarget;
     private int selectedTimeIndex = 0;
@@ -956,10 +956,14 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             long mins = durationMs / 60000L;
             stayDurationStr = mins + "m stay";
         } else {
-            stayDurationStr = "Stop / Point";
+            stayDurationStr = pings + (pings == 1 ? " Fix" : " Fixes");
         }
         
-        tvLabel.setText("📍 " + fromDateStr + " • " + fromTimeStr + " - " + toTimeStr + " (" + stayDurationStr + ")");
+        if (durationMs >= 60000L && !fromTimeStr.equals(toTimeStr)) {
+            tvLabel.setText("📍 " + fromDateStr + " • " + fromTimeStr + " - " + toTimeStr + " (" + stayDurationStr + ")");
+        } else {
+            tvLabel.setText("📍 " + fromDateStr + " • " + fromTimeStr + " (" + stayDurationStr + ")");
+        }
         tvLabel.setTextColor(getGradientStart());
         tvLabel.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tvLabel, "TEXT_MINI");

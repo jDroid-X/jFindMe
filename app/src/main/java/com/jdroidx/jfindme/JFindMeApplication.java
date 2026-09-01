@@ -28,5 +28,21 @@ public class JFindMeApplication extends Application {
 
         // 🛠️ Initialize background jobs & sentinels with persisted frequencies
         com.jdroidx.jfindme.service.BackgroundJobManager.INSTANCE.initializeAllJobs(this);
+
+        // 🚀 Persistent WhatsApp-Grade Background Service Auto-Start
+        try {
+            if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAutoLoginEnabled(this)) {
+                android.content.Intent serviceIntent = new android.content.Intent(this, com.jdroidx.jfindme.service.TrackingService.class);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+                SystemLogger.i("AppLifecycle", "TrackingService auto-started in foreground on app boot.");
+            }
+        } catch (Exception e) {
+            SystemLogger.e("AppLifecycle", "Failed to auto-start TrackingService on app boot", e);
+        }
     }
 }

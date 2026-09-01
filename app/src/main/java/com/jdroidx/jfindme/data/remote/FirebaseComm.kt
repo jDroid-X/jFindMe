@@ -695,17 +695,56 @@ object FirebaseComm {
         return (baseline - current).toString()
     }
 
+    @JvmStatic
+    fun parseTimestampFromInvertedKey(key: String): String {
+        if (key.isBlank()) return getForensicTimestamp()
+        return try {
+            val baseline = 9999123123595999L
+            val numKey = key.trim().toLongOrNull() ?: return getForensicTimestamp()
+            val origTs = baseline - numKey
+            val origStr = origTs.toString()
+            if (origStr.length >= 14) {
+                origStr.padEnd(16, '0').take(16)
+            } else {
+                getForensicTimestamp(origTs)
+            }
+        } catch (e: Exception) {
+            getForensicTimestamp()
+        }
+    }
+
     /**
      * 🧬 V60 High-Precision Forensic Pulse
      * Returns: YYYYMMDDHHMMSSSS (16-character precise timeline)
      */
     @JvmStatic
     fun getForensicTimestamp(input: Any? = System.currentTimeMillis()): String {
-        if (input is String && input.length == 16) return input
+        if (input == null) return getForensicTimestamp(System.currentTimeMillis())
+        if (input is String) {
+            val s = input.trim()
+            if (s.length == 16 && s.matches(Regex("^\\d{16}$"))) return s
+            if (s.matches(Regex("^\\d{13}$"))) {
+                val num = s.toLongOrNull()
+                if (num != null) return getForensicTimestamp(num)
+            }
+            if (s.matches(Regex("^\\d{10}$"))) {
+                val num = s.toLongOrNull()
+                if (num != null) return getForensicTimestamp(num * 1000L)
+            }
+            val patterns = arrayOf("yyyyMMddHHmmssSS", "yyyyMMddHHmmss", "yyyyMMdd", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss")
+            for (p in patterns) {
+                try {
+                    val sdf = java.text.SimpleDateFormat(p, java.util.Locale.US)
+                    val d = sdf.parse(if (s.length > p.length) s.substring(0, p.length) else s)
+                    if (d != null) return getForensicTimestamp(d.time)
+                } catch (e: Exception) {}
+            }
+            if (s.isBlank()) return getForensicTimestamp(System.currentTimeMillis())
+        }
         
         val timeMs = when (input) {
             is Long -> input
-            is String -> input.toLongOrNull() ?: System.currentTimeMillis()
+            is Number -> input.toLong()
             else -> System.currentTimeMillis()
         }
         

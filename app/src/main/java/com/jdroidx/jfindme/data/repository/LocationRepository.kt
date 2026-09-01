@@ -80,25 +80,18 @@ class LocationRepository(internal val context: Context) {
             loc.userName = resolvedId
         }
 
-        // 🚀 LIVE AVATAR RESOLUTION: Live cloud avatar takes top precedence over stale local cache!
+        // 🚀 STABLE AVATAR RESOLUTION: Custom assigned avatar takes top precedence over fallback default
         val liveAvatar = loc.avatar_id
         val ssotAvatar = db.getDeviceCentricAvatar(resolvedId)
-        if (!liveAvatar.isNullOrEmpty()) {
+
+        if (!liveAvatar.isNullOrEmpty() && liveAvatar != "butterfly") {
             loc.avatar_id = liveAvatar
-            // If the remote peer updated their avatar, sync the new avatar back to local SQLite ledger
-            if (profile != null && liveAvatar != profile["avatar_id"]) {
-                try {
-                    db.updateDeviceIdentityAndAvatar(resolvedId, loc.userName, liveAvatar)
-                    com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
-                } catch (e: Exception) {}
-            }
         } else if (ssotAvatar.isNotEmpty()) {
             loc.avatar_id = ssotAvatar
-        } else if (profile != null) {
-            val resolvedAvatar = profile["avatar_id"] ?: profile["equipped_avatar_id"] ?: profile["qr_code_ref"]
-            if (!resolvedAvatar.isNullOrEmpty()) {
-                loc.avatar_id = resolvedAvatar
-            }
+        } else if (!liveAvatar.isNullOrEmpty()) {
+            loc.avatar_id = liveAvatar
+        } else {
+            loc.avatar_id = "butterfly"
         }
         
         if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name") && !isSelf) {
@@ -200,10 +193,31 @@ class LocationRepository(internal val context: Context) {
                 val ref = FirebaseComm.devicesRef.child(uid).child("device").child("live")
                 val listener = object : ValueEventListener {
                     override fun onDataChange(snapshot: DataSnapshot) {
-                        val rawLoc = snapshot.getValue(UserLocation::class.java) ?: return
+                        var rawLoc = snapshot.getValue(UserLocation::class.java)
                         val explicitAvatar = snapshot.child("avatar_id").getValue(String::class.java)
                         val explicitName = snapshot.child("userName").getValue(String::class.java) 
                             ?: snapshot.child("name").getValue(String::class.java)
+                        val zoneName = snapshot.child("current_safe_zone_name").getValue(String::class.java)
+                        val zoneState = snapshot.child("current_safe_zone_state").getValue(String::class.java)
+                        val zoneId = snapshot.child("current_safe_zone_id").getValue(String::class.java)
+
+                        if (rawLoc == null) {
+                            val lat = snapshot.child("latitude").getValue(Double::class.java) ?: 0.0
+                            val lng = snapshot.child("longitude").getValue(Double::class.java) ?: 0.0
+                            rawLoc = UserLocation(userId = uid, latitude = lat, longitude = lng)
+                        }
+
+                        // If coordinates missing but currently inside safe zone, fallback to safe zone coordinates
+                        if ((rawLoc.latitude == 0.0 && rawLoc.longitude == 0.0) && zoneState == "IN" && !zoneId.isNullOrEmpty()) {
+                            try {
+                                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                                val zoneModel = db.getSafeZoneById(zoneId)
+                                if (zoneModel != null && zoneModel.lat != 0.0 && zoneModel.lng != 0.0) {
+                                    rawLoc = rawLoc.copy(latitude = zoneModel.lat, longitude = zoneModel.lng)
+                                }
+                            } catch (e: Exception) {}
+                        }
+
                         val loc = rawLoc.copy(
                             userId = uid,
                             avatar_id = explicitAvatar ?: rawLoc.avatar_id,
@@ -426,6 +440,13 @@ class LocationRepository(internal val context: Context) {
                         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                         snapshot.children.forEach { child ->
                             child.getValue(UserLocation::class.java)?.let { point ->
+                                val effectiveTs = if (point.getLongTimestamp() <= 0L || point.timestamp == "" || point.timestamp == null) {
+                                    val childKey = child.key ?: ""
+                                    FirebaseComm.parseTimestampFromInvertedKey(childKey)
+                                } else {
+                                    point.getResolvedTimestamp()
+                                }
+                                point.timestamp = effectiveTs
                                 points.add(point)
                                 
                                 db.saveHistoryPoint(
@@ -437,7 +458,7 @@ class LocationRepository(internal val context: Context) {
                                     point.batteryLevel.toInt(),
                                     point.isSosActive,
                                     null,
-                                    point.getResolvedTimestamp()
+                                    effectiveTs
                                 )
                             }
                         }

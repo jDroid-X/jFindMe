@@ -4,19 +4,27 @@
  */
 export class FirebaseService {
     constructor() {
-        this.baseUrl = window.API_BASE_URL || (window.location.origin.startsWith('http') ? window.location.origin : "http://127.0.0.1:3000");
+        const hasWindow = typeof window !== 'undefined';
+        const host = (hasWindow && window.location && window.location.hostname) || '127.0.0.1';
+        const port = (hasWindow && window.location && window.location.port) || '8080';
+        const origin = (hasWindow && window.location && window.location.origin) || `http://${host}:${port}`;
+        this.baseUrl = (hasWindow && window.API_BASE_URL) || (port === '3000' ? origin : `http://${host}:3000`);
     }
 
     async fetchRaw(endpoint, options = {}) {
-        if (this.currentController) {
-            this.currentController.abort();
+        if (!this.controllers) {
+            this.controllers = {};
         }
-        this.currentController = new AbortController();
+        if (this.controllers[endpoint]) {
+            this.controllers[endpoint].abort();
+        }
+        const controller = new AbortController();
+        this.controllers[endpoint] = controller;
         
         try {
             const response = await fetch(`${this.baseUrl}${endpoint}`, { 
                 ...options,
-                signal: this.currentController.signal,
+                signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', ...options.headers }
             });
             if (!response.ok) throw new Error(`HTTP_${response.status}`);
@@ -26,7 +34,9 @@ export class FirebaseService {
             console.error(`[BRIDGE_ERROR] ${endpoint}`, err);
             throw err;
         } finally {
-            this.currentController = null;
+            if (this.controllers && this.controllers[endpoint] === controller) {
+                delete this.controllers[endpoint];
+            }
         }
     }
 

@@ -9,14 +9,18 @@ import android.graphics.Color;
 public class ThemeManager {
 
     public static final String[] THEME_NAMES = {
-        "Celadon Sage",          // 0: Whispering Sage & Porcelain Bisque (Light)
+        "Coral Sea Teal",        // 0: Amelia Coral Sunset & Deep Ocean Teal (Light)
         "Nordic Obsidian",       // 1: Oceanic Glacier & Deep OLED Void (Dark)
-        "Oceanic Emerald",       // 2: Marine Jade & Soft Sea Glass (Light)
+        "Amber Pine",            // 2: Edmonia Warm Amber & Forest Pine (Light)
         "Sunrise Terracotta",    // 3: Warm Sandstone & Apricot Bisque (Light)
-        "Kyoto Wabi-Sabi",       // 4: Lotus Porcelain & Amethyst Plum (Light)
-        "Silver Slate",          // 5: Mineral Basalt & Frosted Zinc (Light)
-        "Earthen Clay",          // 6: Artisan Clay & Burnt Sienna (Light)
-        "Golden Hour Dark"       // 7: Smoked Roasted Charcoal & Amber Glow (Dark)
+        "Teal & Umber",          // 4: Rich Earth Umber & Vibrant Pacific Teal (Light)
+        "Mint & Mocha",          // 5: Cool Sage Mint & Deep Roasted Mocha (Light)
+        "Celadon Sage",          // 6: Whispering Sage & Porcelain Bisque (Light)
+        "Golden Hour Dark",      // 7: Smoked Roasted Charcoal & Amber Glow (Dark)
+        "Midnight Teal Dark",    // 8: Deep OLED Abyss & Kinetic Teal (Dark)
+        "Crimson Coral Dark",    // 9: Obsidian Night & Vivid Sunset Coral (Dark)
+        "Earthen Clay",          // 10: Artisan Clay & Burnt Sienna (Light)
+        "Silver Slate"           // 11: Mineral Basalt & Frosted Zinc (Light)
     };
 
     // Theme Elements Index Mapping:
@@ -28,29 +32,41 @@ public class ThemeManager {
     // [5] Gradient End (Right/Bottom)
     // [6] Gradient Overlay Text/Icon Color (Contrast Guard)
     public static final String[][] THEMES = {
-        // 0: "Celadon Sage" (Whispering Sage Mist -> Glazed Frosted Porcelain White)
-        {"#EBF2EB", "#F4F8F4", "#0D2818", "#415D43", "#1B4332", "#2D6A4F", "#FFFFFF"},
+        // 0: "Coral Sea Teal" (Amelia Earhart Inspired: Vivid Coral Flame -> Ocean Teal)
+        {"#FDF6F4", "#FFFFFF", "#1E293B", "#64748B", "#F43F5E", "#0D9488", "#FFFFFF"},
         
         // 1: "Nordic Obsidian" (Deep Oceanic OLED Canvas -> Frosted Cobalt Slate)
         {"#080C14", "#111A28", "#F0F6FC", "#8B9BB4", "#0EA5E9", "#2563EB", "#FFFFFF"},
         
-        // 2: "Oceanic Emerald" (Soft Sea Glass Canvas -> Porcelain Sea Mist)
-        {"#E5F4F0", "#F2FAF7", "#064E3B", "#2D6A4F", "#059669", "#0D9488", "#FFFFFF"},
+        // 2: "Amber Pine" (Edmonia Lewis Inspired: Warm Sunlit Amber -> Forest Pine)
+        {"#FBF8F2", "#FFFFFF", "#1F2937", "#4B5563", "#F59E0B", "#2A7B6E", "#FFFFFF"},
         
         // 3: "Sunrise Terracotta" (Warm Sandstone Canvas -> Cream Clay Bisque)
         {"#F8EDE5", "#FCF6F2", "#431407", "#7C2D12", "#C2410C", "#EA580C", "#FFFFFF"},
         
-        // 4: "Kyoto Wabi-Sabi" (Soft Lavender Petal Wash -> Lotus Porcelain Bisque)
-        {"#F6EDF4", "#FCF6FA", "#280E24", "#703866", "#9333EA", "#C026D3", "#FFFFFF"},
+        // 4: "Teal & Umber" (Teal & Brown Palette: Warm Tan/Beige -> Deep Rich Umber -> Teal)
+        {"#F7F3EE", "#FFFFFF", "#27170E", "#6B5446", "#8D5B3A", "#0E7490", "#FFFFFF"},
         
-        // 5: "Silver Slate" (Soft Slate Mist -> Glazed Frosted Mineral)
-        {"#E2E8F0", "#F4F7FB", "#0F172A", "#475569", "#0284C7", "#0369A1", "#FFFFFF"},
+        // 5: "Mint & Mocha" (Mint & Brown Palette: Fresh Sage Mist -> Espresso Brown -> Soft Mint)
+        {"#F3F7F4", "#FFFFFF", "#1C1917", "#57534E", "#6E473B", "#4E937A", "#FFFFFF"},
         
-        // 6: "Earthen Clay" (Warm Clay Dust -> Baked Terracotta Bisque)
-        {"#F3EBE3", "#FAF4EF", "#3E1A0A", "#78350F", "#9A3412", "#C2410C", "#FFFFFF"}, 
+        // 6: "Celadon Sage" (Whispering Sage Mist -> Glazed Frosted Porcelain White)
+        {"#EBF2EB", "#F4F8F4", "#0D2818", "#415D43", "#1B4332", "#2D6A4F", "#FFFFFF"},
         
         // 7: "Golden Hour Dark" (Cast Iron OLED Black -> Smoked Roasted Charcoal)
-        {"#0C0A07", "#1A1612", "#FEF3C7", "#A89886", "#D97706", "#F59E0B", "#000000"}
+        {"#0C0A07", "#1A1612", "#FEF3C7", "#A89886", "#D97706", "#F59E0B", "#000000"},
+
+        // 8: "Midnight Teal Dark" (OLED Night -> Deep Teal & Sea Glass)
+        {"#061017", "#0D1E2B", "#E0F2FE", "#7DD3FC", "#0284C7", "#0D9488", "#FFFFFF"},
+
+        // 9: "Crimson Coral Dark" (Dark Umber Abyss -> Vivid Crimson Coral)
+        {"#12080A", "#221115", "#FFE4E6", "#FDA4AF", "#E11D48", "#F43F5E", "#FFFFFF"},
+
+        // 10: "Earthen Clay" (Warm Clay Dust -> Baked Terracotta Bisque)
+        {"#F3EBE3", "#FAF4EF", "#3E1A0A", "#78350F", "#9A3412", "#C2410C", "#FFFFFF"},
+
+        // 11: "Silver Slate" (Soft Slate Mist -> Glazed Frosted Mineral)
+        {"#E2E8F0", "#F4F7FB", "#0F172A", "#475569", "#0284C7", "#0369A1", "#FFFFFF"}
     };
 
     // Rigorous Database Element Getters
@@ -125,7 +141,7 @@ public class ThemeManager {
 
     public static boolean isDarkTheme(int themeId) {
         themeId = sanitizeThemeId(themeId);
-        return themeId == 1 || themeId == 7;
+        return themeId == 1 || themeId == 7 || themeId == 8 || themeId == 9;
     }
 
     private static int sanitizeThemeId(int themeId) {
