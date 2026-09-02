@@ -75,6 +75,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                     val authUid = auth.currentUser?.uid ?: ""
                     
                     // 🛡️ Forensic Bridge: Unify Hardware IDENTITY Protocol via DeviceIdentityHelper
+                    val rawId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(getApplication())
                     val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
                     val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication())
 
