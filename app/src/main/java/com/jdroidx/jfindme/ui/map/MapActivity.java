@@ -1941,8 +1941,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
 
-        // --- SUB-GROUP 1: SPATIAL MONITORING & TRACKING ---
-        items.addView(createDrawerSectionHeader("Spatial Monitoring & Tracking"));
+        // --- SUB-GROUP 1: TRACKING ---
+        items.addView(createDrawerSectionHeader("TRACKING"));
 
         // 1. Dashboard (Command Overview)
         items.addView(createDrawerItem("Dashboard", "Mission Overview & Telemetry", com.jdroidx.jfindme.R.drawable.ic_locator_pin, v -> {
@@ -1976,8 +1976,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // --- SUB-GROUP 2: NETWORK & DEVICE PAIRING ---
-        items.addView(createDrawerSectionHeader("Network & Device Pairing"));
+        // --- SUB-GROUP 2: NETWORK ---
+        items.addView(createDrawerSectionHeader("NETWORK"));
 
         // 5. Device Pairing (QR Pairing Gateway)
         items.addView(createDrawerItem("Device Pairing", "QR Scan & Link Network Nodes", com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, v -> {
@@ -2012,8 +2012,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // --- SUB-GROUP 3: SAFETY & SYSTEM AUDIT ---
-        items.addView(createDrawerSectionHeader("Safety & System Audit"));
+        // --- SUB-GROUP 3: SECURITY ---
+        items.addView(createDrawerSectionHeader("SECURITY"));
 
         // 9. Notifications & Alerts (Incident Ledger)
         items.addView(createDrawerItem("Notifications", "System Alerts & SOS Ledger", com.jdroidx.jfindme.R.drawable.ic_nav_notice, v -> { 
@@ -2027,8 +2027,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // --- SUB-GROUP 4: USER & SYSTEM CONTROLS ---
-        items.addView(createDrawerSectionHeader("User & System Controls"));
+        // --- SUB-GROUP 4: SYSTEM ---
+        items.addView(createDrawerSectionHeader("SYSTEM"));
 
         // 11. Profile & Avatar (User Dossier)
         items.addView(createDrawerItem("Profile", "Identity Dossier & 3D Avatar", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> { 
@@ -2060,8 +2060,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // --- SUB-GROUP 5: ACCOUNT SESSION ---
-        items.addView(createDrawerSectionHeader("Account Session"));
+        // --- SUB-GROUP 5: ACCOUNT ---
+        items.addView(createDrawerSectionHeader("ACCOUNT"));
 
         // 16. Logout (Safe Session Disconnect)
         items.addView(createDrawerItem("Logout", "Secure Account Sign Out", com.jdroidx.jfindme.R.drawable.ic_logout, v -> {
