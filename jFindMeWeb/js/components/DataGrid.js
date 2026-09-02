@@ -119,6 +119,15 @@ export class DataGrid {
                     </div>
                     
                     <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] font-mono text-slate-300">
+                            <span class="text-slate-500 font-bold uppercase">Size:</span>
+                            <select onchange="window.dataGridInstance && window.dataGridInstance.setPageSize(this.value)" class="bg-transparent text-accent font-bold outline-none cursor-pointer">
+                                <option value="5" ${this.pageSize === 5 ? 'selected' : ''} class="bg-slate-900 text-white">5</option>
+                                <option value="10" ${this.pageSize === 10 ? 'selected' : ''} class="bg-slate-900 text-white">10</option>
+                                <option value="25" ${this.pageSize === 25 ? 'selected' : ''} class="bg-slate-900 text-white">25</option>
+                                <option value="50" ${this.pageSize === 50 ? 'selected' : ''} class="bg-slate-900 text-white">50</option>
+                            </select>
+                        </div>
                         <button onclick="window.dataGridInstance && window.dataGridInstance.showAddRecordModal()" class="flex items-center gap-1.5 p-2 px-3 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg border border-emerald-500/30 transition-all text-[10px] font-bold uppercase tracking-wider">
                             <span>➕ Add Record</span>
                         </button>
@@ -492,6 +501,17 @@ export class DataGrid {
                 alert("Failed to create record: " + e.message);
             }
         });
+    }
+
+    setPageSize(size) {
+        const val = parseInt(size, 10);
+        if (!isNaN(val) && val > 0) {
+            this.pageSize = val;
+            const state = Store.getState();
+            if (state.navigation.activeNode && window.appInstance) {
+                window.appInstance.loadNode(state.navigation.activeNode, this.pageSize, window.appInstance.activeNodeType);
+            }
+        }
     }
 
     setPage(page) {
