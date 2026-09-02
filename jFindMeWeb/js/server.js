@@ -499,25 +499,20 @@ app.post("/api/safezone/update-targets", async (req, res) => {
     if (!zoneId) return res.status(400).json({ error: "MISSING_ZONE_ID" });
 
     try {
-        const creator = creatorUid || "BE5A234A";
         console.log(`[SAFE_ZONES] Updating targets for zone [${zoneId}] to: "${assignedTargets}"`);
 
-        // Check root Geofencing node first
         const snap = await db.ref(`Geofencing`).once('value');
         const geofencing = snap.val() || {};
         let updated = false;
 
-        for (const [cId, cNode] of Object.entries(geofencing)) {
-            if (cNode && cNode.safe_zones && cNode.safe_zones[zoneId]) {
-                await db.ref(`Geofencing/${cId}/safe_zones/${zoneId}/assigned_targets`).set(assignedTargets);
+        for (const [zKey, zNode] of Object.entries(geofencing)) {
+            if (zNode && (zNode.zone_id === zoneId || zKey === zoneId || zKey.includes(zoneId))) {
+                await db.ref(`Geofencing/${zKey}/assigned_targets`).set(assignedTargets);
                 updated = true;
             }
         }
 
-        if (!updated) {
-            await db.ref(`Geofencing/${creator}/safe_zones/${zoneId}/assigned_targets`).set(assignedTargets);
-        }
-
+        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
         res.json({ status: "SUCCESS", zoneId, assignedTargets });
     } catch (err) {
         console.error("[ERROR] /api/safezone/update-targets failed:", err.message);
@@ -535,12 +530,13 @@ app.post("/api/safezone/delete", async (req, res) => {
         const snap = await db.ref(`Geofencing`).once('value');
         const geofencing = snap.val() || {};
 
-        for (const [cId, cNode] of Object.entries(geofencing)) {
-            if (cNode && cNode.safe_zones && cNode.safe_zones[zoneId]) {
-                await db.ref(`Geofencing/${cId}/safe_zones/${zoneId}`).remove();
+        for (const [zKey, zNode] of Object.entries(geofencing)) {
+            if (zNode && (zNode.zone_id === zoneId || zKey === zoneId || zKey.includes(zoneId))) {
+                await db.ref(`Geofencing/${zKey}`).remove();
             }
         }
 
+        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
         res.json({ status: "SUCCESS", zoneId });
     } catch (err) {
         console.error("[ERROR] /api/safezone/delete failed:", err.message);
@@ -663,50 +659,15 @@ app.post("/api/update-profile", async (req, res) => {
             ...(newAvatar ? { avatar_id: newAvatar } : {})
         }).catch(() => null);
 
-        // 3. Closed-Loop: Synchronize Geofencing Root
-        await db.ref(`Geofencing/${agentId}`).update({
-            device_name: newName
-        }).catch(() => null);
-
-        // 4. Closed-Loop: Propagate Name & Avatar across all peer relationships
-        const allDevicesSnap = await db.ref("devices").once("value").catch(() => null);
-        const allDevices = (allDevicesSnap && allDevicesSnap.val()) || {};
-        
-        for (const [peerId, peerNode] of Object.entries(allDevices)) {
-            if (peerId === agentId || !peerNode) continue;
-            
-            // Peer relationship link
-            if (peerNode.relationships && peerNode.relationships[agentId]) {
-                await db.ref(`devices/${peerId}/relationships/${agentId}`).update({
-                    name: newName
-                }).catch(() => null);
-            }
-
-            // Peer safe zone connected devices
-            if (peerNode.safe_zones) {
-                for (const zoneId of Object.keys(peerNode.safe_zones)) {
-                    if (peerNode.safe_zones[zoneId].connected_devices && peerNode.safe_zones[zoneId].connected_devices[agentId]) {
-                        await db.ref(`devices/${peerId}/safe_zones/${zoneId}/connected_devices/${agentId}`).update({
-                            device_name: newName,
-                            ...(newAvatar ? { avatar_id: newAvatar } : {})
-                        }).catch(() => null);
-                    }
-                }
-            }
-        }
-
         // 5. Closed-Loop: Propagate across top-level Geofencing tree
         const geofencingSnap = await db.ref("Geofencing").once("value").catch(() => null);
         const geofencingData = (geofencingSnap && geofencingSnap.val()) || {};
-        for (const [creatorId, creatorNode] of Object.entries(geofencingData)) {
-            if (!creatorNode || !creatorNode.safe_zones) continue;
-            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
-                if (zone.connected_devices && zone.connected_devices[agentId]) {
-                    await db.ref(`Geofencing/${creatorId}/safe_zones/${zoneId}/connected_devices/${agentId}`).update({
-                        device_name: newName,
-                        ...(newAvatar ? { avatar_id: newAvatar } : {})
-                    }).catch(() => null);
-                }
+        for (const [zKey, zone] of Object.entries(geofencingData)) {
+            if (!zone || typeof zone !== 'object') continue;
+            if (zone.devices && zone.devices[agentId]) {
+                await db.ref(`Geofencing/${zKey}/devices/${agentId}`).update({
+                    device_name: newName
+                }).catch(() => null);
             }
         }
 
