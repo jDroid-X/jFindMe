@@ -308,27 +308,33 @@ app.get("/api/safe-zones", async (req, res) => {
             return authToDevice[rawKey] || rawKey;
         };
 
-        // 1. Extract exclusively from root Geofencing node (Primary SSOT for Geofencing & Devices)
-        for (const [zoneKey, zone] of Object.entries(geofenceData)) {
-            if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneKey)) continue;
-            seenZoneIds.add(zoneKey);
+        // Helper to process and normalize a single safe zone payload
+        const processZoneNode = (zKey, zone, creatorHint = "") => {
+            if (!zone || typeof zone !== "object") return;
+            const zoneId = zone.zone_id || zKey;
+            if (seenZoneIds.has(zoneId)) return;
+            seenZoneIds.add(zoneId);
 
             const connMap = zone.connected_devices || {};
             const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
 
-            // Extract nested devices node (GeoFencing -> SafeZone -> Devices -> Alert Notice)
-            if (zone.devices && typeof zone.devices === 'object') {
-                Object.keys(zone.devices).forEach(dKey => {
+            // Extract nested devices node
+            const devMap = zone.devices || zone.connected_devices || {};
+            if (devMap && typeof devMap === 'object') {
+                Object.keys(devMap).forEach(dKey => {
                     const canonicalDev = resolveCanonicalDevId(dKey);
                     if (!connList.includes(canonicalDev)) connList.push(canonicalDev);
                 });
             }
 
-            // Extract nested alert_notices under devices
+            // Extract nested alert_notices and date-grouped notifications under connected devices
             const historyObj = zone.history || {};
-            if (zone.devices && typeof zone.devices === 'object') {
-                for (const [dKey, devNode] of Object.entries(zone.devices)) {
-                    if (devNode && devNode.alert_notices && typeof devNode.alert_notices === 'object') {
+            if (devMap && typeof devMap === 'object') {
+                for (const [dKey, devNode] of Object.entries(devMap)) {
+                    if (!devNode || typeof devNode !== 'object') continue;
+                    
+                    // 1. Check alert_notices node
+                    if (devNode.alert_notices && typeof devNode.alert_notices === 'object') {
                         for (const [aId, alertNotice] of Object.entries(devNode.alert_notices)) {
                             historyObj[aId] = {
                                 event_id: aId,
@@ -341,25 +347,59 @@ app.get("/api/safe-zones", async (req, res) => {
                             };
                         }
                     }
+
+                    // 2. Check Android notifications date-grouped tree (FirebaseComm.kt standard)
+                    if (devNode.notifications && typeof devNode.notifications === 'object') {
+                        for (const [dateStr, notifGroup] of Object.entries(devNode.notifications)) {
+                            if (notifGroup && typeof notifGroup === 'object') {
+                                for (const [aId, notifItem] of Object.entries(notifGroup)) {
+                                    historyObj[aId] = {
+                                        event_id: aId,
+                                        datetime: notifItem.readable_time || (notifItem.timestamp ? new Date(notifItem.timestamp).toLocaleString() : "Recorded Alert"),
+                                        status: notifItem.event_type || "TRANSITION",
+                                        target_name: devNode.device_name || notifItem.target_name || dKey,
+                                        target_uid: resolveCanonicalDevId(notifItem.agent_id || dKey),
+                                        zone_name: zone.zone_name || zone.name || "Safe Perimeter",
+                                        timestamp: notifItem.timestamp || Date.now()
+                                    };
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             zonesList.push({
-                zoneId: zone.zone_id || zoneKey,
+                zoneId: zoneId,
                 zoneName: zone.zone_name || zone.name || "Safe Perimeter",
                 latitude: parseFloat(zone.latitude || zone.lat || 0),
                 longitude: parseFloat(zone.longitude || zone.lng || 0),
                 radius: parseFloat(zone.radius || zone.radius_meters || 100),
                 address: zone.address || "",
                 assignedName: zone.assigned_targets || zone.assignedName || "",
-                creatorId: resolveCanonicalDevId(zone.creator_id || "BE5A234A"),
+                creatorId: resolveCanonicalDevId(zone.creator_id || creatorHint || "BE5A234A"),
                 createdAt: zone.created_at || zone.timestamp || zone.createdAt || Date.now(),
                 isActive: zone.is_active !== false && zone.isZoneActive !== false,
                 alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
                 history: historyObj,
                 connectedDevices: connList,
-                devicesTree: zone.devices || {}
+                devicesTree: devMap
             });
+        };
+
+        // 1. Extract from Geofencing tree (Handles BOTH root /Geofencing/{zoneId} AND /Geofencing/{creatorId}/safe_zones/{zoneId})
+        for (const [key, node] of Object.entries(geofenceData)) {
+            if (!node || typeof node !== "object") continue;
+            
+            // Check if node is creator container with safe_zones sub-tree
+            if (node.safe_zones && typeof node.safe_zones === 'object') {
+                for (const [zId, zNode] of Object.entries(node.safe_zones)) {
+                    processZoneNode(zId, zNode, key);
+                }
+            } else {
+                // Root level safe zone node
+                processZoneNode(key, node, node.creator_id);
+            }
         }
 
         // Enrich every safe zone history ledger with group notifications
