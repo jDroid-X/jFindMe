@@ -1941,8 +1941,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
 
-        // 1. Dashboard
-        items.addView(createDrawerItem("Dashboard", "Overview & Telemetry", com.jdroidx.jfindme.R.drawable.ic_locator_pin, v -> {
+        // 1. Dashboard (Command Overview)
+        items.addView(createDrawerItem("Dashboard", "Mission Overview & Telemetry", com.jdroidx.jfindme.R.drawable.ic_locator_pin, v -> {
             if (isMapExpanded) {
                 binding.expandIcon.performClick();
             }
@@ -1950,15 +1950,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers();
         }));
 
-        // 2. Children Devices
-        items.addView(createDrawerItem("Children Devices", "Monitored Dependents & Kids", com.jdroidx.jfindme.R.drawable.ic_people, v -> { 
-            Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
-            i.putExtra("REQUESTED_TAB", 0); 
-            startActivity(i); 
-            drawerLayout.closeDrawers(); 
-        }));
-
-        // 3. Live Map
+        // 2. Live Map (Spatial Tracking)
         items.addView(createDrawerItem("Live Map", "Real-Time Spatial Grid", com.jdroidx.jfindme.R.drawable.ic_nav_map, v -> {
             if (!isMapExpanded) {
                 binding.expandIcon.performClick();
@@ -1967,77 +1959,85 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers();
         }));
 
-        // 4. Location History
+        // 3. Location History (Chronological Trails)
         items.addView(createDrawerItem("Location History", "Review Traveled Paths", com.jdroidx.jfindme.R.drawable.ic_location_history, v -> { 
             startActivity(new Intent(this, HistoryActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 5. MeetMyFriend Groups
-        items.addView(createDrawerItem("MeetMyFriend Groups", "Friend Circles & Peers", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
-            Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
-            i.putExtra("REQUESTED_TAB", 1); 
-            startActivity(i); 
-            drawerLayout.closeDrawers(); 
-        }));
-
-        // 6. Safe Zones
-        items.addView(createDrawerItem("Safe Zones", "Geofence Boundaries", com.jdroidx.jfindme.R.drawable.ic_safe_zone, v -> { 
+        // 4. Safe Zones (Geofencing Perimeters)
+        items.addView(createDrawerItem("Safe Zones", "Geofence Boundaries & Perimeters", com.jdroidx.jfindme.R.drawable.ic_safe_zone, v -> { 
             startActivity(new Intent(this, GeofenceActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 7. Guardians / Family
-        items.addView(createDrawerItem("Guardians / Family", "Monitored Family Roster", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
+        // 5. Guardians / Family (Primary Family Circle)
+        items.addView(createDrawerItem("Guardians / Family", "Primary Caregivers & Family Roster", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 0); 
             startActivity(i); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 8. Notifications
-        items.addView(createDrawerItem("Notifications", "System Alerts & SOS", com.jdroidx.jfindme.R.drawable.ic_nav_notice, v -> { 
+        // 6. Children Devices (Dependents & Kids)
+        items.addView(createDrawerItem("Children Devices", "Kids & Monitored Dependents", com.jdroidx.jfindme.R.drawable.ic_people, v -> { 
+            Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
+            i.putExtra("REQUESTED_TAB", 0); 
+            startActivity(i); 
+            drawerLayout.closeDrawers(); 
+        }));
+
+        // 7. Friends & Peer Circles (Social & Peers)
+        items.addView(createDrawerItem("Friends & Peer Circles", "Social Circles & Peers", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
+            Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
+            i.putExtra("REQUESTED_TAB", 1); 
+            startActivity(i); 
+            drawerLayout.closeDrawers(); 
+        }));
+
+        // 8. Notifications & Alerts (Incident Ledger)
+        items.addView(createDrawerItem("Notifications", "System Alerts & SOS Ledger", com.jdroidx.jfindme.R.drawable.ic_nav_notice, v -> { 
             startActivity(new Intent(this, NotifActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 9. Device Health
+        // 9. Device Health & Fleet (Hardware Status)
         items.addView(createDrawerItem("Device Health", "Hardware & Battery Status", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> { 
             startActivity(new Intent(this, HealthActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 10. Profile
-        items.addView(createDrawerItem("Profile", "Identity & 3D Avatar", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> { 
+        // 10. Profile & Avatar (User Dossier)
+        items.addView(createDrawerItem("Profile", "Identity Dossier & 3D Avatar", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> { 
             startActivity(new Intent(this, ProfileActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 11. Settings
+        // 11. System Settings (App Preferences)
         items.addView(createDrawerItem("Settings", "Control Hub & Customization", com.jdroidx.jfindme.R.drawable.ic_settings_gears, v -> { 
             startActivity(new Intent(this, SettingsActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 12. Privacy Controls
+        // 12. Privacy Controls (Security Permissions)
         items.addView(createDrawerItem("Privacy Controls", "Permissions & Security Locks", com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> { 
             startActivity(new Intent(this, PrivacyActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 13. Help & Support
+        // 13. Help & Support (Manual & FAQs)
         items.addView(createDrawerItem("Help & Support", "Knowledge Base & FAQs", com.jdroidx.jfindme.R.drawable.ic_help_support, v -> { 
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.HelpSupportActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 14. About App
+        // 14. About App (Architecture & Integrity)
         items.addView(createDrawerItem("About App", "Version & Architecture", com.jdroidx.jfindme.R.drawable.ic_about_app, v -> { 
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.AboutActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 15. Logout
+        // 15. Logout (Safe Session Disconnect)
         items.addView(createDrawerItem("Logout", "Secure Account Sign Out", com.jdroidx.jfindme.R.drawable.ic_logout, v -> {
             UiArchitect.showConfirmationDialog(this,
                 "Confirm Logout",

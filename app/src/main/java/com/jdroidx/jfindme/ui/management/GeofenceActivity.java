@@ -143,6 +143,29 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         titleBundle.addView(subTitle);
 
         header.addView(titleBundle);
+
+        // 🚀 NAVIGATION BAR ACTION: Safe Zone Messages & Alerts Ledger
+        ImageView btnNavNotifs = new ImageView(this);
+        btnNavNotifs.setImageResource(android.R.drawable.ic_dialog_email);
+        btnNavNotifs.setColorFilter(getGradientOverlayText());
+        int pad = scale(10);
+        btnNavNotifs.setPadding(pad, pad, pad, pad);
+        android.graphics.drawable.GradientDrawable btnBg = new android.graphics.drawable.GradientDrawable();
+        btnBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        btnBg.setColor(Color.parseColor("#33FFFFFF"));
+        btnNavNotifs.setBackground(btnBg);
+        btnNavNotifs.setFocusable(true);
+        btnNavNotifs.setClickable(true);
+        btnNavNotifs.setContentDescription("Safe Zone Messages & Notifications");
+        btnNavNotifs.setOnClickListener(v -> {
+            android.content.Intent route = new android.content.Intent(this, GeofenceNotificationActivity.class);
+            startActivity(route);
+        });
+        int iconBtnSize = scale(42);
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(iconBtnSize, iconBtnSize);
+        btnLp.setMargins(scale(8), 0, scale(4), 0);
+        header.addView(btnNavNotifs, btnLp);
+
         listStateContainer.addView(header);
         
         // 🚀 IDENTITY CARD (Owner Tile 1): Mapped from Core Profile

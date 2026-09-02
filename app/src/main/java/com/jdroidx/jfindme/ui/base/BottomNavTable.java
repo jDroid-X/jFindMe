@@ -243,10 +243,8 @@ public class BottomNavTable {
                 }
                 break;
             case "OPEN_ALERT":
-                // 🚨 HIGH-PRIORITY PANIC / ACOUSTIC SIREN TRIGGER
-                activity.startActivity(new android.content.Intent(activity, com.jdroidx.jfindme.ui.alert.AcousticSirenActivity.class)
-                    .putExtra("MODE", "SOS")
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                // 🚨 HIGH-PRIORITY PANIC / ACOUSTIC SIREN TRIGGER WITH CONNECTED DEVICE SELECTION
+                com.jdroidx.jfindme.ui.alert.EmergencyAlertHelper.showPanicDispatchDialog(activity);
                 break;
             case "OPEN_MAP":
                 if (activity.getClass().getSimpleName().contains("MapActivity")) {
