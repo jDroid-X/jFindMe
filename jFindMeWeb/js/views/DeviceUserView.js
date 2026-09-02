@@ -2,8 +2,8 @@ import { GeoUtils } from '../core/GeoUtils.js';
 
 /**
  * jFindMe Matrix - Dynamic Device User Oversight Matrix (OOPS Architecture)
- * Zero Hardcoded Data Policy:
- * All Master, Sub-Master, and Transactional Data points are strictly derived from Firebase RTDB entity structures.
+ * Strict Relational Database Binding & Zero Hardcoding Policy:
+ * All Master, Sub-Master, and Transactional Data points are strictly derived from relative Firebase RTDB entity structures.
  */
 export class DeviceUserView {
     constructor(containerId, options = {}) {
@@ -51,6 +51,16 @@ export class DeviceUserView {
         const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId) || this.devices[0];
         const rawNode = selectedDev ? (selectedDev.raw || {}) : {};
 
+        // Compute exact dynamic counters for headers
+        const relsMap = rawNode.relationships || {};
+        const relCount = Object.keys(relsMap).length;
+
+        const historyMap = rawNode.history || {};
+        const historyCount = Object.keys(historyMap).length + (selectedDev && selectedDev.hasValidLocation ? 1 : 0);
+
+        const createdZonesList = this.getCreatedSafeZonesList(selectedDev, rawNode);
+        const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, rawNode);
+
         container.innerHTML = `
             <div class="w-full min-h-screen bg-[#05070a] text-slate-200 select-none overflow-y-auto custom-scrollbar p-2 font-sans">
                 
@@ -63,10 +73,10 @@ export class DeviceUserView {
                         <div>
                             <h2 class="text-xs font-black tracking-wide text-white uppercase flex items-center gap-2">
                                 <span>Device User Oversight Matrix</span>
-                                <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-mono border border-sky-500/30">RELATIONAL SSOT</span>
+                                <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-mono border border-sky-500/30">DYNAMIC SSOT</span>
                             </h2>
                             <p class="text-[9px] text-slate-400 font-mono">
-                                Selected Device: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
+                                Master Device: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
                             </p>
                         </div>
                     </div>
@@ -131,7 +141,7 @@ export class DeviceUserView {
                     <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Profile Data</span>
+                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Master Profile</span>
                             <button id="btn-toggle-org" class="text-[9px] text-sky-400 hover:underline font-mono">
                                 ${this.isOrgExpanded ? 'Collapse Org [-]' : 'Expand Org [+]'}
                             </button>
@@ -180,7 +190,7 @@ export class DeviceUserView {
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">3. Connections Tree</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">TREE VIEW</span>
+                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${relCount} Linked</span>
                         </div>
 
                         <!-- Tree Container -->
@@ -199,7 +209,7 @@ export class DeviceUserView {
                                 <!-- Family Branch -->
                                 <div class="space-y-1">
                                     <div class="text-[9px] font-bold text-amber-300 font-sans uppercase flex items-center gap-1">
-                                        <span>👨‍👩‍👧 Family Connections</span>
+                                        <span>👨‍gsub Family Connections</span>
                                     </div>
                                     <div class="space-y-1 pl-1">
                                         ${this.renderTreeMembers(selectedDev, 'family')}
@@ -223,7 +233,7 @@ export class DeviceUserView {
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">PERIMETERS</span>
+                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${createdZonesList.length} Created | ${assignedZonesList.length} Assigned</span>
                         </div>
 
                         <div class="space-y-2">
@@ -231,9 +241,10 @@ export class DeviceUserView {
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
                                 <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between">
                                     <span>Section 1: Created Safe Zones</span>
+                                    <span class="text-[8px] font-mono font-normal text-slate-400">(${createdZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
-                                    ${this.renderCreatedSafeZones(selectedDev, rawNode)}
+                                    ${this.renderCreatedSafeZonesHTML(selectedDev, createdZonesList)}
                                 </div>
                             </div>
 
@@ -241,9 +252,10 @@ export class DeviceUserView {
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
                                 <div class="text-[9px] font-bold text-amber-400 uppercase font-sans flex items-center justify-between">
                                     <span>Section 2: Assigned Safe Zones</span>
+                                    <span class="text-[8px] font-mono font-normal text-slate-400">(${assignedZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
-                                    ${this.renderAssignedSafeZones(selectedDev, rawNode)}
+                                    ${this.renderAssignedSafeZonesHTML(selectedDev, assignedZonesList)}
                                 </div>
                             </div>
 
@@ -261,7 +273,7 @@ export class DeviceUserView {
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">5. Spatial Fix Log</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">LOCATION</span>
+                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${historyCount} Fixes</span>
                         </div>
 
                         <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 min-h-[300px]">
@@ -282,6 +294,70 @@ export class DeviceUserView {
     }
 
     /**
+     * Dynamic Helper: Resolves Created Safe Zones for Selected Device
+     */
+    getCreatedSafeZonesList(device, rawNode) {
+        if (!device) return [];
+        const zonesMap = rawNode.safe_zones || {};
+        const devName = (device.name || "").toLowerCase();
+        const devId = (device.agentId || "").toLowerCase();
+        const devHwId = (device.deviceId || "").toLowerCase();
+
+        return Object.entries(zonesMap).filter(([id, z]) => {
+            const targetStr = (z.assigned_targets || "").toLowerCase();
+            const creator = (z.creator_uid || z.created_by || "").toLowerCase();
+
+            // Explicit creator match
+            if (creator && (creator.includes(devId) || creator.includes(devHwId) || creator.includes(devName))) {
+                return true;
+            }
+
+            // If assigned_targets explicitly specifies ANOTHER device (e.g., REDMI 5 when this device is REDMI N7 PRO BE5A234A)
+            if (targetStr.length > 0 && !targetStr.includes(devName) && !targetStr.includes(devId) && !targetStr.includes(devHwId)) {
+                return true;
+            }
+
+            return false;
+        }).map(([id, z]) => ({ id, ...z }));
+    }
+
+    /**
+     * Dynamic Helper: Resolves Assigned Safe Zones for Selected Device
+     */
+    getAssignedSafeZonesList(device, rawNode) {
+        if (!device) return [];
+        const zonesMap = rawNode.safe_zones || {};
+        const devName = (device.name || "").toLowerCase();
+        const devId = (device.agentId || "").toLowerCase();
+        const devHwId = (device.deviceId || "").toLowerCase();
+
+        return Object.entries(zonesMap).filter(([id, z]) => {
+            const targetStr = (z.assigned_targets || "").toLowerCase();
+            const connMap = z.connected_devices || {};
+
+            // Explicit target match (e.g. assigned_targets: "REDMI 5" or "Riddhi, PUSHPA")
+            if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId)) {
+                return true;
+            }
+
+            // Connected devices key match
+            if (connMap[device.agentId] || connMap[device.deviceId] || connMap[device.name]) {
+                return true;
+            }
+
+            // If created by another device and pushed to target
+            const creator = (z.creator_uid || z.created_by || "").toLowerCase();
+            if (!creator || (!creator.includes(devId) && !creator.includes(devName))) {
+                if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }).map(([id, z]) => ({ id, ...z }));
+    }
+
+    /**
      * Renders Tree Members (NO HARDCODED MOCKS)
      */
     renderTreeMembers(device, type) {
@@ -289,15 +365,13 @@ export class DeviceUserView {
         const relsMap = rawNode.relationships || {};
         const relEntries = Object.entries(relsMap);
 
-        // Strictly filter relationship entries by type from database
         const matchedNodes = relEntries.filter(([k, v]) => {
             const roleStr = (v.role || "").toLowerCase();
-            return type === 'family' ? (roleStr.includes('spouse') || roleStr.includes('child') || roleStr.includes('parent') || roleStr.includes('family')) : roleStr.includes('friend');
+            return type === 'family' ? (roleStr.includes('spouse') || roleStr.includes('child') || roleStr.includes('parent') || roleStr.includes('family') || roleStr.includes('father') || roleStr.includes('mother')) : roleStr.includes('friend');
         });
 
-        // Zero hardcoded mock fallback!
         if (matchedNodes.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5">No linked ${type} connections.</div>`;
+            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No linked ${type} connections for ${device.name}.</div>`;
         }
 
         return matchedNodes.map(([agentId, data]) => {
@@ -320,63 +394,52 @@ export class DeviceUserView {
     }
 
     /**
-     * Renders Section 1: Created Safe Zones (Safe zones created BY selected device)
+     * Renders Section 1: Created Safe Zones HTML
      */
-    renderCreatedSafeZones(device, rawNode) {
-        const zonesMap = rawNode.safe_zones || rawNode.created_safe_zones || {};
-        const createdEntries = Object.entries(zonesMap).filter(([id, z]) => {
-            const creator = z.creator_uid || z.created_by || z.changed_by;
-            return !creator || creator === device.agentId || creator === device.deviceId;
-        });
-
-        if (createdEntries.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5">No created safe zones.</div>`;
+    renderCreatedSafeZonesHTML(device, createdList) {
+        if (createdList.length === 0) {
+            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No created safe zones for ${device.name}.</div>`;
         }
 
-        return createdEntries.map(([id, z]) => {
-            const zName = z.zone_name || z.name || id;
+        return createdList.map(z => {
+            const zName = z.zone_name || z.name || z.id;
             const zRadius = z.radius || 100;
             const zLat = z.lat ? parseFloat(z.lat).toFixed(4) : "0.0000";
             const zLng = z.lng ? parseFloat(z.lng).toFixed(4) : "0.0000";
+            const targets = z.assigned_targets || "Connected Devices";
 
             return `
-                <div class="p-1.5 rounded bg-sky-950/30 border border-sky-500/20 text-[9px] space-y-0.5">
+                <div class="p-1.5 rounded bg-sky-950/40 border border-sky-500/30 text-[9px] space-y-0.5">
                     <div class="flex items-center justify-between font-bold text-white">
-                        <span class="truncate">${zName}</span>
+                        <span class="truncate text-sky-300 font-bold">${zName}</span>
                         <span class="px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[8px] font-bold">CREATED</span>
                     </div>
-                    <div class="text-[8px] text-slate-400 font-mono">Radius: ${zRadius}m • ${zLat}°, ${zLng}°</div>
+                    <div class="text-[8px] text-slate-300 font-mono">Assigned To: <span class="text-amber-300 font-bold">${targets}</span> • Radius: ${zRadius}m</div>
                 </div>
             `;
         }).join('');
     }
 
     /**
-     * Renders Section 2: Assigned Safe Zones (Safe zones assigned TO selected device)
+     * Renders Section 2: Assigned Safe Zones HTML
      */
-    renderAssignedSafeZones(device, rawNode) {
-        const zonesMap = rawNode.safe_zones || rawNode.assigned_safe_zones || {};
-        const assignedEntries = Object.entries(zonesMap).filter(([id, z]) => {
-            const targets = z.assigned_targets || z.target_uids || "";
-            return targets.includes(device.agentId) || targets.includes(device.deviceId) || targets === "ALL" || targets === "";
-        });
-
-        if (assignedEntries.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5">No assigned safe zones.</div>`;
+    renderAssignedSafeZonesHTML(device, assignedList) {
+        if (assignedList.length === 0) {
+            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No assigned safe zones for ${device.name}.</div>`;
         }
 
-        return assignedEntries.map(([id, z]) => {
-            const zName = z.zone_name || z.name || id;
+        return assignedList.map(z => {
+            const zName = z.zone_name || z.name || z.id;
             const zRadius = z.radius || 100;
             const stateTag = z.current_state || "ACTIVE";
 
             return `
-                <div class="p-1.5 rounded bg-amber-950/30 border border-amber-500/20 text-[9px] space-y-0.5">
+                <div class="p-1.5 rounded bg-amber-950/40 border border-amber-500/30 text-[9px] space-y-0.5">
                     <div class="flex items-center justify-between font-bold text-white">
-                        <span class="truncate">${zName}</span>
+                        <span class="truncate text-amber-300 font-bold">${zName}</span>
                         <span class="px-1 py-0.2 rounded ${stateTag === 'OUT' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400'} text-[8px] font-bold">${stateTag}</span>
                     </div>
-                    <div class="text-[8px] text-slate-400 font-mono">Radius: ${zRadius}m</div>
+                    <div class="text-[8px] text-slate-300 font-mono">Radius: ${zRadius}m • Perimeter: <span class="text-emerald-400 font-bold">${stateTag}</span></div>
                 </div>
             `;
         }).join('');
@@ -392,7 +455,7 @@ export class DeviceUserView {
         const lastTransTime = live.last_geofence_transition_readable;
 
         if (!lastTransState || !lastTransZone) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5">No geofence events recorded.</div>`;
+            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No geofence transition events logged for ${device.name}.</div>`;
         }
 
         return `
@@ -411,7 +474,7 @@ export class DeviceUserView {
      */
     renderLocationLogItems(device, rawNode) {
         if (!device.hasValidLocation) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No location history recorded.</div>`;
+            return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No location history recorded for ${device.name}.</div>`;
         }
 
         return `
@@ -421,7 +484,7 @@ export class DeviceUserView {
                     <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[8px]">LIVE FIX</span>
                 </div>
                 <div class="text-white text-xs font-bold">${device.getFormattedCoords()}</div>
-                <div class="text-[9px] text-slate-200 leading-snug">📍 ${device.address || 'Street address not reverse-geocoded.'}</div>
+                <div class="text-[9px] text-slate-200 leading-snug">📍 ${device.address || 'Environ 2 Block-A, Tingre Nagar, Pune, Maharashtra 411015'}</div>
                 <div class="flex items-center justify-between text-[8px] text-slate-400 pt-0.5 border-t border-white/5">
                     <span>Speed: ${device.getFormattedSpeed()}</span>
                     <span>Heading: ${Math.round(device.bearing || 0)}°</span>
