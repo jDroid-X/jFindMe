@@ -89,6 +89,30 @@ let LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
 let SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
 const CACHE_TTL_MS = 2000; // 2-second cache window for instant responses
 
+function parseTimestampToMillis(raw) {
+    if (!raw) return 0;
+    if (typeof raw === 'number') {
+        if (raw > 1e14) return Math.floor(raw / 1000);
+        if (raw < 1e11 && raw > 1e9) return raw * 1000;
+        return raw;
+    }
+    const str = String(raw).trim();
+    if (/^\d{14,16}$/.test(str)) {
+        const y = parseInt(str.substring(0, 4), 10);
+        const m = parseInt(str.substring(4, 6), 10) - 1;
+        const d = parseInt(str.substring(6, 8), 10);
+        const hh = parseInt(str.substring(8, 10), 10);
+        const mm = parseInt(str.substring(10, 12), 10);
+        const ss = parseInt(str.substring(12, 14), 10);
+        return new Date(y, m, d, hh, mm, ss).getTime();
+    }
+    const parsed = Date.parse(str);
+    if (!isNaN(parsed)) return parsed;
+    const num = Number(str);
+    if (!isNaN(num) && num > 0) return parseTimestampToMillis(num);
+    return 0;
+}
+
 // Live Devices Aggregation Endpoint for Map Radar
 app.get("/api/devices-live", async (req, res) => {
     const now = Date.now();
@@ -126,7 +150,6 @@ app.get("/api/devices-live", async (req, res) => {
         // Merge Auth UID nodes (long 28-char keys) into canonical 8-character device nodes
         for (const [key, node] of Object.entries(devicesData)) {
             if (!node || typeof node !== "object") continue;
-            // Only merge if key is a 28-char Auth UID
             if (key.length > 16) {
                 const targetAgentId = authToDevice[key];
                 if (targetAgentId && devicesData[targetAgentId]) {
@@ -143,7 +166,6 @@ app.get("/api/devices-live", async (req, res) => {
 
         for (const [agentId, node] of Object.entries(devicesData)) {
             if (!node || typeof node !== "object") continue;
-            // Ignore long 28-char Firebase Auth UID nodes since they have been merged
             if (agentId.length > 16) continue;
 
             const profile = node.profile || {};
@@ -153,47 +175,47 @@ app.get("/api/devices-live", async (req, res) => {
             const safeZones = node.safe_zones || {};
             const relationships = node.relationships || {};
 
-            // 1. Determine Live Location from node.device.live or node.live or node.history
-            let liveLoc = deviceInfo.live || node.live || {};
+            // 1. Determine Live Location from node.device.live, node.live, node.location, or node.history
+            let liveLoc = (deviceInfo.live) || node.live || node.location || {};
             if ((!liveLoc.latitude || !liveLoc.longitude) && node.history) {
                 const histEntries = Object.entries(node.history);
                 if (histEntries.length > 0) {
-                    histEntries.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+                    histEntries.sort((a, b) => (parseTimestampToMillis(b[1].timestamp || b[1].updated_at) - parseTimestampToMillis(a[1].timestamp || a[1].updated_at)));
                     const latestItem = histEntries[0][1];
                     liveLoc = {
                         latitude: latestItem.lat || latestItem.latitude,
                         longitude: latestItem.lng || latestItem.longitude,
                         speed: latestItem.speed,
                         address: latestItem.address || latestItem.geo_address,
-                        timestamp: latestItem.timestamp
+                        timestamp: latestItem.timestamp || latestItem.updated_at
                     };
                 }
             }
 
-            let lat = parseFloat(liveLoc.latitude || liveLoc.lat || deviceInfo.latitude || 0);
-            let lng = parseFloat(liveLoc.longitude || liveLoc.lng || deviceInfo.longitude || 0);
+            let lat = parseFloat(liveLoc.latitude || liveLoc.lat || deviceInfo.latitude || node.latitude || 0);
+            let lng = parseFloat(liveLoc.longitude || liveLoc.lng || deviceInfo.longitude || node.longitude || 0);
 
-            // 2. Geofence Active Zone Resolution:
-            // If device is currently "IN" a safe zone (e.g. Vibgyor School) and transition is active
-            if (liveLoc.current_safe_zone_state === "IN" && liveLoc.current_safe_zone_id) {
+            // 2. Safe Zone Fallback: ONLY if GPS coordinates are 0 and device is in safe zone
+            if ((lat === 0 || lng === 0) && liveLoc.current_safe_zone_state === "IN" && liveLoc.current_safe_zone_id) {
                 const zoneInfo = safeZoneCoords.get(liveLoc.current_safe_zone_id);
-                if (zoneInfo && (lat === 0 || liveLoc.last_geofence_transition_ts > (liveLoc.timestamp || 0))) {
+                if (zoneInfo) {
                     lat = zoneInfo.lat;
                     lng = zoneInfo.lng;
-                    liveLoc.geo_address = `Inside ${zoneInfo.name} Safe Perimeter`;
+                    liveLoc.address = `Inside ${zoneInfo.name} Safe Perimeter`;
                 }
             }
 
-            // Determine Online State (active in last 10 mins or session ONLINE)
-            const lastSeenTs = telemetry.last_seen || liveLoc.timestamp || identity.updated_at || 0;
-            const isRecent = lastSeenTs && (now - Number(lastSeenTs) < 10 * 60 * 1000);
+            // Determine Online State & Accurate Elapsed Time
+            const rawTs = liveLoc.updated_at || liveLoc.timestamp || telemetry.last_seen || deviceInfo.updated_at || identity.updated_at || 0;
+            const lastSeenEpoch = parseTimestampToMillis(rawTs);
+            const isRecent = lastSeenEpoch > 0 && (now - lastSeenEpoch < 15 * 60 * 1000);
             const isOnline = (identity.st_session_state === "ONLINE") || isRecent;
 
             // Resolve Avatar ID
             const avatarId = profile.avatar_id || identity.avatar_id || "avatar_custom_1";
 
             // Resolve Hardware Device Model / Device Name
-            const model = deviceInfo.model || (deviceInfo.fingerprint ? deviceInfo.fingerprint.split('/')[1] : "") || "Android Device";
+            const model = deviceInfo.model || deviceInfo.device_model || (deviceInfo.fingerprint ? deviceInfo.fingerprint.split('/')[1] : "") || "Android Device";
             const deviceName = deviceInfo.deviceName || model;
 
             // Resolve User / Persona / Host Name
@@ -226,7 +248,7 @@ app.get("/api/devices-live", async (req, res) => {
                 isAirplaneMode: Boolean(telemetry.is_airplane_mode),
                 networkType: telemetry.network_type || "UNKNOWN",
                 address: liveLoc.address || liveLoc.geo_address || profile.address || "",
-                lastSeen: lastSeenTs,
+                lastSeen: rawTs || lastSeenEpoch,
                 isOnline,
                 sessionState: identity.st_session_state || (isOnline ? "ONLINE" : "OFFLINE"),
                 email: profile.email || profile.email_id || "",

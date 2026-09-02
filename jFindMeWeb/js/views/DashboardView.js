@@ -16,6 +16,7 @@ export class DashboardView {
         
         this.activeFilter = "in_radius"; // 'in_radius', 'outside_radius', 'online', 'all', 'cluster_X'
         this.activeClusterKey = null;
+        this.searchQuery = "";
         this.devices = [];
         this.settings = null;
     }
@@ -64,33 +65,48 @@ export class DashboardView {
         ];
 
         // Resolve currently selected device list to display in the drill-down panel
-        let displayList = [];
+        let baseList = [];
         let filterTitle = "";
         let filterBadge = "";
 
         if (this.activeFilter === "in_radius") {
-            displayList = inRadiusDevices;
+            baseList = inRadiusDevices;
             filterTitle = `Devices Within ${radiusKm} km Window`;
             filterBadge = `🎯 In Radius (${inRadiusDevices.length})`;
         } else if (this.activeFilter === "outside_radius") {
-            displayList = outOfRadiusDevices;
+            baseList = outOfRadiusDevices;
             filterTitle = `Devices Outside ${radiusKm} km Window`;
             filterBadge = `📡 Outside Radius (${outOfRadiusDevices.length})`;
         } else if (this.activeFilter === "online") {
-            displayList = onlineDevices;
+            baseList = onlineDevices;
             filterTitle = "Active Online Telemetry Stream";
             filterBadge = `🟢 Online (${onlineDevices.length})`;
         } else if (this.activeFilter === "all") {
-            displayList = this.devices;
+            baseList = this.devices;
             filterTitle = "All Registered Fleet Devices";
             filterBadge = `📋 Master Roster (${this.devices.length})`;
         } else if (this.activeFilter.startsWith("cluster_")) {
             const cluster = clusters.find(c => c.key === this.activeClusterKey);
             if (cluster) {
-                displayList = cluster.list;
+                baseList = cluster.list;
                 filterTitle = cluster.label;
                 filterBadge = `${cluster.icon} ${cluster.list.length} Devices`;
             }
+        }
+
+        // Apply real-time search query filtering
+        let displayList = baseList;
+        if (this.searchQuery && this.searchQuery.trim().length > 0) {
+            const q = this.searchQuery.trim().toLowerCase();
+            displayList = baseList.filter(d => {
+                return (d.name && d.name.toLowerCase().includes(q)) ||
+                       (d.agentId && d.agentId.toLowerCase().includes(q)) ||
+                       (d.model && d.model.toLowerCase().includes(q)) ||
+                       (d.deviceName && d.deviceName.toLowerCase().includes(q)) ||
+                       (d.role && d.role.toLowerCase().includes(q)) ||
+                       (d.roleFamily && d.roleFamily.toLowerCase().includes(q)) ||
+                       (d.address && d.address.toLowerCase().includes(q));
+            });
         }
 
         container.innerHTML = `
@@ -118,7 +134,7 @@ export class DashboardView {
                     <div class="flex items-center gap-2.5">
                         <button id="btn-dash-settings" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md">
                             <span>⚙️</span>
-                            <span>Adjust Window (${radiusKm}km)</span>
+                            <span>Radius & Station</span>
                         </button>
                         <button id="btn-dash-refresh" class="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-sky-600/30">
                             <span>🔄</span>
@@ -127,52 +143,52 @@ export class DashboardView {
                     </div>
                 </div>
 
-                <!-- 4 PRIMARY METRIC CARDS (CLICKABLE FOR DRILL-DOWN) -->
+                <!-- 4 PRIMARY METRIC CARDS (INTERACTIVE FILTERS) -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <!-- Card 1: Within Proximity Window -->
+                    <!-- Card 1: Within Search Radius -->
                     <div id="card-filter-in-radius" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'in_radius' ? 'border-sky-400 bg-sky-950/30 shadow-[0_0_20px_rgba(56,189,248,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold">Within ${radiusKm}km Window</span>
-                            <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping"></span>
+                            <span class="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold">Within Search Radius</span>
+                            <span class="text-xs">🎯</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-white tracking-tight">${inRadiusDevices.length} <span class="text-xs font-medium text-slate-400">devices</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Fleet in active safety zone</div>
+                            <div class="text-3xl font-black text-white tracking-tight">${inRadiusDevices.length} <span class="text-xs font-medium text-slate-400">/ ${this.devices.length}</span></div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">Inside active <span class="text-sky-300 font-bold">${radiusKm}km</span> perimeter</div>
                         </div>
                         <div class="text-[10px] font-bold text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                            <span>View Location Devices</span>
+                            <span>Inspect In-Radius Fleet</span>
                             <span>→</span>
                         </div>
                     </div>
 
-                    <!-- Card 2: Outside Proximity Window -->
+                    <!-- Card 2: Outside Search Radius -->
                     <div id="card-filter-outside-radius" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'outside_radius' ? 'border-amber-400 bg-amber-950/30 shadow-[0_0_20px_rgba(251,191,36,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">Outside ${radiusKm}km Window</span>
+                            <span class="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">Outside Radius Window</span>
                             <span class="text-xs">📡</span>
                         </div>
                         <div>
                             <div class="text-3xl font-black text-white tracking-tight">${outOfRadiusDevices.length} <span class="text-xs font-medium text-slate-400">devices</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Remote / roaming devices</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">Beyond <span class="text-amber-300 font-bold">${radiusKm}km</span> range</div>
                         </div>
                         <div class="text-[10px] font-bold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                            <span>View Remote Devices</span>
+                            <span>Inspect Long-Range Nodes</span>
                             <span>→</span>
                         </div>
                     </div>
 
-                    <!-- Card 3: Live Online Telemetry -->
+                    <!-- Card 3: Active Online Signal -->
                     <div id="card-filter-online" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'online' ? 'border-emerald-400 bg-emerald-950/30 shadow-[0_0_20px_rgba(52,211,153,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">Online Heartbeat</span>
-                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span class="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">Active Online Pulse</span>
+                            <span class="text-xs">🟢</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-white tracking-tight">${onlineDevices.length} <span class="text-xs font-medium text-slate-400">streaming</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Active WebSocket telemetry</div>
+                            <div class="text-3xl font-black text-emerald-400 tracking-tight">${onlineDevices.length} <span class="text-xs font-medium text-slate-400">active</span></div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">Real-time GPS stream live</div>
                         </div>
                         <div class="text-[10px] font-bold text-emerald-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                            <span>View Online Fleet</span>
+                            <span>View Active Nodes</span>
                             <span>→</span>
                         </div>
                     </div>
@@ -243,23 +259,40 @@ export class DashboardView {
                     <!-- RIGHT COLUMN (2 COLS): Drill-down Devices List & Detailed Metadata -->
                     <div class="lg:col-span-2 space-y-4">
                         <div class="bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-5 space-y-4">
-                            <!-- Section Title -->
-                            <div class="flex items-center justify-between border-b border-white/10 pb-3">
-                                <div>
-                                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                                        <span>${filterTitle}</span>
-                                    </h3>
-                                    <p class="text-[10px] text-slate-400 mt-0.5">Click on any device card below to inspect full metadata & dossier</p>
+                            <!-- Section Title & Search Bar -->
+                            <div class="space-y-3 border-b border-white/10 pb-3">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                            <span>${filterTitle}</span>
+                                        </h3>
+                                        <p class="text-[10px] text-slate-400 mt-0.5">Click on any device card below to inspect full metadata & dossier</p>
+                                    </div>
+                                    <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">
+                                        ${filterBadge}
+                                    </span>
                                 </div>
-                                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">
-                                    ${filterBadge}
-                                </span>
+
+                                <!-- Device Search Bar -->
+                                <div class="relative flex items-center">
+                                    <input type="text" id="dash-device-search-input" 
+                                           placeholder="🔍 Search device by name, ID, hardware, role, address..." 
+                                           value="${this.searchQuery}"
+                                           class="w-full bg-slate-950/90 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-all font-mono">
+                                    <svg class="w-4 h-4 absolute left-3 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                    ${this.searchQuery ? `
+                                        <button id="btn-dash-clear-search" class="absolute right-2.5 text-slate-400 hover:text-white text-xs font-bold p-1">✕</button>
+                                    ` : ''}
+                                </div>
                             </div>
 
                             <!-- Devices Grid -->
                             ${displayList.length === 0 ? `
-                                <div class="py-12 text-center text-slate-500 text-xs italic">
-                                    No devices matching the selected location criteria.
+                                <div class="py-12 text-center text-slate-500 text-xs italic space-y-1">
+                                    <div>No devices found matching your search or location filter.</div>
+                                    ${this.searchQuery ? `<div class="text-[10px] text-sky-400 cursor-pointer underline" onclick="document.getElementById('dash-device-search-input').value=''; document.getElementById('dash-device-search-input').dispatchEvent(new Event('input'));">Clear search filter</div>` : ''}
                                 </div>
                             ` : `
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -302,13 +335,17 @@ export class DashboardView {
                                                 </div>
                                             </div>
 
-                                            <!-- Street Address Snippet -->
-                                            ${dev.address ? `
-                                                <div class="text-[9px] text-slate-400 line-clamp-1 flex items-center gap-1">
-                                                    <span>📍</span>
-                                                    <span class="truncate">${dev.address}</span>
+                                            <!-- Location & Timestamp Metadata -->
+                                            <div class="bg-black/30 rounded-xl p-2 space-y-1 border border-white/5">
+                                                <div class="flex items-center justify-between text-[8px] font-mono text-sky-400 font-bold border-b border-white/5 pb-1">
+                                                    <span class="flex items-center gap-1">🕒 <span>${dev.getFormattedDateTime()}</span></span>
+                                                    <span class="text-slate-400 font-normal">${dev.getFormattedTimeDelta()}</span>
                                                 </div>
-                                            ` : ''}
+                                                <div class="text-[9px] text-slate-300 line-clamp-2 flex items-start gap-1 pt-0.5">
+                                                    <span class="text-slate-400">📍</span>
+                                                    <span class="truncate">${dev.address || 'No street address recorded'}</span>
+                                                </div>
+                                            </div>
 
                                             <!-- Action Triggers -->
                                             <div class="flex items-center gap-2 pt-1 border-t border-white/5">
@@ -418,6 +455,26 @@ export class DashboardView {
 
         document.getElementById('btn-dash-open-map')?.addEventListener('click', () => {
             if (window.showLiveMap) window.showLiveMap();
+        });
+
+        // 7. Search Input Real-time Filtering
+        const searchInput = document.getElementById('dash-device-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.searchQuery = e.target.value;
+                this.render(this.devices, this.settings);
+                // Retain input focus and caret position after re-render
+                const nextInput = document.getElementById('dash-device-search-input');
+                if (nextInput) {
+                    nextInput.focus();
+                    nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+                }
+            });
+        }
+
+        document.getElementById('btn-dash-clear-search')?.addEventListener('click', () => {
+            this.searchQuery = "";
+            this.render(this.devices, this.settings);
         });
     }
 }

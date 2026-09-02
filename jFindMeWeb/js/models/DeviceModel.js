@@ -98,11 +98,27 @@ export class DeviceModel {
     }
 
     /**
-     * Formatted relative time
+     * Formatted relative time delta (e.g., "Live (Just now)", "2m ago")
      * @returns {string}
      */
     getFormattedLastSeen() {
         return GeoUtils.formatRelativeTime(this.lastSeen);
+    }
+
+    /**
+     * Formatted relative time delta
+     * @returns {string}
+     */
+    getFormattedTimeDelta() {
+        return GeoUtils.formatRelativeTime(this.lastSeen);
+    }
+
+    /**
+     * Formatted absolute Date & Time (e.g., "02 Sep 2026, 11:41:42 AM")
+     * @returns {string}
+     */
+    getFormattedDateTime() {
+        return GeoUtils.formatDateTime(this.lastSeen);
     }
 
     /**

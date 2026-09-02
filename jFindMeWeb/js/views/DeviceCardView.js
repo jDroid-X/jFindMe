@@ -74,12 +74,16 @@ export class DeviceCardView {
                     </div>
                 </div>
 
-                <!-- Location Address -->
-                ${device.address ? `
-                <div class="text-[10px] text-slate-300 bg-white/5 rounded-lg p-2 mb-3 line-clamp-2 border border-white/5">
-                    <span class="text-slate-400">📍 </span>${device.address}
+                <!-- Location Address & Date/Time Metadata -->
+                <div class="bg-black/30 rounded-lg p-2 mb-2 border border-white/5 space-y-1">
+                    <div class="flex items-center justify-between text-[8px] font-mono text-sky-400 font-bold border-b border-white/5 pb-1">
+                        <span class="flex items-center gap-1">🕒 <span>${device.getFormattedDateTime()}</span></span>
+                        <span class="text-slate-400 font-normal">${device.getFormattedTimeDelta()}</span>
+                    </div>
+                    <div class="text-[9px] text-slate-300 line-clamp-2 pt-0.5">
+                        <span class="text-slate-400">📍 </span>${device.address || 'No street address registered'}
+                    </div>
                 </div>
-                ` : ''}
 
                 <!-- Quick Action Buttons -->
                 <div class="flex items-center gap-1.5 pt-1 border-t border-white/10">
@@ -237,13 +241,17 @@ export class DeviceCardView {
                         </div>
                     </div>
 
-                    <!-- Address Block -->
-                    ${device.address ? `
-                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 text-xs">
-                        <span class="text-[10px] text-slate-400 font-mono uppercase block mb-1">📍 Reverse-Geocoded Street Address</span>
-                        <div class="text-slate-200 font-medium">${device.address}</div>
+                    <!-- Address Block & Latest Metadata -->
+                    <div class="bg-black/30 p-4 rounded-xl border border-white/5 text-xs space-y-2">
+                        <div class="flex items-center justify-between font-mono text-[11px] text-sky-400 font-bold border-b border-white/5 pb-2">
+                            <span class="flex items-center gap-1.5">🕒 <span>Last Telemetry: ${device.getFormattedDateTime()}</span></span>
+                            <span class="text-slate-400 font-normal">(${device.getFormattedTimeDelta()})</span>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-400 font-mono uppercase block mb-1">📍 Reverse-Geocoded Street Address</span>
+                            <div class="text-slate-200 font-medium">${device.address || 'No physical street address recorded.'}</div>
+                        </div>
                     </div>
-                    ` : ''}
                 </div>
 
                 <!-- Footer Actions -->

@@ -106,19 +106,70 @@ export class GeoUtils {
     }
 
     /**
+     * Parses diverse timestamp representations (14/16-char forensic string YYYYMMDDHHmmssSS, ISO string, or numeric epoch ms)
+     * @param {string|number} raw 
+     * @returns {number} Epoch milliseconds
+     */
+    static parseTimestampToEpoch(raw) {
+        if (!raw) return 0;
+        if (typeof raw === 'number') {
+            if (raw > 1e14) return Math.floor(raw / 1000);
+            if (raw < 1e11 && raw > 1e9) return raw * 1000;
+            return raw;
+        }
+        const str = String(raw).trim();
+        if (/^\d{14,16}$/.test(str)) {
+            // Forensic Timestamp format: YYYYMMDDHHmmss or YYYYMMDDHHmmssSS
+            const y = parseInt(str.substring(0, 4), 10);
+            const m = parseInt(str.substring(4, 6), 10) - 1;
+            const d = parseInt(str.substring(6, 8), 10);
+            const hh = parseInt(str.substring(8, 10), 10);
+            const mm = parseInt(str.substring(10, 12), 10);
+            const ss = parseInt(str.substring(12, 14), 10);
+            const date = new Date(y, m, d, hh, mm, ss);
+            return date.getTime();
+        }
+        const parsed = Date.parse(str);
+        if (!isNaN(parsed)) return parsed;
+        const num = Number(str);
+        if (!isNaN(num) && num > 0) return this.parseTimestampToEpoch(num);
+        return 0;
+    }
+
+    /**
+     * Formats timestamp to readable Date & Time (e.g. "02 Sep 2026, 11:41:42 AM")
+     * @param {string|number} raw 
+     * @returns {string}
+     */
+    static formatDateTime(raw) {
+        const epoch = this.parseTimestampToEpoch(raw);
+        if (!epoch) return "No timestamp recorded";
+        const date = new Date(epoch);
+        const day = String(date.getDate()).padStart(2, '0');
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = months[date.getMonth()];
+        const year = date.getFullYear();
+        let hours = date.getHours();
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        const formattedHours = String(hours).padStart(2, '0');
+        return `${day} ${month} ${year}, ${formattedHours}:${minutes}:${seconds} ${ampm}`;
+    }
+
+    /**
      * Formats relative time elapsed ("Just now", "2m ago", "1h ago", "Yesterday")
      * @param {number|string} timestamp 
      * @returns {string}
      */
     static formatRelativeTime(timestamp) {
         if (!timestamp) return "Never";
-        let ts = Number(timestamp);
-        // Handle 16-digit microsecond or non-standard timestamp
-        if (ts > 1e14) ts = Math.floor(ts / 1000);
-        else if (ts < 1e11 && ts > 1e9) ts = ts * 1000;
+        const ts = this.parseTimestampToEpoch(timestamp);
+        if (!ts) return "Never";
 
         const diffMs = Date.now() - ts;
-        if (diffMs < 0) return "Live";
+        if (diffMs < 0) return "Live (Just now)";
         const diffSec = Math.floor(diffMs / 1000);
         if (diffSec < 30) return "Live (Just now)";
         if (diffSec < 60) return `${diffSec}s ago`;
