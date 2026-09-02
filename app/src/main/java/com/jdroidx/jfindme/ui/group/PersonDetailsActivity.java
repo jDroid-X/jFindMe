@@ -253,10 +253,18 @@ public class PersonDetailsActivity extends BaseActivityJava {
         aclGrid.setPadding(0, 10, 0, 10);
         
         cbAclLiveTracking = createPermissionCheckbox("Live Tracking Protocol", "Authorize real-time synchronization of GPS and sensor data with the tracking engine.");
+        cbAclLiveTracking.setChecked(true); // Default App Requirement: Enabled for live tracking
+
         cbAclHistoryAudit = createPermissionCheckbox("History Audit Extraction", "Permit the extraction of historical location logs and event chronologies for audit.");
+        cbAclHistoryAudit.setChecked(true); // Default App Requirement: Enabled for location history
+
         cbAclGeofence = createPermissionCheckbox("Boundary Breach Alerts", "Authorize automated broadcast alerts when geofence radii are breached.");
+        cbAclGeofence.setChecked(true); // Default App Requirement: Enabled for safe zone alerts
+
         cbAclAdminStatus = createPermissionCheckbox("Administrative Overrides", "Grant global administrative permissions to modify profile settings remotely.");
+        
         cbAclGhostOverride = createPermissionCheckbox("Stealth Oversite Logic", "Allow the system to override 'Ghost Mode' when an emergency protocol is triggered.");
+        cbAclGhostOverride.setChecked(true); // Default App Requirement: Enabled for emergency SOS override
         
         cbAclBiometrics = createPermissionCheckbox("Biometric Identity Lock", "Securely store and verify fingerprint, face, or iris biometric signatures for identity handshake.");
         
