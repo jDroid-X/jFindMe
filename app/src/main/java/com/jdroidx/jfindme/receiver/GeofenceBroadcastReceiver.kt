@@ -50,13 +50,19 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                     val userName = prefs.getString("user_nickname", "Agent") ?: "Agent"
                     val myUid = FirebaseAuth.getInstance().uid ?: "NULL_IDENTITY"
+                    val myAgentId = prefs.getString("agent_id", null) ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                    val myHardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
+                    val myRawAndroidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(context)
                     
                     // 🛑 CRITICAL SECURITY FILTER: Multi-Point Identity Handshake (V50.0)
                     val matchesIdentity = assignedTo == "ALL CONNECTED DEVICES" || 
                                           assignedTo.equals(myUid, ignoreCase = true) || 
+                                          assignedTo.equals(myAgentId, ignoreCase = true) || 
+                                          assignedTo.equals(myHardwareUid, ignoreCase = true) || 
+                                          assignedTo.equals(myRawAndroidId, ignoreCase = true) || 
                                           assignedTo.equals(userName, ignoreCase = true)
                     if (!matchesIdentity) {
-                        SystemLogger.i(TAG, "GEOFENCE_SUPPRESSED: Device '$userName' ($myUid) intersected zone but is NOT the targeted Subject ($assignedTo)!")
+                        SystemLogger.i(TAG, "GEOFENCE_SUPPRESSED: Device '$userName' ($myUid / $myAgentId) intersected zone but is NOT the targeted Subject ($assignedTo)!")
                         continue
                     }
 
@@ -103,10 +109,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     continue
                 }
 
-                val groupId = prefs.getString("active_group", null)
+                var groupId = prefs.getString("active_group", null)
+                if (groupId.isNullOrBlank() || groupId.startsWith("LOCAL_SANDBOX")) {
+                    groupId = "GRP_$myAgentId"
+                }
 
                 // 🚀 REMOTE MISSION MONITORING: Push to Cloud Matrix (V50.0)
-                if (groupId != null && !groupId.startsWith("LOCAL_SANDBOX") && myUid != "NULL_IDENTITY") {
+                if (!groupId.isNullOrBlank() && !groupId.startsWith("LOCAL_SANDBOX")) {
                     try {
                         val cleanGroupId = FirebaseComm.sanitizePathKey(groupId)
                         val now = System.currentTimeMillis()

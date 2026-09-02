@@ -19,25 +19,25 @@ export class DeviceCardView {
         const cardinal = GeoUtils.bearingToCardinal(bearing);
 
         return `
-            <div class="matrix-visiting-card glass-panel shadow-xl p-2.5 rounded-xl border border-white/10 text-white w-[210px] select-none font-sans">
+            <div class="matrix-visiting-card glass-panel shadow-2xl p-3.5 rounded-2xl border border-white/20 text-white w-[280px] select-none font-sans bg-slate-950/95 backdrop-blur-2xl">
                 <!-- Header: Avatar, Name & Live Status -->
-                <div class="flex items-center gap-2 border-b border-white/10 pb-2 mb-2">
+                <div class="flex items-center gap-3 border-b border-white/10 pb-2.5 mb-2.5">
                     <div class="relative shrink-0">
                         <img src="${avatarUrl}" alt="${device.name}" 
-                             class="w-8 h-8 rounded-full object-cover border shadow bg-transparent" 
+                             class="w-10 h-10 rounded-full object-cover border-2 shadow-md bg-transparent" 
                              style="border-color: ${themeColor};"
                              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
-                        <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-slate-900 ${device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
+                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between gap-1">
-                            <h4 class="font-bold text-xs text-white truncate tracking-tight">${device.name}</h4>
-                            <span class="text-[7px] font-mono px-1 py-0.2 rounded uppercase font-bold tracking-wider ${device.isOnline ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'}">
+                            <h4 class="font-bold text-sm text-white truncate tracking-tight">${device.name}</h4>
+                            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-bold tracking-wider ${device.isOnline ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-white/10'}">
                                 ${device.isOnline ? 'LIVE' : 'OFF'}
                             </span>
                         </div>
-                        <div class="text-[8px] text-slate-400 truncate flex items-center gap-1 mt-0.5 font-mono">
-                            <span class="truncate">${device.deviceName || device.model || device.agentId}</span>
+                        <div class="text-[10px] text-slate-300 truncate flex items-center gap-1 mt-0.5 font-mono">
+                            <span class="truncate font-semibold text-slate-200">${device.deviceName || device.model || device.agentId}</span>
                             <span>•</span>
                             <span class="text-sky-400 font-sans font-bold">${device.roleFamily !== 'None' ? device.roleFamily : device.role}</span>
                         </div>
@@ -45,57 +45,56 @@ export class DeviceCardView {
                 </div>
 
                 <!-- Distance Radar Badge -->
-                <div class="mb-2 flex items-center justify-between text-[10px] px-2 py-1 rounded-lg ${isWithin ? 'bg-sky-500/15 border border-sky-500/30 text-sky-300' : 'bg-amber-500/10 border border-amber-500/20 text-amber-300'}">
-                    <span class="flex items-center gap-1 font-medium text-[9px] truncate">
-                        <span>${isWithin ? '🎯 10km Zone' : '📡 Radar'}</span>
+                <div class="mb-2.5 flex items-center justify-between text-xs px-2.5 py-1.5 rounded-xl ${isWithin ? 'bg-sky-500/20 border border-sky-500/40 text-sky-300' : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'}">
+                    <span class="flex items-center gap-1 font-semibold text-[11px] truncate">
+                        <span>${isWithin ? '🎯 10km Radius' : '📡 Radar Out'}</span>
                     </span>
-                    <span class="font-mono font-bold text-[10px]">${device.getFormattedDistance()}</span>
+                    <span class="font-mono font-bold text-xs">${device.getFormattedDistance()}</span>
                 </div>
 
                 <!-- Telemetry Grid -->
-                <div class="grid grid-cols-2 gap-1.5 text-[9px] bg-black/40 rounded-lg p-2 border border-white/5 mb-2 font-mono">
+                <div class="grid grid-cols-2 gap-2 text-xs bg-black/50 rounded-xl p-2.5 border border-white/10 mb-2.5 font-mono">
                     <div class="flex flex-col">
-                        <span class="text-[7px] text-slate-400 uppercase tracking-wider font-sans">Battery</span>
-                        <span class="font-bold flex items-center gap-0.5" style="color: ${batteryMeta.color}">
+                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Battery</span>
+                        <span class="font-bold text-xs flex items-center gap-1" style="color: ${batteryMeta.color}">
                             ${batteryMeta.icon} ${batteryMeta.text}
                         </span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-[7px] text-slate-400 uppercase tracking-wider font-sans">Speed</span>
-                        <span class="text-white font-bold">${device.getFormattedSpeed()}</span>
+                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Speed</span>
+                        <span class="text-white font-bold text-xs">${device.getFormattedSpeed()}</span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-[7px] text-slate-400 uppercase tracking-wider font-sans">Heading</span>
-                        <span class="text-white font-bold">${bearing}° (${cardinal})</span>
+                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Heading</span>
+                        <span class="text-white font-bold text-xs">${bearing}° (${cardinal})</span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-sans">Last Seen</span>
-                        <span class="text-slate-300">${device.getFormattedLastSeen()}</span>
+                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-sans font-semibold">Last Pulse</span>
+                        <span class="text-slate-200 font-bold text-xs">${device.getFormattedLastSeen()}</span>
                     </div>
                 </div>
 
                 <!-- Location Address & Date/Time Metadata -->
-                <div class="bg-black/30 rounded-lg p-2 mb-2 border border-white/5 space-y-1">
-                    <div class="flex items-center justify-between text-[8px] font-mono text-sky-400 font-bold border-b border-white/5 pb-1">
+                <div class="bg-black/40 rounded-xl p-2.5 mb-2.5 border border-white/10 space-y-1.5">
+                    <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-white/10 pb-1">
                         <span class="flex items-center gap-1">🕒 <span>${device.getFormattedDateTime()}</span></span>
-                        <span class="text-slate-400 font-normal">${device.getFormattedTimeDelta()}</span>
                     </div>
-                    <div class="text-[9px] text-slate-300 line-clamp-2 pt-0.5">
-                        <span class="text-slate-400">📍 </span>${device.address || 'No street address registered'}
+                    <div class="text-[11px] text-slate-200 line-clamp-2 pt-0.5 leading-relaxed">
+                        <span class="text-sky-400">📍 </span>${device.address || 'No street address registered'}
                     </div>
                 </div>
 
                 <!-- Quick Action Buttons -->
-                <div class="flex items-center gap-1.5 pt-1 border-t border-white/10">
-                    <button class="flex-1 py-1.5 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1 shadow-lg shadow-sky-600/20"
+                <div class="flex items-center gap-2 pt-1.5 border-t border-white/10">
+                    <button class="flex-1 py-2 px-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-1 shadow-lg shadow-sky-600/30"
                             onclick="window.MatrixApp.focusDevice('${device.agentId}')">
                         <span>🎯 Center</span>
                     </button>
-                    <button class="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-white/10 transition-all flex items-center justify-center gap-1"
+                    <button class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1"
                             onclick="window.MatrixApp.showHistory('${device.agentId}')">
                         <span>📍 Trail</span>
                     </button>
-                    <button class="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium border border-white/10 transition-all flex items-center justify-center gap-1"
+                    <button class="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1"
                             onclick="window.MatrixApp.showDossier('${device.agentId}')">
                         <span>🔍 Dossier</span>
                     </button>
