@@ -135,14 +135,15 @@ app.get("/api/devices-live", async (req, res) => {
         // Build a map of all Safe Zone coordinates for quick fallback resolution
         const safeZoneCoords = new Map();
         for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
-            if (!creatorNode || !creatorNode.safe_zones) continue;
-            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
-                if (zone && zone.lat && zone.lng) {
-                    safeZoneCoords.set(zone.zone_id || zoneId, {
-                        lat: parseFloat(zone.lat),
-                        lng: parseFloat(zone.lng),
-                        name: zone.zone_name || "Safe Zone"
-                    });
+            if (!creatorNode) continue;
+            const zonesMap = creatorNode.safe_zones || (creatorNode.latitude || creatorNode.lat ? { [creatorId]: creatorNode } : creatorNode);
+            for (const [zoneId, zone] of Object.entries(zonesMap)) {
+                if (zone && (zone.lat || zone.latitude) && (zone.lng || zone.longitude)) {
+                    const zLat = parseFloat(zone.lat || zone.latitude);
+                    const zLng = parseFloat(zone.lng || zone.longitude);
+                    const zName = zone.zone_name || zone.name || "Safe Zone";
+                    safeZoneCoords.set(zone.zone_id || zoneId, { lat: zLat, lng: zLng, name: zName });
+                    if (zone.zone_name) safeZoneCoords.set(zone.zone_name.toLowerCase(), { lat: zLat, lng: zLng, name: zName });
                 }
             }
         }
@@ -195,13 +196,14 @@ app.get("/api/devices-live", async (req, res) => {
             let lat = parseFloat(liveLoc.latitude || liveLoc.lat || deviceInfo.latitude || node.latitude || 0);
             let lng = parseFloat(liveLoc.longitude || liveLoc.lng || deviceInfo.longitude || node.longitude || 0);
 
-            // 2. Safe Zone Fallback: ONLY if GPS coordinates are 0 and device is in safe zone
-            if ((lat === 0 || lng === 0) && liveLoc.current_safe_zone_state === "IN" && liveLoc.current_safe_zone_id) {
-                const zoneInfo = safeZoneCoords.get(liveLoc.current_safe_zone_id);
+            // 2. Safe Zone Fallback: If GPS coordinates are 0 and device is in safe zone or matching name
+            if (lat === 0 || lng === 0) {
+                const zoneKey = liveLoc.current_safe_zone_id || liveLoc.current_safe_zone_name || (liveLoc.safe_zone || "").toLowerCase();
+                const zoneInfo = safeZoneCoords.get(zoneKey) || safeZoneCoords.get(String(zoneKey).toLowerCase());
                 if (zoneInfo) {
                     lat = zoneInfo.lat;
                     lng = zoneInfo.lng;
-                    liveLoc.address = `Inside ${zoneInfo.name} Safe Perimeter`;
+                    liveLoc.address = liveLoc.address || `Inside ${zoneInfo.name} Safe Perimeter`;
                 }
             }
 
@@ -306,120 +308,58 @@ app.get("/api/safe-zones", async (req, res) => {
             return authToDevice[rawKey] || rawKey;
         };
 
-        // 1. Extract from Geofencing/{creatorId}/safe_zones (Primary SSOT for Geofencing & Connected Devices)
-        for (const [rawCreatorId, creatorNode] of Object.entries(geofenceData)) {
-            if (!creatorNode) continue;
-            const canonicalCreator = resolveCanonicalDevId(rawCreatorId);
+        // 1. Extract exclusively from root Geofencing node (Primary SSOT for Geofencing & Devices)
+        for (const [zoneKey, zone] of Object.entries(geofenceData)) {
+            if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneKey)) continue;
+            seenZoneIds.add(zoneKey);
 
-            // Handle both Geofencing/{creatorId}/safe_zones AND Geofencing/{zoneId} structures
-            const zonesMap = creatorNode.safe_zones || (creatorNode.zone_id ? { [rawCreatorId]: creatorNode } : creatorNode);
+            const connMap = zone.connected_devices || {};
+            const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
 
-            for (const [zoneId, zone] of Object.entries(zonesMap)) {
-                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
-                seenZoneIds.add(zoneId);
+            // Extract nested devices node (GeoFencing -> SafeZone -> Devices -> Alert Notice)
+            if (zone.devices && typeof zone.devices === 'object') {
+                Object.keys(zone.devices).forEach(dKey => {
+                    const canonicalDev = resolveCanonicalDevId(dKey);
+                    if (!connList.includes(canonicalDev)) connList.push(canonicalDev);
+                });
+            }
 
-                const connMap = zone.connected_devices || {};
-                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
-
-                // Extract nested devices node (GeoFencing -> SafeZone -> Devices -> Alert Notice)
-                if (zone.devices && typeof zone.devices === 'object') {
-                    Object.keys(zone.devices).forEach(dKey => {
-                        const canonicalDev = resolveCanonicalDevId(dKey);
-                        if (!connList.includes(canonicalDev)) connList.push(canonicalDev);
-                    });
-                }
-
-                // Extract nested alert_notices under devices
-                const historyObj = zone.history || {};
-                if (zone.devices && typeof zone.devices === 'object') {
-                    for (const [dKey, devNode] of Object.entries(zone.devices)) {
-                        if (devNode && devNode.alert_notices && typeof devNode.alert_notices === 'object') {
-                            for (const [aId, alertNotice] of Object.entries(devNode.alert_notices)) {
-                                historyObj[aId] = {
-                                    event_id: aId,
-                                    datetime: alertNotice.readable_time || (alertNotice.timestamp ? new Date(alertNotice.timestamp).toLocaleString() : "Recorded Alert"),
-                                    status: alertNotice.event_type || "TRANSITION",
-                                    target_name: devNode.device_name || alertNotice.target_name || dKey,
-                                    target_uid: resolveCanonicalDevId(alertNotice.agent_id || dKey),
-                                    zone_name: zone.zone_name || zone.name || "Safe Perimeter",
-                                    timestamp: alertNotice.timestamp || Date.now()
-                                };
-                            }
+            // Extract nested alert_notices under devices
+            const historyObj = zone.history || {};
+            if (zone.devices && typeof zone.devices === 'object') {
+                for (const [dKey, devNode] of Object.entries(zone.devices)) {
+                    if (devNode && devNode.alert_notices && typeof devNode.alert_notices === 'object') {
+                        for (const [aId, alertNotice] of Object.entries(devNode.alert_notices)) {
+                            historyObj[aId] = {
+                                event_id: aId,
+                                datetime: alertNotice.readable_time || (alertNotice.timestamp ? new Date(alertNotice.timestamp).toLocaleString() : "Recorded Alert"),
+                                status: alertNotice.event_type || "TRANSITION",
+                                target_name: devNode.device_name || alertNotice.target_name || dKey,
+                                target_uid: resolveCanonicalDevId(alertNotice.agent_id || dKey),
+                                zone_name: zone.zone_name || zone.name || "Safe Perimeter",
+                                timestamp: alertNotice.timestamp || Date.now()
+                            };
                         }
                     }
                 }
-
-                zonesList.push({
-                    zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
-                    latitude: parseFloat(zone.lat || zone.latitude || 0),
-                    longitude: parseFloat(zone.lng || zone.longitude || 0),
-                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
-                    address: zone.address || "",
-                    assignedName: zone.assigned_targets || zone.assignedName || "",
-                    creatorId: resolveCanonicalDevId(zone.creator_id || canonicalCreator),
-                    createdAt: zone.created_at || zone.timestamp || zone.createdAt || Date.now(),
-                    isActive: zone.is_active !== false && zone.isZoneActive !== false,
-                    alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
-                    history: historyObj,
-                    connectedDevices: connList,
-                    devicesTree: zone.devices || {}
-                });
             }
-        }
 
-        // 2. Extract from relationships/{groupId}/geofences
-        for (const [groupId, groupNode] of Object.entries(relData)) {
-            if (!groupNode || !groupNode.geofences) continue;
-            for (const [zoneId, zone] of Object.entries(groupNode.geofences)) {
-                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
-                seenZoneIds.add(zoneId);
-
-                const connMap = zone.connected_devices || {};
-                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
-
-                zonesList.push({
-                    zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
-                    latitude: parseFloat(zone.lat || zone.latitude || 0),
-                    longitude: parseFloat(zone.lng || zone.longitude || 0),
-                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
-                    address: zone.address || "",
-                    assignedName: zone.assignedName || zone.assigned_targets || "",
-                    creatorId: resolveCanonicalDevId(zone.created_by || zone.creator_uid || groupId),
-                    isActive: zone.isZoneActive !== false && zone.is_active !== false,
-                    alertsEnabled: Boolean(zone.alertsEnabled || zone.alerts_enabled),
-                    history: zone.history || {},
-                    connectedDevices: connList
-                });
-            }
-        }
-
-        // 3. Extract from devices/{agentId}/safe_zones
-        for (const [agentId, deviceNode] of Object.entries(devicesData)) {
-            if (!deviceNode || !deviceNode.safe_zones) continue;
-            for (const [zoneId, zone] of Object.entries(deviceNode.safe_zones)) {
-                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
-                seenZoneIds.add(zoneId);
-
-                const connMap = zone.connected_devices || {};
-                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
-
-                zonesList.push({
-                    zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
-                    latitude: parseFloat(zone.lat || zone.latitude || 0),
-                    longitude: parseFloat(zone.lng || zone.longitude || 0),
-                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
-                    address: zone.address || "",
-                    assignedName: zone.assigned_targets || zone.assignedName || "",
-                    creatorId: resolveCanonicalDevId(agentId),
-                    isActive: zone.is_active !== false,
-                    alertsEnabled: Boolean(zone.alerts_enabled),
-                    history: zone.history || {},
-                    connectedDevices: connList
-                });
-            }
+            zonesList.push({
+                zoneId: zone.zone_id || zoneKey,
+                zoneName: zone.zone_name || zone.name || "Safe Perimeter",
+                latitude: parseFloat(zone.latitude || zone.lat || 0),
+                longitude: parseFloat(zone.longitude || zone.lng || 0),
+                radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                address: zone.address || "",
+                assignedName: zone.assigned_targets || zone.assignedName || "",
+                creatorId: resolveCanonicalDevId(zone.creator_id || "BE5A234A"),
+                createdAt: zone.created_at || zone.timestamp || zone.createdAt || Date.now(),
+                isActive: zone.is_active !== false && zone.isZoneActive !== false,
+                alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
+                history: historyObj,
+                connectedDevices: connList,
+                devicesTree: zone.devices || {}
+            });
         }
 
         // Enrich every safe zone history ledger with group notifications
@@ -520,8 +460,6 @@ app.post("/api/save-safe-zone", async (req, res) => {
 
         // 1. Write directly to Geofencing/{zone_name}_<DDMMYYYY_HHMMSS> (Primary SSOT)
         await db.ref(`Geofencing/${zoneKey}`).set(zonePayload);
-        // Also sync under Geofencing/{creator}/safe_zones/{zoneId} for backwards compatibility
-        await db.ref(`Geofencing/${creator}/safe_zones/${zoneId}`).set(zonePayload);
 
         // 2. Multi-cast write to each connected device's safe_zones node
         if (Array.isArray(connectedDevices)) {
