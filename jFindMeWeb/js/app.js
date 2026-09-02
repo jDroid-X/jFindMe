@@ -94,14 +94,46 @@ class App {
 
         // Global Logging Engine (Descending Order: Latest First)
         window.log = (msg, type = 'system') => {
-            const terminal = document.getElementById('terminal');
-            if (!terminal) return;
+            const body = document.getElementById('terminal-body') || document.getElementById('terminal');
+            if (!body) return;
             const line = document.createElement('div');
             line.className = `log-line log-${type} animate-fade-in border-b border-white/5 pb-1 mb-1`;
+            line.setAttribute('data-log-type', type);
             line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
             
             // Prepend to show latest first
-            terminal.prepend(line);
+            body.prepend(line);
+        };
+
+        window.filterLogs = (type) => {
+            const body = document.getElementById('terminal-body');
+            if (!body) return;
+            const lines = body.querySelectorAll('.log-line');
+            lines.forEach(l => {
+                const logType = l.getAttribute('data-log-type') || 'system';
+                if (type === 'all' || logType === type) {
+                    l.style.display = 'block';
+                } else {
+                    l.style.display = 'none';
+                }
+            });
+        };
+
+        window.clearTerminalLogs = () => {
+            const body = document.getElementById('terminal-body');
+            if (body) body.innerHTML = '<div class="text-secondary opacity-50 mb-2">--- TERMINAL LOGS CLEARED ---</div>';
+        };
+
+        window.toggleTerminalExpand = () => {
+            const term = document.getElementById('terminal');
+            if (!term) return;
+            if (term.classList.contains('h-[250px]')) {
+                term.classList.remove('h-[250px]');
+                term.classList.add('h-[450px]');
+            } else {
+                term.classList.remove('h-[450px]');
+                term.classList.add('h-[250px]');
+            }
         };
     }
 
@@ -698,8 +730,7 @@ class App {
 
         window.showArchitectV2 = () => {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            const v2Tab = Array.from(document.querySelectorAll('.nav-item')).find(n => n.textContent.includes('V2'));
-            v2Tab?.classList.add('active');
+            document.getElementById('nav-architect')?.classList.add('active');
             document.querySelector('header h1').textContent = "Database Architect V2 (Hierarchical)";
             document.getElementById('terminal').style.display = 'none';
             this.schema1.render();

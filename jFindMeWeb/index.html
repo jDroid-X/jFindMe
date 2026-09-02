@@ -127,10 +127,27 @@
                 </div>
             </div>
 
-            <!-- ZONE D: FORENSIC TERMINAL (250px Persistent) -->
-            <div id="terminal" class="h-[250px] border-t border-border bg-black/80 backdrop-blur-xl p-4 font-mono text-xs overflow-y-auto space-y-1">
-                <div class="text-secondary opacity-50 mb-2">--- INITIALIZING FORENSIC AUDIT LOGS ---</div>
-                <div class="text-[#00ffff] opacity-30">[SYSTEM] Awaiting boot sequence... (Press F12 for browser console if stuck)</div>
+            <!-- ZONE D: FORENSIC TERMINAL (Persistent Audit Ledger) -->
+            <div id="terminal" class="h-[250px] border-t border-border bg-black/90 backdrop-blur-xl flex flex-col font-mono text-xs overflow-hidden">
+                <div class="px-4 py-1.5 bg-slate-950/90 border-b border-white/10 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-sky-400">Forensic Audit Logs</span>
+                        <div class="flex items-center gap-1 text-[9px] font-sans">
+                            <button onclick="window.filterLogs('all')" class="px-2 py-0.5 rounded bg-sky-600/30 text-sky-300 font-bold hover:bg-sky-600 hover:text-white transition-all">ALL</button>
+                            <button onclick="window.filterLogs('success')" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold hover:bg-emerald-600 hover:text-white transition-all">SUCCESS</button>
+                            <button onclick="window.filterLogs('warning')" class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold hover:bg-amber-600 hover:text-white transition-all">WARNING</button>
+                            <button onclick="window.filterLogs('error')" class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-bold hover:bg-rose-600 hover:text-white transition-all">ERROR</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.clearTerminalLogs()" class="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[9px] font-bold uppercase tracking-wider transition-all border border-white/10">Clear</button>
+                        <button onclick="window.toggleTerminalExpand()" class="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[9px] font-bold uppercase tracking-wider transition-all border border-white/10">Toggle Height</button>
+                    </div>
+                </div>
+                <div id="terminal-body" class="p-4 flex-1 overflow-y-auto space-y-1 scrollbar-thin">
+                    <div class="text-secondary opacity-50 mb-2">--- INITIALIZING FORENSIC AUDIT LOGS ---</div>
+                    <div class="text-[#00ffff] opacity-30">[SYSTEM] Awaiting boot sequence... (Press F12 for browser console if stuck)</div>
+                </div>
             </div>
         </main>
     </div>

@@ -493,6 +493,87 @@ app.post("/api/save-safe-zone", async (req, res) => {
     }
 });
 
+// Update SafeZone Assigned Targets Endpoint
+app.post("/api/safezone/update-targets", async (req, res) => {
+    const { creatorUid, zoneId, assignedTargets } = req.body;
+    if (!zoneId) return res.status(400).json({ error: "MISSING_ZONE_ID" });
+
+    try {
+        const creator = creatorUid || "BE5A234A";
+        console.log(`[SAFE_ZONES] Updating targets for zone [${zoneId}] to: "${assignedTargets}"`);
+
+        // Check root Geofencing node first
+        const snap = await db.ref(`Geofencing`).once('value');
+        const geofencing = snap.val() || {};
+        let updated = false;
+
+        for (const [cId, cNode] of Object.entries(geofencing)) {
+            if (cNode && cNode.safe_zones && cNode.safe_zones[zoneId]) {
+                await db.ref(`Geofencing/${cId}/safe_zones/${zoneId}/assigned_targets`).set(assignedTargets);
+                updated = true;
+            }
+        }
+
+        if (!updated) {
+            await db.ref(`Geofencing/${creator}/safe_zones/${zoneId}/assigned_targets`).set(assignedTargets);
+        }
+
+        res.json({ status: "SUCCESS", zoneId, assignedTargets });
+    } catch (err) {
+        console.error("[ERROR] /api/safezone/update-targets failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Decommission / Delete SafeZone Endpoint
+app.post("/api/safezone/delete", async (req, res) => {
+    const { creatorUid, zoneId } = req.body;
+    if (!zoneId) return res.status(400).json({ error: "MISSING_ZONE_ID" });
+
+    try {
+        console.log(`[SAFE_ZONES] Decommissioning Safe Zone [${zoneId}]...`);
+        const snap = await db.ref(`Geofencing`).once('value');
+        const geofencing = snap.val() || {};
+
+        for (const [cId, cNode] of Object.entries(geofencing)) {
+            if (cNode && cNode.safe_zones && cNode.safe_zones[zoneId]) {
+                await db.ref(`Geofencing/${cId}/safe_zones/${zoneId}`).remove();
+            }
+        }
+
+        res.json({ status: "SUCCESS", zoneId });
+    } catch (err) {
+        console.error("[ERROR] /api/safezone/delete failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Bind / Update Device Relationship Endpoint
+app.post("/api/relationship/update", async (req, res) => {
+    const { agentId, targetAgentId, targetName, role, type } = req.body;
+    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
+
+    try {
+        console.log(`[RELATIONSHIP] Binding ${agentId} -> ${targetAgentId} (${role})`);
+        const relRef = db.ref(`relationships/GRP_${agentId}_${targetAgentId}`);
+        await relRef.set({
+            group_id: `GRP_${agentId}_${targetAgentId}`,
+            created_by: agentId,
+            target_device: targetAgentId,
+            target_name: targetName || targetAgentId,
+            role_title: role || "Member",
+            branch_type: type || "family",
+            status: "ACTIVE",
+            timestamp: Date.now()
+        });
+
+        res.json({ status: "SUCCESS", agentId, targetAgentId, role });
+    } catch (err) {
+        console.error("[ERROR] /api/relationship/update failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 🛡️ Helper: Resolves any raw ID (e.g. 28-char Auth UID) to canonical 8-character Agent ID
 async function resolveCanonicalAgentId(rawId) {
     if (!rawId) return rawId;
@@ -887,7 +968,6 @@ app.post("/api/delete", async (req, res) => {
     
     try {
         if (sourceType === "firestore") {
-            // Assume path is 'collection/docId'
             const parts = path.split("/").filter(Boolean);
             if (parts.length < 2) throw new Error("INVALID_FIRESTORE_PATH");
             await fs_db.collection(parts[0]).doc(parts[1]).delete();
@@ -898,6 +978,77 @@ app.post("/api/delete", async (req, res) => {
         res.json({ status: "DECOMMISSIONED", path });
     } catch (err) {
         console.error(`[ERROR] Decommission Failure (${path}):`, err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================================
+// SAFE ZONE MANAGEMENT ENDPOINTS (CLOSED LOOP FEEDBACK)
+// ============================================================
+app.post("/api/safezone/delete", async (req, res) => {
+    const { creatorUid, zoneId } = req.body;
+    if (!creatorUid || !zoneId) return res.status(400).json({ error: "MISSING_CREATOR_OR_ZONE_ID" });
+
+    try {
+        console.log(`[SAFEZONE_ACTION] Deleting SafeZone [${zoneId}] for Creator [${creatorUid}]...`);
+        // Remove from creator's Geofencing node
+        await db.ref(`Geofencing/${creatorUid}/safe_zones/${zoneId}`).remove();
+        
+        // Remove from device's safe_zones node if mirrored
+        await db.ref(`devices/${creatorUid}/safe_zones/${zoneId}`).remove().catch(() => null);
+
+        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
+        res.json({ status: "SUCCESS", message: `SafeZone ${zoneId} deleted successfully.` });
+    } catch (err) {
+        console.error("[SAFEZONE_ERROR] Delete failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/api/safezone/update-targets", async (req, res) => {
+    const { creatorUid, zoneId, assignedTargets } = req.body;
+    if (!creatorUid || !zoneId) return res.status(400).json({ error: "MISSING_PARAMS" });
+
+    try {
+        console.log(`[SAFEZONE_ACTION] Updating targets for SafeZone [${zoneId}] to: "${assignedTargets}"...`);
+        await db.ref(`Geofencing/${creatorUid}/safe_zones/${zoneId}`).update({
+            assigned_targets: assignedTargets || "Connected Devices",
+            updated_at: Date.now()
+        });
+
+        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
+        res.json({ status: "SUCCESS", assignedTargets });
+    } catch (err) {
+        console.error("[SAFEZONE_ERROR] Target update failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/api/relationship/update", async (req, res) => {
+    const { agentId, targetAgentId, targetName, role, type } = req.body;
+    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
+
+    try {
+        console.log(`[RELATIONSHIP_ACTION] Binding [${agentId}] -> [${targetAgentId}] as ${role} (${type})...`);
+        const relData = {
+            name: targetName || targetAgentId,
+            role: role || "Member",
+            type: type || "family",
+            updated_at: Date.now()
+        };
+
+        // Bidirectional update
+        await db.ref(`devices/${agentId}/relationships/${targetAgentId}`).update(relData);
+        await db.ref(`devices/${targetAgentId}/relationships/${agentId}`).update({
+            name: agentId,
+            role: role || "Member",
+            type: type || "family",
+            updated_at: Date.now()
+        });
+
+        res.json({ status: "SUCCESS", agentId, targetAgentId, relData });
+    } catch (err) {
+        console.error("[RELATIONSHIP_ERROR] Binding failed:", err.message);
         res.status(500).json({ error: err.message });
     }
 });

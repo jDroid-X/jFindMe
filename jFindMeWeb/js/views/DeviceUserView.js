@@ -144,62 +144,78 @@ export class DeviceUserView {
 
                     ${selectedDev ? `
                     <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1">
+                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
+                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Master Profile</span>
                             <button id="btn-toggle-org" class="text-[9px] text-sky-400 hover:underline font-mono">
                                 ${this.isOrgExpanded ? 'Collapse Org [-]' : 'Expand Org [+]'}
                             </button>
                         </div>
 
-                        <!-- Master Profile Identity Card -->
-                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 text-xs font-mono">
-                            <div class="flex items-center gap-2 pb-1.5 border-b border-white/5">
-                                <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-9 h-9 rounded-full object-cover border shadow" style="border-color: ${selectedDev.getThemeColor()};">
-                                <div class="min-w-0 flex-1">
-                                    <h3 class="font-bold text-xs text-white truncate">${selectedDev.name}</h3>
-                                    <div class="text-[9px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
-                                    <div class="text-[8px] text-slate-400">Agent ID: ${selectedDev.agentId}</div>
+                        <!-- Master Profile Details Container with Scrollbar -->
+                        <div class="overflow-y-auto custom-scrollbar flex-1 space-y-2 pr-1">
+                            <!-- Master Profile Identity Card -->
+                            <div class="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-2 text-xs font-mono">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/10 pb-1 flex items-center justify-between">
+                                    <span>👤 Master Identity & Hardware</span>
+                                    <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[8px] font-mono">${selectedDev.agentId}</span>
+                                </div>
+
+                                <div class="flex items-center gap-2.5 pb-2 border-b border-white/5">
+                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-10 h-10 rounded-full object-cover border-2 shadow shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
+                                    <div class="min-w-0 flex-1">
+                                        <h3 class="font-bold text-xs text-white truncate">${selectedDev.name}</h3>
+                                        <div class="text-[9px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
+                                        <div class="text-[8px] text-slate-400 truncate">Device: ${selectedDev.deviceName || selectedDev.model}</div>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1.5 text-[10px]">
+                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Auth UID:</span> <span class="text-slate-200 font-bold truncate max-w-[130px] font-mono">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Hardware ID:</span> <span class="text-slate-200 font-bold truncate max-w-[130px] font-mono">${selectedDev.deviceId}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Device Model:</span> <span class="text-white font-medium">${selectedDev.model || 'Android Device'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Phone Number:</span> <span class="text-slate-200 font-mono">${selectedDev.phone || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Email Address:</span> <span class="text-slate-200 truncate max-w-[130px]">${selectedDev.email || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5"><span class="text-slate-400">Emergency Note:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-300 font-bold' : 'text-slate-500'} truncate max-w-[120px]">${selectedDev.emergencyNote || 'None'}</span></div>
                                 </div>
                             </div>
 
-                            <div class="space-y-1 text-[10px]">
-                                <div class="flex justify-between"><span class="text-slate-400">Auth UID:</span> <span class="text-slate-200 font-bold truncate max-w-[110px]">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Hardware ID:</span> <span class="text-slate-200 font-bold truncate max-w-[110px]">${selectedDev.deviceId}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Device Model:</span> <span class="text-white">${selectedDev.model || 'Android Device'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Phone:</span> <span class="text-slate-200">${selectedDev.phone || 'Not Registered'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Email:</span> <span class="text-slate-200 truncate max-w-[110px]">${selectedDev.email || 'Not Registered'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Emergency:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-300 font-bold' : 'text-slate-500'}">${selectedDev.emergencyNote || 'None'}</span></div>
-                            </div>
-                        </div>
-
-                        <!-- Sub-Master Expandable Org Data -->
-                        <div id="org-data-panel" class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 text-xs font-mono ${this.isOrgExpanded ? 'block' : 'hidden'}">
-                            <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/5 pb-0.5">🏢 Org Metadata & ACL</div>
-                            <div class="space-y-0.5 text-[9px]">
-                                <div class="flex justify-between"><span class="text-slate-400">Organization:</span> <span class="text-white">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Department:</span> <span class="text-white">${selectedDev.department || 'General'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Role Title:</span> <span class="text-white">${selectedDev.role}</span></div>
-                                <div class="pt-0.5 text-[8px] text-slate-400 uppercase font-sans font-bold">ACL Grants:</div>
-                                <div class="grid grid-cols-2 gap-1 text-[8px]">
-                                    <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Live Track</span>
-                                    <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Geofence</span>
-                                    <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">History</span>
-                                    <span class="px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-white/10">Ghost</span>
+                            <!-- Sub-Master Expandable Org Data Panel -->
+                            <div id="org-data-panel" class="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-2 text-xs font-mono ${this.isOrgExpanded ? 'block' : 'hidden'}">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/10 pb-1 flex items-center justify-between">
+                                    <span>🏢 Org Metadata & ACL</span>
+                                    <span class="text-[8px] text-slate-400 font-mono">SUB-MASTER</span>
+                                </div>
+                                <div class="space-y-1 text-[9px]">
+                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Organization:</span> <span class="text-white font-bold">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
+                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Department:</span> <span class="text-white">${selectedDev.department || 'General'}</span></div>
+                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Role Title:</span> <span class="text-white font-bold">${selectedDev.role}</span></div>
+                                    <div class="pt-1 text-[8px] text-slate-400 uppercase font-sans font-bold">ACL Access Grants:</div>
+                                    <div class="grid grid-cols-2 gap-1 text-[8px] font-sans">
+                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">Live Track</span>
+                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">Geofence</span>
+                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">History</span>
+                                        <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10 text-center font-bold">Ghost Mode</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- PANE 3: CONNECTIONS TREE (FAMILY & FRIENDS) -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1">
+                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
+                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">3. Connections Tree</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${relCount} Linked</span>
+                            <div class="flex items-center gap-1.5">
+                                <button id="btn-du-add-link" class="px-1.5 py-0.5 rounded bg-sky-600/80 hover:bg-sky-500 text-white text-[9px] font-bold font-mono transition-all">
+                                    + Add Link
+                                </button>
+                                <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${relCount} Linked</span>
+                            </div>
                         </div>
 
-                        <!-- Tree Container -->
-                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-2 min-h-[250px] font-mono">
+                        <!-- Tree Container with Scrollbar -->
+                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-2 flex-1 overflow-y-auto custom-scrollbar font-mono pr-1">
                             <!-- Root Selected Device Node -->
                             <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-sky-950/70 border border-sky-500/40 text-white">
                                 <span class="text-xs">👑</span>
@@ -214,7 +230,7 @@ export class DeviceUserView {
                                 <!-- Family Branch -->
                                 <div class="space-y-1">
                                     <div class="text-[9px] font-bold text-amber-300 font-sans uppercase flex items-center gap-1">
-                                        <span>👨‍gsub Family Connections</span>
+                                        <span>👨‍👩‍👧‍👦 Family Connections</span>
                                     </div>
                                     <div class="space-y-1 pl-1">
                                         ${this.renderTreeMembers(selectedDev, 'family')}
@@ -235,39 +251,39 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 4: SAFEZONES (SECTION 1: CREATED | SECTION 2: ASSIGNED) & NOTIFICATIONS -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1">
+                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
+                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
                             <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${createdZonesList.length} Created | ${assignedZonesList.length} Assigned</span>
                         </div>
 
-                        <div class="space-y-2">
+                        <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-1">
                             <!-- Section 1: Created Safe Zones -->
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-white/10 pb-0.5">
                                     <span>Section 1: Created Safe Zones</span>
                                     <span class="text-[8px] font-mono font-normal text-slate-400">(${createdZonesList.length})</span>
                                 </div>
-                                <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
+                                <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderCreatedSafeZonesHTML(selectedDev, createdZonesList)}
                                 </div>
                             </div>
 
                             <!-- Section 2: Assigned Safe Zones -->
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-amber-400 uppercase font-sans flex items-center justify-between">
+                                <div class="text-[9px] font-bold text-amber-400 uppercase font-sans flex items-center justify-between border-b border-white/10 pb-0.5">
                                     <span>Section 2: Assigned Safe Zones</span>
                                     <span class="text-[8px] font-mono font-normal text-slate-400">(${assignedZonesList.length})</span>
                                 </div>
-                                <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
+                                <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderAssignedSafeZonesHTML(selectedDev, assignedZonesList)}
                                 </div>
                             </div>
 
                             <!-- Transactional Geofence Notification Log -->
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-slate-300 uppercase font-sans">Geofence Event Log</div>
-                                <div class="space-y-1 text-[8px] font-mono max-h-[120px] overflow-y-auto custom-scrollbar">
+                                <div class="text-[9px] font-bold text-slate-300 uppercase font-sans border-b border-white/10 pb-0.5">Geofence Event Log</div>
+                                <div class="space-y-1 text-[8px] font-mono max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderNotificationItems(selectedDev, rawNode)}
                                 </div>
                             </div>
@@ -275,15 +291,15 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 5: TRANSACTIONAL LOCATION FIX LOG -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1">
+                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
+                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">5. Spatial Fix Log</span>
                             <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${historyCount} Fixes</span>
                         </div>
 
-                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 min-h-[300px]">
-                            <div class="text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-white/5 pb-0.5">Recorded Location Fixes</div>
-                            <div class="space-y-1.5 max-h-[420px] overflow-y-auto custom-scrollbar text-xs font-mono">
+                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div class="text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-white/5 pb-0.5 shrink-0">Recorded Location Fixes</div>
+                            <div class="space-y-1.5 overflow-y-auto custom-scrollbar flex-1 pr-1 text-xs font-mono">
                                 ${this.renderLocationLogItems(selectedDev, rawNode)}
                             </div>
                         </div>
@@ -553,5 +569,103 @@ export class DeviceUserView {
                 this.onNavigateMap(this.selectedAgentId);
             }
         });
+
+        // 6. Add Relationship Link Modal Handler
+        document.getElementById('btn-du-add-link')?.addEventListener('click', () => {
+            this.openAddConnectionModal();
+        });
+    }
+
+    openAddConnectionModal() {
+        const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId) || this.devices[0];
+        if (!selectedDev) return;
+
+        const peerDevices = this.devices.filter(d => d.agentId !== selectedDev.agentId);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'du-add-link-modal';
+        overlay.className = 'fixed inset-0 bg-black/80 backdrop-blur-md z-[999] flex items-center justify-center p-4';
+        overlay.innerHTML = `
+            <div class="bg-slate-900 border border-sky-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 relative">
+                <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl">🤝</span>
+                        <div>
+                            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Bind Relationship Connection</h3>
+                            <p class="text-[10px] text-sky-400 font-mono">Source Node: ${selectedDev.name} (${selectedDev.agentId})</p>
+                        </div>
+                    </div>
+                    <button id="btn-close-link-modal" class="text-slate-400 hover:text-white font-bold text-sm">✕</button>
+                </div>
+
+                <div class="space-y-3 text-xs font-sans">
+                    <div>
+                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Target Device Node</label>
+                        <select id="link-target-agent" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
+                            ${peerDevices.map(d => `<option value="${d.agentId}">${d.name} (${d.agentId} • ${d.model})</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Relationship Role Title</label>
+                        <input type="text" id="link-role-title" placeholder="e.g. Spouse, Child, Parent, Friend" value="Spouse" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Group Branch Type</label>
+                        <select id="link-branch-type" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
+                            <option value="family">Family Group</option>
+                            <option value="friends">Friends Group</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                    <button id="btn-cancel-link" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all">Cancel</button>
+                    <button id="btn-save-link" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-lg shadow-sky-600/20">
+                        <span>Save Connection</span>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        document.getElementById('btn-close-link-modal').onclick = close;
+        document.getElementById('btn-cancel-link').onclick = close;
+
+        document.getElementById('btn-save-link').onclick = async () => {
+            const targetAgentId = document.getElementById('link-target-agent').value;
+            const role = document.getElementById('link-role-title').value.trim() || "Member";
+            const type = document.getElementById('link-branch-type').value;
+
+            const targetDev = this.devices.find(d => d.agentId === targetAgentId);
+            const targetName = targetDev ? targetDev.name : targetAgentId;
+
+            try {
+                const res = await fetch('/api/relationship/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agentId: selectedDev.agentId,
+                        targetAgentId,
+                        targetName,
+                        role,
+                        type
+                    })
+                });
+                const result = await res.json();
+                if (result.status === 'SUCCESS') {
+                    if (window.log) window.log(`RELATIONSHIP_BOUND: ${selectedDev.name} -> ${targetName} (${role})`, "success");
+                    close();
+                    if (window.showUsers) window.showUsers(selectedDev.agentId);
+                } else {
+                    alert(`Binding Failed: ${result.error}`);
+                }
+            } catch (err) {
+                alert(`Network Failure: ${err.message}`);
+            }
+        };
     }
 }
