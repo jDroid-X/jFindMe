@@ -21,9 +21,11 @@ export class DeviceUserView {
      * Renders the 5-Pane Device User Interface dynamically without hardcoded fallbacks
      * @param {Array<import('../models/DeviceModel.js').DeviceModel>} devices 
      * @param {string} initialSelectedAgentId 
+     * @param {Array<Object>} safeZones 
      */
-    render(devices = [], initialSelectedAgentId = null) {
+    render(devices = [], initialSelectedAgentId = null, safeZones = []) {
         this.devices = devices;
+        this.safeZones = safeZones;
         if (devices.length > 0) {
             if (!this.selectedAgentId || !this.devices.some(d => d.agentId === this.selectedAgentId)) {
                 this.selectedAgentId = initialSelectedAgentId || devices[0].agentId;
@@ -58,8 +60,8 @@ export class DeviceUserView {
         const historyMap = rawNode.history || {};
         const historyCount = Object.keys(historyMap).length + (selectedDev && selectedDev.hasValidLocation ? 1 : 0);
 
-        const createdZonesList = this.getCreatedSafeZonesList(selectedDev, rawNode);
-        const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, rawNode);
+        const createdZonesList = this.getCreatedSafeZonesList(selectedDev, this.safeZones);
+        const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, this.safeZones);
 
         container.innerHTML = `
             <div class="w-full min-h-screen bg-[#05070a] text-slate-200 select-none overflow-y-auto custom-scrollbar p-2 font-sans">
@@ -315,67 +317,63 @@ export class DeviceUserView {
     }
 
     /**
-     * Dynamic Helper: Resolves Created Safe Zones for Selected Device
+     * Dynamic Helper: Resolves Created Safe Zones for Selected Device (Strict Creator ID Matching)
      */
-    getCreatedSafeZonesList(device, rawNode) {
+    getCreatedSafeZonesList(device, safeZonesList = []) {
         if (!device) return [];
-        const zonesMap = rawNode.safe_zones || {};
         const devName = (device.name || "").toLowerCase();
         const devId = (device.agentId || "").toLowerCase();
         const devHwId = (device.deviceId || "").toLowerCase();
+        const devModel = (device.model || "").toLowerCase();
+        const devUserName = ((device.raw && device.raw.Identity && device.raw.Identity.owner_name) || "").toLowerCase();
 
-        return Object.entries(zonesMap).filter(([id, z]) => {
-            const targetStr = (z.assigned_targets || "").toLowerCase();
-            const creator = (z.creator_uid || z.created_by || "").toLowerCase();
-
-            // Explicit creator match
-            if (creator && (creator.includes(devId) || creator.includes(devHwId) || creator.includes(devName))) {
-                return true;
-            }
-
-            // If assigned_targets explicitly specifies ANOTHER device (e.g., REDMI 5 when this device is REDMI N7 PRO BE5A234A)
-            if (targetStr.length > 0 && !targetStr.includes(devName) && !targetStr.includes(devId) && !targetStr.includes(devHwId)) {
-                return true;
-            }
-
-            return false;
-        }).map(([id, z]) => ({ id, ...z }));
+        return safeZonesList.filter(z => {
+            const creator = (z.creatorId || z.creator_uid || z.creator_id || z.created_by || "").toLowerCase();
+            if (!creator) return false;
+            return creator === devId || creator === devHwId || creator === devName || creator === devModel || (devUserName && creator === devUserName);
+        }).map(z => ({
+            id: z.zoneId || z.id,
+            zone_name: z.zoneName || z.name || z.zone_id,
+            radius: z.radius || 100,
+            assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices",
+            lat: z.latitude || z.lat,
+            lng: z.longitude || z.lng
+        }));
     }
 
     /**
      * Dynamic Helper: Resolves Assigned Safe Zones for Selected Device
      */
-    getAssignedSafeZonesList(device, rawNode) {
+    getAssignedSafeZonesList(device, safeZonesList = []) {
         if (!device) return [];
-        const zonesMap = rawNode.safe_zones || {};
         const devName = (device.name || "").toLowerCase();
         const devId = (device.agentId || "").toLowerCase();
         const devHwId = (device.deviceId || "").toLowerCase();
+        const devModel = (device.model || "").toLowerCase();
+        const devUserName = ((device.raw && device.raw.Identity && device.raw.Identity.owner_name) || "").toLowerCase();
 
-        return Object.entries(zonesMap).filter(([id, z]) => {
-            const targetStr = (z.assigned_targets || "").toLowerCase();
-            const connMap = z.connected_devices || {};
+        return safeZonesList.filter(z => {
+            const targetStr = (z.assignedName || z.assigned_targets || "").toLowerCase();
+            const connList = (Array.isArray(z.connectedDevices) ? z.connectedDevices : []).map(c => String(c).toLowerCase());
 
-            // Explicit target match (e.g. assigned_targets: "REDMI 5" or "Riddhi, PUSHPA")
-            if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId)) {
+            // Match targets string
+            if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId) || 
+                (devModel && targetStr.includes(devModel)) || (devUserName && targetStr.includes(devUserName))) {
                 return true;
             }
 
-            // Connected devices key match
-            if (connMap[device.agentId] || connMap[device.deviceId] || connMap[device.name]) {
+            // Match connected devices list
+            if (connList.some(c => c === devId || c === devHwId || c === devName || c === devModel || (devUserName && c === devUserName))) {
                 return true;
-            }
-
-            // If created by another device and pushed to target
-            const creator = (z.creator_uid || z.created_by || "").toLowerCase();
-            if (!creator || (!creator.includes(devId) && !creator.includes(devName))) {
-                if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId)) {
-                    return true;
-                }
             }
 
             return false;
-        }).map(([id, z]) => ({ id, ...z }));
+        }).map(z => ({
+            id: z.zoneId || z.id,
+            zone_name: z.zoneName || z.name || z.zone_id,
+            radius: z.radius || 100,
+            assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices"
+        }));
     }
 
     /**
@@ -402,13 +400,20 @@ export class DeviceUserView {
             const peerTargetId = peerDev ? peerDev.agentId : agentId;
 
             return `
-                <div class="du-tree-node flex items-center justify-between p-1 rounded bg-white/5 hover:bg-sky-950/60 hover:border-sky-500/40 text-[9px] border border-white/5 cursor-pointer transition-all"
+                <div class="du-tree-node flex items-center justify-between p-1 rounded bg-white/5 hover:bg-sky-950/60 hover:border-sky-500/40 text-[9px] border border-white/5 cursor-pointer transition-all group"
                      data-target-agent-id="${peerTargetId}">
                     <div class="flex items-center gap-1 min-w-0">
                         <img src="${peerAvatar}" class="w-4 h-4 rounded-full object-cover shrink-0">
                         <span class="truncate text-white font-bold">${peerName}</span>
                     </div>
-                    <span class="text-[8px] font-mono text-sky-300 font-bold px-1 rounded bg-sky-500/10">${data.role || 'Member'}</span>
+                    <div class="flex items-center gap-1">
+                        <span class="text-[8px] font-mono text-sky-300 font-bold px-1 rounded bg-sky-500/10">${data.role || 'Member'}</span>
+                        <button class="btn-delete-link text-slate-500 hover:text-rose-400 p-0.5 text-[10px] font-bold"
+                                data-source-agent-id="${device.agentId}"
+                                data-target-agent-id="${peerTargetId}"
+                                data-peer-name="${peerName}"
+                                title="Remove Link">✕</button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -573,6 +578,34 @@ export class DeviceUserView {
         // 6. Add Relationship Link Modal Handler
         document.getElementById('btn-du-add-link')?.addEventListener('click', () => {
             this.openAddConnectionModal();
+        });
+
+        // 7. Delete Relationship Link Handler
+        document.querySelectorAll('.btn-delete-link').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const sourceId = btn.getAttribute('data-source-agent-id');
+                const targetId = btn.getAttribute('data-target-agent-id');
+                const peerName = btn.getAttribute('data-peer-name') || targetId;
+
+                if (!confirm(`CONFIRM REMOVAL: Remove relationship link between [${sourceId}] and [${peerName}]?`)) return;
+
+                fetch('/api/relationship/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agentId: sourceId, targetAgentId: targetId })
+                })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.status === 'SUCCESS') {
+                        if (window.log) window.log(`RELATIONSHIP_PURGED: Connection ${sourceId} <-> ${targetId} deleted`, "success");
+                        if (window.showDeviceUsers) window.showDeviceUsers();
+                    } else {
+                        alert(`Delete Failed: ${res.error}`);
+                    }
+                })
+                .catch(err => alert(`Network Failure: ${err.message}`));
+            });
         });
     }
 

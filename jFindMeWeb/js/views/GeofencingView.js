@@ -227,7 +227,15 @@ export class GeofencingView {
         });
 
         return sorted.map(z => {
-            const creatorDev = this.devices.find(d => d.agentId === z.creatorId || d.deviceId === z.creatorId);
+            const creatorIdLower = String(z.creatorId || "").toLowerCase();
+            const creatorDev = this.devices.find(d => {
+                const devId = String(d.agentId || "").toLowerCase();
+                const devHwId = String(d.deviceId || "").toLowerCase();
+                const devName = String(d.name || "").toLowerCase();
+                const devModel = String(d.model || "").toLowerCase();
+                const devUserName = String((d.raw && d.raw.Identity && d.raw.Identity.owner_name) || "").toLowerCase();
+                return creatorIdLower && (devId === creatorIdLower || devHwId === creatorIdLower || devName === creatorIdLower || devModel === creatorIdLower || devUserName === creatorIdLower);
+            });
             const creatorName = creatorDev ? creatorDev.name : (z.creatorId || 'Fleet Admin');
             const createdTimeStr = this.formatDateTime(z.createdAt);
             const isSelected = z.zoneId === this.selectedZoneId;

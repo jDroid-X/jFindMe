@@ -676,14 +676,17 @@ class App {
             if (terminal) terminal.style.display = 'none';
 
             try {
-                const res = await fetch('/api/devices-live');
-                const rawDevices = await res.json();
-                const devicesPayload = rawDevices.devices || rawDevices;
+                const [devRes, zoneRes] = await Promise.all([
+                    fetch('/api/devices-live').then(r => r.json()),
+                    fetch('/api/safe-zones').then(r => r.json())
+                ]);
+                const devicesPayload = devRes.devices || devRes;
                 this.cachedDevices = devicesPayload.map(d => new DeviceModel(d));
-                this.deviceUserView.render(this.cachedDevices, agentId);
+                const safeZones = zoneRes.safeZones || [];
+                this.deviceUserView.render(this.cachedDevices, agentId, safeZones);
             } catch (err) {
                 console.error("[DEVICE_USER] Failed to load devices:", err);
-                this.deviceUserView.render([], agentId);
+                this.deviceUserView.render([], agentId, []);
             }
         };
 
