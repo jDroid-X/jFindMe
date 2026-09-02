@@ -117,7 +117,7 @@ function parseTimestampToMillis(raw) {
 app.get("/api/devices-live", async (req, res) => {
     const now = Date.now();
     // Return cached response instantly if within 2-second window
-    if (LIVE_DEVICES_CACHE.data && (now - LIVE_DEVICES_CACHE.timestamp) < CACHE_TTL_MS) {
+    if (LIVE_DEVICES_CACHE.data && LIVE_DEVICES_CACHE.data.count > 0 && (now - LIVE_DEVICES_CACHE.timestamp) < CACHE_TTL_MS) {
         return res.json(LIVE_DEVICES_CACHE.data);
     }
 
@@ -269,6 +269,7 @@ app.get("/api/devices-live", async (req, res) => {
         const responsePayload = {
             status: "SUCCESS",
             total: devicesList.length,
+            count: devicesList.length,
             withGps: devicesList.filter(d => d.hasValidLocation).length,
             devices: devicesList,
             timestamp: now
