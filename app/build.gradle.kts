@@ -49,25 +49,30 @@ android {
     compileSdk = 34
 
     signingConfigs {
+        val targetKeystore = if (keystorePropertiesFile.exists()) {
+            file(keystoreProperties["storeFile"] as String)
+        } else {
+            file("../keystore/debug.keystore")
+        }
+        val targetStorePassword = if (keystorePropertiesFile.exists()) keystoreProperties["storePassword"] as String else "android"
+        val targetKeyAlias = if (keystorePropertiesFile.exists()) keystoreProperties["keyAlias"] as String else "androiddebugkey"
+        val targetKeyPassword = if (keystorePropertiesFile.exists()) keystoreProperties["keyPassword"] as String else "android"
+
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                enableV1Signing = true
-                enableV2Signing = true
-            }
+            storeFile = targetKeystore
+            storePassword = targetStorePassword
+            keyAlias = targetKeyAlias
+            keyPassword = targetKeyPassword
+            enableV1Signing = true
+            enableV2Signing = true
         }
         getByName("debug") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                enableV1Signing = true
-                enableV2Signing = true
-            }
+            storeFile = targetKeystore
+            storePassword = targetStorePassword
+            keyAlias = targetKeyAlias
+            keyPassword = targetKeyPassword
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
@@ -89,15 +94,15 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            if (keystorePropertiesFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            } else {
-                signingConfig = signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     splits {
