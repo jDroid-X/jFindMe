@@ -1494,16 +1494,21 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * on fresh app reinstalls (Solves Redmi Reinstall Zombie Leak #12).
      */
     fun pruneZombieNodes(currentCanonicalId: String, phoneOrModel: String?): Int {
-        if (currentCanonicalId.isBlank()) return 0
+        if (currentCanonicalId.isBlank() || phoneOrModel.isNullOrBlank()) return 0
         var pruned = 0
         try {
             val db = writableDatabase
             val cursor = db.rawQuery(
                 """
-                SELECT id, uid_1 FROM ${UserIdentityTable.TABLE_NAME}
-                WHERE (phone_model = ? OR phone_number = ?) AND uid_1 != ? AND status != 'DELETED'
+                SELECT i.id, i.uid_1 
+                FROM ${UserIdentityTable.TABLE_NAME} i
+                LEFT JOIN ${UserProfileTable.TABLE_NAME} p ON i.id = p.identity_id
+                LEFT JOIN ${DeviceTable.TABLE_NAME} d ON i.id = d.identity_id
+                WHERE (p.phone_number = ? OR d.device_model = ? OR p.user_name = ?) 
+                  AND i.uid_1 != ? 
+                  AND i.status != 'DELETED'
                 """.trimIndent(),
-                arrayOf(phoneOrModel ?: "", phoneOrModel ?: "", currentCanonicalId)
+                arrayOf(phoneOrModel, phoneOrModel, phoneOrModel, currentCanonicalId)
             )
             cursor.use {
                 while (it.moveToNext()) {

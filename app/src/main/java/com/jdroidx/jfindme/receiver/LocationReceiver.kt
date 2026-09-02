@@ -27,16 +27,20 @@ class LocationReceiver : BroadcastReceiver() {
         try {
             if (LocationResult.hasResult(intent)) {
                 val locationResult = LocationResult.extractResult(intent) ?: return
-                val repository = LocationRepository(context.applicationContext)
-                val targetAgentId = DeviceIdentityHelper.getOrGenerateAgentId(context)
-                val deviceId = DeviceIdentityHelper.getHardwareUid(context)
-                val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-                val resolvedAvatarId = prefs.getString("user_avatar_id", "butterfly") ?: "butterfly"
+                val appContext = context.applicationContext ?: context
+                val repository = LocationRepository(appContext)
+                val targetAgentId = DeviceIdentityHelper.getOrGenerateAgentId(appContext)
+                val deviceId = DeviceIdentityHelper.getHardwareUid(appContext)
+                val prefs = appContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(appContext)
+                val ssotAvatar = db.getDeviceCentricAvatar(targetAgentId)
+                val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") ssotAvatar else (prefs.getString("user_avatar_id", "butterfly") ?: "butterfly")
                 val resolvedUserName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
                 val forensicTs = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(System.currentTimeMillis())
 
                 for (location in locationResult.locations) {
-                    SystemLogger.d(TAG, "OS_PENDING_INTENT_LOCATION_FIX: Lat=" + location.latitude + ", Lng=" + location.longitude)
+                    if (location == null) continue
+                    SystemLogger.d(TAG, "OS_PENDING_INTENT_LOCATION_FIX: Lat=${location.latitude}, Lng=${location.longitude}")
 
                     try {
                         val userLoc = UserLocation(
@@ -56,17 +60,17 @@ class LocationReceiver : BroadcastReceiver() {
                         )
                         repository.updateMyLocation(userLoc)
                     } catch (repoEx: Exception) {
-                        SystemLogger.e(TAG, "REPO_UPDATE_PENDING_INTENT_ERROR: " + repoEx.message)
+                        SystemLogger.e(TAG, "REPO_UPDATE_PENDING_INTENT_ERROR: ${repoEx.message}", repoEx)
                     }
                 }
                 
                 // Flush offline sync queue
                 try {
-                    com.jdroidx.jfindme.data.remote.OfflineSyncManager(context.applicationContext).triggerBackgroundSync()
+                    com.jdroidx.jfindme.data.remote.OfflineSyncManager(appContext).triggerBackgroundSync()
                 } catch (e: Exception) {}
             }
-        } catch (fatal: Exception) {
-            SystemLogger.e(TAG, "LOCATION_RECEIVER_FATAL_ERROR: " + fatal.message)
+        } catch (fatal: Throwable) {
+            SystemLogger.e(TAG, "LOCATION_RECEIVER_FATAL_ERROR", fatal)
         }
     }
 }

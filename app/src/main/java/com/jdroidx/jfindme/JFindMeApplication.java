@@ -14,6 +14,22 @@ public class JFindMeApplication extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        // 🛡️ Enterprise FinalizerDaemon & Conscrypt Socket Crash Shield
+        // Neutralizes known OEM/Conscrypt finalize() NullPointerExceptions thrown during SSL socket garbage collection
+        Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            if (throwable instanceof NullPointerException && 
+                (thread.getName().contains("FinalizerDaemon") || 
+                 (throwable.getMessage() != null && throwable.getMessage().contains("monitor-enter")) ||
+                 (throwable.getStackTrace().length > 0 && throwable.getStackTrace()[0].getClassName().contains("Conscrypt")))) {
+                SystemLogger.w("FinalizerShield", "Swallowed harmless Conscrypt/FinalizerDaemon SSL socket NPE: " + throwable.getMessage());
+                return;
+            }
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
+            }
+        });
+
         // 🚀 QA Fix: Global Enterprise Database Persistence
         // MUST execute immediately on application start before any ViewModels map Firebase nodes
         try {
