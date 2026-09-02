@@ -468,31 +468,59 @@ app.post("/api/save-safe-zone", async (req, res) => {
         const creator = creatorId || "WEB_ADMIN_HOST";
         console.log(`[SAFE_ZONES] Saving Safe Zone [${zoneName}] (${zoneId})...`);
 
-        const connMap = {};
+        // Helper: Formats timestamp to DDMMYYYY_HHMMSS
+        const nowObj = new Date();
+        const dd = String(nowObj.getDate()).padStart(2, '0');
+        const mm = String(nowObj.getMonth() + 1).padStart(2, '0');
+        const yyyy = nowObj.getFullYear();
+        const hh = String(nowObj.getHours()).padStart(2, '0');
+        const minStr = String(nowObj.getMinutes()).padStart(2, '0');
+        const ss = String(nowObj.getSeconds()).padStart(2, '0');
+        const dateKeyStr = `${dd}${mm}${yyyy}_${hh}${minStr}${ss}`;
+        const zoneKey = `${zoneName}_${dateKeyStr}`;
+
+        const devicesNode = {};
         if (Array.isArray(connectedDevices)) {
             connectedDevices.forEach(dId => {
-                connMap[dId] = {
-                    device_id: dId,
-                    role: "TARGET",
-                    assigned_at: Date.now()
+                devicesNode[dId] = {
+                    agent_id: dId,
+                    device_name: dId,
+                    hardware_uid: dId.toLowerCase(),
+                    role: "Assigned Target",
+                    assigned_at: Date.now(),
+                    alert_notices: {}
                 };
             });
         }
+        // Add Creator Device
+        devicesNode[creator] = {
+            agent_id: creator,
+            device_name: creator,
+            hardware_uid: creator.toLowerCase(),
+            role: "Creator / Admin",
+            assigned_at: Date.now(),
+            alert_notices: {}
+        };
 
         const zonePayload = {
             zone_id: zoneId,
             zone_name: zoneName,
-            lat: parseFloat(latitude),
-            lng: parseFloat(longitude),
             radius: parseFloat(radius || 100),
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            creator_id: creator,
+            creator_name: creator,
+            created_at: Date.now(),
             is_active: isActive !== false,
             alerts_enabled: Boolean(alertsEnabled),
-            creator_uid: creator,
-            created_on: new Date().toISOString(),
-            connected_devices: connMap
+            address: req.body.address || "",
+            assigned_targets: Array.isArray(connectedDevices) ? connectedDevices.join(", ") : "",
+            devices: devicesNode
         };
 
-        // 1. Write to Geofencing/{creator}/safe_zones/{zoneId}
+        // 1. Write directly to Geofencing/{zone_name}_<DDMMYYYY_HHMMSS> (Primary SSOT)
+        await db.ref(`Geofencing/${zoneKey}`).set(zonePayload);
+        // Also sync under Geofencing/{creator}/safe_zones/{zoneId} for backwards compatibility
         await db.ref(`Geofencing/${creator}/safe_zones/${zoneId}`).set(zonePayload);
 
         // 2. Multi-cast write to each connected device's safe_zones node
@@ -515,12 +543,12 @@ app.post("/api/save-safe-zone", async (req, res) => {
             timestamp: Date.now(),
             admin_uid: "WEB_ADMIN",
             action: "CREATE_SAFE_ZONE",
-            target_path: `Geofencing/${creator}/safe_zones/${zoneId}`,
+            target_path: `Geofencing/${zoneKey}`,
             zone_name: zoneName
         }).catch(() => null);
 
-        console.log(`[SAFE_ZONES] Success: Geofence [${zoneName}] stored and synced.`);
-        res.json({ status: "SUCCESS", zoneId, zone: zonePayload });
+        console.log(`[SAFE_ZONES] Success: Geofence [${zoneName}] stored at Geofencing/${zoneKey}.`);
+        res.json({ status: "SUCCESS", zoneId, zoneKey, zone: zonePayload });
     } catch (err) {
         console.error("[ERROR] /api/save-safe-zone failed:", err.message);
         res.status(500).json({ error: err.message });
@@ -1103,6 +1131,23 @@ app.post("/api/relationship/update", async (req, res) => {
         res.json({ status: "SUCCESS", agentId, targetAgentId, relData });
     } catch (err) {
         console.error("[RELATIONSHIP_ERROR] Binding failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post("/api/relationship/delete", async (req, res) => {
+    const { agentId, targetAgentId } = req.body;
+    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
+
+    try {
+        console.log(`[RELATIONSHIP_ACTION] Deleting connection [${agentId}] <-> [${targetAgentId}]...`);
+        // Remove bidirectional relationship entries from devices node
+        await db.ref(`devices/${agentId}/relationships/${targetAgentId}`).remove();
+        await db.ref(`devices/${targetAgentId}/relationships/${agentId}`).remove().catch(() => null);
+
+        res.json({ status: "SUCCESS", agentId, targetAgentId });
+    } catch (err) {
+        console.error("[RELATIONSHIP_ERROR] Delete failed:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
