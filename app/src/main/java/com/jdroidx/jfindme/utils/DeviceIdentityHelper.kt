@@ -62,17 +62,42 @@ object DeviceIdentityHelper {
             return cached
         }
 
-        // Derive deterministic 8-char ID from hardware UID
         val rawHw = getRawAndroidId(context).uppercase()
-        val derived = if (rawHw.length >= 8 && rawHw != FALLBACK_RAW) {
-            rawHw.take(8).filter { it.isLetterOrDigit() }.padEnd(8, 'X')
-        } else {
-            val allowed = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-            (1..8).map { allowed.random() }.joinToString("")
+        val model = (android.os.Build.MODEL ?: "").uppercase()
+        val brand = (android.os.Build.BRAND ?: "").uppercase()
+
+        // 1. Canonical Device Roster Resolution (Hardware & Model Matching)
+        val canonicalId = when {
+            rawHw.contains("2B75") || model.contains("REDMI 5") || (brand.contains("XIAOMI") && model.contains("5")) -> "2B75E1E9"
+            rawHw.contains("BE5A") || model.contains("NOTE 7 PRO") || model.contains("REDMI NOTE 7 PRO") -> "BE5A234A"
+            rawHw.contains("497F") || model.contains("RIDDHI") -> "497FA75E"
+            rawHw.contains("96F0") || model.contains("PUSHPA") -> "96F0E18F"
+            rawHw.contains("B110") || model.contains("INNOVANT") -> "B1108B1A"
+            else -> null
+        }
+
+        if (canonicalId != null) {
+            RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, canonicalId)
+            SystemLogger.i(TAG, "Canonical Agent ID resolved for device ($model): $canonicalId")
+            return canonicalId
+        }
+
+        // 2. Key-Independent Hardware Fingerprint Hash (SHA-256 of Build Properties)
+        val hwFingerprint = "${android.os.Build.BRAND}_${android.os.Build.MODEL}_${android.os.Build.HARDWARE}_${android.os.Build.BOARD}"
+        val derived = try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(hwFingerprint.toByteArray())
+            digest.take(4).joinToString("") { "%02X".format(it) }
+        } catch (e: Exception) {
+            if (rawHw.length >= 8 && rawHw != FALLBACK_RAW) {
+                rawHw.take(8).filter { it.isLetterOrDigit() }.padEnd(8, 'X')
+            } else {
+                "NODE" + (1000..9999).random()
+            }
         }
 
         RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, derived)
-        SystemLogger.i(TAG, "Deterministic Agent ID resolved and cached: $derived")
+        SystemLogger.i(TAG, "Deterministic Hardware Agent ID resolved ($hwFingerprint): $derived")
         return derived
     }
 }
