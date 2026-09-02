@@ -353,6 +353,10 @@ export class DashboardView {
                                                         data-agent-id="${dev.agentId}">
                                                     📄 Metadata Details
                                                 </button>
+                                                <button class="btn-poke-dash px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold transition-all"
+                                                        data-agent-id="${dev.agentId}" title="Send Telemetry Poke Signal">
+                                                    🔊 Poke
+                                                </button>
                                                 <button class="btn-inspect-map px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all"
                                                         data-agent-id="${dev.agentId}" title="Focus on Live Map">
                                                     🗺️ Map
@@ -429,6 +433,27 @@ export class DashboardView {
                 e.stopPropagation();
                 const agentId = btn.getAttribute('data-agent-id');
                 if (this.onNavigateMap) this.onNavigateMap(agentId);
+            });
+        });
+
+        // 4b. Poke Telemetry Button Triggers
+        document.querySelectorAll('.btn-poke-dash').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const agentId = btn.getAttribute('data-agent-id');
+                if (agentId) {
+                    fetch('/api/poke-device', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentId, pokedBy: 'Dashboard_Console' })
+                    })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (window.log) window.log(`POKE_DISPATCH: Poked device [${agentId}] from Dashboard.`, "success");
+                        if (window.FeedbackDialog) window.FeedbackDialog.alert("🔊 Telemetry Poke Dispatched", `Poke signal transmitted to device node [${agentId}].`);
+                    })
+                    .catch(err => alert(`Poke Failed: ${err.message}`));
+                }
             });
         });
 
