@@ -287,14 +287,16 @@ app.get("/api/safe-zones", async (req, res) => {
     }
 
     try {
-        const geofenceSnap = await db.ref("Geofencing").once("value").catch(() => null);
+        const [geofenceSnap, devicesSnap, relSnap, lookupSnap] = await Promise.all([
+            db.ref("Geofencing").once("value").catch(() => null),
+            db.ref("devices").once("value").catch(() => null),
+            db.ref("relationships").once("value").catch(() => null),
+            db.ref("lookup_indices/auth_to_device").once("value").catch(() => null)
+        ]);
         const geofenceData = (geofenceSnap && geofenceSnap.val()) || {};
-
-        const devicesSnap = await db.ref("devices").once("value").catch(() => null);
         const devicesData = (devicesSnap && devicesSnap.val()) || {};
-
-        const relSnap = await db.ref("relationships").once("value").catch(() => null);
         const relData = (relSnap && relSnap.val()) || {};
+        const authToDevice = (lookupSnap && lookupSnap.val()) || {};
 
         const zonesList = [];
         const seenZoneIds = new Set();
