@@ -432,11 +432,11 @@ export class DashboardView {
             });
         });
 
-        // 5. Entire Device Card Click -> Metadata Dossier
+        // 5. Entire Device Card Click -> Focus on Live Map
         document.querySelectorAll('.device-summary-card').forEach(card => {
             card.addEventListener('click', () => {
                 const agentId = card.getAttribute('data-agent-id');
-                if (this.onShowDossier) this.onShowDossier(agentId);
+                if (this.onNavigateMap) this.onNavigateMap(agentId);
             });
         });
 

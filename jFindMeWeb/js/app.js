@@ -11,6 +11,7 @@ import { SettingsModel } from './models/SettingsModel.js';
 import { DeviceModel } from './models/DeviceModel.js';
 import { DeviceCardView } from './views/DeviceCardView.js';
 import { MapSettingsView } from './views/MapSettingsView.js';
+import { DeviceUserView } from './views/DeviceUserView.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -55,6 +56,16 @@ class App {
             onOpenSettings: () => {
                 this.settingsView.show(this.settingsModel);
             },
+            onNavigateMap: (agentId) => {
+                window.showLiveMap();
+                setTimeout(() => {
+                    const dev = this.mapController?.deviceController.getDeviceById(agentId);
+                    if (dev) this.mapController?.handleDeviceSelected(dev);
+                }, 400);
+            }
+        });
+
+        this.deviceUserView = new DeviceUserView('workspace-root', {
             onNavigateMap: (agentId) => {
                 window.showLiveMap();
                 setTimeout(() => {
@@ -599,12 +610,26 @@ class App {
             }
         };
 
-        window.showUsers = () => {
-            document.getElementById('terminal').style.display = 'none';
-            const state = Store.getState();
-            // Find users node and its type
-            const node = state.data.collections.find(c => c.name === 'users') || { name: 'users', type: 'rtdb' };
-            window.loadCollection(node.name, null, node.type);
+        window.showDeviceUser = window.showUsers = async (agentId = null) => {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-users')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Device User Oversight Matrix";
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/devices-live');
+                const rawDevices = await res.json();
+                const devicesPayload = rawDevices.devices || rawDevices;
+                this.cachedDevices = devicesPayload.map(d => new DeviceModel(d));
+                this.deviceUserView.render(this.cachedDevices, agentId);
+            } catch (err) {
+                console.error("[DEVICE_USER] Failed to load devices:", err);
+                this.deviceUserView.render([], agentId);
+            }
         };
 
         window.showAudit = () => {
