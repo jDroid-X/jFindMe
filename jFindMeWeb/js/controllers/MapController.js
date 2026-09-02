@@ -108,9 +108,17 @@ export class MapController {
             this.mapView.renderSafeZones(safeZones, true);
         });
 
+        this.selectedDeviceIds = null; // null means ALL devices selected
+
         // 4. Subscribe Device Controller updates to MapView, GoogleFindHubView, and AlertBannerView
         this.deviceController.subscribe((devices, radiusKm) => {
-            this.mapView.renderDeviceMarkers(devices, settings.showAllDevicesIfOutsideRadius);
+            this.allDevicesCache = devices;
+            if (!this.selectedDeviceIds) {
+                this.selectedDeviceIds = devices.map(d => d.agentId);
+            }
+
+            const visibleDevices = devices.filter(d => this.selectedDeviceIds.includes(d.agentId));
+            this.mapView.renderDeviceMarkers(visibleDevices, settings.showAllDevicesIfOutsideRadius);
             
             if (!this.activeSelectedDevice && devices.length > 0) {
                 this.activeSelectedDevice = devices.find(d => d.hasValidLocation) || devices[0];
@@ -120,7 +128,7 @@ export class MapController {
 
             const sidebarEl = document.getElementById(this.sidebarContainerId);
             if (sidebarEl && this.activeSelectedDevice) {
-                sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, devices);
+                sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, devices, this.selectedDeviceIds);
             }
 
             this.alertBannerView.update(devices);
@@ -180,9 +188,58 @@ export class MapController {
         this.activeSelectedDevice = device;
         const sidebarEl = document.getElementById(this.sidebarContainerId);
         if (sidebarEl) {
-            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(device, this.deviceController.devices);
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(device, this.deviceController.devices, this.selectedDeviceIds);
         }
         this.mapView.flyToDevice(device, 13);
+    }
+
+    /**
+     * Toggles device selection for multi-marker map display
+     * @param {string} agentId 
+     */
+    toggleDeviceSelection(agentId) {
+        if (!this.allDevicesCache) return;
+        const allIds = this.allDevicesCache.map(d => d.agentId);
+        if (!this.selectedDeviceIds) this.selectedDeviceIds = [...allIds];
+
+        if (this.selectedDeviceIds.includes(agentId)) {
+            // Prevent deselecting all (keep at least 1)
+            if (this.selectedDeviceIds.length > 1) {
+                this.selectedDeviceIds = this.selectedDeviceIds.filter(id => id !== agentId);
+            }
+        } else {
+            this.selectedDeviceIds.push(agentId);
+        }
+
+        const visibleDevices = this.allDevicesCache.filter(d => this.selectedDeviceIds.includes(d.agentId));
+        this.mapView.renderDeviceMarkers(visibleDevices);
+
+        const sidebarEl = document.getElementById(this.sidebarContainerId);
+        if (sidebarEl && this.activeSelectedDevice) {
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, this.allDevicesCache, this.selectedDeviceIds);
+        }
+    }
+
+    /**
+     * Selects all devices for map marker display
+     */
+    selectAllDevices() {
+        if (!this.allDevicesCache) return;
+        const allIds = this.allDevicesCache.map(d => d.agentId);
+        if (this.selectedDeviceIds && this.selectedDeviceIds.length === allIds.length) {
+            // Toggle to only active selected device
+            this.selectedDeviceIds = this.activeSelectedDevice ? [this.activeSelectedDevice.agentId] : [allIds[0]];
+        } else {
+            this.selectedDeviceIds = [...allIds];
+        }
+
+        const visibleDevices = this.allDevicesCache.filter(d => this.selectedDeviceIds.includes(d.agentId));
+        this.mapView.renderDeviceMarkers(visibleDevices);
+
+        const sidebarEl = document.getElementById(this.sidebarContainerId);
+        if (sidebarEl && this.activeSelectedDevice) {
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, this.allDevicesCache, this.selectedDeviceIds);
+        }
     }
 
     /**

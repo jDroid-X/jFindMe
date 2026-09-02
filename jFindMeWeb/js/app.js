@@ -545,6 +545,12 @@ class App {
                     const dev = this.mapController.deviceController.getDeviceById(agentId);
                     if (dev) this.mapController.handleDeviceSelected(dev);
                 },
+                toggleDeviceSelection: (agentId) => {
+                    if (this.mapController) this.mapController.toggleDeviceSelection(agentId);
+                },
+                selectAllDevices: () => {
+                    if (this.mapController) this.mapController.selectAllDevices();
+                },
                 showDossier: (agentId) => {
                     this.mapController.showDeviceDossier(agentId);
                 },

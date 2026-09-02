@@ -116,24 +116,29 @@ export class DeviceUserView {
 
                         <!-- Roster List -->
                         <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[450px]">
-                            ${filteredDevices.map(dev => `
-                                <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${dev.agentId === this.selectedAgentId ? 'border-sky-400 bg-sky-950/50 text-white shadow' : 'border-white/5 bg-black/40 hover:bg-white/5 text-slate-300'} transition-all flex items-center gap-2"
-                                     data-agent-id="${dev.agentId}">
-                                    <div class="relative shrink-0">
-                                        <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                             class="w-7 h-7 rounded-full object-cover border" 
-                                             style="border-color: ${dev.getThemeColor()};">
-                                        <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 ${dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
-                                    </div>
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center justify-between">
-                                            <h4 class="text-xs font-bold truncate">${dev.name}</h4>
-                                            <span class="text-[8px] font-mono font-bold px-1 rounded ${dev.isOnline ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}">${dev.isOnline ? 'LIVE' : 'OFF'}</span>
+                            ${filteredDevices.map(dev => {
+                                const ragColor = dev.getRagColor();
+                                const ragLabel = dev.getRagLabel();
+
+                                return `
+                                    <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${dev.agentId === this.selectedAgentId ? 'border-sky-400 bg-sky-950/50 text-white shadow' : 'border-white/5 bg-black/40 hover:bg-white/5 text-slate-300'} transition-all flex items-center gap-2"
+                                         data-agent-id="${dev.agentId}">
+                                        <div class="relative shrink-0">
+                                            <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
+                                                 class="w-7 h-7 rounded-full object-cover border-2" 
+                                                 style="border-color: ${ragColor};">
+                                            <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900" style="background-color: ${ragColor}"></span>
                                         </div>
-                                        <div class="text-[9px] text-slate-400 truncate font-mono">${dev.deviceName || dev.model} • ${dev.agentId}</div>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center justify-between">
+                                                <h4 class="text-xs font-normal truncate text-white">${dev.name}</h4>
+                                                <span class="text-[8px] font-mono font-normal px-1 py-0.2 rounded border" style="color: ${ragColor}; border-color: ${ragColor}44; background-color: ${ragColor}11">${ragLabel}</span>
+                                            </div>
+                                            <div class="text-[9px] text-slate-400 truncate font-mono">${dev.deviceName || dev.model} • ${dev.agentId}</div>
+                                        </div>
                                     </div>
-                                </div>
-                            `).join('')}
+                                `;
+                            }).join('')}
                         </div>
                     </div>
 

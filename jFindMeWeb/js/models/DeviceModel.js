@@ -78,15 +78,79 @@ export class DeviceModel {
     }
 
     /**
-     * Resolves Theme Color for this device based on role / status
+     * RAG Status Classifier:
+     * - GREEN: Active (Online or last seen < 15m)
+     * - ORANGE/AMBER: Inactive (Last seen between 15m and 6 hours ago)
+     * - RED: Inactive (Last seen > 6 hours ago)
+     * - GRAY: Uninstalled / Parked / Disconnected
+     */
+    getRagStatus() {
+        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED") {
+            return "UNINSTALLED";
+        }
+        const epochMs = GeoUtils.parseTimestampToEpoch(this.lastSeen);
+        const now = Date.now();
+        const elapsedMs = epochMs > 0 ? (now - epochMs) : Infinity;
+
+        if (this.isOnline || elapsedMs <= 15 * 60 * 1000) {
+            return "ACTIVE"; // Green
+        }
+        if (elapsedMs <= 6 * 60 * 60 * 1000) {
+            return "INACTIVE_RECENT"; // Orange (< 6h)
+        }
+        return "INACTIVE_OLD"; // Red (> 6h)
+    }
+
+    getRagColor() {
+        const status = this.getRagStatus();
+        switch (status) {
+            case "ACTIVE": return "#22C55E"; // Green
+            case "INACTIVE_RECENT": return "#F59E0B"; // Orange
+            case "INACTIVE_OLD": return "#EF4444"; // Red
+            case "UNINSTALLED": return "#64748B"; // Gray
+            default: return "#64748B";
+        }
+    }
+
+    getRagBorderClass() {
+        const status = this.getRagStatus();
+        switch (status) {
+            case "ACTIVE": return "border-emerald-500 shadow-emerald-500/20";
+            case "INACTIVE_RECENT": return "border-amber-500 shadow-amber-500/20";
+            case "INACTIVE_OLD": return "border-rose-500 shadow-rose-500/20";
+            case "UNINSTALLED": return "border-slate-500 shadow-slate-500/20";
+            default: return "border-slate-500";
+        }
+    }
+
+    getRagBadgeClass() {
+        const status = this.getRagStatus();
+        switch (status) {
+            case "ACTIVE": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+            case "INACTIVE_RECENT": return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+            case "INACTIVE_OLD": return "bg-rose-500/20 text-rose-400 border-rose-500/30";
+            case "UNINSTALLED": return "bg-slate-800 text-slate-400 border-white/10";
+            default: return "bg-slate-800 text-slate-400";
+        }
+    }
+
+    getRagLabel() {
+        const status = this.getRagStatus();
+        switch (status) {
+            case "ACTIVE": return "ACTIVE (LIVE)";
+            case "INACTIVE_RECENT": return "INACTIVE (< 6H)";
+            case "INACTIVE_OLD": return "INACTIVE (> 6H)";
+            case "UNINSTALLED": return "UNINSTALLED";
+            default: return "OFFLINE";
+        }
+    }
+
+    /**
+     * Resolves Theme Color for this device based on RAG status
      * @returns {string} Hex color
      */
     getThemeColor() {
-        if (this.isAirplaneMode) return "#94A3B8"; // Slate Gray
-        if (this.isOnline) {
-            return AvatarService.getRoleColor(this.roleFamily !== "None" ? this.roleFamily : this.role);
-        }
-        return "#64748B"; // Inactive Gray
+        return this.getRagColor();
     }
 
     /**

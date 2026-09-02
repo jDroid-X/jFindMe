@@ -12,26 +12,55 @@ export class jButterflyHubView {
      * @param {Array<import('../models/DeviceModel.js').DeviceModel>} allDevices 
      * @returns {string} HTML string
      */
-    static renderHubCardHtml(device, allDevices = []) {
+    static renderHubCardHtml(device, allDevices = [], selectedIds = null) {
         if (!device) return '';
 
         const battery = device.battery >= 0 ? `${device.battery}%` : '58%';
         const wifiName = device.networkType !== 'UNKNOWN' ? device.networkType : 'jNokia5G';
         const lastSeen = device.getFormattedLastSeen();
 
+        const allSelected = !selectedIds || selectedIds.length === allDevices.length;
+        const isDeviceSelected = (d) => !selectedIds || selectedIds.includes(d.agentId);
+
         return `
-            <div class="jbutterfly-card-wrapper w-[305px] min-h-[500px] max-h-[calc(100vh-80px)] overflow-y-auto custom-scrollbar select-none pointer-events-auto font-sans animate-fade-in flex flex-col">
-                <!-- Multi-Device 3-Column Wrapping Combo Grid -->
-                ${allDevices.length > 1 ? `
-                <div class="grid grid-cols-3 gap-1.5 mb-2.5 p-1 bg-slate-950/80 backdrop-blur-md rounded-2xl border border-white/10 shadow-lg">
-                    ${allDevices.map(d => `
-                        <button class="px-2 py-2 rounded-xl text-[11.5px] font-semibold flex items-center justify-center gap-1 transition-all shadow-sm truncate ${d.agentId === device.agentId ? 'bg-sky-600 text-white font-bold shadow-md ring-2 ring-sky-400/40' : 'bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white border border-white/5'}"
-                                onclick="window.MatrixApp.focusDevice('${d.agentId}')"
-                                title="${d.name} (${d.agentId})">
-                            <span class="w-2 h-2 rounded-full ${d.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'} shrink-0"></span>
-                            <span class="truncate">${d.name}</span>
+            <div class="jbutterfly-card-wrapper w-[310px] min-h-[500px] max-h-[calc(100vh-80px)] overflow-y-auto custom-scrollbar select-none pointer-events-auto font-sans animate-fade-in flex flex-col">
+                <!-- Multi-Device Selection Control Panel (Single / Multiple / All) -->
+                ${allDevices.length > 0 ? `
+                <div class="p-2 bg-slate-950/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-lg mb-2 space-y-1.5 font-mono text-xs">
+                    <div class="flex items-center justify-between border-b border-white/10 pb-1 font-sans">
+                        <span class="text-[10px] text-sky-400 font-medium uppercase tracking-wider">📡 Map Selection Matrix</span>
+                        <button class="px-2 py-0.5 rounded bg-sky-600/30 text-sky-300 text-[9px] hover:bg-sky-600/50 font-normal transition-all"
+                                onclick="window.MatrixApp.selectAllDevices()">
+                            ${allSelected ? '✓ All Selected' : 'Select All'}
                         </button>
-                    `).join('')}
+                    </div>
+
+                    <!-- RAG Checkbox Roster -->
+                    <div class="grid grid-cols-1 gap-1 max-h-[140px] overflow-y-auto custom-scrollbar">
+                        ${allDevices.map(d => {
+                            const selected = isDeviceSelected(d);
+                            const ragColor = d.getRagColor();
+                            const ragLabel = d.getRagLabel();
+                            const isFocused = d.agentId === device.agentId;
+
+                            return `
+                                <div class="flex items-center justify-between p-1.5 rounded-xl border transition-all cursor-pointer ${isFocused ? 'ring-1 ring-sky-400 bg-sky-950/60' : (selected ? 'bg-slate-900/80 border-white/10' : 'bg-black/40 border-white/5 opacity-50')}"
+                                     onclick="window.MatrixApp.toggleDeviceSelection('${d.agentId}')">
+                                    <div class="flex items-center gap-1.5 min-w-0">
+                                        <input type="checkbox" ${selected ? 'checked' : ''} class="rounded text-sky-500 bg-slate-900 border-white/20 pointer-events-none">
+                                        <span class="w-2.5 h-2.5 rounded-full shrink-0 border" style="background-color: ${ragColor}; border-color: ${ragColor}"></span>
+                                        <span class="truncate text-xs font-normal text-white">${d.name}</span>
+                                    </div>
+                                    <button class="text-[8px] font-mono font-normal px-1 py-0.2 rounded border truncate max-w-[85px]"
+                                            style="color: ${ragColor}; border-color: ${ragColor}44; background-color: ${ragColor}11"
+                                            onclick="event.stopPropagation(); window.MatrixApp.focusDevice('${d.agentId}')"
+                                            title="Focus ${d.name} on Map">
+                                        ${ragLabel}
+                                    </button>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
                 </div>
                 ` : ''}
 
