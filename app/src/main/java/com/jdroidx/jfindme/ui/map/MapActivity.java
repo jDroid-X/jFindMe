@@ -1941,6 +1941,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
 
+        // --- SUB-GROUP 1: SPATIAL MONITORING & TRACKING ---
+        items.addView(createDrawerSectionHeader("Spatial Monitoring & Tracking"));
+
         // 1. Dashboard (Command Overview)
         items.addView(createDrawerItem("Dashboard", "Mission Overview & Telemetry", com.jdroidx.jfindme.R.drawable.ic_locator_pin, v -> {
             if (isMapExpanded) {
@@ -1971,7 +1974,16 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 5. Guardians / Family (Primary Family Circle)
+        // --- SUB-GROUP 2: NETWORK & DEVICE PAIRING ---
+        items.addView(createDrawerSectionHeader("Network & Device Pairing"));
+
+        // 5. Device Pairing (QR Pairing Gateway)
+        items.addView(createDrawerItem("Device Pairing", "QR Scan & Link Network Nodes", com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, v -> {
+            startActivity(new Intent(this, com.jdroidx.jfindme.ui.group.NetworkGatewayActivity.class));
+            drawerLayout.closeDrawers();
+        }));
+
+        // 6. Guardians / Family (Primary Family Circle)
         items.addView(createDrawerItem("Guardians / Family", "Primary Caregivers & Family Roster", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 0); 
@@ -1979,7 +1991,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 6. Children Devices (Dependents & Kids)
+        // 7. Children Devices (Dependents & Kids)
         items.addView(createDrawerItem("Children Devices", "Kids & Monitored Dependents", com.jdroidx.jfindme.R.drawable.ic_people, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 0); 
@@ -1987,7 +1999,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 7. Friends & Peer Circles (Social & Peers)
+        // 8. Friends & Peer Circles (Social & Peers)
         items.addView(createDrawerItem("Friends & Peer Circles", "Social Circles & Peers", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 1); 
@@ -1995,49 +2007,58 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 8. Notifications & Alerts (Incident Ledger)
+        // --- SUB-GROUP 3: SAFETY & SYSTEM AUDIT ---
+        items.addView(createDrawerSectionHeader("Safety & System Audit"));
+
+        // 9. Notifications & Alerts (Incident Ledger)
         items.addView(createDrawerItem("Notifications", "System Alerts & SOS Ledger", com.jdroidx.jfindme.R.drawable.ic_nav_notice, v -> { 
             startActivity(new Intent(this, NotifActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 9. Device Health & Fleet (Hardware Status)
+        // 10. Device Health & Fleet (Hardware Status)
         items.addView(createDrawerItem("Device Health", "Hardware & Battery Status", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> { 
             startActivity(new Intent(this, HealthActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 10. Profile & Avatar (User Dossier)
+        // --- SUB-GROUP 4: USER & SYSTEM CONTROLS ---
+        items.addView(createDrawerSectionHeader("User & System Controls"));
+
+        // 11. Profile & Avatar (User Dossier)
         items.addView(createDrawerItem("Profile", "Identity Dossier & 3D Avatar", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> { 
             startActivity(new Intent(this, ProfileActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 11. System Settings (App Preferences)
+        // 12. System Settings (App Preferences)
         items.addView(createDrawerItem("Settings", "Control Hub & Customization", com.jdroidx.jfindme.R.drawable.ic_settings_gears, v -> { 
             startActivity(new Intent(this, SettingsActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 12. Privacy Controls (Security Permissions)
+        // 13. Privacy Controls (Security Permissions)
         items.addView(createDrawerItem("Privacy Controls", "Permissions & Security Locks", com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> { 
             startActivity(new Intent(this, PrivacyActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 13. Help & Support (Manual & FAQs)
+        // 14. Help & Support (Manual & FAQs)
         items.addView(createDrawerItem("Help & Support", "Knowledge Base & FAQs", com.jdroidx.jfindme.R.drawable.ic_help_support, v -> { 
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.HelpSupportActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 14. About App (Architecture & Integrity)
+        // 15. About App (Architecture & Integrity)
         items.addView(createDrawerItem("About App", "Version & Architecture", com.jdroidx.jfindme.R.drawable.ic_about_app, v -> { 
             startActivity(new Intent(this, com.jdroidx.jfindme.ui.settings.AboutActivity.class)); 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 15. Logout (Safe Session Disconnect)
+        // --- SUB-GROUP 5: ACCOUNT SESSION ---
+        items.addView(createDrawerSectionHeader("Account Session"));
+
+        // 16. Logout (Safe Session Disconnect)
         items.addView(createDrawerItem("Logout", "Secure Account Sign Out", com.jdroidx.jfindme.R.drawable.ic_logout, v -> {
             UiArchitect.showConfirmationDialog(this,
                 "Confirm Logout",
@@ -2051,7 +2072,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 null);
         }));
 
-        // 16. Version & System Update Quick-Access Footer
+        // 17. Version & System Update Quick-Access Footer
         TextView tvVersionFooter = new TextView(this);
         tvVersionFooter.setText("jFindMe Enterprise V" + com.jdroidx.jfindme.BuildConfig.VERSION_NAME + " (Build " + com.jdroidx.jfindme.BuildConfig.VERSION_CODE + ")\nTap to Check for System Updates");
         tvVersionFooter.setTextColor(getSecondaryTextColor());
@@ -2069,6 +2090,28 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         scroll.addView(items);
         drawer.addView(scroll);
         return drawer;
+    }
+
+    private View createDrawerSectionHeader(String title) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(scale(16), scale(16), scale(16), scale(4));
+
+        TextView tv = new TextView(this);
+        tv.setText(title.toUpperCase(java.util.Locale.ROOT));
+        tv.setTextColor(getGradientStart());
+        tv.setTextSize(scaleText(9.5f));
+        tv.setTypeface(null, Typeface.BOLD);
+        tv.setLetterSpacing(0.06f);
+        header.addView(tv);
+
+        View line = new View(this);
+        line.setBackgroundColor(Color.parseColor("#33888888"));
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scale(1));
+        lineLp.setMargins(0, scale(4), 0, 0);
+        header.addView(line, lineLp);
+
+        return header;
     }
 
     private View createDrawerItem(String title, String desc, int iconRes, View.OnClickListener listener) {
