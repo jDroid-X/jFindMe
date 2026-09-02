@@ -500,7 +500,7 @@ app.post("/api/save-safe-zone", async (req, res) => {
             created_at: Date.now(),
             is_active: isActive !== false,
             alerts_enabled: Boolean(alertsEnabled),
-            address: zoneAddress || "Nyati Environ Socity Road, Tingrenagar, Pune, Maharashtra, 411015, India",
+            address: zoneAddress || `${parseFloat(latitude).toFixed(5)}°, ${parseFloat(longitude).toFixed(5)}° (Custom Perimeter)`,
             assigned_targets: Array.isArray(connectedDevices) ? connectedDevices.join(", ") : "",
             devices: devicesNode
         };
@@ -540,9 +540,9 @@ app.post("/api/save-safe-zone", async (req, res) => {
     }
 });
 
-// Update SafeZone Assigned Targets Endpoint
+// Update SafeZone Assigned Targets Endpoint (Consolidated)
 app.post("/api/safezone/update-targets", async (req, res) => {
-    const { creatorUid, zoneId, assignedTargets } = req.body;
+    const { creatorUid, zoneId, assignedTargets, connectedDevices } = req.body;
     if (!zoneId) return res.status(400).json({ error: "MISSING_ZONE_ID" });
 
     try {
@@ -554,9 +554,20 @@ app.post("/api/safezone/update-targets", async (req, res) => {
 
         for (const [zKey, zNode] of Object.entries(geofencing)) {
             if (zNode && (zNode.zone_id === zoneId || zKey === zoneId || zKey.includes(zoneId))) {
-                await db.ref(`Geofencing/${zKey}/assigned_targets`).set(assignedTargets);
+                await db.ref(`Geofencing/${zKey}`).update({
+                    assigned_targets: assignedTargets || "Connected Devices",
+                    connected_devices: Array.isArray(connectedDevices) ? connectedDevices : (zNode.connected_devices || []),
+                    updated_at: Date.now()
+                });
                 updated = true;
             }
+        }
+
+        if (creatorUid) {
+            await db.ref(`devices/${creatorUid}/safe_zones/${zoneId}`).update({
+                assigned_targets: assignedTargets || "Connected Devices",
+                updated_at: Date.now()
+            }).catch(() => null);
         }
 
         SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
@@ -567,13 +578,13 @@ app.post("/api/safezone/update-targets", async (req, res) => {
     }
 });
 
-// Decommission / Delete SafeZone Endpoint
+// Decommission / Delete SafeZone Endpoint (Consolidated)
 app.post("/api/safezone/delete", async (req, res) => {
     const { creatorUid, zoneId } = req.body;
     if (!zoneId) return res.status(400).json({ error: "MISSING_ZONE_ID" });
 
     try {
-        console.log(`[SAFE_ZONES] Decommissioning Safe Zone [${zoneId}]...`);
+        console.log(`[SAFE_ZONES] Decommissioning Safe Zone [${zoneId}] for Creator [${creatorUid || 'ANY'}]...`);
         const snap = await db.ref(`Geofencing`).once('value');
         const geofencing = snap.val() || {};
 
@@ -583,38 +594,55 @@ app.post("/api/safezone/delete", async (req, res) => {
             }
         }
 
+        if (creatorUid) {
+            await db.ref(`devices/${creatorUid}/safe_zones/${zoneId}`).remove().catch(() => null);
+        }
+
         SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
-        res.json({ status: "SUCCESS", zoneId });
+        res.json({ status: "DELETED", zoneId });
     } catch (err) {
         console.error("[ERROR] /api/safezone/delete failed:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Bind / Update Device Relationship Endpoint
-app.post("/api/relationship/update", async (req, res) => {
-    const { agentId, targetAgentId, targetName, role, type } = req.body;
-    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
+// Helper Handler for Relationship Binding / Addition
+const handleRelationshipUpdate = async (req, res) => {
+    const agentId = req.body.agentId || req.body.sourceId;
+    const targetAgentId = req.body.targetAgentId || req.body.targetId;
+    const targetName = req.body.targetName || targetAgentId;
+    const role = req.body.role || req.body.roleTitle || "Member";
+    const type = req.body.type || req.body.branchType || "family";
+
+    if (!agentId || !targetAgentId) {
+        return res.status(400).json({ error: "MISSING_AGENT_IDS", message: "Both agentId and targetAgentId are required." });
+    }
 
     try {
         const cleanAgentId = await resolveCanonicalAgentId(agentId);
         const cleanTargetId = await resolveCanonicalAgentId(targetAgentId);
-        console.log(`[RELATIONSHIP] Binding ${cleanAgentId} -> ${cleanTargetId} (${role || 'Member'})`);
+        console.log(`[RELATIONSHIP] Binding ${cleanAgentId} <-> ${cleanTargetId} (${role} • ${type})`);
 
-        // SSOT: Store bidirectional relationship directly inside canonical devices nodes
+        // Unified Schema supporting both legacy and modern readers
         const relDataForward = {
             target_device: cleanTargetId,
             target_name: targetName || cleanTargetId,
-            role_title: role || "Member",
-            branch_type: type || "family",
+            name: targetName || cleanTargetId,
+            role_title: role,
+            role: role,
+            branch_type: type,
+            type: type,
             status: "ACTIVE",
             updated_at: Date.now()
         };
         const relDataBackward = {
             target_device: cleanAgentId,
             target_name: cleanAgentId,
+            name: cleanAgentId,
             role_title: "Member",
-            branch_type: type || "family",
+            role: "Member",
+            branch_type: type,
+            type: type,
             status: "ACTIVE",
             updated_at: Date.now()
         };
@@ -630,36 +658,139 @@ app.post("/api/relationship/update", async (req, res) => {
             const roleFriend = (type === "friend") ? role : "None";
             await db.ref(`devices/${cleanTargetId}/profile`).update({
                 role_title: role,
+                role: role,
                 role_family: roleFamily,
                 role_friend: roleFriend
             }).catch(() => null);
         }
 
         LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
-        res.json({ status: "SUCCESS", agentId: cleanAgentId, targetAgentId: cleanTargetId, role });
+        res.json({ status: "SUCCESS", agentId: cleanAgentId, targetAgentId: cleanTargetId, role, type });
     } catch (err) {
         console.error("[ERROR] /api/relationship/update failed:", err.message);
         res.status(500).json({ error: err.message });
     }
+};
+
+// Bind / Update Device Relationship Endpoint (supports both /add and /update aliases)
+app.post("/api/relationship/update", handleRelationshipUpdate);
+app.post("/api/relationship/add", handleRelationshipUpdate);
+
+// Sever / Delete Device Relationship Endpoint (Consolidated)
+app.post("/api/relationship/delete", async (req, res) => {
+    const agentId = req.body.agentId || req.body.sourceId;
+    const targetAgentId = req.body.targetAgentId || req.body.targetId;
+
+    if (!agentId || !targetAgentId) {
+        return res.status(400).json({ error: "MISSING_AGENT_IDS", message: "Both agentId and targetAgentId are required." });
+    }
+
+    try {
+        const cleanAgentId = await resolveCanonicalAgentId(agentId);
+        const cleanTargetId = await resolveCanonicalAgentId(targetAgentId);
+        console.log(`[RELATIONSHIP] Severing connection: [${cleanAgentId}] <-> [${cleanTargetId}]`);
+
+        await Promise.all([
+            db.ref(`devices/${cleanAgentId}/relationships/${cleanTargetId}`).remove(),
+            db.ref(`devices/${cleanTargetId}/relationships/${cleanAgentId}`).remove().catch(() => null)
+        ]);
+
+        LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+        res.json({ status: "SUCCESS", agentId: cleanAgentId, targetAgentId: cleanTargetId });
+    } catch (err) {
+        console.error("[ERROR] /api/relationship/delete failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Device Telemetry Poke Endpoint
+// Device Telemetry Poke Endpoint (Consolidated)
 app.post("/api/poke-device", async (req, res) => {
-    const { agentId, pokedBy } = req.body;
+    let { agentId, pokedBy } = req.body;
     if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
 
     try {
-        console.log(`[POKE] Dispatched telemetry poke signal to device [${agentId}] from [${pokedBy || 'CONSOLE'}]`);
-        await db.ref(`devices/${agentId}/commands/poke`).set({
-            command: "POKE_LOCATION_UPDATE",
-            timestamp: Date.now(),
-            poked_by: pokedBy || "CONSOLE"
-        }).catch(() => null);
+        agentId = await resolveCanonicalAgentId(agentId);
+        const sender = pokedBy || "Web_Matrix_Commander";
+        console.log(`[POKE] Telemetry poke signal dispatched to [${agentId}] from [${sender}]`);
+
+        await Promise.all([
+            db.ref(`devices/${agentId}/commands/poke`).set({
+                command: "POKE_LOCATION_UPDATE",
+                timestamp: Date.now(),
+                poked_by: sender
+            }).catch(() => null),
+            db.ref(`devices/${agentId}/telemetry/poke`).set({
+                isPoked: true,
+                pokedBy: sender,
+                timestamp: Date.now()
+            }).catch(() => null)
+        ]);
 
         res.json({ status: "SUCCESS", agentId, timestamp: Date.now() });
     } catch (err) {
         console.error("[ERROR] /api/poke-device failed:", err.message);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Device Historical Trail Endpoint
+app.get("/api/device-history", async (req, res) => {
+    let agentId = req.query.agentId || req.query.id;
+    const limit = parseInt(req.query.limit || 100, 10);
+
+    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
+
+    try {
+        agentId = await resolveCanonicalAgentId(agentId);
+        
+        // 1. Check History/{agentId}
+        let histSnap = await db.ref(`History/${agentId}/history`).limitToLast(limit).once("value");
+        let histData = histSnap.val();
+
+        if (!histData) {
+            histSnap = await db.ref(`History/${agentId}`).limitToLast(limit).once("value");
+            histData = histSnap.val();
+        }
+
+        // 2. Fallback check devices/{agentId}/history
+        if (!histData) {
+            histSnap = await db.ref(`devices/${agentId}/history`).limitToLast(limit).once("value");
+            histData = histSnap.val();
+        }
+
+        const breadcrumbs = [];
+        if (histData && typeof histData === 'object') {
+            for (const [key, item] of Object.entries(histData)) {
+                if (!item || typeof item !== 'object') continue;
+                const lat = parseFloat(item.latitude || item.lat || 0);
+                const lng = parseFloat(item.longitude || item.lng || 0);
+                if (lat !== 0 || lng !== 0) {
+                    breadcrumbs.push({
+                        id: key,
+                        latitude: lat,
+                        longitude: lng,
+                        speed: parseFloat(item.speed || 0),
+                        bearing: parseFloat(item.bearing || 0),
+                        altitude: parseFloat(item.altitude || 0),
+                        timestamp: item.timestamp || item.updated_at || Date.now(),
+                        readableTime: item.readable_time || item.datetime || new Date(item.timestamp || Date.now()).toLocaleTimeString()
+                    });
+                }
+            }
+        }
+
+        // Sort chronologically ascending
+        breadcrumbs.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+
+        res.json({
+            status: "SUCCESS",
+            agentId,
+            count: breadcrumbs.length,
+            breadcrumbs
+        });
+    } catch (err) {
+        console.error(`[ERROR] /api/device-history for ${agentId} failed:`, err.message);
+        res.status(500).json({ error: err.message, breadcrumbs: [] });
     }
 });
 
@@ -815,23 +946,6 @@ app.get("/api/reverse-geocode", async (req, res) => {
     }
 });
 
-// Poke / Ping Telemetry Trigger Endpoint
-app.post("/api/poke-device", async (req, res) => {
-    let { agentId, pokedBy } = req.body;
-    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
-
-    try {
-        agentId = await resolveCanonicalAgentId(agentId);
-        await db.ref(`devices/${agentId}/telemetry/poke`).set({
-            isPoked: true,
-            pokedBy: pokedBy || "Web_Matrix_Commander",
-            timestamp: Date.now()
-        });
-        res.json({ status: "POKED", agentId, timestamp: Date.now() });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 app.get("/api/ping", (req, res) => res.json({ status: "ALIVE", project: PROJECT_ID }));
 
@@ -902,18 +1016,23 @@ app.get("/api/data", async (req, res) => {
     
     try {
         if (type === "firestore") {
-            let query = fs_db.collection(node);
-            if (startAt) {
-                // For Firestore, we assume startAt is a document ID
-                const doc = await fs_db.collection(node).doc(startAt).get();
-                if (doc.exists) query = query.startAfter(doc);
+            try {
+                let query = fs_db.collection(node);
+                if (startAt) {
+                    // For Firestore, we assume startAt is a document ID
+                    const doc = await fs_db.collection(node).doc(startAt).get();
+                    if (doc.exists) query = query.startAfter(doc);
+                }
+                const snapshot = await query.limit(limit).get();
+                const data = {};
+                snapshot.forEach(doc => { data[doc.id] = doc.data(); });
+                
+                console.log(`[NETWORK] FS_SYNC_COMPLETE: Collection [${node}] | Size: ${snapshot.size}`);
+                return res.json(data);
+            } catch (fsErr) {
+                console.warn(`[WARN] Firestore query for [${node}] failed:`, fsErr.message);
+                return res.json({});
             }
-            const snapshot = await query.limit(limit).get();
-            const data = {};
-            snapshot.forEach(doc => { data[doc.id] = doc.data(); });
-            
-            console.log(`[NETWORK] FS_SYNC_COMPLETE: Collection [${node}] | Size: ${snapshot.size}`);
-            return res.json(data);
         } else {
             let query = db.ref(node).orderByKey();
             if (startAt) query = query.startAt(startAt);
@@ -1036,93 +1155,6 @@ app.post("/api/delete", async (req, res) => {
     }
 });
 
-// ============================================================
-// SAFE ZONE MANAGEMENT ENDPOINTS (CLOSED LOOP FEEDBACK)
-// ============================================================
-app.post("/api/safezone/delete", async (req, res) => {
-    const { creatorUid, zoneId } = req.body;
-    if (!creatorUid || !zoneId) return res.status(400).json({ error: "MISSING_CREATOR_OR_ZONE_ID" });
-
-    try {
-        console.log(`[SAFEZONE_ACTION] Deleting SafeZone [${zoneId}] for Creator [${creatorUid}]...`);
-        // Remove from creator's Geofencing node
-        await db.ref(`Geofencing/${creatorUid}/safe_zones/${zoneId}`).remove();
-        
-        // Remove from device's safe_zones node if mirrored
-        await db.ref(`devices/${creatorUid}/safe_zones/${zoneId}`).remove().catch(() => null);
-
-        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
-        res.json({ status: "SUCCESS", message: `SafeZone ${zoneId} deleted successfully.` });
-    } catch (err) {
-        console.error("[SAFEZONE_ERROR] Delete failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post("/api/safezone/update-targets", async (req, res) => {
-    const { creatorUid, zoneId, assignedTargets } = req.body;
-    if (!creatorUid || !zoneId) return res.status(400).json({ error: "MISSING_PARAMS" });
-
-    try {
-        console.log(`[SAFEZONE_ACTION] Updating targets for SafeZone [${zoneId}] to: "${assignedTargets}"...`);
-        await db.ref(`Geofencing/${creatorUid}/safe_zones/${zoneId}`).update({
-            assigned_targets: assignedTargets || "Connected Devices",
-            updated_at: Date.now()
-        });
-
-        SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
-        res.json({ status: "SUCCESS", assignedTargets });
-    } catch (err) {
-        console.error("[SAFEZONE_ERROR] Target update failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post("/api/relationship/update", async (req, res) => {
-    const { agentId, targetAgentId, targetName, role, type } = req.body;
-    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
-
-    try {
-        console.log(`[RELATIONSHIP_ACTION] Binding [${agentId}] -> [${targetAgentId}] as ${role} (${type})...`);
-        const relData = {
-            name: targetName || targetAgentId,
-            role: role || "Member",
-            type: type || "family",
-            updated_at: Date.now()
-        };
-
-        // Bidirectional update
-        await db.ref(`devices/${agentId}/relationships/${targetAgentId}`).update(relData);
-        await db.ref(`devices/${targetAgentId}/relationships/${agentId}`).update({
-            name: agentId,
-            role: role || "Member",
-            type: type || "family",
-            updated_at: Date.now()
-        });
-
-        res.json({ status: "SUCCESS", agentId, targetAgentId, relData });
-    } catch (err) {
-        console.error("[RELATIONSHIP_ERROR] Binding failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post("/api/relationship/delete", async (req, res) => {
-    const { agentId, targetAgentId } = req.body;
-    if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
-
-    try {
-        console.log(`[RELATIONSHIP_ACTION] Deleting connection [${agentId}] <-> [${targetAgentId}]...`);
-        // Remove bidirectional relationship entries from devices node
-        await db.ref(`devices/${agentId}/relationships/${targetAgentId}`).remove();
-        await db.ref(`devices/${targetAgentId}/relationships/${agentId}`).remove().catch(() => null);
-
-        res.json({ status: "SUCCESS", agentId, targetAgentId });
-    } catch (err) {
-        console.error("[RELATIONSHIP_ERROR] Delete failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // ============================================================
 // NUCLEAR PURGE: Complete Erasure of an Entire Root-Level Node

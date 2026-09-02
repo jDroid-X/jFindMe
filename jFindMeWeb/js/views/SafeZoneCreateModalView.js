@@ -1,7 +1,10 @@
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
+
 /**
- * jFindMe Matrix - Safe Zone Geofence Creator Modal View (OOPS Architecture)
+ * jFindMe Matrix - Safe Zone Geofence Creator Modal View (Dynamic OOPS Architecture)
  * Interactive dialog allowing admins to create geofences, calibrate radius (50m - 5000m),
  * name zones, assign devices, and save atomically to Firebase Geofencing.
+ * 100% Theme-Adaptive (Dark / Light) with coordinate bounds validation and feedback toasts.
  */
 export class SafeZoneCreateModalView {
     constructor(options = {}) {
@@ -21,72 +24,77 @@ export class SafeZoneCreateModalView {
 
         const modal = document.createElement('div');
         modal.id = 'safezone-create-modal';
-        modal.className = 'fixed inset-0 z-[1100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in font-sans';
+        modal.className = 'fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in font-sans';
 
         modal.innerHTML = `
-            <div class="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[90vh]">
+            <div class="card-theme border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-primary-theme flex flex-col max-h-[90vh]">
                 <!-- Header -->
-                <div class="p-5 border-b border-white/10 flex items-center justify-between bg-slate-950/80">
+                <div class="p-4 border-b border-subtle-theme flex items-center justify-between surface-theme">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-lg">
+                        <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500 text-base font-bold">
                             🛡️
                         </div>
                         <div>
-                            <h3 class="text-base font-black tracking-tight text-white uppercase">Create Safe Zone Geofence</h3>
-                            <p class="text-xs text-slate-400">Establish Geofence Perimeter for Tracked Devices</p>
+                            <h3 class="text-sm font-extrabold tracking-tight text-primary-theme uppercase">Create Safe Zone Geofence</h3>
+                            <p class="text-[11px] text-secondary-theme">Establish Perimeter Bounds for Monitored Fleet</p>
                         </div>
                     </div>
-                    <button id="btn-close-sz" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-all text-xl font-mono">
+                    <button id="btn-close-sz" class="text-muted-theme hover:text-primary-theme p-1.5 rounded-lg text-lg font-mono">
                         ✕
                     </button>
                 </div>
 
                 <!-- Body -->
-                <div class="p-6 overflow-y-auto space-y-5 flex-1 custom-scrollbar">
-                    <div id="sz-error-box" class="hidden p-3 rounded-lg bg-red-950/80 border border-red-500/50 text-red-200 text-xs font-mono"></div>
+                <div class="p-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+                    <div id="sz-error-box" class="hidden p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-500 text-xs font-mono font-medium"></div>
 
                     <!-- Zone Name -->
                     <div>
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">Zone Perimeter Name *</label>
-                        <input type="text" id="sz-name" placeholder="e.g. Home Perimeter, School Zone, Office HQ" 
-                               class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none font-medium">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-secondary-theme block mb-1">Zone Perimeter Name *</label>
+                        <input type="text" id="sz-name" placeholder="e.g. Home Perimeter, Office HQ, School Campus" 
+                               class="input-theme w-full p-2 text-xs font-medium">
                     </div>
 
-                    <!-- Coordinates & Pinpoint -->
-                    <div class="grid grid-cols-2 gap-3 bg-black/40 p-3.5 rounded-xl border border-white/5">
+                    <!-- Coordinates -->
+                    <div class="grid grid-cols-2 gap-3 surface-theme p-3 rounded-xl border">
                         <div>
-                            <label class="text-[10px] text-slate-400 uppercase font-mono block mb-1">Center Latitude</label>
+                            <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Center Latitude (-90 to 90)</label>
                             <input type="number" step="any" id="sz-lat" value="${defaultLat}" 
-                                   class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none">
+                                   class="input-theme w-full p-2 text-xs font-mono">
                         </div>
                         <div>
-                            <label class="text-[10px] text-slate-400 uppercase font-mono block mb-1">Center Longitude</label>
+                            <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Center Longitude (-180 to 180)</label>
                             <input type="number" step="any" id="sz-lng" value="${defaultLng}" 
-                                   class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-xs text-white font-mono focus:border-emerald-500 focus:outline-none">
+                                   class="input-theme w-full p-2 text-xs font-mono">
                         </div>
                     </div>
 
                     <!-- Radius Slider (50m to 5000m) -->
-                    <div class="space-y-2 bg-black/40 p-3.5 rounded-xl border border-white/5">
+                    <div class="space-y-2 surface-theme p-3 rounded-xl border">
                         <div class="flex items-center justify-between">
-                            <label class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Geofence Radius</label>
-                            <span id="sz-radius-display" class="text-xs font-mono font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                            <label class="text-[11px] font-bold uppercase tracking-wider text-emerald-500">Perimeter Radius</label>
+                            <span id="sz-radius-display" class="badge-status badge-success text-[10px]">
                                 150 meters
                             </span>
                         </div>
                         <input type="range" id="sz-radius-slider" min="50" max="5000" step="25" value="150"
-                               class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+                               class="w-full h-2 bg-canvas rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                        <div class="flex justify-between text-[9px] text-muted-theme font-mono">
+                            <span>50m (Tight)</span>
+                            <span>1000m (Campus)</span>
+                            <span>5000m (District)</span>
+                        </div>
                     </div>
 
                     <!-- Assign Connected Devices -->
-                    <div class="space-y-2">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block">Assign Devices to Zone</label>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto custom-scrollbar p-2 bg-black/40 rounded-xl border border-white/5">
+                    <div class="space-y-1.5">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-secondary-theme block">Assign Tracked Devices</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto custom-scrollbar p-2 surface-theme rounded-xl border">
                             ${devices.map(d => `
-                                <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-950 hover:bg-slate-900 cursor-pointer border border-white/5">
-                                    <input type="checkbox" class="sz-device-checkbox accent-emerald-400" value="${d.agentId}" checked>
-                                    <span class="text-xs font-bold truncate">${d.name}</span>
-                                    <span class="text-[10px] font-mono text-slate-500 ml-auto">${d.agentId}</span>
+                                <label class="flex items-center gap-2 p-2 rounded-lg bg-card-subtle hover:bg-card-hover cursor-pointer border border-subtle-theme">
+                                    <input type="checkbox" class="sz-device-checkbox accent-emerald-500 rounded" value="${d.agentId}" checked>
+                                    <span class="text-xs font-bold text-primary-theme truncate">${d.name}</span>
+                                    <span class="text-[10px] font-mono text-muted-theme ml-auto">${d.agentId}</span>
                                 </label>
                             `).join('')}
                         </div>
@@ -94,12 +102,12 @@ export class SafeZoneCreateModalView {
                 </div>
 
                 <!-- Footer -->
-                <div class="p-4 border-t border-white/10 bg-slate-950 flex items-center justify-end gap-3">
-                    <button id="btn-cancel-sz" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                <div class="p-3.5 border-t border-subtle-theme surface-theme flex items-center justify-end gap-2">
+                    <button id="btn-cancel-sz" class="btn-action-secondary text-xs">
                         Cancel
                     </button>
-                    <button id="btn-save-sz" class="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-1.5">
-                        <span>Save Safe Zone</span>
+                    <button id="btn-save-sz" class="btn-action-primary text-xs">
+                        <span>Establish Safe Zone</span>
                     </button>
                 </div>
             </div>
@@ -144,15 +152,27 @@ export class SafeZoneCreateModalView {
                 return;
             }
 
-            if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
-                errorBox.textContent = "Validation Error: Please provide valid Center Latitude and Longitude.";
+            if (isNaN(lat) || lat < -90 || lat > 90) {
+                errorBox.textContent = "Validation Error: Latitude must be between -90 and 90 degrees.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            if (isNaN(lng) || lng < -180 || lng > 180) {
+                errorBox.textContent = "Validation Error: Longitude must be between -180 and 180 degrees.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            if (isNaN(radius) || radius < 50 || radius > 5000) {
+                errorBox.textContent = "Validation Error: Radius must be between 50 and 5000 meters.";
                 errorBox.classList.remove('hidden');
                 return;
             }
 
             errorBox.classList.add('hidden');
             saveBtn.disabled = true;
-            saveBtn.innerHTML = `<span>⏳ Saving...</span>`;
+            saveBtn.innerHTML = `<span>⏳ Establishing...</span>`;
 
             const zoneId = `ZONE_${Date.now()}`;
             const payload = {
@@ -170,11 +190,13 @@ export class SafeZoneCreateModalView {
                 try {
                     await this.onSave(payload);
                     this.close();
+                    FeedbackDialog.showToast(`Safe Zone [${name}] established successfully!`, "success");
                 } catch (err) {
                     errorBox.textContent = `Save Error: ${err.message}`;
                     errorBox.classList.remove('hidden');
                     saveBtn.disabled = false;
-                    saveBtn.innerHTML = `<span>Save Safe Zone</span>`;
+                    saveBtn.innerHTML = `<span>Establish Safe Zone</span>`;
+                    FeedbackDialog.showToast(`Failed to create safe zone: ${err.message}`, "error");
                 }
             }
         });

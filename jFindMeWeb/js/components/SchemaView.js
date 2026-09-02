@@ -25,12 +25,17 @@ export class SchemaView {
             for(const nodeName of targetNodes) {
                 const meta = collections.find(c => c.name === nodeName);
                 if (meta) {
-                    const data = await FBBridge.getNodeData(meta.name, 100, null, meta.type);
-                    this.fullData[nodeName] = Object.entries(data || {}).map(([id, val]) => ({ 
-                        id, 
-                        _source: meta.type,
-                        ...(typeof val === 'object' ? val : {val}) 
-                    }));
+                    try {
+                        const data = await FBBridge.getNodeData(meta.name, 100, null, meta.type);
+                        this.fullData[nodeName] = Object.entries(data || {}).map(([id, val]) => ({ 
+                            id, 
+                            _source: meta.type,
+                            ...(typeof val === 'object' ? val : {val}) 
+                        }));
+                    } catch (nodeErr) {
+                        console.warn(`[SCHEMA] Node [${nodeName}] fetch skipped:`, nodeErr.message);
+                        this.fullData[nodeName] = [];
+                    }
                 }
             }
             this.updateUI();

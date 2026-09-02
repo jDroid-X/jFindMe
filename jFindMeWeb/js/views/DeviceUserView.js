@@ -1,4 +1,6 @@
 import { GeoUtils } from '../core/GeoUtils.js';
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
+import { DeviceEditModalView } from './DeviceEditModalView.js';
 
 /**
  * jFindMe Matrix - Dynamic Device User Oversight Matrix (OOPS Architecture)
@@ -15,6 +17,21 @@ export class DeviceUserView {
         this.selectedAgentId = null;
         this.searchQuery = "";
         this.isOrgExpanded = false;
+
+        this.editModal = new DeviceEditModalView({
+            onSave: async (agentId, payload) => {
+                const res = await fetch('/api/update-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agentId, profileData: payload })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || 'Update failed');
+                }
+                if (window.showDeviceUser) window.showDeviceUser(agentId);
+            }
+        });
     }
 
     /**
@@ -161,9 +178,14 @@ export class DeviceUserView {
                     <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
                         <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
                             <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">2. Master Profile</span>
-                            <button id="btn-toggle-org" class="text-[10px] text-sky-400 hover:underline font-mono font-bold">
-                                ${this.isOrgExpanded ? '[-] Collapse' : '[+] Org ACL'}
-                            </button>
+                            <div class="flex items-center gap-1.5">
+                                <button id="btn-edit-profile-dossier" class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-1 cursor-pointer">
+                                    <span>✏️ Edit</span>
+                                </button>
+                                <button id="btn-toggle-org" class="text-[10px] text-sky-400 hover:underline font-mono font-bold">
+                                    ${this.isOrgExpanded ? '[-] Collapse' : '[+] Org ACL'}
+                                </button>
+                            </div>
                         </div>
 
                         <div class="overflow-y-auto custom-scrollbar space-y-2.5 max-h-[500px] pr-0.5">
@@ -614,30 +636,47 @@ export class DeviceUserView {
             }
         });
 
-        // 6. Delete Link Action
+        // 5b. Edit Profile Action
+        document.getElementById('btn-edit-profile-dossier')?.addEventListener('click', () => {
+            const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId);
+            if (selectedDev) {
+                this.editModal.show(selectedDev);
+            }
+        });
+
+        // 6. Delete Link Action (Closed-Loop Confirmation)
         document.querySelectorAll('.btn-delete-link').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+            btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const sourceId = btn.getAttribute('data-source-agent-id');
                 const targetId = btn.getAttribute('data-target-agent-id');
                 const peerName = btn.getAttribute('data-peer-name');
+                const sourceDev = this.devices.find(d => d.agentId === sourceId);
+                const sourceName = sourceDev ? sourceDev.name : sourceId;
 
-                if (!confirm(`Are you sure you want to disconnect ${peerName} (${targetId})?`)) return;
-
-                try {
-                    const res = await fetch('/api/relationship/delete', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sourceId, targetId })
-                    });
-                    const resData = await res.json();
-                    if (resData.status === 'DELETED') {
-                        if (window.log) window.log(`RELATION_PURGE: Severed link between [${sourceId}] and [${targetId}]`, "warning");
-                        if (window.showDeviceUser) window.showDeviceUser(sourceId);
+                FeedbackDialog.showConfirm({
+                    title: "Sever Connection",
+                    message: `Are you sure you want to disconnect [${peerName}] from [${sourceName}]? This will remove bidirectional relational tracking.`,
+                    icon: "🔗",
+                    confirmText: "Disconnect",
+                    confirmClass: "btn-action-danger",
+                    onConfirm: async () => {
+                        try {
+                            const res = await fetch('/api/relationship/delete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ agentId: sourceId, targetAgentId: targetId })
+                            });
+                            const resData = await res.json();
+                            if (resData.status === 'SUCCESS' || resData.status === 'DELETED') {
+                                FeedbackDialog.showToast(`Severed connection with [${peerName}].`, "warning");
+                                if (window.showDeviceUser) window.showDeviceUser(sourceId);
+                            }
+                        } catch (err) {
+                            FeedbackDialog.showToast(`Sever failed: ${err.message}`, "error");
+                        }
                     }
-                } catch (err) {
-                    console.error("[DEVICE_USER] Delete link failure:", err);
-                }
+                });
             });
         });
 
@@ -648,100 +687,79 @@ export class DeviceUserView {
     }
 
     /**
-     * Add Link Modal
+     * Add Link Modal using Rich Searchable Detail List & Action Selection
      */
     openAddLinkModal() {
         const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId) || this.devices[0];
         if (!selectedDev) return;
 
         const otherDevices = this.devices.filter(d => d.agentId !== selectedDev.agentId);
+        if (otherDevices.length === 0) {
+            FeedbackDialog.showToast("No other registered devices available to connect.", "info");
+            return;
+        }
 
-        const overlay = document.createElement('div');
-        overlay.id = 'add-link-modal-overlay';
-        overlay.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4';
-        overlay.innerHTML = `
-            <div class="card-theme p-5 w-full max-w-md shadow-2xl border space-y-4">
-                <div class="flex items-center justify-between border-b border-subtle-theme pb-2.5">
-                    <h3 class="text-sm font-bold text-primary-theme flex items-center gap-2">
-                        <span>🔗</span>
-                        <span>Establish Device Connection</span>
-                    </h3>
-                    <button id="btn-close-link-modal" class="text-muted-theme hover:text-primary-theme text-base font-bold">✕</button>
-                </div>
+        // Step 1: Rich Detail List Modal to select candidate device
+        FeedbackDialog.showDetailListModal({
+            title: `Connect Device to [${selectedDev.name}]`,
+            message: "Select a fleet device from the directory below to establish relational link:",
+            items: otherDevices.map(d => ({
+                id: d.agentId,
+                title: d.name,
+                subtitle: `ID: ${d.agentId} • ${d.model || 'Device'} • Battery: ${d.batteryPct}%`,
+                avatarUrl: d.getAvatarUrl(),
+                tag: d.isOnline ? 'ONLINE' : 'OFFLINE'
+            })),
+            multiSelect: false,
+            onConfirm: (selectedIds) => {
+                const targetId = selectedIds[0];
+                const targetDev = this.devices.find(d => d.agentId === targetId);
+                if (!targetDev) return;
 
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block text-secondary-theme font-bold mb-1">Source Device (Root)</label>
-                        <div class="input-theme p-2 text-primary-theme font-bold font-mono">${selectedDev.name} (${selectedDev.agentId})</div>
-                    </div>
+                // Step 2: Multi-Option Action Modal to choose Role & Branch
+                FeedbackDialog.showActionModal({
+                    title: `Select Role for [${targetDev.name}]`,
+                    message: `Define relational hierarchy between ${selectedDev.name} and ${targetDev.name}:`,
+                    icon: "👥",
+                    actions: [
+                        { id: 'Father', label: 'Father', description: 'Primary Guardian & Family Administrator', icon: '👨', badge: 'FAMILY', variant: 'primary' },
+                        { id: 'Mother', label: 'Mother', description: 'Family Guardian & Oversight Node', icon: '👩', badge: 'FAMILY', variant: 'primary' },
+                        { id: 'Spouse', label: 'Spouse', description: 'Partner Relationship', icon: '💍', badge: 'FAMILY', variant: 'primary' },
+                        { id: 'Child', label: 'Child', description: 'Monitored Family Dependent', icon: '🧒', badge: 'FAMILY', variant: 'primary' },
+                        { id: 'Guardian', label: 'Guardian / Caretaker', description: 'Designated Safety Monitor', icon: '🛡️', badge: 'FAMILY', variant: 'secondary' },
+                        { id: 'Friend', label: 'Close Friend', description: 'Social & MeetMyFriend Circle', icon: '🤝', badge: 'FRIENDS', variant: 'secondary' },
+                        { id: 'Member', label: 'Fleet Team Member', description: 'General Organization Colleague', icon: '📱', badge: 'MEMBERS', variant: 'secondary' }
+                    ],
+                    onSelect: async (chosenRole) => {
+                        const isFriend = chosenRole.toLowerCase().includes('friend');
+                        const branchType = isFriend ? 'friend' : 'family';
 
-                    <div>
-                        <label class="block text-secondary-theme font-bold mb-1">Target Device to Connect</label>
-                        <select id="modal-link-target" class="input-theme w-full p-2 text-primary-theme font-mono">
-                            ${otherDevices.map(d => `<option value="${d.agentId}">${d.name} (${d.agentId}) - ${d.model}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-secondary-theme font-bold mb-1">Relationship Category</label>
-                        <select id="modal-link-category" class="input-theme w-full p-2 text-primary-theme">
-                            <option value="Family">Family Connection</option>
-                            <option value="Friends">Friend Connection</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-secondary-theme font-bold mb-1">Specific Role / Label</label>
-                        <input type="text" id="modal-link-role" placeholder="e.g. Mother, Father, Spouse, Child, Friend" value="Family Member"
-                               class="input-theme w-full p-2 text-primary-theme">
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 pt-2 border-t border-subtle-theme">
-                    <button id="btn-cancel-link-modal" class="btn-action-secondary text-xs">Cancel</button>
-                    <button id="btn-save-link-modal" class="btn-action-primary text-xs">Establish Link</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-
-        const closeModal = () => overlay.remove();
-        document.getElementById('btn-close-link-modal')?.addEventListener('click', closeModal);
-        document.getElementById('btn-cancel-link-modal')?.addEventListener('click', closeModal);
-
-        document.getElementById('btn-save-link-modal')?.addEventListener('click', async () => {
-            const targetId = document.getElementById('modal-link-target')?.value;
-            const category = document.getElementById('modal-link-category')?.value;
-            const role = document.getElementById('modal-link-role')?.value || 'Member';
-
-            if (!targetId) return;
-
-            const targetDev = this.devices.find(d => d.agentId === targetId);
-            const targetName = targetDev ? targetDev.name : targetId;
-
-            try {
-                const res = await fetch('/api/relationship/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        sourceId: selectedDev.agentId,
-                        targetId,
-                        targetName,
-                        category,
-                        role
-                    })
+                        try {
+                            const res = await fetch('/api/relationship/add', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    agentId: selectedDev.agentId,
+                                    targetAgentId: targetDev.agentId,
+                                    targetName: targetDev.name,
+                                    role: chosenRole,
+                                    type: branchType
+                                })
+                            });
+                            const resData = await res.json();
+                            if (resData.status === 'SUCCESS' || resData.status === 'LINKED') {
+                                FeedbackDialog.showToast(`Connected [${selectedDev.name}] <-> [${targetDev.name}] as ${chosenRole}!`, "success");
+                                if (window.showDeviceUser) window.showDeviceUser(selectedDev.agentId);
+                            } else {
+                                FeedbackDialog.showToast(`Binding notice: ${resData.message || 'Operation processed.'}`, "info");
+                            }
+                        } catch (err) {
+                            FeedbackDialog.showToast(`Connection failed: ${err.message}`, "error");
+                        }
+                    }
                 });
-                const resData = await res.json();
-                if (resData.status === 'LINKED') {
-                    if (window.log) window.log(`RELATION_SUCCESS: Connected [${selectedDev.agentId}] to [${targetId}] as ${role}`, "success");
-                    closeModal();
-                    if (window.showDeviceUser) window.showDeviceUser(selectedDev.agentId);
-                }
-            } catch (err) {
-                console.error("[DEVICE_USER] Add link failure:", err);
-                closeModal();
             }
         });
     }
 }
+

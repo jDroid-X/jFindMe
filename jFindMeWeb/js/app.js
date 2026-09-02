@@ -528,6 +528,12 @@ class App {
             const header = document.querySelector('header h1');
             if (header) header.textContent = "Live Map Radar (10 km Proximity Matrix)";
             
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | PATH: /devices (Tactical Live Map)";
+                pathLink.href = "#";
+            }
+            
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
 
@@ -581,7 +587,15 @@ class App {
 
             window.MatrixApp = {
                 focusDevice: (agentId) => {
-                    const dev = this.mapController.deviceController.getDeviceById(agentId);
+                    if (!this.mapController) {
+                        window.showLiveMap();
+                        setTimeout(() => {
+                            const dev = this.mapController?.deviceController?.getDeviceById(agentId);
+                            if (dev) this.mapController?.handleDeviceSelected(dev);
+                        }, 300);
+                        return;
+                    }
+                    const dev = this.mapController.deviceController?.getDeviceById(agentId);
                     if (dev) this.mapController.handleDeviceSelected(dev);
                 },
                 toggleDeviceSelection: (agentId) => {
@@ -591,42 +605,44 @@ class App {
                     if (this.mapController) this.mapController.selectAllDevices();
                 },
                 showDossier: (agentId) => {
-                    this.mapController.showDeviceDossier(agentId);
+                    if (this.mapController) this.mapController.showDeviceDossier(agentId);
                 },
                 openEditProfile: (agentId) => {
-                    this.mapController.openEditProfileModal(agentId);
+                    if (this.mapController) this.mapController.openEditProfileModal(agentId);
                 },
                 openCreateSafeZone: () => {
-                    this.mapController.openCreateSafeZoneModal();
+                    if (this.mapController) this.mapController.openCreateSafeZoneModal();
                 },
                 toggleTraffic: () => {
-                    this.mapController.toggleTraffic();
+                    if (this.mapController) this.mapController.toggleTraffic();
                 },
                 pokeDevice: (agentId) => {
-                    this.mapController.pokeDevice(agentId);
+                    if (this.mapController) this.mapController.pokeDevice(agentId);
                 },
                 showHistory: (agentId) => {
-                    this.mapController.showDeviceHistoryTrail(agentId);
+                    if (this.mapController) this.mapController.showDeviceHistoryTrail(agentId);
                 },
                 openSettings: () => {
-                    this.mapController.settingsController.openSettingsModal();
+                    if (this.mapController) this.mapController.settingsController?.openSettingsModal();
                 },
                 focusStation: () => {
-                    this.mapController.focusStation();
+                    if (this.mapController) this.mapController.focusStation();
                 },
                 fitAll: () => {
-                    this.mapController.fitAll();
+                    if (this.mapController) this.mapController.fitAll();
                 },
                 toggleFullscreen: () => {
-                    this.mapController.toggleFullscreen();
+                    if (this.mapController) this.mapController.toggleFullscreen();
                 },
                 refreshNow: async () => {
-                    window.log("RADAR_SYNC: Requesting instantaneous device refresh...", "system");
-                    await Promise.all([
-                        this.mapController.deviceController.fetchLiveDevices(),
-                        this.mapController.safeZoneController.fetchSafeZones()
-                    ]);
-                    window.log("RADAR_SYNC: Devices & Geofences synchronized.", "success");
+                    if (this.mapController) {
+                        window.log?.("RADAR_SYNC: Requesting instantaneous device refresh...", "system");
+                        await Promise.all([
+                            this.mapController.deviceController?.fetchLiveDevices?.(),
+                            this.mapController.safeZoneController?.fetchSafeZones?.()
+                        ]);
+                        window.log?.("RADAR_SYNC: Devices & Geofences synchronized.", "success");
+                    }
                 }
             };
         };
@@ -648,6 +664,12 @@ class App {
             
             const header = document.querySelector('header h1');
             if (header) header.textContent = "Fleet Proximity & Location Dashboard";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | PATH: /devices-live";
+                pathLink.href = "#";
+            }
             
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
@@ -656,7 +678,8 @@ class App {
             try {
                 this.settingsModel.load();
                 const res = await fetch('/api/devices-live');
-                const rawDevices = await res.json();
+                const rawData = await res.json();
+                const rawDevices = Array.isArray(rawData) ? rawData : (rawData.devices || []);
                 this.cachedDevices = rawDevices.map(d => new DeviceModel(d));
                 this.dashboardView.render(this.cachedDevices, this.settingsModel);
             } catch (err) {
@@ -671,6 +694,12 @@ class App {
             
             const header = document.querySelector('header h1');
             if (header) header.textContent = "Device User Oversight Matrix";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | PATH: /devices + /Geofencing";
+                pathLink.href = "#";
+            }
             
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
@@ -681,7 +710,7 @@ class App {
                     fetch('/api/safe-zones').then(r => r.json())
                 ]);
                 const devicesPayload = devRes.devices || devRes;
-                this.cachedDevices = devicesPayload.map(d => new DeviceModel(d));
+                this.cachedDevices = (Array.isArray(devicesPayload) ? devicesPayload : []).map(d => new DeviceModel(d));
                 const safeZones = zoneRes.safeZones || [];
                 this.deviceUserView.render(this.cachedDevices, agentId, safeZones);
             } catch (err) {
@@ -696,6 +725,12 @@ class App {
             
             const header = document.querySelector('header h1');
             if (header) header.textContent = "Geofencing Perimeter Oversight Matrix";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | PATH: /Geofencing";
+                pathLink.href = "#";
+            }
             
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
@@ -706,7 +741,7 @@ class App {
                     fetch('/api/safe-zones').then(r => r.json())
                 ]);
                 const rawDevices = devRes.devices || devRes;
-                this.cachedDevices = rawDevices.map(d => new DeviceModel(d));
+                this.cachedDevices = (Array.isArray(rawDevices) ? rawDevices : []).map(d => new DeviceModel(d));
                 const safeZones = zoneRes.safeZones || [];
                 this.geofencingView.render(this.cachedDevices, safeZones);
             } catch (err) {
@@ -719,6 +754,13 @@ class App {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-audit').classList.add('active');
             document.querySelector('header h1').textContent = "Forensic Audit Ledger";
+            
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | PATH: /system_audit";
+                pathLink.href = "#";
+            }
+            
             document.getElementById('terminal').style.display = 'block';
             this.loadNode('system_audit');
         };
@@ -735,6 +777,13 @@ class App {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-architect')?.classList.add('active');
             document.querySelector('header h1').textContent = "Database Architect V2 (Hierarchical)";
+            
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB + FS | PATH: /SchemaMatrix";
+                pathLink.href = "#";
+            }
+            
             document.getElementById('terminal').style.display = 'none';
             this.schema1.render();
         };

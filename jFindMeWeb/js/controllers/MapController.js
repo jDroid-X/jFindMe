@@ -9,6 +9,7 @@ import { AlertBannerView } from '../views/AlertBannerView.js';
 import { DeviceController } from './DeviceController.js';
 import { SafeZoneController } from './SafeZoneController.js';
 import { SettingsController } from './SettingsController.js';
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix - Master Map & Radar Orchestrator (jButterfly Architecture)
@@ -292,12 +293,12 @@ export class MapController {
         if (!device) return;
         try {
             await this.deviceController.pokeDevice(agentId, "Web_Commander");
-            alert(`⚡ Poke signal transmitted to ${device.name} (${agentId})!`);
+            FeedbackDialog.showToast(`⚡ Poke signal dispatched to ${device.name}!`, "success");
             if (window.log) {
                 window.log(`POKE_SENT: Telemetry poke signal dispatched to [${device.name}].`, "success");
             }
         } catch (e) {
-            alert(`Failed to transmit poke signal: ${e.message}`);
+            FeedbackDialog.showToast(`Failed to transmit poke signal: ${e.message}`, "error");
         }
     }
 

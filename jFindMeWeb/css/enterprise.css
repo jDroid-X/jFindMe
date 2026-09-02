@@ -272,6 +272,97 @@ header {
     border: 1px solid var(--accent-border);
 }
 
+/* Global Action Buttons */
+.btn-action-primary {
+    background-color: var(--accent-primary);
+    color: #ffffff !important;
+    padding: 6px 14px;
+    border-radius: var(--radius-md);
+    font-weight: 700;
+    font-size: 0.82rem;
+    border: none;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+.btn-action-primary:hover {
+    background-color: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+.btn-action-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-action-secondary {
+    background-color: var(--bg-card-subtle);
+    color: var(--text-secondary) !important;
+    padding: 6px 14px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.btn-action-secondary:hover {
+    background-color: var(--bg-card-hover);
+    color: var(--text-primary) !important;
+    border-color: var(--border-medium);
+}
+
+.btn-action-danger {
+    background-color: var(--danger-bg);
+    color: var(--danger-text) !important;
+    padding: 6px 14px;
+    border-radius: var(--radius-md);
+    font-weight: 700;
+    font-size: 0.82rem;
+    border: 1px solid var(--danger-border);
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.btn-action-danger:hover {
+    background-color: #ef4444;
+    color: #ffffff !important;
+    border-color: #ef4444;
+}
+
+.btn-action-success {
+    background-color: var(--success-bg);
+    color: var(--success-text) !important;
+    padding: 6px 14px;
+    border-radius: var(--radius-md);
+    font-weight: 700;
+    font-size: 0.82rem;
+    border: 1px solid var(--success-border);
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+.btn-action-success:hover {
+    background-color: #10b981;
+    color: #ffffff !important;
+    border-color: #10b981;
+}
+
 /* ==========================================================================
    Smart-Fit Responsive Grids
    ========================================================================== */

@@ -1,4 +1,5 @@
 import { GeoUtils } from '../core/GeoUtils.js';
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix - Dedicated Geofencing 4-Pane Oversight Workspace (OOPS Architecture)
@@ -575,13 +576,16 @@ export class GeofencingView {
                     })
                 });
                 const resData = await res.json();
-                if (resData.status === 'UPDATED') {
-                    if (window.log) window.log(`SAFEZONE_TARGETS: Updated perimeter [${selectedZone.zoneName}] targets.`, "success");
+                if (resData.status === 'UPDATED' || resData.status === 'SUCCESS') {
+                    FeedbackDialog.showToast(`Updated targets for [${selectedZone.zoneName}]!`, "success");
                     closeModal();
                     if (window.showGeofencing) window.showGeofencing();
+                } else {
+                    FeedbackDialog.showToast(`Target update notice: ${resData.message || 'Saved'}`, "info");
+                    closeModal();
                 }
             } catch (err) {
-                console.error("[GEOFENCING] Update targets failure:", err);
+                FeedbackDialog.showToast(`Update targets failed: ${err.message}`, "error");
                 closeModal();
             }
         });
@@ -591,25 +595,33 @@ export class GeofencingView {
         const selectedZone = this.safeZones.find(z => z.zoneId === this.selectedZoneId) || this.safeZones[0];
         if (!selectedZone) return;
 
-        if (!confirm(`Are you sure you want to delete safe zone [${selectedZone.zoneName}]?`)) return;
-
-        fetch('/api/safezone/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                zoneId: selectedZone.zoneId,
-                creatorUid: selectedZone.creatorId || 'Fleet_Admin'
-            })
-        })
-        .then(r => r.json())
-        .then(res => {
-            if (res.status === 'DELETED') {
-                if (window.log) window.log(`SAFEZONE_PURGE: Removed perimeter [${selectedZone.zoneName}]`, "warning");
-                if (window.showGeofencing) window.showGeofencing();
+        FeedbackDialog.showConfirm({
+            title: "Delete Safe Zone Perimeter",
+            message: `Are you sure you want to permanently delete perimeter [${selectedZone.zoneName}] (${selectedZone.radius}m)? Monitored devices will no longer record transition events.`,
+            icon: "🗑️",
+            confirmText: "Delete Perimeter",
+            confirmClass: "btn-action-danger",
+            onConfirm: async () => {
+                try {
+                    const r = await fetch('/api/safezone/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            zoneId: selectedZone.zoneId,
+                            creatorUid: selectedZone.creatorId || 'Fleet_Admin'
+                        })
+                    });
+                    const res = await r.json();
+                    if (res.status === 'DELETED' || res.status === 'SUCCESS') {
+                        FeedbackDialog.showToast(`Perimeter [${selectedZone.zoneName}] removed.`, "warning");
+                        if (window.showGeofencing) window.showGeofencing();
+                    } else {
+                        FeedbackDialog.showToast(`Delete notice: ${res.message || 'Operation finished.'}`, "info");
+                    }
+                } catch (err) {
+                    FeedbackDialog.showToast(`Failed to delete zone: ${err.message}`, "error");
+                }
             }
-        })
-        .catch(err => {
-            console.error("[GEOFENCING] Delete zone error:", err);
         });
     }
 }

@@ -1,8 +1,10 @@
 import { GeoUtils } from '../core/GeoUtils.js';
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix - History Breadcrumb Trail & Playback View (OOPS Architecture)
  * Renders route breadcrumbs on the map and provides an interactive playback scrubber bar with speed controls.
+ * 100% Theme-Adaptive with user notifications.
  */
 export class HistoryTrailView {
     constructor(mapView, options = {}) {
@@ -24,7 +26,10 @@ export class HistoryTrailView {
      */
     showTrail(deviceName, breadcrumbs = []) {
         this.clear();
-        if (!breadcrumbs || breadcrumbs.length === 0) return;
+        if (!breadcrumbs || breadcrumbs.length === 0) {
+            FeedbackDialog.showToast(`No historical breadcrumbs recorded for ${deviceName}.`, "info");
+            return;
+        }
 
         this.breadcrumbs = breadcrumbs;
         this.currentIndex = breadcrumbs.length - 1;
@@ -50,48 +55,48 @@ export class HistoryTrailView {
 
         const hud = document.createElement('div');
         hud.id = 'trail-playback-hud';
-        hud.className = 'absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[950] bg-slate-950/95 backdrop-blur-2xl border border-sky-500/30 rounded-2xl shadow-2xl p-4 text-white w-[90%] max-w-xl animate-fade-in font-sans select-none';
+        hud.className = 'absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[950] card-theme shadow-2xl p-3.5 border rounded-2xl text-primary-theme w-[92%] max-w-xl animate-fade-in font-sans select-none';
 
         const lastCrumb = this.breadcrumbs[this.currentIndex];
 
         hud.innerHTML = `
-            <div class="space-y-3">
+            <div class="space-y-2.5">
                 <!-- Header -->
-                <div class="flex items-center justify-between border-b border-white/10 pb-2">
-                    <div class="flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping"></span>
-                        <h4 class="text-xs font-black tracking-wider text-sky-400 uppercase">Route Trail: ${deviceName}</h4>
-                        <span class="text-[10px] font-mono text-slate-400">(${this.breadcrumbs.length} Points • ${GeoUtils.formatDistance(totalDistanceKm)})</span>
+                <div class="flex items-center justify-between border-b border-subtle-theme pb-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping shrink-0"></span>
+                        <h4 class="text-xs font-black tracking-wider text-sky-400 uppercase truncate">Route Trail: ${deviceName}</h4>
+                        <span class="text-[10px] font-mono text-muted-theme truncate">(${this.breadcrumbs.length} Pts • ${GeoUtils.formatDistance(totalDistanceKm)})</span>
                     </div>
-                    <button id="btn-close-trail-hud" class="text-slate-400 hover:text-white p-1 rounded hover:bg-white/5 font-mono text-xs">
+                    <button id="btn-close-trail-hud" class="btn-action-secondary text-[10px] py-0.5 px-2 shrink-0">
                         ✕ Close Trail
                     </button>
                 </div>
 
                 <!-- Active Waypoint Readout -->
-                <div class="flex items-center justify-between text-xs font-mono bg-black/40 px-3 py-2 rounded-xl border border-white/5">
-                    <div class="flex items-center gap-2">
-                        <span class="text-slate-400">Time:</span>
-                        <span id="hud-time" class="font-bold text-white">${new Date(Number(lastCrumb.timestamp) || Date.now()).toLocaleTimeString()}</span>
+                <div class="flex items-center justify-between text-xs font-mono surface-theme px-3 py-1.5 rounded-xl border">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-muted-theme">Time:</span>
+                        <span id="hud-time" class="font-bold text-primary-theme">${new Date(Number(lastCrumb.timestamp) || Date.now()).toLocaleTimeString()}</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-slate-400">Speed:</span>
-                        <span id="hud-speed" class="font-bold text-emerald-400">${(lastCrumb.speed * 3.6).toFixed(1)} km/h</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-muted-theme">Speed:</span>
+                        <span id="hud-speed" class="font-bold text-emerald-500">${(lastCrumb.speed * 3.6).toFixed(1)} km/h</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-slate-400">Point:</span>
-                        <span id="hud-point" class="font-bold text-sky-300">${this.currentIndex + 1}/${this.breadcrumbs.length}</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-muted-theme">Point:</span>
+                        <span id="hud-point" class="font-bold text-sky-400">${this.currentIndex + 1}/${this.breadcrumbs.length}</span>
                     </div>
                 </div>
 
                 <!-- Scrubber Slider -->
-                <div class="flex items-center gap-3">
-                    <button id="btn-play-pause" class="w-9 h-9 rounded-xl bg-sky-600 hover:bg-sky-500 flex items-center justify-center text-white text-sm font-bold shadow-md transition-all shrink-0">
+                <div class="flex items-center gap-2.5">
+                    <button id="btn-play-pause" class="btn-action-primary w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 p-0">
                         ▶
                     </button>
                     <input type="range" id="hud-scrubber" min="0" max="${this.breadcrumbs.length - 1}" value="${this.currentIndex}"
-                           class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400">
-                    <button id="btn-speed-toggle" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] font-mono font-bold text-slate-300 shrink-0">
+                           class="w-full h-2 bg-canvas rounded-lg appearance-none cursor-pointer accent-sky-500">
+                    <button id="btn-speed-toggle" class="btn-action-secondary px-2 py-0.5 text-[10px] font-mono font-bold shrink-0">
                         1x
                     </button>
                 </div>

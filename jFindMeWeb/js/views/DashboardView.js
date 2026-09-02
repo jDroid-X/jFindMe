@@ -1,5 +1,6 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 import { DeviceCardView } from './DeviceCardView.js';
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix - Enterprise Dashboard View (OOPS Architecture)
@@ -463,6 +464,9 @@ export class DashboardView {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const agentId = btn.getAttribute('data-agent-id');
+                const targetDev = this.devices.find(d => d.agentId === agentId);
+                const targetName = targetDev ? targetDev.name : agentId;
+
                 if (agentId) {
                     fetch('/api/poke-device', {
                         method: 'POST',
@@ -471,9 +475,11 @@ export class DashboardView {
                     })
                     .then(r => r.json())
                     .then(res => {
+                        FeedbackDialog.showToast(`⚡ Poke ping sent to [${targetName}]!`, "success");
                         if (window.log) window.log(`POKE_SUCCESS: Poke sent to [${agentId}]`, "success");
                     })
                     .catch(err => {
+                        FeedbackDialog.showToast(`Poke failed: ${err.message}`, "error");
                         if (window.log) window.log(`POKE_FAILED: ${err.message}`, "error");
                     });
                 }
@@ -521,6 +527,7 @@ export class DashboardView {
             if (window.showDashboard) {
                 window.showDashboard();
             }
+            FeedbackDialog.showToast("Fleet proximity & telemetry refreshed.", "info");
         });
 
         // 9. Launch Live Map Button
