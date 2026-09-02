@@ -24,11 +24,22 @@ export class DeviceUserView {
      * @param {Array<Object>} safeZones 
      */
     render(devices = [], initialSelectedAgentId = null, safeZones = []) {
-        this.devices = devices;
-        this.safeZones = safeZones;
-        if (devices.length > 0) {
+        // Deduplicate devices by canonical agentId
+        const seenDevs = new Set();
+        const uniqueDevices = [];
+        for (const d of (Array.isArray(devices) ? devices : [])) {
+            const key = d.agentId || d.deviceId;
+            if (key && !seenDevs.has(key)) {
+                seenDevs.add(key);
+                uniqueDevices.push(d);
+            }
+        }
+        this.devices = uniqueDevices;
+        this.safeZones = safeZones || [];
+
+        if (this.devices.length > 0) {
             if (!this.selectedAgentId || !this.devices.some(d => d.agentId === this.selectedAgentId)) {
-                this.selectedAgentId = initialSelectedAgentId || devices[0].agentId;
+                this.selectedAgentId = initialSelectedAgentId || this.devices[0].agentId;
             }
         }
 
@@ -64,42 +75,42 @@ export class DeviceUserView {
         const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, this.safeZones);
 
         container.innerHTML = `
-            <div class="w-full min-h-screen bg-[#05070a] text-slate-200 select-none overflow-y-auto custom-scrollbar p-2 font-sans">
+            <div class="w-full h-full select-none overflow-y-auto custom-scrollbar p-4 font-sans space-y-3">
                 
                 <!-- COMPACT HEADER BAR -->
-                <div class="bg-slate-900/90 border border-white/10 rounded-xl px-3 py-1.5 mb-2 flex items-center justify-between shadow-lg">
-                    <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 font-bold text-sm">
+                <div class="card-theme px-4 py-2.5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-base shrink-0">
                             📱
                         </div>
-                        <div>
-                            <h2 class="text-xs font-black tracking-wide text-white uppercase flex items-center gap-2">
+                        <div class="min-w-0">
+                            <h2 class="text-xs font-bold tracking-wide text-primary-theme uppercase flex items-center gap-2">
                                 <span>Device User Oversight Matrix</span>
-                                <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-mono border border-sky-500/30">DYNAMIC SSOT</span>
+                                <span class="badge-status badge-accent text-[9px]">DYNAMIC SSOT</span>
                             </h2>
-                            <p class="text-[9px] text-slate-400 font-mono">
-                                Master Device: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
+                            <p class="text-[11px] text-secondary-theme font-mono truncate">
+                                Master Identity: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
                             </p>
                         </div>
                     </div>
 
                     ${selectedDev ? `
-                    <div class="flex items-center gap-1.5">
-                        <button id="btn-du-view-map" class="px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-md shadow-sky-600/20">
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button id="btn-du-view-map" class="btn-action-primary text-xs">
                             <span>🗺️ Locate on Map</span>
                         </button>
                     </div>
                     ` : ''}
                 </div>
 
-                <!-- 5-PANE MULTI-COLUMN WORKSPACE -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+                <!-- 5-PANE MULTI-COLUMN SMART-FIT WORKSPACE -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 items-start">
                     
                     <!-- PANE 1: MASTER DEVICE ROSTER & SEARCH BAR -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 flex flex-col space-y-2 shadow-md">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">1. Device Roster</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${filteredDevices.length}/${this.devices.length}</span>
+                    <div class="card-theme p-3 flex flex-col space-y-2.5 shadow-sm">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2">
+                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">1. Device Roster</span>
+                            <span class="badge-status badge-accent">${filteredDevices.length}/${this.devices.length}</span>
                         </div>
 
                         <!-- Search Input -->
@@ -107,36 +118,37 @@ export class DeviceUserView {
                             <input type="text" id="du-search-input" 
                                    placeholder="🔍 Filter name, ID, role..." 
                                    value="${this.searchQuery}"
-                                   class="w-full bg-slate-950 border border-white/10 rounded-lg pl-7 pr-6 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono">
-                            <svg class="w-3 h-3 absolute left-2 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   class="input-theme w-full pl-7 pr-6 py-1.5 text-xs font-mono">
+                            <svg class="w-3.5 h-3.5 absolute left-2 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
                             ${this.searchQuery ? `
-                                <button id="btn-du-clear-search" class="absolute right-1.5 text-slate-400 hover:text-white text-xs font-bold p-0.5">✕</button>
+                                <button id="btn-du-clear-search" class="absolute right-1.5 text-muted-theme hover:text-primary-theme text-xs font-bold p-0.5">✕</button>
                             ` : ''}
                         </div>
 
                         <!-- Roster List -->
-                        <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[450px]">
+                        <div class="space-y-1.5 overflow-y-auto custom-scrollbar max-h-[500px] pr-0.5">
                             ${filteredDevices.map(dev => {
                                 const ragColor = dev.getRagColor();
                                 const ragLabel = dev.getRagLabel();
+                                const isSel = dev.agentId === this.selectedAgentId;
 
                                 return `
-                                    <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${dev.agentId === this.selectedAgentId ? 'border-sky-400 bg-sky-950/50 text-white shadow' : 'border-white/5 bg-black/40 hover:bg-white/5 text-slate-300'} transition-all flex items-center gap-2"
+                                    <div class="du-device-item cursor-pointer p-2 rounded-xl border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-2.5"
                                          data-agent-id="${dev.agentId}">
                                         <div class="relative shrink-0">
                                             <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                                 class="w-7 h-7 rounded-full object-cover border-2" 
+                                                 class="w-8 h-8 rounded-full object-cover border-2 shadow-sm" 
                                                  style="border-color: ${ragColor};">
-                                            <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900" style="background-color: ${ragColor}"></span>
+                                            <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-surface" style="background-color: ${ragColor}"></span>
                                         </div>
                                         <div class="min-w-0 flex-1">
-                                            <div class="flex items-center justify-between">
-                                                <h4 class="text-xs font-normal truncate text-white">${dev.name}</h4>
-                                                <span class="text-[8px] font-mono font-normal px-1 py-0.2 rounded border" style="color: ${ragColor}; border-color: ${ragColor}44; background-color: ${ragColor}11">${ragLabel}</span>
+                                            <div class="flex items-center justify-between gap-1">
+                                                <h4 class="text-xs font-bold truncate text-primary-theme min-w-0">${dev.name}</h4>
+                                                <span class="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border shrink-0" style="color: ${ragColor}; border-color: ${ragColor}44; background-color: ${ragColor}18">${ragLabel}</span>
                                             </div>
-                                            <div class="text-[9px] text-slate-400 truncate font-mono">${dev.deviceName || dev.model} • ${dev.agentId}</div>
+                                            <div class="text-[10px] text-secondary-theme truncate font-mono">${dev.deviceName || dev.model} • ${dev.agentId}</div>
                                         </div>
                                     </div>
                                 `;
@@ -146,58 +158,57 @@ export class DeviceUserView {
 
                     ${selectedDev ? `
                     <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Master Profile</span>
-                            <button id="btn-toggle-org" class="text-[9px] text-sky-400 hover:underline font-mono">
-                                ${this.isOrgExpanded ? 'Collapse Org [-]' : 'Expand Org [+]'}
+                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">2. Master Profile</span>
+                            <button id="btn-toggle-org" class="text-[10px] text-sky-400 hover:underline font-mono font-bold">
+                                ${this.isOrgExpanded ? '[-] Collapse' : '[+] Org ACL'}
                             </button>
                         </div>
 
-                        <!-- Master Profile Details Container with Scrollbar -->
-                        <div class="overflow-y-auto custom-scrollbar flex-1 space-y-2 pr-1">
+                        <div class="overflow-y-auto custom-scrollbar space-y-2.5 max-h-[500px] pr-0.5">
                             <!-- Master Profile Identity Card -->
-                            <div class="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-2 text-xs font-mono">
-                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/10 pb-1 flex items-center justify-between">
-                                    <span>👤 Master Identity & Hardware</span>
-                                    <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[8px] font-mono">${selectedDev.agentId}</span>
+                            <div class="surface-theme p-3 rounded-xl space-y-2 text-xs font-mono border">
+                                <div class="text-[10px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
+                                    <span>👤 Master Identity</span>
+                                    <span class="badge-status badge-accent text-[8px]">${selectedDev.agentId}</span>
                                 </div>
 
-                                <div class="flex items-center gap-2.5 pb-2 border-b border-white/5">
-                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-10 h-10 rounded-full object-cover border-2 shadow shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
+                                <div class="flex items-center gap-2.5 pb-2 border-b border-subtle-theme">
+                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-10 h-10 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
                                     <div class="min-w-0 flex-1">
-                                        <h3 class="font-bold text-xs text-white truncate">${selectedDev.name}</h3>
-                                        <div class="text-[9px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
-                                        <div class="text-[8px] text-slate-400 truncate">Device: ${selectedDev.deviceName || selectedDev.model}</div>
+                                        <h3 class="font-bold text-xs text-primary-theme truncate">${selectedDev.name}</h3>
+                                        <div class="text-[10px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
+                                        <div class="text-[9px] text-secondary-theme truncate">${selectedDev.deviceName || selectedDev.model}</div>
                                     </div>
                                 </div>
 
-                                <div class="space-y-1.5 text-[10px]">
-                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Auth UID:</span> <span class="text-slate-200 font-bold truncate max-w-[130px] font-mono">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Hardware ID:</span> <span class="text-slate-200 font-bold truncate max-w-[130px] font-mono">${selectedDev.deviceId}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Device Model:</span> <span class="text-white font-medium">${selectedDev.model || 'Android Device'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Phone Number:</span> <span class="text-slate-200 font-mono">${selectedDev.phone || 'Not Registered'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Email Address:</span> <span class="text-slate-200 truncate max-w-[130px]">${selectedDev.email || 'Not Registered'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5"><span class="text-slate-400">Emergency Note:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-300 font-bold' : 'text-slate-500'} truncate max-w-[120px]">${selectedDev.emergencyNote || 'None'}</span></div>
+                                <div class="space-y-1.5 text-[11px]">
+                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Auth UID:</span> <span class="text-primary-theme font-bold truncate max-w-[120px] font-mono">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Hardware ID:</span> <span class="text-primary-theme font-bold truncate max-w-[120px] font-mono">${selectedDev.deviceId}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Model:</span> <span class="text-primary-theme font-medium truncate max-w-[120px]">${selectedDev.model || 'Android Device'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Phone:</span> <span class="text-primary-theme font-mono">${selectedDev.phone || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Email:</span> <span class="text-primary-theme truncate max-w-[120px]">${selectedDev.email || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between items-center py-0.5"><span class="text-secondary-theme">Emergency Note:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-500 font-bold' : 'text-muted-theme'} truncate max-w-[120px]">${selectedDev.emergencyNote || 'None'}</span></div>
                                 </div>
                             </div>
 
                             <!-- Sub-Master Expandable Org Data Panel -->
-                            <div id="org-data-panel" class="bg-black/50 p-2.5 rounded-lg border border-white/5 space-y-2 text-xs font-mono ${this.isOrgExpanded ? 'block' : 'hidden'}">
-                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/10 pb-1 flex items-center justify-between">
+                            <div id="org-data-panel" class="surface-theme p-3 rounded-xl space-y-2 text-xs font-mono border ${this.isOrgExpanded ? 'block' : 'hidden'}">
+                                <div class="text-[10px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
                                     <span>🏢 Org Metadata & ACL</span>
-                                    <span class="text-[8px] text-slate-400 font-mono">SUB-MASTER</span>
+                                    <span class="text-[9px] text-muted-theme font-mono">SUB-MASTER</span>
                                 </div>
-                                <div class="space-y-1 text-[9px]">
-                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Organization:</span> <span class="text-white font-bold">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
-                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Department:</span> <span class="text-white">${selectedDev.department || 'General'}</span></div>
-                                    <div class="flex justify-between py-0.5 border-b border-white/[0.03]"><span class="text-slate-400">Role Title:</span> <span class="text-white font-bold">${selectedDev.role}</span></div>
-                                    <div class="pt-1 text-[8px] text-slate-400 uppercase font-sans font-bold">ACL Access Grants:</div>
-                                    <div class="grid grid-cols-2 gap-1 text-[8px] font-sans">
-                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">Live Track</span>
-                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">Geofence</span>
-                                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-center font-bold">History</span>
-                                        <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/10 text-center font-bold">Ghost Mode</span>
+                                <div class="space-y-1 text-[10px]">
+                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Org:</span> <span class="text-primary-theme font-bold">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
+                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Dept:</span> <span class="text-primary-theme">${selectedDev.department || 'General'}</span></div>
+                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Role:</span> <span class="text-primary-theme font-bold">${selectedDev.role}</span></div>
+                                    <div class="pt-1 text-[9px] text-secondary-theme uppercase font-sans font-bold">ACL Grants:</div>
+                                    <div class="grid grid-cols-2 gap-1 text-[9px] font-sans pt-0.5">
+                                        <span class="badge-status badge-success text-center justify-center">Live Track</span>
+                                        <span class="badge-status badge-success text-center justify-center">Geofence</span>
+                                        <span class="badge-status badge-success text-center justify-center">History</span>
+                                        <span class="badge-status badge-warning text-center justify-center">Ghost Mode</span>
                                     </div>
                                 </div>
                             </div>
@@ -205,48 +216,48 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 3: CONNECTIONS TREE (FAMILY & FRIENDS) -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">3. Connections Tree</span>
+                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">3. Connections</span>
                             <div class="flex items-center gap-1.5">
-                                <button id="btn-du-add-link" class="px-1.5 py-0.5 rounded bg-sky-600/80 hover:bg-sky-500 text-white text-[9px] font-bold font-mono transition-all">
-                                    + Add Link
+                                <button id="btn-du-add-link" class="btn-action-secondary text-[10px] py-0.5 px-2">
+                                    + Link
                                 </button>
-                                <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${relCount} Linked</span>
+                                <span class="badge-status badge-accent">${relCount} Linked</span>
                             </div>
                         </div>
 
                         <!-- Tree Container with Scrollbar -->
-                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-2 flex-1 overflow-y-auto custom-scrollbar font-mono pr-1">
+                        <div class="surface-theme p-2.5 rounded-xl border space-y-2 overflow-y-auto custom-scrollbar max-h-[500px] font-mono">
                             <!-- Root Selected Device Node -->
-                            <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-sky-950/70 border border-sky-500/40 text-white">
-                                <span class="text-xs">👑</span>
+                            <div class="flex items-center gap-2 p-2 rounded-lg bg-sky-500/10 border border-sky-500/30 text-primary-theme">
+                                <span class="text-sm">👑</span>
                                 <div class="min-w-0 flex-1">
                                     <div class="text-xs font-bold truncate">${selectedDev.name}</div>
-                                    <div class="text-[8px] text-sky-300">Root Node (${selectedDev.agentId})</div>
+                                    <div class="text-[9px] text-sky-400">Root Node (${selectedDev.agentId})</div>
                                 </div>
                             </div>
 
-                            <!-- Tree Branches (Dynamic Database Relationships Only) -->
+                            <!-- Tree Branches -->
                             <div class="pl-2 border-l-2 border-sky-500/30 space-y-2">
                                 <!-- Family Branch -->
                                 <details class="group/family space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[9px] font-bold text-amber-300 font-sans uppercase flex items-center gap-1.5 list-none hover:text-amber-200">
-                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[10px] text-amber-400 font-black">&gt;</span>
+                                    <summary class="cursor-pointer select-none text-[10px] font-bold text-amber-500 font-sans uppercase flex items-center gap-1.5 list-none hover:text-amber-400">
+                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[10px] font-black">&gt;</span>
                                         <span>👨‍👩‍👧‍👦 Family Connections</span>
                                     </summary>
-                                    <div class="space-y-1 pl-3.5 border-l border-amber-500/20 mt-1">
+                                    <div class="space-y-1 pl-3 border-l border-amber-500/20 mt-1">
                                         ${this.renderTreeMembers(selectedDev, 'family')}
                                     </div>
                                 </details>
 
                                 <!-- Friends Branch -->
                                 <details class="group/friends space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[9px] font-bold text-emerald-300 font-sans uppercase flex items-center gap-1.5 list-none hover:text-emerald-200">
-                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[10px] text-emerald-400 font-black">&gt;</span>
+                                    <summary class="cursor-pointer select-none text-[10px] font-bold text-emerald-500 font-sans uppercase flex items-center gap-1.5 list-none hover:text-emerald-400">
+                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[10px] font-black">&gt;</span>
                                         <span>🤝 Friends Connections</span>
                                     </summary>
-                                    <div class="space-y-1 pl-3.5 border-l border-emerald-500/20 mt-1">
+                                    <div class="space-y-1 pl-3 border-l border-emerald-500/20 mt-1">
                                         ${this.renderTreeMembers(selectedDev, 'friends')}
                                     </div>
                                 </details>
@@ -255,18 +266,18 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 4: SAFEZONES (SECTION 1: CREATED | SECTION 2: ASSIGNED) & NOTIFICATIONS -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${createdZonesList.length} Created | ${assignedZonesList.length} Assigned</span>
+                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
+                            <span class="badge-status badge-accent">${createdZonesList.length} C | ${assignedZonesList.length} A</span>
                         </div>
 
-                        <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                        <div class="space-y-2 overflow-y-auto custom-scrollbar max-h-[500px] pr-0.5">
                             <!-- Section 1: Created Safe Zones -->
-                            <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-white/10 pb-0.5">
-                                    <span>Section 1: Created Safe Zones</span>
-                                    <span class="text-[8px] font-mono font-normal text-slate-400">(${createdZonesList.length})</span>
+                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
+                                <div class="text-[10px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-1">
+                                    <span>Section 1: Created Zones</span>
+                                    <span class="text-[9px] font-mono text-muted-theme">(${createdZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderCreatedSafeZonesHTML(selectedDev, createdZonesList)}
@@ -274,10 +285,10 @@ export class DeviceUserView {
                             </div>
 
                             <!-- Section 2: Assigned Safe Zones -->
-                            <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-amber-400 uppercase font-sans flex items-center justify-between border-b border-white/10 pb-0.5">
-                                    <span>Section 2: Assigned Safe Zones</span>
-                                    <span class="text-[8px] font-mono font-normal text-slate-400">(${assignedZonesList.length})</span>
+                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
+                                <div class="text-[10px] font-bold text-amber-500 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-1">
+                                    <span>Section 2: Assigned Zones</span>
+                                    <span class="text-[9px] font-mono text-muted-theme">(${assignedZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderAssignedSafeZonesHTML(selectedDev, assignedZonesList)}
@@ -285,9 +296,9 @@ export class DeviceUserView {
                             </div>
 
                             <!-- Transactional Geofence Notification Log -->
-                            <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-slate-300 uppercase font-sans border-b border-white/10 pb-0.5">Geofence Event Log</div>
-                                <div class="space-y-1 text-[8px] font-mono max-h-[140px] overflow-y-auto custom-scrollbar">
+                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
+                                <div class="text-[10px] font-bold text-secondary-theme uppercase font-sans border-b border-subtle-theme pb-1">Geofence Event Log</div>
+                                <div class="space-y-1 text-[9px] font-mono max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderNotificationItems(selectedDev, rawNode)}
                                 </div>
                             </div>
@@ -295,15 +306,15 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 5: TRANSACTIONAL LOCATION FIX LOG -->
-                    <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md flex flex-col max-h-[calc(100vh-100px)] overflow-hidden">
-                        <div class="flex items-center justify-between border-b border-white/10 pb-1 shrink-0">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">5. Spatial Fix Log</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${historyCount} Fixes</span>
+                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">5. Spatial Fix Log</span>
+                            <span class="badge-status badge-accent">${historyCount} Fixes</span>
                         </div>
 
-                        <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div class="text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-white/5 pb-0.5 shrink-0">Recorded Location Fixes</div>
-                            <div class="space-y-1.5 overflow-y-auto custom-scrollbar flex-1 pr-1 text-xs font-mono">
+                        <div class="surface-theme p-2.5 rounded-xl border space-y-2 flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div class="text-[10px] font-bold text-sky-400 uppercase font-sans border-b border-subtle-theme pb-1 shrink-0">Recorded Location Fixes</div>
+                            <div class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-0.5 text-xs font-mono">
                                 ${this.renderLocationLogItems(selectedDev, rawNode)}
                             </div>
                         </div>
@@ -319,7 +330,7 @@ export class DeviceUserView {
     }
 
     /**
-     * Dynamic Helper: Resolves Created Safe Zones for Selected Device (Strict Creator ID Matching)
+     * Dynamic Helper: Resolves Created Safe Zones for Selected Device (Strict Deduplicated ID Matching)
      */
     getCreatedSafeZonesList(device, safeZonesList = []) {
         if (!device) return [];
@@ -329,22 +340,33 @@ export class DeviceUserView {
         const devModel = (device.model || "").toLowerCase();
         const devUserName = ((device.raw && device.raw.Identity && device.raw.Identity.owner_name) || "").toLowerCase();
 
-        return safeZonesList.filter(z => {
+        const seen = new Set();
+        const result = [];
+
+        for (const z of safeZonesList) {
+            const zId = z.zoneId || z.id || z.zone_id;
+            if (!zId || seen.has(zId)) continue;
+
             const creator = (z.creatorId || z.creator_uid || z.creator_id || z.created_by || "").toLowerCase();
-            if (!creator) return false;
-            return creator === devId || creator === devHwId || creator === devName || creator === devModel || (devUserName && creator === devUserName);
-        }).map(z => ({
-            id: z.zoneId || z.id,
-            zone_name: z.zoneName || z.name || z.zone_id,
-            radius: z.radius || 100,
-            assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices",
-            lat: z.latitude || z.lat,
-            lng: z.longitude || z.lng
-        }));
+            if (!creator) continue;
+
+            if (creator === devId || creator === devHwId || creator === devName || creator === devModel || (devUserName && creator === devUserName)) {
+                seen.add(zId);
+                result.push({
+                    id: zId,
+                    zone_name: z.zoneName || z.name || z.zone_id || "Safe Zone",
+                    radius: z.radius || 100,
+                    assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices",
+                    lat: z.latitude || z.lat,
+                    lng: z.longitude || z.lng
+                });
+            }
+        }
+        return result;
     }
 
     /**
-     * Dynamic Helper: Resolves Assigned Safe Zones for Selected Device
+     * Dynamic Helper: Resolves Assigned Safe Zones for Selected Device (Strict Deduplicated)
      */
     getAssignedSafeZonesList(device, safeZonesList = []) {
         if (!device) return [];
@@ -354,32 +376,39 @@ export class DeviceUserView {
         const devModel = (device.model || "").toLowerCase();
         const devUserName = ((device.raw && device.raw.Identity && device.raw.Identity.owner_name) || "").toLowerCase();
 
-        return safeZonesList.filter(z => {
+        const seen = new Set();
+        const result = [];
+
+        for (const z of safeZonesList) {
+            const zId = z.zoneId || z.id || z.zone_id;
+            if (!zId || seen.has(zId)) continue;
+
             const targetStr = (z.assignedName || z.assigned_targets || "").toLowerCase();
             const connList = (Array.isArray(z.connectedDevices) ? z.connectedDevices : []).map(c => String(c).toLowerCase());
 
-            // Match targets string
+            let isAssigned = false;
             if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId) || 
                 (devModel && targetStr.includes(devModel)) || (devUserName && targetStr.includes(devUserName))) {
-                return true;
+                isAssigned = true;
+            } else if (connList.some(c => c === devId || c === devHwId || c === devName || c === devModel || (devUserName && c === devUserName))) {
+                isAssigned = true;
             }
 
-            // Match connected devices list
-            if (connList.some(c => c === devId || c === devHwId || c === devName || c === devModel || (devUserName && c === devUserName))) {
-                return true;
+            if (isAssigned) {
+                seen.add(zId);
+                result.push({
+                    id: zId,
+                    zone_name: z.zoneName || z.name || z.zone_id || "Safe Zone",
+                    radius: z.radius || 100,
+                    assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices"
+                });
             }
-
-            return false;
-        }).map(z => ({
-            id: z.zoneId || z.id,
-            zone_name: z.zoneName || z.name || z.zone_id,
-            radius: z.radius || 100,
-            assigned_targets: z.assignedName || z.assigned_targets || "Connected Devices"
-        }));
+        }
+        return result;
     }
 
     /**
-     * Renders Tree Members (NO HARDCODED MOCKS)
+     * Renders Tree Members (Deduplicated, Zero Hardcoding)
      */
     renderTreeMembers(device, type) {
         const rawNode = device.raw || {};
@@ -392,7 +421,7 @@ export class DeviceUserView {
         });
 
         if (matchedNodes.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No linked ${type} connections for ${device.name}.</div>`;
+            return `<div class="text-[10px] text-muted-theme italic py-1 font-mono">No linked ${type} connections.</div>`;
         }
 
         return matchedNodes.map(([agentId, data]) => {
@@ -402,15 +431,15 @@ export class DeviceUserView {
             const peerTargetId = peerDev ? peerDev.agentId : agentId;
 
             return `
-                <div class="du-tree-node flex items-center justify-between p-1 rounded bg-white/5 hover:bg-sky-950/60 hover:border-sky-500/40 text-[9px] border border-white/5 cursor-pointer transition-all group"
+                <div class="du-tree-node flex items-center justify-between p-1.5 rounded-lg bg-card-subtle hover:bg-card-hover text-xs border border-subtle-theme cursor-pointer transition-all group"
                      data-target-agent-id="${peerTargetId}">
-                    <div class="flex items-center gap-1 min-w-0">
+                    <div class="flex items-center gap-1.5 min-w-0">
                         <img src="${peerAvatar}" class="w-4 h-4 rounded-full object-cover shrink-0">
-                        <span class="truncate text-white font-bold">${peerName}</span>
+                        <span class="truncate text-primary-theme font-bold">${peerName}</span>
                     </div>
                     <div class="flex items-center gap-1">
-                        <span class="text-[8px] font-mono text-sky-300 font-bold px-1 rounded bg-sky-500/10">${data.role || 'Member'}</span>
-                        <button class="btn-delete-link text-slate-500 hover:text-rose-400 p-0.5 text-[10px] font-bold"
+                        <span class="badge-status badge-accent text-[8px]">${data.role || 'Member'}</span>
+                        <button class="btn-delete-link text-muted-theme hover:text-rose-500 p-0.5 text-xs font-bold"
                                 data-source-agent-id="${device.agentId}"
                                 data-target-agent-id="${peerTargetId}"
                                 data-peer-name="${peerName}"
@@ -426,23 +455,21 @@ export class DeviceUserView {
      */
     renderCreatedSafeZonesHTML(device, createdList) {
         if (createdList.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No created safe zones for ${device.name}.</div>`;
+            return `<div class="text-[10px] text-muted-theme italic py-1 font-mono">No created safe zones.</div>`;
         }
 
         return createdList.map(z => {
             const zName = z.zone_name || z.name || z.id;
             const zRadius = z.radius || 100;
-            const zLat = z.lat ? parseFloat(z.lat).toFixed(4) : "0.0000";
-            const zLng = z.lng ? parseFloat(z.lng).toFixed(4) : "0.0000";
             const targets = z.assigned_targets || "Connected Devices";
 
             return `
-                <div class="p-1.5 rounded bg-sky-950/40 border border-sky-500/30 text-[9px] space-y-0.5">
-                    <div class="flex items-center justify-between font-bold text-white">
-                        <span class="truncate text-sky-300 font-bold">${zName}</span>
-                        <span class="px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[8px] font-bold">CREATED</span>
+                <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme text-xs space-y-0.5">
+                    <div class="flex items-center justify-between font-bold text-primary-theme">
+                        <span class="truncate text-sky-400 font-bold">${zName}</span>
+                        <span class="badge-status badge-accent text-[8px]">CREATED</span>
                     </div>
-                    <div class="text-[8px] text-slate-300 font-mono">Assigned To: <span class="text-amber-300 font-bold">${targets}</span> • Radius: ${zRadius}m</div>
+                    <div class="text-[10px] text-secondary-theme font-mono">Assigned: <span class="text-amber-500 font-bold">${targets}</span> • ${zRadius}m</div>
                 </div>
             `;
         }).join('');
@@ -453,7 +480,7 @@ export class DeviceUserView {
      */
     renderAssignedSafeZonesHTML(device, assignedList) {
         if (assignedList.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No assigned safe zones for ${device.name}.</div>`;
+            return `<div class="text-[10px] text-muted-theme italic py-1 font-mono">No assigned safe zones.</div>`;
         }
 
         return assignedList.map(z => {
@@ -462,19 +489,19 @@ export class DeviceUserView {
             const stateTag = z.current_state || "ACTIVE";
 
             return `
-                <div class="p-1.5 rounded bg-amber-950/40 border border-amber-500/30 text-[9px] space-y-0.5">
-                    <div class="flex items-center justify-between font-bold text-white">
-                        <span class="truncate text-amber-300 font-bold">${zName}</span>
-                        <span class="px-1 py-0.2 rounded ${stateTag === 'OUT' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400'} text-[8px] font-bold">${stateTag}</span>
+                <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme text-xs space-y-0.5">
+                    <div class="flex items-center justify-between font-bold text-primary-theme">
+                        <span class="truncate text-amber-500 font-bold">${zName}</span>
+                        <span class="badge-status ${stateTag === 'OUT' ? 'badge-warning' : 'badge-success'} text-[8px]">${stateTag}</span>
                     </div>
-                    <div class="text-[8px] text-slate-300 font-mono">Radius: ${zRadius}m • Perimeter: <span class="text-emerald-400 font-bold">${stateTag}</span></div>
+                    <div class="text-[10px] text-secondary-theme font-mono">Radius: ${zRadius}m • Perimeter: <span class="text-emerald-500 font-bold">${stateTag}</span></div>
                 </div>
             `;
         }).join('');
     }
 
     /**
-     * Renders Geofence Notification Log (NO HARDCODED MOCKS)
+     * Renders Geofence Notification Log
      */
     renderNotificationItems(device, rawNode) {
         const live = (rawNode.device && rawNode.device.live) || rawNode.live || {};
@@ -483,37 +510,37 @@ export class DeviceUserView {
         const lastTransTime = live.last_geofence_transition_readable;
 
         if (!lastTransState || !lastTransZone) {
-            return `<div class="text-[9px] text-slate-500 italic py-0.5 font-mono">No geofence transition events logged for ${device.name}.</div>`;
+            return `<div class="text-[10px] text-muted-theme italic py-1 font-mono">No geofence transition events logged.</div>`;
         }
 
         return `
-            <div class="p-1.5 rounded bg-white/5 border border-white/5 space-y-0.5">
-                <div class="flex items-center justify-between font-bold ${lastTransState === 'IN' ? 'text-emerald-400' : 'text-amber-400'}">
+            <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme space-y-0.5">
+                <div class="flex items-center justify-between font-bold ${lastTransState === 'IN' ? 'text-emerald-500' : 'text-amber-500'}">
                     <span>${lastTransState === 'IN' ? '🟢 ENTERED' : '🔴 EXITED'} ${lastTransZone}</span>
-                    <span class="text-[8px] text-slate-400">${lastTransTime || 'Recent'}</span>
+                    <span class="text-[9px] text-muted-theme">${lastTransTime || 'Recent'}</span>
                 </div>
-                <div class="text-slate-300 text-[8px]">Device transition logged: ${lastTransState} perimeter.</div>
+                <div class="text-secondary-theme text-[10px]">Transition: ${lastTransState} perimeter registered.</div>
             </div>
         `;
     }
 
     /**
-     * Renders Location History Items (NO HARDCODED MOCKS)
+     * Renders Location History Items
      */
     renderLocationLogItems(device, rawNode) {
         if (!device.hasValidLocation) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No location history recorded for ${device.name}.</div>`;
+            return `<div class="text-[10px] text-muted-theme italic py-4 text-center font-mono">No location history recorded.</div>`;
         }
 
         return `
-            <div class="p-1.5 rounded-lg bg-sky-950/40 border border-sky-500/30 space-y-1">
-                <div class="flex items-center justify-between text-[8px] text-sky-300 font-bold">
+            <div class="p-2.5 rounded-xl bg-card-subtle border border-subtle-theme space-y-1.5">
+                <div class="flex items-center justify-between text-[10px] text-sky-400 font-bold">
                     <span>🕒 ${device.getFormattedDateTime()}</span>
-                    <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[8px]">LIVE FIX</span>
+                    <span class="badge-status badge-success text-[8px]">LIVE FIX</span>
                 </div>
-                <div class="text-white text-xs font-bold">${device.getFormattedCoords()}</div>
-                <div class="text-[9px] text-slate-200 leading-snug">📍 ${device.address || 'Environ 2 Block-A, Tingre Nagar, Pune, Maharashtra 411015'}</div>
-                <div class="flex items-center justify-between text-[8px] text-slate-400 pt-0.5 border-t border-white/5">
+                <div class="text-primary-theme text-xs font-bold">${device.getFormattedCoords()}</div>
+                <div class="text-[11px] text-secondary-theme leading-snug">📍 ${device.address || 'Environ 2 Block-A, Tingre Nagar, Pune, Maharashtra 411015'}</div>
+                <div class="flex items-center justify-between text-[10px] text-muted-theme pt-1 border-t border-subtle-theme">
                     <span>Speed: ${device.getFormattedSpeed()}</span>
                     <span>Heading: ${Math.round(device.bearing || 0)}°</span>
                 </div>
@@ -530,7 +557,7 @@ export class DeviceUserView {
             el.addEventListener('click', () => {
                 const agentId = el.getAttribute('data-agent-id');
                 this.selectedAgentId = agentId;
-                this.render(this.devices, agentId);
+                this.render(this.devices, agentId, this.safeZones);
             });
         });
 
@@ -540,7 +567,7 @@ export class DeviceUserView {
                 const targetAgentId = el.getAttribute('data-target-agent-id');
                 if (targetAgentId) {
                     this.selectedAgentId = targetAgentId;
-                    this.render(this.devices, targetAgentId);
+                    this.render(this.devices, targetAgentId, this.safeZones);
                 }
             });
         });
@@ -550,7 +577,7 @@ export class DeviceUserView {
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
                 this.searchQuery = e.target.value;
-                this.render(this.devices, this.selectedAgentId);
+                this.render(this.devices, this.selectedAgentId, this.safeZones);
                 const nextInput = document.getElementById('du-search-input');
                 if (nextInput) {
                     nextInput.focus();
@@ -561,146 +588,160 @@ export class DeviceUserView {
 
         document.getElementById('btn-du-clear-search')?.addEventListener('click', () => {
             this.searchQuery = "";
-            this.render(this.devices, this.selectedAgentId);
+            this.render(this.devices, this.selectedAgentId, this.safeZones);
         });
 
-        // 4. Org Expansion Toggle
-        document.getElementById('btn-toggle-org')?.addEventListener('click', () => {
-            this.isOrgExpanded = !this.isOrgExpanded;
-            this.render(this.devices, this.selectedAgentId);
-        });
-
-        // 5. Locate on Map Button
+        // 4. Locate on Live Map
         document.getElementById('btn-du-view-map')?.addEventListener('click', () => {
             if (this.onNavigateMap && this.selectedAgentId) {
                 this.onNavigateMap(this.selectedAgentId);
             }
         });
 
-        // 6. Add Relationship Link Modal Handler
-        document.getElementById('btn-du-add-link')?.addEventListener('click', () => {
-            this.openAddConnectionModal();
+        // 5. Expand Org Panel Toggle
+        document.getElementById('btn-toggle-org')?.addEventListener('click', () => {
+            this.isOrgExpanded = !this.isOrgExpanded;
+            const orgPanel = document.getElementById('org-data-panel');
+            const btnToggle = document.getElementById('btn-toggle-org');
+            if (orgPanel && btnToggle) {
+                if (this.isOrgExpanded) {
+                    orgPanel.classList.remove('hidden');
+                    btnToggle.textContent = '[-] Collapse';
+                } else {
+                    orgPanel.classList.add('hidden');
+                    btnToggle.textContent = '[+] Org ACL';
+                }
+            }
         });
 
-        // 7. Delete Relationship Link Handler
+        // 6. Delete Link Action
         document.querySelectorAll('.btn-delete-link').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const sourceId = btn.getAttribute('data-source-agent-id');
                 const targetId = btn.getAttribute('data-target-agent-id');
-                const peerName = btn.getAttribute('data-peer-name') || targetId;
+                const peerName = btn.getAttribute('data-peer-name');
 
-                if (!confirm(`CONFIRM REMOVAL: Remove relationship link between [${sourceId}] and [${peerName}]?`)) return;
+                if (!confirm(`Are you sure you want to disconnect ${peerName} (${targetId})?`)) return;
 
-                fetch('/api/relationship/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ agentId: sourceId, targetAgentId: targetId })
-                })
-                .then(r => r.json())
-                .then(res => {
-                    if (res.status === 'SUCCESS') {
-                        if (window.log) window.log(`RELATIONSHIP_PURGED: Connection ${sourceId} <-> ${targetId} deleted`, "success");
-                        if (window.showDeviceUsers) window.showDeviceUsers();
-                    } else {
-                        alert(`Delete Failed: ${res.error}`);
+                try {
+                    const res = await fetch('/api/relationship/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sourceId, targetId })
+                    });
+                    const resData = await res.json();
+                    if (resData.status === 'DELETED') {
+                        if (window.log) window.log(`RELATION_PURGE: Severed link between [${sourceId}] and [${targetId}]`, "warning");
+                        if (window.showDeviceUser) window.showDeviceUser(sourceId);
                     }
-                })
-                .catch(err => alert(`Network Failure: ${err.message}`));
+                } catch (err) {
+                    console.error("[DEVICE_USER] Delete link failure:", err);
+                }
             });
+        });
+
+        // 7. Add Link Action Modal
+        document.getElementById('btn-du-add-link')?.addEventListener('click', () => {
+            this.openAddLinkModal();
         });
     }
 
-    openAddConnectionModal() {
+    /**
+     * Add Link Modal
+     */
+    openAddLinkModal() {
         const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId) || this.devices[0];
         if (!selectedDev) return;
 
-        const peerDevices = this.devices.filter(d => d.agentId !== selectedDev.agentId);
+        const otherDevices = this.devices.filter(d => d.agentId !== selectedDev.agentId);
 
         const overlay = document.createElement('div');
-        overlay.id = 'du-add-link-modal';
-        overlay.className = 'fixed inset-0 bg-black/80 backdrop-blur-md z-[999] flex items-center justify-center p-4';
+        overlay.id = 'add-link-modal-overlay';
+        overlay.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4';
         overlay.innerHTML = `
-            <div class="bg-slate-900 border border-sky-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 relative">
-                <div class="flex items-center justify-between border-b border-white/10 pb-3">
-                    <div class="flex items-center gap-2">
-                        <span class="text-xl">🤝</span>
-                        <div>
-                            <h3 class="text-sm font-bold text-white uppercase tracking-wider">Bind Relationship Connection</h3>
-                            <p class="text-[10px] text-sky-400 font-mono">Source Node: ${selectedDev.name} (${selectedDev.agentId})</p>
-                        </div>
-                    </div>
-                    <button id="btn-close-link-modal" class="text-slate-400 hover:text-white font-bold text-sm">✕</button>
+            <div class="card-theme p-5 w-full max-w-md shadow-2xl border space-y-4">
+                <div class="flex items-center justify-between border-b border-subtle-theme pb-2.5">
+                    <h3 class="text-sm font-bold text-primary-theme flex items-center gap-2">
+                        <span>🔗</span>
+                        <span>Establish Device Connection</span>
+                    </h3>
+                    <button id="btn-close-link-modal" class="text-muted-theme hover:text-primary-theme text-base font-bold">✕</button>
                 </div>
 
-                <div class="space-y-3 text-xs font-sans">
+                <div class="space-y-3 text-xs">
                     <div>
-                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Target Device Node</label>
-                        <select id="link-target-agent" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
-                            ${peerDevices.map(d => `<option value="${d.agentId}">${d.name} (${d.agentId} • ${d.model})</option>`).join('')}
+                        <label class="block text-secondary-theme font-bold mb-1">Source Device (Root)</label>
+                        <div class="input-theme p-2 text-primary-theme font-bold font-mono">${selectedDev.name} (${selectedDev.agentId})</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-secondary-theme font-bold mb-1">Target Device to Connect</label>
+                        <select id="modal-link-target" class="input-theme w-full p-2 text-primary-theme font-mono">
+                            ${otherDevices.map(d => `<option value="${d.agentId}">${d.name} (${d.agentId}) - ${d.model}</option>`).join('')}
                         </select>
                     </div>
 
                     <div>
-                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Relationship Role Title</label>
-                        <input type="text" id="link-role-title" placeholder="e.g. Spouse, Child, Parent, Friend" value="Spouse" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
+                        <label class="block text-secondary-theme font-bold mb-1">Relationship Category</label>
+                        <select id="modal-link-category" class="input-theme w-full p-2 text-primary-theme">
+                            <option value="Family">Family Connection</option>
+                            <option value="Friends">Friend Connection</option>
+                        </select>
                     </div>
 
                     <div>
-                        <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Group Branch Type</label>
-                        <select id="link-branch-type" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2 text-white font-mono focus:border-sky-500 outline-none">
-                            <option value="family">Family Group</option>
-                            <option value="friends">Friends Group</option>
-                        </select>
+                        <label class="block text-secondary-theme font-bold mb-1">Specific Role / Label</label>
+                        <input type="text" id="modal-link-role" placeholder="e.g. Mother, Father, Spouse, Child, Friend" value="Family Member"
+                               class="input-theme w-full p-2 text-primary-theme">
                     </div>
                 </div>
 
-                <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-                    <button id="btn-cancel-link" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all">Cancel</button>
-                    <button id="btn-save-link" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-lg shadow-sky-600/20">
-                        <span>Save Connection</span>
-                    </button>
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-subtle-theme">
+                    <button id="btn-cancel-link-modal" class="btn-action-secondary text-xs">Cancel</button>
+                    <button id="btn-save-link-modal" class="btn-action-primary text-xs">Establish Link</button>
                 </div>
             </div>
         `;
 
         document.body.appendChild(overlay);
 
-        const close = () => overlay.remove();
-        document.getElementById('btn-close-link-modal').onclick = close;
-        document.getElementById('btn-cancel-link').onclick = close;
+        const closeModal = () => overlay.remove();
+        document.getElementById('btn-close-link-modal')?.addEventListener('click', closeModal);
+        document.getElementById('btn-cancel-link-modal')?.addEventListener('click', closeModal);
 
-        document.getElementById('btn-save-link').onclick = async () => {
-            const targetAgentId = document.getElementById('link-target-agent').value;
-            const role = document.getElementById('link-role-title').value.trim() || "Member";
-            const type = document.getElementById('link-branch-type').value;
+        document.getElementById('btn-save-link-modal')?.addEventListener('click', async () => {
+            const targetId = document.getElementById('modal-link-target')?.value;
+            const category = document.getElementById('modal-link-category')?.value;
+            const role = document.getElementById('modal-link-role')?.value || 'Member';
 
-            const targetDev = this.devices.find(d => d.agentId === targetAgentId);
-            const targetName = targetDev ? targetDev.name : targetAgentId;
+            if (!targetId) return;
+
+            const targetDev = this.devices.find(d => d.agentId === targetId);
+            const targetName = targetDev ? targetDev.name : targetId;
 
             try {
-                const res = await fetch('/api/relationship/update', {
+                const res = await fetch('/api/relationship/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        agentId: selectedDev.agentId,
-                        targetAgentId,
+                        sourceId: selectedDev.agentId,
+                        targetId,
                         targetName,
-                        role,
-                        type
+                        category,
+                        role
                     })
                 });
-                const result = await res.json();
-                if (result.status === 'SUCCESS') {
-                    if (window.log) window.log(`RELATIONSHIP_BOUND: ${selectedDev.name} -> ${targetName} (${role})`, "success");
-                    close();
-                    if (window.showUsers) window.showUsers(selectedDev.agentId);
-                } else {
-                    alert(`Binding Failed: ${result.error}`);
+                const resData = await res.json();
+                if (resData.status === 'LINKED') {
+                    if (window.log) window.log(`RELATION_SUCCESS: Connected [${selectedDev.agentId}] to [${targetId}] as ${role}`, "success");
+                    closeModal();
+                    if (window.showDeviceUser) window.showDeviceUser(selectedDev.agentId);
                 }
             } catch (err) {
-                alert(`Network Failure: ${err.message}`);
+                console.error("[DEVICE_USER] Add link failure:", err);
+                closeModal();
             }
-        };
+        });
     }
 }

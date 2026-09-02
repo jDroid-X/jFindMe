@@ -10,7 +10,7 @@ object AvatarRegistry {
     // Master Registry containing all 50 Popular Avatars from Diverse Collection
     val templateList: List<AvatarEntity> = listOf(
         // --- 🟢 CIVILIAN & CORE (1-10) ---
-        createBaseAvatar(1, "Avatar Jane", AvatarRarity.COMMON, MovementType.WANDER),
+        createBaseAvatar(1, "Angel Butterfly", AvatarRarity.LEGENDARY, MovementType.WANDER),
         createBaseAvatar(2, "Pixel Max", AvatarRarity.RARE, MovementType.PATROL, 2.5f),
         createBaseAvatar(3, "Med Fam", AvatarRarity.COMMON, MovementType.STATIC),
         createBaseAvatar(4, "22D Kawaii", AvatarRarity.RARE, MovementType.FOLLOW, 1.5f, InteractionType.PROXIMITY),

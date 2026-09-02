@@ -714,6 +714,7 @@ object FirebaseComm {
      * Returns: YYYYMMDDHHMMSSSS (16-character precise timeline)
      */
     @JvmStatic
+    @JvmOverloads
     fun getForensicTimestamp(input: Any? = System.currentTimeMillis()): String {
         if (input == null) return getForensicTimestamp(System.currentTimeMillis())
         if (input is String) {

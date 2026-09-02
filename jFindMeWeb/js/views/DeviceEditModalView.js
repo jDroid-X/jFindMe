@@ -78,6 +78,17 @@ export class DeviceEditModalView {
                         </div>
 
                         <div>
+                            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">Network Role / Title</label>
+                            <select id="edit-role" class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:border-sky-500 focus:outline-none font-medium cursor-pointer">
+                                ${["Admin", "Guardian", "Father", "Mother", "Spouse", "Child", "Friend", "Member"].map(r => {
+                                    const currentRole = device.roleFamily && device.roleFamily !== 'None' ? device.roleFamily : (device.roleFriend && device.roleFriend !== 'None' ? device.roleFriend : (device.role || 'Member'));
+                                    const isSel = currentRole.toLowerCase().includes(r.toLowerCase());
+                                    return `<option value="${r}" ${isSel ? 'selected' : ''}>${r}</option>`;
+                                }).join('')}
+                            </select>
+                        </div>
+
+                        <div>
                             <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">Department / Organization</label>
                             <input type="text" id="edit-dept" value="${device.department || ''}" placeholder="e.g. Field Operations"
                                    class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:border-sky-500 focus:outline-none">
@@ -89,7 +100,7 @@ export class DeviceEditModalView {
                                    class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
                         </div>
 
-                        <div>
+                        <div class="sm:col-span-2">
                             <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">Email Address</label>
                             <input type="email" id="edit-email" value="${device.email || ''}" placeholder="e.g. user@domain.com"
                                    class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
@@ -100,6 +111,29 @@ export class DeviceEditModalView {
                         <label class="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">Emergency Medical Note</label>
                         <input type="text" id="edit-note" value="${device.emergencyNote || ''}" placeholder="e.g. Blood Group O+, Allergies: None"
                                class="w-full bg-slate-950 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:border-sky-500 focus:outline-none">
+                    </div>
+
+                    <!-- ACL ACCESS GRANTS CHECKBOXES -->
+                    <div class="p-3 bg-black/40 rounded-xl border border-white/5 space-y-2">
+                        <label class="text-[11px] font-bold uppercase tracking-wider text-sky-400 block">Security Access Grants (ACL)</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <label class="flex items-center gap-2 text-slate-300 cursor-pointer hover:text-white">
+                                <input type="checkbox" id="acl-live-tracking" checked class="w-4 h-4 rounded bg-slate-900 border-white/20 text-sky-600 focus:ring-sky-500">
+                                <span>Live GPS Tracking Protocol</span>
+                            </label>
+                            <label class="flex items-center gap-2 text-slate-300 cursor-pointer hover:text-white">
+                                <input type="checkbox" id="acl-history-audit" checked class="w-4 h-4 rounded bg-slate-900 border-white/20 text-sky-600 focus:ring-sky-500">
+                                <span>History Trace Audit Logs</span>
+                            </label>
+                            <label class="flex items-center gap-2 text-slate-300 cursor-pointer hover:text-white">
+                                <input type="checkbox" id="acl-geofence" checked class="w-4 h-4 rounded bg-slate-900 border-white/20 text-sky-600 focus:ring-sky-500">
+                                <span>Safe Zone Breach Alerts</span>
+                            </label>
+                            <label class="flex items-center gap-2 text-slate-300 cursor-pointer hover:text-white">
+                                <input type="checkbox" id="acl-ghost-override" checked class="w-4 h-4 rounded bg-slate-900 border-white/20 text-sky-600 focus:ring-sky-500">
+                                <span>Stealth Ghost Mode SOS Override</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -177,13 +211,26 @@ export class DeviceEditModalView {
             saveBtn.disabled = true;
             saveBtn.innerHTML = `<span>⏳ Synchronizing...</span>`;
 
+            const role = modal.querySelector('#edit-role') ? modal.querySelector('#edit-role').value : "Member";
+            const aclLive = modal.querySelector('#acl-live-tracking') ? modal.querySelector('#acl-live-tracking').checked : true;
+            const aclHistory = modal.querySelector('#acl-history-audit') ? modal.querySelector('#acl-history-audit').checked : true;
+            const aclGeofence = modal.querySelector('#acl-geofence') ? modal.querySelector('#acl-geofence').checked : true;
+            const aclGhost = modal.querySelector('#acl-ghost-override') ? modal.querySelector('#acl-ghost-override').checked : true;
+
             const payload = {
                 name,
                 avatar_id: selectedAvatarId,
                 department: dept,
                 phone,
                 email,
-                emergency_note: note
+                emergency_note: note,
+                role,
+                role_family: role.toLowerCase().includes("friend") ? "None" : role,
+                role_friend: role.toLowerCase().includes("friend") ? "Friends" : "None",
+                acl_live_tracking: aclLive ? "GRANTED" : "DENIED",
+                acl_history_audit: aclHistory ? "GRANTED" : "DENIED",
+                acl_geofence: aclGeofence ? "GRANTED" : "DENIED",
+                acl_ghost_override: aclGhost ? "GRANTED" : "DENIED"
             };
 
             if (this.onSave) {

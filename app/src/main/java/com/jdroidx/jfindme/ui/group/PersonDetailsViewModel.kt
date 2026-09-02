@@ -97,11 +97,8 @@ class PersonDetailsViewModel : ViewModel() {
         FirebaseComm.resolveHardwareIdentity(targetUid) { agentId ->
             val cloudAgentId = agentId ?: resolvedAgentId
             
-            val citizenRef = if (!groupId.isNullOrEmpty()) {
-                FirebaseComm.relationshipsRef.child(groupId).child("citizen_dossiers").child(cloudAgentId)
-            } else {
-                FirebaseComm.getProfileRef(cloudAgentId)
-            }
+            // SSOT: Always read canonical profile directly from /devices/{cloudAgentId}/profile
+            val citizenRef = FirebaseComm.getProfileRef(cloudAgentId)
 
             citizenRef.get().addOnSuccessListener { snapshot ->
                 if (snapshot.exists()) {
@@ -134,7 +131,7 @@ class PersonDetailsViewModel : ViewModel() {
                     cloudMap["acl_history_audit"] = snapshot.child("acl_history_audit").getValue(String::class.java) ?: "GRANTED"
                     cloudMap["acl_geofence"] = snapshot.child("acl_geofence").getValue(String::class.java) ?: "GRANTED"
                     cloudMap["acl_admin"] = snapshot.child("acl_admin").getValue(String::class.java) ?: "DENIED"
-                    cloudMap["acl_ghost_override"] = snapshot.child("acl_ghost_override").getValue(String::class.java) ?: "DENIED"
+                    cloudMap["acl_ghost_override"] = snapshot.child("acl_ghost_override").getValue(String::class.java) ?: "GRANTED"
                     cloudMap["acl_biometrics"] = snapshot.child("acl_biometrics").getValue(String::class.java) ?: "DENIED"
                     cloudMap["cloud_sync_enabled"] = snapshot.child("cloud_sync_enabled").getValue(String::class.java) ?: "TRUE"
                     

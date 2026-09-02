@@ -27,7 +27,17 @@ export class DashboardView {
      * @param {import('../models/SettingsModel.js').SettingsModel} settings 
      */
     render(devices = [], settings = {}) {
-        this.devices = devices;
+        // Closed-Loop Deduplication by Canonical Identifier
+        const seenIds = new Set();
+        const uniqueDevices = [];
+        for (const d of (Array.isArray(devices) ? devices : [])) {
+            const key = d.agentId || d.deviceId;
+            if (key && !seenIds.has(key)) {
+                seenIds.add(key);
+                uniqueDevices.push(d);
+            }
+        }
+        this.devices = uniqueDevices;
         this.settings = settings;
 
         const container = document.getElementById(this.containerId);
@@ -110,33 +120,33 @@ export class DashboardView {
         }
 
         container.innerHTML = `
-            <div class="h-full bg-[#05070a] overflow-y-auto custom-scrollbar p-6 space-y-6 text-white select-none">
+            <div class="h-full overflow-y-auto custom-scrollbar p-6 space-y-6 select-none font-sans">
                 
                 <!-- TOP BAR: Station Context & Radius Configuration -->
-                <div class="bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                <div class="card-theme p-4 flex flex-wrap items-center justify-between gap-4">
                     <div class="flex items-center gap-3.5">
-                        <div class="w-11 h-11 rounded-xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 text-xl shadow-lg">
+                        <div class="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 text-xl shadow-md shrink-0">
                             📡
                         </div>
                         <div>
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-black uppercase tracking-widest text-sky-400">Reference Location Station</span>
-                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30">MONITORING ACTIVE</span>
+                                <span class="text-xs font-extrabold uppercase tracking-widest text-sky-400">Reference Location Station</span>
+                                <span class="badge-status badge-success">MONITORING ACTIVE</span>
                             </div>
-                            <h2 class="text-base font-bold text-white tracking-tight mt-0.5">${refAddress}</h2>
-                            <p class="text-[11px] font-mono text-slate-400">
-                                Coordinates: <span class="text-white">${refLat.toFixed(5)}° N, ${refLng.toFixed(5)}° E</span> • Active Radius Window: <span class="text-amber-300 font-bold">${radiusKm} km</span>
+                            <h2 class="text-base font-bold text-primary-theme tracking-tight mt-0.5">${refAddress}</h2>
+                            <p class="text-xs font-mono text-secondary-theme">
+                                Coordinates: <span class="text-primary-theme font-bold">${refLat.toFixed(5)}° N, ${refLng.toFixed(5)}° E</span> • Active Window: <span class="text-amber-500 font-bold">${radiusKm} km</span>
                             </p>
                         </div>
                     </div>
 
                     <!-- Quick Actions -->
                     <div class="flex items-center gap-2.5">
-                        <button id="btn-dash-settings" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md">
+                        <button id="btn-dash-settings" class="btn-action-secondary text-xs">
                             <span>⚙️</span>
                             <span>Radius & Station</span>
                         </button>
-                        <button id="btn-dash-refresh" class="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-sky-600/30">
+                        <button id="btn-dash-refresh" class="btn-action-primary text-xs">
                             <span>🔄</span>
                             <span>Refresh Live Fleet</span>
                         </button>
@@ -146,64 +156,76 @@ export class DashboardView {
                 <!-- 4 PRIMARY METRIC CARDS (INTERACTIVE FILTERS) -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Card 1: Within Search Radius -->
-                    <div id="card-filter-in-radius" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'in_radius' ? 'border-sky-400 bg-sky-950/30 shadow-[0_0_20px_rgba(56,189,248,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
+                    <div id="card-filter-in-radius" class="card-theme p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 group ${this.activeFilter === 'in_radius' ? '!border-sky-500 shadow-md ring-2 ring-sky-500/20' : ''}">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold">Within Search Radius</span>
-                            <span class="text-xs">🎯</span>
+                            <span class="text-xs font-mono uppercase tracking-wider text-sky-400 font-bold">Within Search Radius</span>
+                            <span class="text-base">🎯</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-white tracking-tight">${inRadiusDevices.length} <span class="text-xs font-medium text-slate-400">/ ${this.devices.length}</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Inside active <span class="text-sky-300 font-bold">${radiusKm}km</span> perimeter</div>
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-3xl font-black text-primary-theme tracking-tight">${inRadiusDevices.length}</span>
+                                <span class="text-xs font-semibold text-muted-theme">/ ${this.devices.length} TOTAL</span>
+                            </div>
+                            <div class="text-xs text-secondary-theme mt-1">Inside active <span class="text-sky-400 font-bold">${radiusKm}km</span> perimeter</div>
                         </div>
-                        <div class="text-[10px] font-bold text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                        <div class="text-xs font-bold text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                             <span>Inspect In-Radius Fleet</span>
                             <span>→</span>
                         </div>
                     </div>
 
                     <!-- Card 2: Outside Search Radius -->
-                    <div id="card-filter-outside-radius" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'outside_radius' ? 'border-amber-400 bg-amber-950/30 shadow-[0_0_20px_rgba(251,191,36,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
+                    <div id="card-filter-outside-radius" class="card-theme p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 group ${this.activeFilter === 'outside_radius' ? '!border-amber-500 shadow-md ring-2 ring-amber-500/20' : ''}">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">Outside Radius Window</span>
-                            <span class="text-xs">📡</span>
+                            <span class="text-xs font-mono uppercase tracking-wider text-amber-500 font-bold">Outside Radius Window</span>
+                            <span class="text-base">📡</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-white tracking-tight">${outOfRadiusDevices.length} <span class="text-xs font-medium text-slate-400">devices</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Beyond <span class="text-amber-300 font-bold">${radiusKm}km</span> range</div>
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-3xl font-black text-primary-theme tracking-tight">${outOfRadiusDevices.length}</span>
+                                <span class="text-xs font-semibold text-muted-theme">NODES</span>
+                            </div>
+                            <div class="text-xs text-secondary-theme mt-1">Beyond <span class="text-amber-500 font-bold">${radiusKm}km</span> range</div>
                         </div>
-                        <div class="text-[10px] font-bold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                        <div class="text-xs font-bold text-amber-500 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                             <span>Inspect Long-Range Nodes</span>
                             <span>→</span>
                         </div>
                     </div>
 
                     <!-- Card 3: Active Online Signal -->
-                    <div id="card-filter-online" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'online' ? 'border-emerald-400 bg-emerald-950/30 shadow-[0_0_20px_rgba(52,211,153,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
+                    <div id="card-filter-online" class="card-theme p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 group ${this.activeFilter === 'online' ? '!border-emerald-500 shadow-md ring-2 ring-emerald-500/20' : ''}">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">Active Online Pulse</span>
-                            <span class="text-xs">🟢</span>
+                            <span class="text-xs font-mono uppercase tracking-wider text-emerald-500 font-bold">Active Online Pulse</span>
+                            <span class="text-base">🟢</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-emerald-400 tracking-tight">${onlineDevices.length} <span class="text-xs font-medium text-slate-400">active</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">Real-time GPS stream live</div>
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-3xl font-black text-emerald-500 tracking-tight">${onlineDevices.length}</span>
+                                <span class="text-xs font-semibold text-muted-theme">ACTIVE</span>
+                            </div>
+                            <div class="text-xs text-secondary-theme mt-1">Real-time GPS stream active</div>
                         </div>
-                        <div class="text-[10px] font-bold text-emerald-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                        <div class="text-xs font-bold text-emerald-500 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                             <span>View Active Nodes</span>
                             <span>→</span>
                         </div>
                     </div>
 
                     <!-- Card 4: Master Total Fleet -->
-                    <div id="card-filter-all" class="cursor-pointer bg-slate-900/80 hover:bg-slate-850 p-4 rounded-2xl border ${this.activeFilter === 'all' ? 'border-indigo-400 bg-indigo-950/30 shadow-[0_0_20px_rgba(129,140,248,0.2)]' : 'border-white/10 hover:border-white/20'} transition-all flex flex-col justify-between space-y-3 group">
+                    <div id="card-filter-all" class="card-theme p-4 cursor-pointer transition-all flex flex-col justify-between space-y-3 group ${this.activeFilter === 'all' ? '!border-indigo-500 shadow-md ring-2 ring-indigo-500/20' : ''}">
                         <div class="flex items-center justify-between">
-                            <span class="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold">Total Master Fleet</span>
-                            <span class="text-xs">📋</span>
+                            <span class="text-xs font-mono uppercase tracking-wider text-indigo-400 font-bold">Total Master Fleet</span>
+                            <span class="text-base">📋</span>
                         </div>
                         <div>
-                            <div class="text-3xl font-black text-white tracking-tight">${this.devices.length} <span class="text-xs font-medium text-slate-400">total nodes</span></div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">All registered identities</div>
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-3xl font-black text-primary-theme tracking-tight">${this.devices.length}</span>
+                                <span class="text-xs font-semibold text-muted-theme">IDENTITIES</span>
+                            </div>
+                            <div class="text-xs text-secondary-theme mt-1">All unique registered devices</div>
                         </div>
-                        <div class="text-[10px] font-bold text-indigo-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                        <div class="text-xs font-bold text-indigo-400 group-hover:translate-x-1 transition-transform flex items-center gap-1">
                             <span>View Master Roster</span>
                             <span>→</span>
                         </div>
@@ -215,27 +237,27 @@ export class DashboardView {
                     
                     <!-- LEFT COLUMN: Spatial Clusters & Location Breakdown -->
                     <div class="space-y-4">
-                        <div class="bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-4 space-y-3">
-                            <div class="flex items-center justify-between border-b border-white/10 pb-2.5">
+                        <div class="card-theme p-4 space-y-3">
+                            <div class="flex items-center justify-between border-b border-subtle-theme pb-2.5">
                                 <h3 class="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
                                     <span>📍 Location Range Clusters</span>
                                 </h3>
-                                <span class="text-[10px] font-mono text-slate-400">${this.devices.length} Devices</span>
+                                <span class="text-xs font-mono text-muted-theme">${this.devices.length} Devices</span>
                             </div>
 
                             <!-- Cluster List -->
                             <div class="space-y-2">
                                 ${clusters.map(c => `
-                                    <div class="cluster-item cursor-pointer p-2.5 rounded-xl border ${this.activeClusterKey === c.key ? 'border-sky-400 bg-sky-950/40 text-white' : 'border-white/5 bg-black/30 hover:bg-white/5 text-slate-300'} transition-all flex items-center justify-between"
+                                    <div class="cluster-item cursor-pointer p-2.5 rounded-xl border ${this.activeClusterKey === c.key ? 'border-sky-500 bg-sky-500/10 font-bold' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center justify-between"
                                          data-cluster="${c.key}">
-                                        <div class="flex items-center gap-2.5">
-                                            <span class="text-base">${c.icon}</span>
-                                            <div>
-                                                <div class="text-xs font-bold leading-tight">${c.label}</div>
-                                                <div class="text-[9px] text-slate-400 font-mono">${c.list.length} devices detected</div>
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <span class="text-base shrink-0">${c.icon}</span>
+                                            <div class="min-w-0">
+                                                <div class="text-xs font-bold text-primary-theme truncate">${c.label}</div>
+                                                <div class="text-[10px] text-secondary-theme font-mono">${c.list.length} devices detected</div>
                                             </div>
                                         </div>
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/10 border border-white/10">
+                                        <span class="badge-status badge-accent shrink-0 ml-2">
                                             ${c.list.length}
                                         </span>
                                     </div>
@@ -244,13 +266,13 @@ export class DashboardView {
                         </div>
 
                         <!-- Live Map Navigation Card -->
-                        <div class="bg-gradient-to-br from-sky-950/40 to-slate-900/90 rounded-2xl border border-sky-500/30 p-4 space-y-2 text-center">
-                            <div class="text-2xl">🗺️</div>
-                            <h4 class="text-xs font-bold text-white">Full Tactical Live Map Radar</h4>
-                            <p class="text-[10px] text-slate-400 leading-relaxed">
-                                View interactive real-time movement markers, heading bearings, and safe zone perimeters on the live map.
+                        <div class="card-theme p-4 space-y-2 text-center border-sky-500/30">
+                            <div class="text-3xl">🗺️</div>
+                            <h4 class="text-sm font-bold text-primary-theme">Full Tactical Live Map Radar</h4>
+                            <p class="text-xs text-secondary-theme leading-relaxed">
+                                View interactive real-time movement markers, heading bearings, and safe zone perimeters on the live radar map.
                             </p>
-                            <button id="btn-dash-open-map" class="w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-lg shadow-sky-600/30 transition-all mt-2">
+                            <button id="btn-dash-open-map" class="btn-action-primary w-full justify-center mt-2 py-2">
                                 Launch Live Map Radar →
                             </button>
                         </div>
@@ -258,17 +280,17 @@ export class DashboardView {
 
                     <!-- RIGHT COLUMN (2 COLS): Drill-down Devices List & Detailed Metadata -->
                     <div class="lg:col-span-2 space-y-4">
-                        <div class="bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-5 space-y-4">
+                        <div class="card-theme p-5 space-y-4">
                             <!-- Section Title & Search Bar -->
-                            <div class="space-y-3 border-b border-white/10 pb-3">
-                                <div class="flex items-center justify-between">
+                            <div class="space-y-3 border-b border-subtle-theme pb-3">
+                                <div class="flex items-center justify-between flex-wrap gap-2">
                                     <div>
-                                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                        <h3 class="text-sm font-bold text-primary-theme flex items-center gap-2">
                                             <span>${filterTitle}</span>
                                         </h3>
-                                        <p class="text-[10px] text-slate-400 mt-0.5">Click on any device card below to inspect full metadata & dossier</p>
+                                        <p class="text-xs text-muted-theme mt-0.5">Click on any device card below to inspect full metadata & dossier</p>
                                     </div>
-                                    <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30 font-mono">
+                                    <span class="badge-status badge-accent text-xs">
                                         ${filterBadge}
                                     </span>
                                 </div>
@@ -278,57 +300,57 @@ export class DashboardView {
                                     <input type="text" id="dash-device-search-input" 
                                            placeholder="🔍 Search device by name, ID, hardware, role, address..." 
                                            value="${this.searchQuery}"
-                                           class="w-full bg-slate-950/90 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-all font-mono">
-                                    <svg class="w-4 h-4 absolute left-3 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                           class="input-theme w-full pl-9 pr-8 py-2 text-xs font-mono">
+                                    <svg class="w-4 h-4 absolute left-3 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                                     </svg>
                                     ${this.searchQuery ? `
-                                        <button id="btn-dash-clear-search" class="absolute right-2.5 text-slate-400 hover:text-white text-xs font-bold p-1">✕</button>
+                                        <button id="btn-dash-clear-search" class="absolute right-2.5 text-muted-theme hover:text-primary-theme text-xs font-bold p-1">✕</button>
                                     ` : ''}
                                 </div>
                             </div>
 
                             <!-- Devices Grid -->
                             ${displayList.length === 0 ? `
-                                <div class="py-12 text-center text-slate-500 text-xs italic space-y-1">
+                                <div class="py-12 text-center text-muted-theme text-xs italic space-y-1">
                                     <div>No devices found matching your search or location filter.</div>
-                                    ${this.searchQuery ? `<div class="text-[10px] text-sky-400 cursor-pointer underline" onclick="document.getElementById('dash-device-search-input').value=''; document.getElementById('dash-device-search-input').dispatchEvent(new Event('input'));">Clear search filter</div>` : ''}
+                                    ${this.searchQuery ? `<div class="text-xs text-sky-400 cursor-pointer underline mt-1" onclick="document.getElementById('dash-device-search-input').value=''; document.getElementById('dash-device-search-input').dispatchEvent(new Event('input'));">Clear search filter</div>` : ''}
                                 </div>
                             ` : `
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                                     ${displayList.map(dev => `
-                                        <div class="device-summary-card bg-slate-950/80 hover:bg-slate-900 border border-white/10 hover:border-sky-500/50 rounded-2xl p-3.5 space-y-3 transition-all cursor-pointer group shadow-md"
+                                        <div class="device-summary-card surface-theme hover:border-sky-500/50 rounded-2xl p-3.5 space-y-3 transition-all cursor-pointer group shadow-sm border"
                                              data-agent-id="${dev.agentId}">
                                             <!-- Top Row: Avatar + Name + Status -->
                                             <div class="flex items-center justify-between">
                                                 <div class="flex items-center gap-2.5 min-w-0">
                                                     <div class="relative shrink-0">
                                                         <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                                             class="w-10 h-10 rounded-full object-cover border-2 shadow bg-transparent"
+                                                             class="w-10 h-10 rounded-full object-cover border-2 shadow-sm"
                                                              style="border-color: ${dev.getThemeColor()};"
                                                              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
-                                                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
+                                                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-surface ${dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}"></span>
                                                     </div>
                                                     <div class="min-w-0">
-                                                        <h4 class="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate">${dev.name}</h4>
-                                                        <div class="text-[10px] text-slate-400 truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold">${dev.agentId}</span></div>
+                                                        <h4 class="text-xs font-bold text-primary-theme group-hover:text-sky-400 transition-colors truncate">${dev.name}</h4>
+                                                        <div class="text-[10px] text-secondary-theme truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold">${dev.agentId}</span></div>
                                                     </div>
                                                 </div>
 
                                                 <!-- Online / Offline Badge -->
-                                                <span class="text-[8px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${dev.isOnline ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-white/10'}">
+                                                <span class="badge-status ${dev.isOnline ? 'badge-success' : 'badge-danger'}">
                                                     ${dev.isOnline ? 'LIVE' : 'OFFLINE'}
                                                 </span>
                                             </div>
 
                                             <!-- Distance & Telemetry Row -->
-                                            <div class="flex items-center justify-between text-[10px] font-mono bg-black/40 rounded-xl px-2.5 py-1.5 border border-white/5">
+                                            <div class="flex items-center justify-between text-xs font-mono bg-card-subtle rounded-xl px-2.5 py-1.5 border border-subtle-theme">
                                                 <div class="flex items-center gap-1.5">
-                                                    <span class="${dev.isWithinSearchRadius ? 'text-sky-300' : 'text-amber-300'} font-bold">
+                                                    <span class="${dev.isWithinSearchRadius ? 'text-sky-400' : 'text-amber-500'} font-bold">
                                                         ${dev.isWithinSearchRadius ? '🎯' : '📡'} ${dev.getFormattedDistance()}
                                                     </span>
                                                 </div>
-                                                <div class="flex items-center gap-2 text-slate-400">
+                                                <div class="flex items-center gap-2 text-secondary-theme text-[11px]">
                                                     <span>🔋 ${dev.battery >= 0 ? `${dev.battery}%` : '--'}</span>
                                                     <span>•</span>
                                                     <span>${dev.getFormattedSpeed()}</span>
@@ -336,28 +358,28 @@ export class DashboardView {
                                             </div>
 
                                             <!-- Location & Timestamp Metadata -->
-                                            <div class="bg-black/30 rounded-xl p-2 space-y-1 border border-white/5">
-                                                <div class="flex items-center justify-between text-[8px] font-mono text-sky-400 font-bold border-b border-white/5 pb-1">
+                                            <div class="bg-card-subtle rounded-xl p-2 space-y-1 border border-subtle-theme">
+                                                <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-subtle-theme pb-1">
                                                     <span class="flex items-center gap-1">🕒 <span>${dev.getFormattedDateTime()}</span></span>
-                                                    <span class="text-slate-400 font-normal">${dev.getFormattedTimeDelta()}</span>
+                                                    <span class="text-secondary-theme font-normal">${dev.getFormattedTimeDelta()}</span>
                                                 </div>
-                                                <div class="text-[9px] text-slate-300 line-clamp-2 flex items-start gap-1 pt-0.5">
-                                                    <span class="text-slate-400">📍</span>
+                                                <div class="text-[11px] text-secondary-theme line-clamp-2 flex items-start gap-1 pt-0.5">
+                                                    <span class="text-muted-theme">📍</span>
                                                     <span class="truncate">${dev.address || 'No street address recorded'}</span>
                                                 </div>
                                             </div>
 
                                             <!-- Action Triggers -->
-                                            <div class="flex items-center gap-2 pt-1 border-t border-white/5">
-                                                <button class="btn-inspect-dossier flex-1 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-[10px] font-bold transition-all"
+                                            <div class="flex items-center gap-2 pt-1 border-t border-subtle-theme">
+                                                <button class="btn-inspect-dossier flex-1 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 text-xs font-bold transition-all"
                                                         data-agent-id="${dev.agentId}">
-                                                    📄 Metadata Details
+                                                    📄 Details
                                                 </button>
-                                                <button class="btn-poke-dash px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold transition-all"
+                                                <button class="btn-poke-dash px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 border border-amber-500/30 text-xs font-bold transition-all"
                                                         data-agent-id="${dev.agentId}" title="Send Telemetry Poke Signal">
                                                     🔊 Poke
                                                 </button>
-                                                <button class="btn-inspect-map px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all"
+                                                <button class="btn-inspect-map px-2.5 py-1.5 rounded-lg bg-card-subtle hover:bg-card-hover text-primary-theme text-xs font-bold border border-subtle-theme transition-all"
                                                         data-agent-id="${dev.agentId}" title="Focus on Live Map">
                                                     🗺️ Map
                                                 </button>
@@ -449,46 +471,30 @@ export class DashboardView {
                     })
                     .then(r => r.json())
                     .then(res => {
-                        if (window.log) window.log(`POKE_DISPATCH: Poked device [${agentId}] from Dashboard.`, "success");
-                        if (window.FeedbackDialog) window.FeedbackDialog.alert("🔊 Telemetry Poke Dispatched", `Poke signal transmitted to device node [${agentId}].`);
+                        if (window.log) window.log(`POKE_SUCCESS: Poke sent to [${agentId}]`, "success");
                     })
-                    .catch(err => alert(`Poke Failed: ${err.message}`));
+                    .catch(err => {
+                        if (window.log) window.log(`POKE_FAILED: ${err.message}`, "error");
+                    });
                 }
             });
         });
 
-        // 5. Entire Device Card Click -> Focus on Live Map
+        // 5. Direct Card Click -> Select Device & Focus Map
         document.querySelectorAll('.device-summary-card').forEach(card => {
-            card.addEventListener('click', () => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('button')) return;
                 const agentId = card.getAttribute('data-agent-id');
                 if (this.onNavigateMap) this.onNavigateMap(agentId);
             });
         });
 
-        // 6. Settings & Refresh Triggers
-        document.getElementById('btn-dash-settings')?.addEventListener('click', () => {
-            if (this.onOpenSettings) this.onOpenSettings();
-        });
-
-        document.getElementById('btn-dash-refresh')?.addEventListener('click', () => {
-            if (window.MatrixApp && window.MatrixApp.refreshNow) {
-                window.MatrixApp.refreshNow().then(() => {
-                    this.render(this.devices, this.settings);
-                });
-            }
-        });
-
-        document.getElementById('btn-dash-open-map')?.addEventListener('click', () => {
-            if (window.showLiveMap) window.showLiveMap();
-        });
-
-        // 7. Search Input Real-time Filtering
+        // 6. Search Bar Real-Time Filter
         const searchInput = document.getElementById('dash-device-search-input');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
                 this.searchQuery = e.target.value;
                 this.render(this.devices, this.settings);
-                // Retain input focus and caret position after re-render
                 const nextInput = document.getElementById('dash-device-search-input');
                 if (nextInput) {
                     nextInput.focus();
@@ -500,6 +506,26 @@ export class DashboardView {
         document.getElementById('btn-dash-clear-search')?.addEventListener('click', () => {
             this.searchQuery = "";
             this.render(this.devices, this.settings);
+        });
+
+        // 7. Settings Modal Trigger
+        document.getElementById('btn-dash-settings')?.addEventListener('click', () => {
+            if (this.onOpenSettings) this.onOpenSettings();
+        });
+
+        // 8. Refresh Fleet Trigger
+        document.getElementById('btn-dash-refresh')?.addEventListener('click', async () => {
+            if (window.MatrixApp && window.MatrixApp.refreshNow) {
+                await window.MatrixApp.refreshNow();
+            }
+            if (window.showDashboard) {
+                window.showDashboard();
+            }
+        });
+
+        // 9. Launch Live Map Button
+        document.getElementById('btn-dash-open-map')?.addEventListener('click', () => {
+            if (window.showLiveMap) window.showLiveMap();
         });
     }
 }

@@ -49,14 +49,20 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private String currentRoleFamily = "None";
     private String currentRoleFriend = "None";
     private android.widget.ImageView headerAvatar;
+    private android.widget.TextView gatewayTitle;
     private android.widget.LinearLayout dynamicTaggingContainer;
     private android.widget.LinearLayout formBox;
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (headerAvatar != null && isSelf) {
-            com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+        if (headerAvatar != null) {
+            if (isSelf) {
+                com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+            } else if (targetAgentId != null) {
+                String av = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, av);
+            }
         }
     }
 
@@ -108,7 +114,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         // 🚀 Premium Avatar (Double Size & Smart Fit)
         headerAvatar = new android.widget.ImageView(this);
-        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+        if (isSelf) {
+            com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
+        } else {
+            String initialAv = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, initialAv);
+        }
         headerAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
         ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
@@ -116,11 +127,15 @@ public class PersonDetailsActivity extends BaseActivityJava {
         headerAvatar.setBackground(ring);
         int iSize = UiArchitect.getUniversalAvatarSize(this);
         
-        // --- 🚀 AVATAR CLICK: Open Profile ---
+        // --- 🚀 AVATAR CLICK: Open Profile or Target Preview ---
         headerAvatar.setFocusable(true);
         headerAvatar.setClickable(true);
         headerAvatar.setOnClickListener(v -> {
-            startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+            if (isSelf) {
+                startActivity(new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.ProfileActivity.class));
+            } else {
+                showTargetAvatarPreviewDialog();
+            }
         });
         
         ownerTile.addView(headerAvatar, new LinearLayout.LayoutParams(iSize, iSize));
@@ -129,20 +144,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
         metaText.setOrientation(LinearLayout.VERTICAL);
         metaText.setPadding(getResponsivePaddingQuota(), 0, 0, 0);
         
-        TextView gatewayTitle = new TextView(this);
-        // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-        String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        String agentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
-        String fallbackOwner = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getOwnerAgentId(this);
-        java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : fallbackOwner);
-        
-        String ownerName = (myDos != null) ? myDos.get("owner_name") : null;
-        String fullName = (myDos != null) ? myDos.get("fullName") : null;
-        
+        gatewayTitle = new TextView(this);
         String nameStr = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
-                
-        gatewayTitle.setText("👤 Owner: " + nameStr);
+        if (isSelf) {
+            gatewayTitle.setText("👤 My Device: " + nameStr);
+        } else {
+            gatewayTitle.setText("📱 Target: " + (targetRoleTitle != null ? targetRoleTitle : "Peer") + " [" + (targetAgentId != null ? targetAgentId : "NODE") + "]");
+        }
         gatewayTitle.setTextColor(getTextColor());
         UiArchitect.applyText(this, gatewayTitle, "TEXT_LABEL");
         metaText.addView(gatewayTitle);
@@ -289,7 +297,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
         formBox.addView(dynamicTaggingContainer, dtLp);
 
         if (!isSelf) {
-            // Strict Read-Only Lockdown execution!
+            boolean isCurrentUserAdmin = false;
+            String myRole = prefs.getString("role_family", "").toUpperCase(java.util.Locale.ROOT);
+            if (myRole.contains("ADMIN") || myRole.contains("GUARDIAN") || myRole.contains("FATHER") || myRole.contains("MOTHER") || myRole.contains("PARENT")) {
+                isCurrentUserAdmin = true;
+            }
+
+            // Core personal demographic traits remain locked on peer device
             etFullName.setEnabled(false);
             etDob.setEnabled(false);
             etGender.setEnabled(false);
@@ -300,20 +314,33 @@ public class PersonDetailsActivity extends BaseActivityJava {
             etPincode.setEnabled(false);
             etOrgName.setEnabled(false);
             etDeptName.setEnabled(false);
-            etEmergencyNote.setEnabled(false);
-            etSafeZoneName.setEnabled(false);
-            etSafeZoneRadius.setEnabled(false);
+
+            // Allow Guardian / Admin to configure safety parameters and security ACLs remotely
+            etEmergencyNote.setEnabled(isCurrentUserAdmin);
+            etSafeZoneName.setEnabled(isCurrentUserAdmin);
+            etSafeZoneRadius.setEnabled(isCurrentUserAdmin);
             
-            cbAclLiveTracking.setEnabled(false);
-            cbAclHistoryAudit.setEnabled(false);
-            cbAclGeofence.setEnabled(false);
-            cbAclAdminStatus.setEnabled(false);
-            cbAclGhostOverride.setEnabled(false);
-            cbAclBiometrics.setEnabled(false);
-            cbGlobalCloudSync.setEnabled(false);
+            cbAclLiveTracking.setEnabled(isCurrentUserAdmin);
+            cbAclHistoryAudit.setEnabled(isCurrentUserAdmin);
+            cbAclGeofence.setEnabled(isCurrentUserAdmin);
+            cbAclAdminStatus.setEnabled(isCurrentUserAdmin);
+            cbAclGhostOverride.setEnabled(isCurrentUserAdmin);
+            cbAclBiometrics.setEnabled(false); // Hardware-bound to physical device
+            cbGlobalCloudSync.setEnabled(isCurrentUserAdmin);
             
             LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             btnLp.setMargins(0, 0, 0, formPad);
+
+            if (isCurrentUserAdmin) {
+                View adminSaveBtn = createIconButton("💾 SAVE TARGET CONFIGURATION", android.R.drawable.ic_menu_save, true, v -> {
+                    UiArchitect.showConfirmationDialog(this,
+                        "Save Target Configuration",
+                        "Update safety permissions and parameters for " + (etFullName != null ? etFullName.getText().toString() : "Target Node") + "?",
+                        "SAVE CONFIG", "CANCEL",
+                        () -> saveCitizenData(), null);
+                });
+                formBox.addView(adminSaveBtn, btnLp);
+            }
             View syncBtn = createIconButton("REQUEST DEVICE SYNC", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
                 com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
                     .child("force_cloud_sync_trigger")
@@ -522,6 +549,19 @@ public class PersonDetailsActivity extends BaseActivityJava {
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(nodeUid).child("role").setValue(effectiveRole);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                         }
+
+                        // 🚀 SSOT Closed-Loop: Update Canonical Device Node in Firebase RTDB
+                        String canonId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(PersonDetailsActivity.this).resolveAgentIdLocally(nodeUid);
+                        if (canonId == null) canonId = nodeUid;
+                        if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(canonId)) {
+                            java.util.Map<String, Object> profUpdate = new java.util.HashMap<>();
+                            profUpdate.put("role_family", famRole);
+                            profUpdate.put("role_friend", frRole);
+                            profUpdate.put("role_title", isFriendRole ? "Friends" : (famRole.equals("None") ? "Member" : famRole));
+                            profUpdate.put("updated_at", com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(System.currentTimeMillis()));
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(canonId).updateChildren(profUpdate);
+                        }
+
                         android.widget.Toast.makeText(this, "Network Array Re-Mapped! Role: " + selected, android.widget.Toast.LENGTH_SHORT).show();
                     }).show();
             });
@@ -761,7 +801,18 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, avId);
                 }
             }
-            etFullName.setText(data.get("fullName"));
+            String dName = data.get("fullName");
+            etFullName.setText(dName != null ? dName : "");
+            
+            // Dynamic Header Title Update
+            if (gatewayTitle != null && dName != null && !dName.isEmpty()) {
+                if (isSelf) {
+                    gatewayTitle.setText("👤 My Device: " + dName);
+                } else {
+                    gatewayTitle.setText("📱 Target: " + dName + " [" + (targetAgentId != null ? targetAgentId : "NODE") + "]");
+                }
+            }
+
             etPhone.setText(data.get("phone"));
             etEmailId.setText(data.get("email_id"));
             etDob.setText(data.get("dob"));
@@ -778,16 +829,16 @@ public class PersonDetailsActivity extends BaseActivityJava {
             if (data.containsKey("role_family") && data.get("role_family") != null) currentRoleFamily = data.get("role_family");
             if (data.containsKey("role_friend") && data.get("role_friend") != null) currentRoleFriend = data.get("role_friend");
             
-            // ACL MVVM Matrix Restore
-            cbAclLiveTracking.setChecked("GRANTED".equals(data.get("acl_live_tracking")));
-            cbAclHistoryAudit.setChecked("GRANTED".equals(data.get("acl_history_audit")));
-            cbAclGeofence.setChecked("GRANTED".equals(data.get("acl_geofence")));
-            cbAclAdminStatus.setChecked("GRANTED".equals(data.get("acl_admin")));
-            cbAclGhostOverride.setChecked("GRANTED".equals(data.get("acl_ghost_override")));
+            // ACL MVVM Matrix Restore (Defaults to TRUE unless explicitly DENIED or REVOKED)
+            cbAclLiveTracking.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_live_tracking")) && !"REVOKED".equalsIgnoreCase(data.get("acl_live_tracking")));
+            cbAclHistoryAudit.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_history_audit")) && !"REVOKED".equalsIgnoreCase(data.get("acl_history_audit")));
+            cbAclGeofence.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_geofence")) && !"REVOKED".equalsIgnoreCase(data.get("acl_geofence")));
+            cbAclAdminStatus.setChecked("GRANTED".equalsIgnoreCase(data.get("acl_admin")));
+            cbAclGhostOverride.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_ghost_override")) && !"REVOKED".equalsIgnoreCase(data.get("acl_ghost_override")));
             
-            cbAclBiometrics.setChecked("GRANTED".equals(data.get("acl_biometrics")));
+            cbAclBiometrics.setChecked("GRANTED".equalsIgnoreCase(data.get("acl_biometrics")));
             
-            cbGlobalCloudSync.setChecked(!"FALSE".equals(data.get("cloud_sync_enabled"))); // Defaults to TRUE if missing
+            cbGlobalCloudSync.setChecked(!"FALSE".equalsIgnoreCase(data.get("cloud_sync_enabled"))); // Defaults to TRUE if missing
             
             // 🚀 Trigger Country fetch after data Load to initialize dropdowns if needed
             viewModel.fetchCountriesList();
@@ -1189,6 +1240,55 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     });
             }
         });
+    }
+
+    private void showTargetAvatarPreviewDialog() {
+        String devAvatar = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+        String personName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : "Target Node";
+        
+        android.widget.LinearLayout dialogView = new android.widget.LinearLayout(this);
+        dialogView.setOrientation(android.widget.LinearLayout.VERTICAL);
+        dialogView.setGravity(Gravity.CENTER);
+        int pad = getResponsivePaddingQuota();
+        dialogView.setPadding(pad, pad, pad, pad);
+        
+        android.widget.ImageView preview = new android.widget.ImageView(this);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, preview, devAvatar);
+        int aSize = (int)(UiArchitect.getUniversalAvatarSize(this) * 1.5f);
+        dialogView.addView(preview, new android.widget.LinearLayout.LayoutParams(aSize, aSize));
+        
+        android.widget.TextView nameTv = new android.widget.TextView(this);
+        nameTv.setText(personName);
+        nameTv.setTextColor(getTextColor());
+        nameTv.setTextSize(18);
+        nameTv.setTypeface(null, Typeface.BOLD);
+        nameTv.setGravity(Gravity.CENTER);
+        nameTv.setPadding(0, 15, 0, 5);
+        dialogView.addView(nameTv);
+        
+        android.widget.TextView idTv = new android.widget.TextView(this);
+        idTv.setText("Agent ID: " + (targetAgentId != null ? targetAgentId : "Unknown") + " • Role: " + (targetRoleTitle != null ? targetRoleTitle : "Peer"));
+        idTv.setTextColor(getSecondaryTextColor());
+        idTv.setTextSize(12);
+        idTv.setGravity(Gravity.CENTER);
+        idTv.setPadding(0, 0, 0, 15);
+        dialogView.addView(idTv);
+        
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("👤 Target Device Dossier")
+            .setView(dialogView)
+            .setPositiveButton("📍 TRACK ON MAP", (d, w) -> {
+                android.content.Intent mapIntent = new android.content.Intent(this, com.jdroidx.jfindme.ui.map.MapActivity.class);
+                mapIntent.putExtra("TARGET_UID", targetAgentId);
+                mapIntent.putExtra("target_uid", targetAgentId);
+                startActivity(mapIntent);
+            })
+            .setNeutralButton("🔊 RING SIREN", (d, w) -> {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
+                Toast.makeText(this, "🔊 Acoustic Siren dispatched (30s)", Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("CLOSE", null)
+            .show();
     }
 
     @Override

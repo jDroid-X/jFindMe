@@ -597,20 +597,46 @@ app.post("/api/relationship/update", async (req, res) => {
     if (!agentId || !targetAgentId) return res.status(400).json({ error: "MISSING_AGENT_IDS" });
 
     try {
-        console.log(`[RELATIONSHIP] Binding ${agentId} -> ${targetAgentId} (${role})`);
-        const relRef = db.ref(`relationships/GRP_${agentId}_${targetAgentId}`);
-        await relRef.set({
-            group_id: `GRP_${agentId}_${targetAgentId}`,
-            created_by: agentId,
-            target_device: targetAgentId,
-            target_name: targetName || targetAgentId,
+        const cleanAgentId = await resolveCanonicalAgentId(agentId);
+        const cleanTargetId = await resolveCanonicalAgentId(targetAgentId);
+        console.log(`[RELATIONSHIP] Binding ${cleanAgentId} -> ${cleanTargetId} (${role || 'Member'})`);
+
+        // SSOT: Store bidirectional relationship directly inside canonical devices nodes
+        const relDataForward = {
+            target_device: cleanTargetId,
+            target_name: targetName || cleanTargetId,
             role_title: role || "Member",
             branch_type: type || "family",
             status: "ACTIVE",
-            timestamp: Date.now()
-        });
+            updated_at: Date.now()
+        };
+        const relDataBackward = {
+            target_device: cleanAgentId,
+            target_name: cleanAgentId,
+            role_title: "Member",
+            branch_type: type || "family",
+            status: "ACTIVE",
+            updated_at: Date.now()
+        };
 
-        res.json({ status: "SUCCESS", agentId, targetAgentId, role });
+        await Promise.all([
+            db.ref(`devices/${cleanAgentId}/relationships/${cleanTargetId}`).set(relDataForward),
+            db.ref(`devices/${cleanTargetId}/relationships/${cleanAgentId}`).set(relDataBackward)
+        ]);
+
+        // Also update role in target profile if relevant
+        if (role) {
+            const roleFamily = (type === "family" || !type) ? role : "None";
+            const roleFriend = (type === "friend") ? role : "None";
+            await db.ref(`devices/${cleanTargetId}/profile`).update({
+                role_title: role,
+                role_family: roleFamily,
+                role_friend: roleFriend
+            }).catch(() => null);
+        }
+
+        LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+        res.json({ status: "SUCCESS", agentId: cleanAgentId, targetAgentId: cleanTargetId, role });
     } catch (err) {
         console.error("[ERROR] /api/relationship/update failed:", err.message);
         res.status(500).json({ error: err.message });
