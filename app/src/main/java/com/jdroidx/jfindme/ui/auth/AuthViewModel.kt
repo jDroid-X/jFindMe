@@ -74,11 +74,9 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                 if (task.isSuccessful) {
                     val authUid = auth.currentUser?.uid ?: ""
                     
-                    // 🛡️ Forensic Bridge: Unify Hardware IDENTITY Protocol (V58.1 Standard)
-                    val rawId = android.provider.Settings.Secure.getString(getApplication<android.app.Application>().contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "AGENT_L7_NODE"
-                    val prefix = RegistryManager.getHardwarePrefix(getApplication())
-                    val hardwareUid = prefix + rawId.uppercase()
-                    val agentId = dbHelper.resolveForensicAgentId(hardwareUid)
+                    // 🛡️ Forensic Bridge: Unify Hardware IDENTITY Protocol via DeviceIdentityHelper
+                    val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+                    val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication())
 
                     // 🚀 Step 1: Cloud Meta-Data Recovery (Fetch existing profile markers)
                     FirebaseComm.devicesRef.child(agentId).child("profile").get().addOnCompleteListener { profileTask ->

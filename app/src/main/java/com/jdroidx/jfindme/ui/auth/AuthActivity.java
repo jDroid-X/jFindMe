@@ -378,13 +378,12 @@ public class AuthActivity extends BaseActivityJava {
     }
 
     private void performAutoSetup() {
-        String hwId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-        if (hwId == null || hwId.length() < 8) hwId = "AGENT_MASTER_NODE_L7";
-        String sig = (hwId.length() >= 8) ? (hwId.substring(0, 4) + hwId.substring(hwId.length() - 4)).toLowerCase() : hwId.toLowerCase();
+        String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String sig = canonicalAgentId.toLowerCase();
         
         String prefix = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getAgentPrefix(this);
         String domain = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getEnterpriseDomain(this);
-        if (etNick != null) etNick.setText(prefix + sig.toUpperCase());
+        if (etNick != null) etNick.setText(prefix + canonicalAgentId.toUpperCase());
         if (etEmail != null) etEmail.setText("node_" + sig + "@" + domain);
         if (etPass != null) etPass.setText("PassCode" + sig + "!");
         

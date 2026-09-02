@@ -215,12 +215,12 @@ public class SplashActivity extends Activity {
                     
                     // Save to SQLite
                     com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(SplashActivity.this);
-                    String androidId = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-                    if (androidId == null) androidId = "AGENT_L7_NODE";
-                    String hardwareUid = "HW_" + androidId.toUpperCase();
+                    String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(SplashActivity.this);
+                    String hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(SplashActivity.this);
+                    String androidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(SplashActivity.this);
                     
                     db.executeTieredHandshake(
-                        authUid, agentId, hardwareUid, androidId,
+                        authUid, canonicalAgentId, hardwareUid, androidId,
                         profileData, orgData, null, groupData, null, null, null,
                         0.0, 0.0, null, "ADMIN"
                     );
