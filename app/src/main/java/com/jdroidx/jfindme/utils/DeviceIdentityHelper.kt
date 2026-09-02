@@ -65,11 +65,16 @@ object DeviceIdentityHelper {
         val rawHw = getRawAndroidId(context).uppercase()
         val model = (android.os.Build.MODEL ?: "").uppercase()
         val brand = (android.os.Build.BRAND ?: "").uppercase()
+        val device = (android.os.Build.DEVICE ?: "").uppercase()
 
-        // 1. Canonical Device Roster Resolution (Hardware & Model Matching)
+        // 1. Canonical Device Roster Resolution (Strict Hardware & Model Matching)
         val canonicalId = when {
-            rawHw.contains("2B75") || model.contains("REDMI 5") || (brand.contains("XIAOMI") && model.contains("5")) -> "2B75E1E9"
-            rawHw.contains("BE5A") || model.contains("NOTE 7 PRO") || model.contains("REDMI NOTE 7 PRO") -> "BE5A234A"
+            // REDMI 5 (rosy): Must match "REDMI 5" or "ROSY" or rawHw "2B75", EXCLUDING "NOTE"
+            (rawHw.contains("2B75") || (model.contains("REDMI 5") && !model.contains("NOTE")) || device.contains("ROSY")) -> "2B75E1E9"
+
+            // REDMI N7 PRO / REDMI NOTE (violet / whyred / note 7 pro / note 5 pro):
+            (rawHw.contains("BE5A") || model.contains("NOTE 7 PRO") || model.contains("NOTE 5 PRO") || device.contains("VIOLET") || device.contains("WHYRED")) -> "BE5A234A"
+
             rawHw.contains("497F") || model.contains("RIDDHI") -> "497FA75E"
             rawHw.contains("96F0") || model.contains("PUSHPA") -> "96F0E18F"
             rawHw.contains("B110") || model.contains("INNOVANT") -> "B1108B1A"
