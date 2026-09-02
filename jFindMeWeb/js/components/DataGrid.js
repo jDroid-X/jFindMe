@@ -185,20 +185,32 @@ export class DataGrid {
                                         const isObject = val && typeof val === 'object';
                                         
                                         if (isObject) {
+                                            const keys = Object.keys(val);
+                                            const countLabel = Array.isArray(val) ? `[${keys.length} items]` : `{${keys.length} fields}`;
                                             return `
-                                                <td class="p-4 border-r border-white/5">
-                                                    <button 
-                                                        onclick="window.openJsonEditor('${state.navigation.activeNode}', '${row.id}', '${col}')"
-                                                        class="bg-accent/10 hover:bg-accent/20 text-accent text-[10px] px-2 py-0.5 rounded border border-accent/20 font-bold transition-all flex items-center gap-2"
-                                                    >
-                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                                        OBJECT_META
-                                                    </button>
+                                                <td class="p-3 border-r border-white/5 align-top">
+                                                    <details class="group/tree inline-block">
+                                                        <summary class="cursor-pointer select-none text-[10px] font-mono font-bold text-sky-400 hover:text-sky-300 inline-flex items-center gap-1.5 list-none bg-sky-950/40 px-2 py-0.5 rounded border border-sky-500/20">
+                                                            <span class="inline-block transition-transform group-open/tree:rotate-90 text-[10px] text-sky-400 font-black">&gt;</span>
+                                                            <span class="text-sky-300 font-mono text-[10px]">${countLabel}</span>
+                                                        </summary>
+                                                        <div class="mt-1.5 pl-2.5 border-l border-sky-500/30 space-y-1 bg-black/60 p-2 rounded max-h-48 overflow-y-auto custom-scrollbar">
+                                                            ${keys.map(k => {
+                                                                const subVal = val[k];
+                                                                const isSubObj = subVal && typeof subVal === 'object';
+                                                                const subDisplay = isSubObj ? (Array.isArray(subVal) ? `[${Object.keys(subVal).length} items]` : `{${Object.keys(subVal).length} fields}`) : subVal;
+                                                                return `<div class="text-[9px] font-mono text-slate-300 flex items-start gap-1">
+                                                                    <span class="text-sky-400 font-bold shrink-0">${k}:</span> 
+                                                                    <span class="text-white/90 break-all">${subDisplay !== undefined ? subDisplay : '--'}</span>
+                                                                </div>`;
+                                                            }).join('')}
+                                                        </div>
+                                                    </details>
                                                 </td>`;
                                         }
 
-                                        const displayVal = val !== undefined ? val : '--';
-                                        return `<td class="p-4 text-white/70 text-xs whitespace-nowrap border-r border-white/5">${displayVal}</td>`;
+                                        const displayVal = val !== undefined && val !== null ? String(val) : '--';
+                                        return `<td class="p-4 text-white/80 text-xs whitespace-nowrap border-r border-white/5 font-mono">${displayVal}</td>`;
                                     }).join('')}
                                 </tr>
                             `).join('') : `

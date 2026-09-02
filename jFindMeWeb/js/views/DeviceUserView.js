@@ -230,24 +230,26 @@ export class DeviceUserView {
                             <!-- Tree Branches (Dynamic Database Relationships Only) -->
                             <div class="pl-2 border-l-2 border-sky-500/30 space-y-2">
                                 <!-- Family Branch -->
-                                <div class="space-y-1">
-                                    <div class="text-[9px] font-bold text-amber-300 font-sans uppercase flex items-center gap-1">
+                                <details class="group/family space-y-1" open>
+                                    <summary class="cursor-pointer select-none text-[9px] font-bold text-amber-300 font-sans uppercase flex items-center gap-1.5 list-none hover:text-amber-200">
+                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[10px] text-amber-400 font-black">&gt;</span>
                                         <span>👨‍👩‍👧‍👦 Family Connections</span>
-                                    </div>
-                                    <div class="space-y-1 pl-1">
+                                    </summary>
+                                    <div class="space-y-1 pl-3.5 border-l border-amber-500/20 mt-1">
                                         ${this.renderTreeMembers(selectedDev, 'family')}
                                     </div>
-                                </div>
+                                </details>
 
                                 <!-- Friends Branch -->
-                                <div class="space-y-1">
-                                    <div class="text-[9px] font-bold text-emerald-300 font-sans uppercase flex items-center gap-1">
+                                <details class="group/friends space-y-1" open>
+                                    <summary class="cursor-pointer select-none text-[9px] font-bold text-emerald-300 font-sans uppercase flex items-center gap-1.5 list-none hover:text-emerald-200">
+                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[10px] text-emerald-400 font-black">&gt;</span>
                                         <span>🤝 Friends Connections</span>
-                                    </div>
-                                    <div class="space-y-1 pl-1">
+                                    </summary>
+                                    <div class="space-y-1 pl-3.5 border-l border-emerald-500/20 mt-1">
                                         ${this.renderTreeMembers(selectedDev, 'friends')}
                                     </div>
-                                </div>
+                                </details>
                             </div>
                         </div>
                     </div>
