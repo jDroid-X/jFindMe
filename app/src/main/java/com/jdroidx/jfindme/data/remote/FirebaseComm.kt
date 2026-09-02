@@ -269,14 +269,10 @@ object FirebaseComm {
                 "status" to status
             )
 
-            // 1. Write under /Version_Update/{agentId}/{version_name}
-            getVersionUpdateDetailRef(agentId, "V$versionName").setValue(metaMap)
-
-            // 2. Record device's latest install under /Version_Update/{agentId}/latest
-            getVersionUpdatesDeviceRef(agentId).child("latest").setValue(metaMap)
-
-            // 3. Only write to master root if explicitly publishing
+            // 1. Only write to master root if explicitly publishing
             if (status == "PUBLISHED_MASTER") {
+                getVersionUpdateDetailRef(agentId, "V$versionName").setValue(metaMap)
+                getVersionUpdatesDeviceRef(agentId).child("latest").setValue(metaMap)
                 versionUpdatesRef.child("master_release").setValue(metaMap)
                 versionUpdatesRef.child("latest").setValue(metaMap)
             }
