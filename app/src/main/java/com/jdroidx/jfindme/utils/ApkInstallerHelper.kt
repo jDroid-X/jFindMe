@@ -75,16 +75,17 @@ object ApkInstallerHelper {
 
         val folderId = extractDriveFolderId(trimmed)
         if (folderId != null) {
-            // If it's a Google Drive folder, try resolving embedded view or fallback to the mirrored GitHub binary
-            return "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/app-universal-release.apk"
+            // Direct Git LFS media CDN endpoint for seamless zero-redirect download
+            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/app-universal-release.apk"
         }
 
         // Handle GitHub tree/blob folder links
         if (trimmed.contains("github.com/jDroid-X/jButterfly/tree/main/jbutterfly") || 
             trimmed.contains("github.com/jDroid-X/jButterfly/blob/main/jbutterfly") ||
             trimmed.equals("https://github.com/jDroid-X/jButterfly", ignoreCase = true) ||
-            trimmed.equals("https://github.com/jDroid-X/jButterfly/", ignoreCase = true)) {
-            return "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/app-universal-release.apk"
+            trimmed.equals("https://github.com/jDroid-X/jButterfly/", ignoreCase = true) ||
+            trimmed.contains("github.com/jDroid-X/jButterfly/raw/main/jbutterfly/app-universal-release.apk")) {
+            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/app-universal-release.apk"
         }
         if (trimmed.contains("github.com") && trimmed.contains("/blob/")) {
             return trimmed.replace("/blob/", "/raw/")
