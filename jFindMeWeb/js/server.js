@@ -308,14 +308,46 @@ app.get("/api/safe-zones", async (req, res) => {
 
         // 1. Extract from Geofencing/{creatorId}/safe_zones (Primary SSOT for Geofencing & Connected Devices)
         for (const [rawCreatorId, creatorNode] of Object.entries(geofenceData)) {
-            if (!creatorNode || !creatorNode.safe_zones) continue;
+            if (!creatorNode) continue;
             const canonicalCreator = resolveCanonicalDevId(rawCreatorId);
-            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
+
+            // Handle both Geofencing/{creatorId}/safe_zones AND Geofencing/{zoneId} structures
+            const zonesMap = creatorNode.safe_zones || (creatorNode.zone_id ? { [rawCreatorId]: creatorNode } : creatorNode);
+
+            for (const [zoneId, zone] of Object.entries(zonesMap)) {
                 if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
                 seenZoneIds.add(zoneId);
 
                 const connMap = zone.connected_devices || {};
                 const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
+
+                // Extract nested devices node (GeoFencing -> SafeZone -> Devices -> Alert Notice)
+                if (zone.devices && typeof zone.devices === 'object') {
+                    Object.keys(zone.devices).forEach(dKey => {
+                        const canonicalDev = resolveCanonicalDevId(dKey);
+                        if (!connList.includes(canonicalDev)) connList.push(canonicalDev);
+                    });
+                }
+
+                // Extract nested alert_notices under devices
+                const historyObj = zone.history || {};
+                if (zone.devices && typeof zone.devices === 'object') {
+                    for (const [dKey, devNode] of Object.entries(zone.devices)) {
+                        if (devNode && devNode.alert_notices && typeof devNode.alert_notices === 'object') {
+                            for (const [aId, alertNotice] of Object.entries(devNode.alert_notices)) {
+                                historyObj[aId] = {
+                                    event_id: aId,
+                                    datetime: alertNotice.readable_time || (alertNotice.timestamp ? new Date(alertNotice.timestamp).toLocaleString() : "Recorded Alert"),
+                                    status: alertNotice.event_type || "TRANSITION",
+                                    target_name: devNode.device_name || alertNotice.target_name || dKey,
+                                    target_uid: resolveCanonicalDevId(alertNotice.agent_id || dKey),
+                                    zone_name: zone.zone_name || zone.name || "Safe Perimeter",
+                                    timestamp: alertNotice.timestamp || Date.now()
+                                };
+                            }
+                        }
+                    }
+                }
 
                 zonesList.push({
                     zoneId: zone.zone_id || zoneId,
@@ -325,11 +357,13 @@ app.get("/api/safe-zones", async (req, res) => {
                     radius: parseFloat(zone.radius || zone.radius_meters || 100),
                     address: zone.address || "",
                     assignedName: zone.assigned_targets || zone.assignedName || "",
-                    creatorId: canonicalCreator,
+                    creatorId: resolveCanonicalDevId(zone.creator_id || canonicalCreator),
+                    createdAt: zone.created_at || zone.timestamp || zone.createdAt || Date.now(),
                     isActive: zone.is_active !== false && zone.isZoneActive !== false,
                     alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
-                    history: zone.history || {},
-                    connectedDevices: connList
+                    history: historyObj,
+                    connectedDevices: connList,
+                    devicesTree: zone.devices || {}
                 });
             }
         }

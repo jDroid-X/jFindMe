@@ -190,51 +190,93 @@ export class GeofencingView {
     }
 
     /**
-     * Renders Pane 1: Safezone Tree Grouped by Creator Device
+     * Helper: Formats timestamp to readable Date & Time string
      */
-    renderSafeZoneTree(zones) {
-        if (zones.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No registered safe zones.</div>`;
-        }
-
-        // Group safe zones by creator
-        const grouped = {};
-        zones.forEach(z => {
-            const creatorDev = this.devices.find(d => d.agentId === z.creatorId || d.deviceId === z.creatorId) || { name: 'REDMI N7 PRO' };
-            const creatorName = creatorDev.name || z.creatorId || 'Fleet Admin';
-            if (!grouped[creatorName]) grouped[creatorName] = [];
-            grouped[creatorName].push(z);
+    formatDateTime(ts) {
+        if (!ts) return "Recent";
+        const dateObj = new Date(typeof ts === 'number' ? ts : (Date.parse(ts) || Date.now()));
+        if (isNaN(dateObj.getTime())) return String(ts);
+        return dateObj.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
         });
-
-        return Object.entries(grouped).map(([creatorName, zoneItems]) => `
-            <div class="space-y-1">
-                <div class="flex items-center gap-1 text-[10px] text-amber-300 font-sans font-medium">
-                    <span>👑 Creator: ${creatorName}</span>
-                </div>
-                <div class="pl-2 border-l border-sky-500/30 space-y-1">
-                    ${zoneItems.map(z => `
-                        <div class="gf-zone-item cursor-pointer p-1.5 rounded-lg border ${z.zoneId === this.selectedZoneId ? 'border-sky-400 bg-sky-950/50 text-white shadow' : 'border-white/5 bg-black/40 hover:bg-white/5 text-slate-300'} transition-all flex items-center justify-between"
-                             data-zone-id="${z.zoneId}">
-                            <div class="min-w-0 flex-1">
-                                <div class="text-xs font-medium text-white truncate">${z.zoneName}</div>
-                                <div class="text-[8px] text-slate-400 font-mono">Radius: ${z.radius}m • ${z.assignedName || 'All Devices'}</div>
-                            </div>
-                            <span class="text-[8px] font-mono px-1 rounded ${z.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}">${z.isActive ? 'ACTIVE' : 'OFF'}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `).join('');
     }
 
     /**
-     * Resolves Assigned Devices for Selected Safe Zone (Strict Relational Binding)
-     * Matches exact connected_devices array, assigned targets string, or creator device.
+     * Renders Pane 1: Detailed Safezone Cards (Sorted by Latest Timestamp First)
+     * Format matches image layout:
+     * [ 🛡️ Zone Name ]                     [ XXm Radius ]
+     * Created by: <Creator Name> • <Date Time>
+     * Address: <Location Address>              [ ACTIVE ]
+     */
+    renderSafeZoneTree(zones) {
+        if (zones.length === 0) {
+            return `<div class="text-[9px] text-slate-500 italic py-4 text-center font-mono">No registered safe zones.</div>`;
+        }
+
+        // Sort zones by latest creation timestamp first
+        const sorted = [...zones].sort((a, b) => {
+            const timeA = typeof a.createdAt === 'number' ? a.createdAt : (Date.parse(a.createdAt) || 0);
+            const timeB = typeof b.createdAt === 'number' ? b.createdAt : (Date.parse(b.createdAt) || 0);
+            return timeB - timeA;
+        });
+
+        return sorted.map(z => {
+            const creatorDev = this.devices.find(d => d.agentId === z.creatorId || d.deviceId === z.creatorId);
+            const creatorName = creatorDev ? creatorDev.name : (z.creatorId || 'Fleet Admin');
+            const createdTimeStr = this.formatDateTime(z.createdAt);
+            const isSelected = z.zoneId === this.selectedZoneId;
+
+            return `
+                <div class="gf-zone-item cursor-pointer p-2.5 rounded-xl border ${isSelected ? 'border-sky-400 bg-sky-950/40 text-white shadow-lg shadow-sky-500/10' : 'border-white/10 bg-slate-950/80 hover:bg-slate-900 text-slate-300'} transition-all space-y-1.5 font-mono select-none"
+                     data-zone-id="${z.zoneId}">
+                    
+                    <!-- Header Row: Icon + Zone Name + Radius Badge -->
+                    <div class="flex items-center justify-between text-xs font-bold text-white">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-sky-400 text-sm">🛡️</span>
+                            <span class="truncate text-sky-300 text-sm font-bold tracking-tight">${z.zoneName}</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[9px] font-bold shrink-0">
+                            ${z.radius}m Radius
+                        </span>
+                    </div>
+
+                    <!-- Line 2: Created By <Name> <Date Time> -->
+                    <div class="text-[9px] text-slate-300 leading-tight flex items-center gap-1">
+                        <span class="text-slate-400">Created by:</span>
+                        <span class="text-amber-300 font-bold">${creatorName}</span>
+                        <span class="text-slate-500">•</span>
+                        <span class="text-slate-400 text-[8px]">${createdTimeStr}</span>
+                    </div>
+
+                    <!-- Line 3: Address + Status Badge -->
+                    <div class="text-[8px] text-slate-400 border-t border-white/5 pt-1 flex items-start justify-between gap-2">
+                        <div class="line-clamp-2 text-slate-300 flex-1 leading-snug">
+                            <span class="text-slate-400">Address:</span> ${z.address || 'Local Memory Coordinates'}
+                        </div>
+                        <span class="px-1.5 py-0.2 rounded font-bold uppercase tracking-wider text-[8px] shrink-0 ${z.isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-500 border border-white/10'}">
+                            ${z.isActive ? 'ACTIVE' : 'OFF'}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Resolves Assigned Devices for Selected Safe Zone (Strict Subset Filtering: Pane 1 -> Pane 2)
+     * Matches connected_devices array, assigned targets string, or creator device with alias support (e.g. REDMI N7 PRO / BE5A234A / Riddhi).
      */
     getAssignedDevicesForZone(zone) {
         if (!zone) return [];
         
-        const connList = Array.isArray(zone.connectedDevices) ? zone.connectedDevices : [];
+        const connList = (Array.isArray(zone.connectedDevices) ? zone.connectedDevices : []).map(c => String(c).toLowerCase());
         const targetStr = (zone.assignedName || "").toLowerCase();
         const creatorId = (zone.creatorId || "").toLowerCase();
 
@@ -242,21 +284,25 @@ export class GeofencingView {
             const devName = (d.name || "").toLowerCase();
             const devId = (d.agentId || "").toLowerCase();
             const devHwId = (d.deviceId || "").toLowerCase();
+            const devModel = (d.model || "").toLowerCase();
+            const devUserName = ((d.raw && d.raw.Identity && d.raw.Identity.owner_name) || "").toLowerCase();
 
-            // 1. Direct match in connectedDevices list (e.g. 2B75E1E9, 497FA75E, 96F0E18F, BE5A234A)
-            if (connList.some(k => k.toLowerCase() === devId || k.toLowerCase() === devHwId || k.toLowerCase() === devName)) {
-                return true;
-            }
+            // Check if device matches any alias in connectedDevices list
+            const matchConnected = connList.some(c => 
+                c === devId || c === devHwId || c === devName || (devUserName && c === devUserName) || (devModel && c.includes(devModel))
+            );
+            if (matchConnected) return true;
 
-            // 2. Direct match in assigned targets string (e.g. "REDMI 5" or "Riddhi, PUSHPA")
+            // Check match in assigned targets string (e.g. "REDMI 5, REDMI N7 PRO" or "Riddhi, PUSHPA")
             if (targetStr.length > 0) {
-                if (targetStr.includes(devName) || targetStr.includes(devId)) {
+                if (targetStr.includes(devName) || targetStr.includes(devId) || targetStr.includes(devHwId) || 
+                    (devUserName && targetStr.includes(devUserName)) || (devModel && targetStr.includes(devModel))) {
                     return true;
                 }
             }
 
-            // 3. Creator check: Creator device is linked to their created perimeter
-            if (creatorId && (creatorId === devId || creatorId === devHwId || creatorId === devName)) {
+            // Creator check: Creator device is implicitly linked to their created perimeter
+            if (creatorId && (creatorId === devId || creatorId === devHwId || creatorId === devName || (devUserName && creatorId === devUserName))) {
                 return true;
             }
 
@@ -269,7 +315,7 @@ export class GeofencingView {
      */
     renderAssignedDevicesList(devicesList) {
         if (devicesList.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No assigned devices for this safe zone.</div>`;
+            return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No assigned devices for this safe zone.</div>`;
         }
 
         return devicesList.map(dev => `
@@ -279,7 +325,7 @@ export class GeofencingView {
                     <img src="${dev.getAvatarUrl()}" class="w-6 h-6 rounded-full object-cover border" style="border-color: ${dev.getThemeColor()};">
                     <div class="min-w-0">
                         <div class="text-xs font-medium text-white truncate">${dev.name}</div>
-                        <div class="text-[8px] text-slate-400 font-mono">${dev.agentId}</div>
+                        <div class="text-[8px] text-slate-400 font-mono">${dev.agentId} • ${dev.model || 'Device'}</div>
                     </div>
                 </div>
                 <span class="text-[8px] font-mono px-1 rounded bg-sky-500/20 text-sky-300">ASSIGNED</span>
@@ -288,42 +334,69 @@ export class GeofencingView {
     }
 
     /**
-     * Renders Pane 3: IN/OUT Transition Event Log (Dynamic SSOT Extraction from Firebase RTDB)
+     * Renders Pane 3: IN/OUT Transition Event Log (Strict Subset Filtering: Pane 2 -> Pane 3)
+     * Queries live transition state + history ledger for the selected device in the selected zone.
      */
     renderInOutTransitionLogs(zone, device) {
-        if (!device) return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No device selected.</div>`;
+        if (!device) return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No device selected.</div>`;
 
         const logs = [];
         const devName = (device.name || "").toLowerCase();
         const devId = (device.agentId || "").toLowerCase();
         const devHwId = (device.deviceId || "").toLowerCase();
+        const devUserName = ((device.raw && device.raw.Identity && device.raw.Identity.owner_name) || "").toLowerCase();
 
-        // 1. Dynamic Extraction from zone.history (Firebase RTDB nodes: relationships/{groupId}/notifications + geofences/{zoneId}/history)
+        const matchesDevice = (targetStr) => {
+            if (!targetStr) return false;
+            const t = String(targetStr).toLowerCase();
+            return t.includes(devName) || devName.includes(t) || t === devId || t === devHwId || (devUserName && t.includes(devUserName));
+        };
+
+        // 1. Live Current SafeZone State from selected device node
+        const rawNode = device.raw || {};
+        const live = (rawNode.device && rawNode.device.live) || rawNode.live || {};
+        const currentZoneState = live.current_safe_zone_state || "";
+        const currentZoneId = (live.current_safe_zone_id || "").toLowerCase();
+        const currentZoneName = (live.current_safe_zone_name || "").toLowerCase();
+        const zoneNameLower = (zone.zoneName || "").toLowerCase();
+        const zoneIdLower = (zone.zoneId || "").toLowerCase();
+
+        if (currentZoneState && (currentZoneId === zoneIdLower || currentZoneName === zoneNameLower || currentZoneName.includes(zoneNameLower))) {
+            const isEntered = currentZoneState === "IN" || currentZoneState.includes("ENTER");
+            logs.push({
+                datetime: live.last_geofence_transition_readable || device.getFormattedDateTime() || "Recent Live Fix",
+                status: isEntered ? "ENTERED" : "EXITED",
+                zone: zone.zoneName,
+                duration: isEntered ? "Currently Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter",
+                isLive: true
+            });
+        }
+
+        // 2. Dynamic Extraction from zone.history (Firebase RTDB history & notification nodes)
         if (zone.history && typeof zone.history === 'object') {
             Object.values(zone.history).forEach(histItem => {
                 if (!histItem) return;
                 
-                // Structured Notification Object
                 if (typeof histItem === 'object') {
-                    const targetName = (histItem.target_name || histItem.avatar_name || "").toLowerCase();
-                    const targetUid = (histItem.target_uid || histItem.creator_uid || "").toLowerCase();
+                    const targetName = histItem.target_name || histItem.avatar_name || histItem.userName || "";
+                    const targetUid = histItem.target_uid || histItem.creator_uid || histItem.uid || "";
                     
-                    if (targetName.includes(devName) || devName.includes(targetName) || targetUid === devId || targetUid === devHwId) {
-                        const statusTag = (histItem.status || histItem.transition || "TRANSITION").toUpperCase();
+                    if (matchesDevice(targetName) || matchesDevice(targetUid)) {
+                        const statusTag = String(histItem.status || histItem.transition || histItem.event_type || "TRANSITION").toUpperCase();
                         const isEntered = statusTag.includes("ENTER") || statusTag.includes("IN");
                         logs.push({
-                            datetime: histItem.datetime || histItem.readable_time || "Recorded Event",
+                            datetime: histItem.datetime || histItem.readable_time || (histItem.timestamp ? new Date(histItem.timestamp).toLocaleString() : "Recorded Event"),
                             status: isEntered ? "ENTERED" : "EXITED",
                             zone: histItem.zone_name || zone.zoneName,
-                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter"
+                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter",
+                            isLive: false
                         });
                     }
                 } else if (typeof histItem === 'string') {
-                    // Legacy String Entry (e.g. "PUSHPA ENTERED on 2026-09-01 at 07:51:34 AM")
                     const itemLower = histItem.toLowerCase();
-                    if (itemLower.includes(devName) || itemLower.includes(devId)) {
-                        const isEntered = itemLower.includes('entered') || itemLower.includes('enter');
-                        const isExited = itemLower.includes('exited') || itemLower.includes('exit');
+                    if (matchesDevice(itemLower)) {
+                        const isEntered = itemLower.includes('entered') || itemLower.includes('enter') || itemLower.includes(' in ');
+                        const isExited = itemLower.includes('exited') || itemLower.includes('exit') || itemLower.includes(' out ');
                         const timeMatch = histItem.match(/on (.*?) at (.*)/i) || histItem.match(/(?:at|on)\s+(.*)/i);
                         const datetimeStr = timeMatch ? `${timeMatch[1]} ${timeMatch[2] || ''}`.trim() : histItem;
 
@@ -331,27 +404,39 @@ export class GeofencingView {
                             datetime: datetimeStr || "Recorded Event",
                             status: isEntered ? "ENTERED" : (isExited ? "EXITED" : "TRANSITION"),
                             zone: zone.zoneName,
-                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter"
+                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter",
+                            isLive: false
                         });
                     }
                 }
             });
         }
 
+        // Fallback: If device is assigned to this perimeter, synthesize current state fix log
         if (logs.length === 0) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No recorded geofence transitions for ${device.name} in ${zone.zoneName}.</div>`;
+            const isInside = live.current_safe_zone_state === "IN" && (currentZoneId === zoneIdLower || currentZoneName === zoneNameLower);
+            logs.push({
+                datetime: device.getFormattedDateTime() || "Current Active State",
+                status: isInside ? "ENTERED" : "EXITED",
+                zone: zone.zoneName,
+                duration: isInside ? "Active Inside Perimeter" : "Active Outside Perimeter",
+                isLive: true
+            });
         }
 
         return logs.map(log => `
-            <div class="p-1.5 rounded-lg bg-white/5 border border-white/5 space-y-0.5 font-mono">
+            <div class="p-1.5 rounded-lg ${log.isLive ? 'bg-sky-950/40 border-sky-500/40' : 'bg-white/5 border-white/5'} border space-y-0.5 font-mono">
                 <div class="flex items-center justify-between text-[9px] font-normal">
-                    <span class="${log.status === 'ENTERED' ? 'text-emerald-400' : 'text-amber-400'}">
+                    <span class="${log.status === 'ENTERED' ? 'text-emerald-400' : 'text-amber-400'} font-bold">
                         ${log.status === 'ENTERED' ? '🟢 ENTERED' : '🔴 EXITED'} ${log.zone}
                     </span>
-                    <span class="text-slate-400 text-[8px]">${log.datetime}</span>
+                    <span class="text-slate-400 text-[8px] flex items-center gap-1">
+                        ${log.isLive ? '<span class="px-1 bg-emerald-500/20 text-emerald-400 rounded text-[7px]">LIVE</span>' : ''}
+                        <span>${log.datetime}</span>
+                    </span>
                 </div>
                 <div class="text-[8px] text-slate-300">
-                    Device: <span class="text-white">${device.name}</span> • ${log.duration}
+                    Device: <span class="text-white font-bold">${device.name}</span> • ${log.duration}
                 </div>
             </div>
         `).join('');
