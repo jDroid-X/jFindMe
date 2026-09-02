@@ -574,6 +574,26 @@ app.post("/api/relationship/update", async (req, res) => {
     }
 });
 
+// Device Telemetry Poke Endpoint
+app.post("/api/poke-device", async (req, res) => {
+    const { agentId, pokedBy } = req.body;
+    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
+
+    try {
+        console.log(`[POKE] Dispatched telemetry poke signal to device [${agentId}] from [${pokedBy || 'CONSOLE'}]`);
+        await db.ref(`devices/${agentId}/commands/poke`).set({
+            command: "POKE_LOCATION_UPDATE",
+            timestamp: Date.now(),
+            poked_by: pokedBy || "CONSOLE"
+        }).catch(() => null);
+
+        res.json({ status: "SUCCESS", agentId, timestamp: Date.now() });
+    } catch (err) {
+        console.error("[ERROR] /api/poke-device failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 🛡️ Helper: Resolves any raw ID (e.g. 28-char Auth UID) to canonical 8-character Agent ID
 async function resolveCanonicalAgentId(rawId) {
     if (!rawId) return rawId;
