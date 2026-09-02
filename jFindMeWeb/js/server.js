@@ -299,35 +299,22 @@ app.get("/api/safe-zones", async (req, res) => {
         const zonesList = [];
         const seenZoneIds = new Set();
 
-        // 1. Extract from relationships/{groupId}/geofences
-        for (const [groupId, groupNode] of Object.entries(relData)) {
-            if (!groupNode || !groupNode.geofences) continue;
-            for (const [zoneId, zone] of Object.entries(groupNode.geofences)) {
-                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
-                seenZoneIds.add(zoneId);
-                zonesList.push({
-                    zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
-                    latitude: parseFloat(zone.lat || zone.latitude || 0),
-                    longitude: parseFloat(zone.lng || zone.longitude || 0),
-                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
-                    address: zone.address || "",
-                    assignedName: zone.assignedName || zone.assigned_targets || "",
-                    creatorId: zone.created_by || zone.creator_uid || groupId,
-                    isActive: zone.isZoneActive !== false && zone.is_active !== false,
-                    alertsEnabled: Boolean(zone.alertsEnabled || zone.alerts_enabled),
-                    history: zone.history || {},
-                    connectedDevices: zone.connected_devices ? Object.keys(zone.connected_devices) : []
-                });
-            }
-        }
+        const resolveCanonicalDevId = (rawKey) => {
+            if (!rawKey) return rawKey;
+            return authToDevice[rawKey] || rawKey;
+        };
 
-        // 2. Extract from Geofencing/{creatorId}/safe_zones
-        for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
+        // 1. Extract from Geofencing/{creatorId}/safe_zones (Primary SSOT for Geofencing & Connected Devices)
+        for (const [rawCreatorId, creatorNode] of Object.entries(geofenceData)) {
             if (!creatorNode || !creatorNode.safe_zones) continue;
+            const canonicalCreator = resolveCanonicalDevId(rawCreatorId);
             for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
                 if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
                 seenZoneIds.add(zoneId);
+
+                const connMap = zone.connected_devices || {};
+                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
+
                 zonesList.push({
                     zoneId: zone.zone_id || zoneId,
                     zoneName: zone.zone_name || zone.name || "Safe Perimeter",
@@ -336,11 +323,38 @@ app.get("/api/safe-zones", async (req, res) => {
                     radius: parseFloat(zone.radius || zone.radius_meters || 100),
                     address: zone.address || "",
                     assignedName: zone.assigned_targets || zone.assignedName || "",
-                    creatorId: creatorId,
-                    isActive: zone.is_active !== false,
-                    alertsEnabled: Boolean(zone.alerts_enabled),
+                    creatorId: canonicalCreator,
+                    isActive: zone.is_active !== false && zone.isZoneActive !== false,
+                    alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
                     history: zone.history || {},
-                    connectedDevices: Object.keys(zone.connected_devices || {})
+                    connectedDevices: connList
+                });
+            }
+        }
+
+        // 2. Extract from relationships/{groupId}/geofences
+        for (const [groupId, groupNode] of Object.entries(relData)) {
+            if (!groupNode || !groupNode.geofences) continue;
+            for (const [zoneId, zone] of Object.entries(groupNode.geofences)) {
+                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
+                seenZoneIds.add(zoneId);
+
+                const connMap = zone.connected_devices || {};
+                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
+
+                zonesList.push({
+                    zoneId: zone.zone_id || zoneId,
+                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
+                    latitude: parseFloat(zone.lat || zone.latitude || 0),
+                    longitude: parseFloat(zone.lng || zone.longitude || 0),
+                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    address: zone.address || "",
+                    assignedName: zone.assignedName || zone.assigned_targets || "",
+                    creatorId: resolveCanonicalDevId(zone.created_by || zone.creator_uid || groupId),
+                    isActive: zone.isZoneActive !== false && zone.is_active !== false,
+                    alertsEnabled: Boolean(zone.alertsEnabled || zone.alerts_enabled),
+                    history: zone.history || {},
+                    connectedDevices: connList
                 });
             }
         }
@@ -351,6 +365,10 @@ app.get("/api/safe-zones", async (req, res) => {
             for (const [zoneId, zone] of Object.entries(deviceNode.safe_zones)) {
                 if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
                 seenZoneIds.add(zoneId);
+
+                const connMap = zone.connected_devices || {};
+                const connList = Object.keys(connMap).map(k => resolveCanonicalDevId(k)).filter((v, i, a) => a.indexOf(v) === i);
+
                 zonesList.push({
                     zoneId: zone.zone_id || zoneId,
                     zoneName: zone.zone_name || zone.name || "Safe Perimeter",
@@ -359,14 +377,39 @@ app.get("/api/safe-zones", async (req, res) => {
                     radius: parseFloat(zone.radius || zone.radius_meters || 100),
                     address: zone.address || "",
                     assignedName: zone.assigned_targets || zone.assignedName || "",
-                    creatorId: agentId,
+                    creatorId: resolveCanonicalDevId(agentId),
                     isActive: zone.is_active !== false,
                     alertsEnabled: Boolean(zone.alerts_enabled),
                     history: zone.history || {},
-                    connectedDevices: Object.keys(zone.connected_devices || {})
+                    connectedDevices: connList
                 });
             }
         }
+
+        // Enrich every safe zone history ledger with group notifications
+        zonesList.forEach(z => {
+            const zoneNameLower = (z.zoneName || "").toLowerCase();
+            const zoneIdLower = (z.zoneId || "").toLowerCase();
+            
+            for (const [groupId, groupNode] of Object.entries(relData)) {
+                if (!groupNode || !groupNode.notifications) continue;
+                for (const [nId, n] of Object.entries(groupNode.notifications)) {
+                    const notifZoneName = (n.zone_name || "").toLowerCase();
+                    const notifZoneId = (n.zone_id || "").toLowerCase();
+                    if (notifZoneName === zoneNameLower || notifZoneId === zoneIdLower || (zoneNameLower.length > 3 && notifZoneName.includes(zoneNameLower))) {
+                        z.history[nId] = {
+                            event_id: nId,
+                            datetime: n.datetime || n.readable_time || (n.timestamp ? new Date(n.timestamp).toLocaleString() : "Recorded Alert"),
+                            status: n.status || n.transition || n.event_type || "TRANSITION",
+                            target_name: n.avatar_name || n.target_name || "Device",
+                            target_uid: resolveCanonicalDevId(n.target_uid || n.creator_uid),
+                            zone_name: z.zoneName,
+                            timestamp: n.timestamp || Date.now()
+                        };
+                    }
+                }
+            }
+        });
 
         const validZones = zonesList.filter(z => z.latitude !== 0 && z.longitude !== 0);
         const zonePayload = { status: "SUCCESS", count: validZones.length, safeZones: validZones, timestamp: now };

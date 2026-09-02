@@ -220,19 +220,39 @@ export class GeofencingView {
     }
 
     /**
-     * Resolves Assigned Devices for Selected Safe Zone
+     * Resolves Assigned Devices for Selected Safe Zone (Strict Relational Binding)
+     * Matches exact connected_devices array, assigned targets string, or creator device.
      */
     getAssignedDevicesForZone(zone) {
         if (!zone) return [];
+        
+        const connList = Array.isArray(zone.connectedDevices) ? zone.connectedDevices : [];
         const targetStr = (zone.assignedName || "").toLowerCase();
+        const creatorId = (zone.creatorId || "").toLowerCase();
 
         return this.devices.filter(d => {
             const devName = (d.name || "").toLowerCase();
             const devId = (d.agentId || "").toLowerCase();
-            if (targetStr.includes(devName) || targetStr.includes(devId)) return true;
-            if (zone.connectedDevices && (zone.connectedDevices.includes(d.agentId) || zone.connectedDevices.includes(d.deviceId))) return true;
-            // Default to fleet assigned devices if explicitly targeted or REDMI N7 PRO
-            return targetStr.includes("redmi") || targetStr.includes("riddhi") || targetStr.includes("pushpa");
+            const devHwId = (d.deviceId || "").toLowerCase();
+
+            // 1. Direct match in connectedDevices list (e.g. 2B75E1E9, 497FA75E, 96F0E18F, BE5A234A)
+            if (connList.some(k => k.toLowerCase() === devId || k.toLowerCase() === devHwId || k.toLowerCase() === devName)) {
+                return true;
+            }
+
+            // 2. Direct match in assigned targets string (e.g. "REDMI 5" or "Riddhi, PUSHPA")
+            if (targetStr.length > 0) {
+                if (targetStr.includes(devName) || targetStr.includes(devId)) {
+                    return true;
+                }
+            }
+
+            // 3. Creator check: Creator device is linked to their created perimeter
+            if (creatorId && (creatorId === devId || creatorId === devHwId || creatorId === devName)) {
+                return true;
+            }
+
+            return false;
         });
     }
 
@@ -260,70 +280,69 @@ export class GeofencingView {
     }
 
     /**
-     * Renders Pane 3: IN/OUT Transition Event Log (Last 2+ Days Metadata)
+     * Renders Pane 3: IN/OUT Transition Event Log (Dynamic SSOT Extraction from Firebase RTDB)
      */
     renderInOutTransitionLogs(zone, device) {
         if (!device) return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No device selected.</div>`;
 
         const logs = [];
+        const devName = (device.name || "").toLowerCase();
+        const devId = (device.agentId || "").toLowerCase();
+        const devHwId = (device.deviceId || "").toLowerCase();
 
-        // 1. Dynamic Extraction from zone.history (Firebase RTDB node: relationships/{groupId}/geofences/{zoneId}/history)
+        // 1. Dynamic Extraction from zone.history (Firebase RTDB nodes: relationships/{groupId}/notifications + geofences/{zoneId}/history)
         if (zone.history && typeof zone.history === 'object') {
             Object.values(zone.history).forEach(histItem => {
-                const itemStr = typeof histItem === 'string' ? histItem : (histItem.text || histItem.message || JSON.stringify(histItem));
-                const devName = device.name.toLowerCase();
+                if (!histItem) return;
+                
+                // Structured Notification Object
+                if (typeof histItem === 'object') {
+                    const targetName = (histItem.target_name || histItem.avatar_name || "").toLowerCase();
+                    const targetUid = (histItem.target_uid || histItem.creator_uid || "").toLowerCase();
+                    
+                    if (targetName.includes(devName) || devName.includes(targetName) || targetUid === devId || targetUid === devHwId) {
+                        const statusTag = (histItem.status || histItem.transition || "TRANSITION").toUpperCase();
+                        const isEntered = statusTag.includes("ENTER") || statusTag.includes("IN");
+                        logs.push({
+                            datetime: histItem.datetime || histItem.readable_time || "Recorded Event",
+                            status: isEntered ? "ENTERED" : "EXITED",
+                            zone: histItem.zone_name || zone.zoneName,
+                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter"
+                        });
+                    }
+                } else if (typeof histItem === 'string') {
+                    // Legacy String Entry (e.g. "PUSHPA ENTERED on 2026-09-01 at 07:51:34 AM")
+                    const itemLower = histItem.toLowerCase();
+                    if (itemLower.includes(devName) || itemLower.includes(devId)) {
+                        const isEntered = itemLower.includes('entered') || itemLower.includes('enter');
+                        const isExited = itemLower.includes('exited') || itemLower.includes('exit');
+                        const timeMatch = histItem.match(/on (.*?) at (.*)/i) || histItem.match(/(?:at|on)\s+(.*)/i);
+                        const datetimeStr = timeMatch ? `${timeMatch[1]} ${timeMatch[2] || ''}`.trim() : histItem;
 
-                if (itemStr.toLowerCase().includes(devName) || itemStr.toLowerCase().includes(device.agentId.toLowerCase())) {
-                    const isEntered = itemStr.toLowerCase().includes('entered');
-                    const isExited = itemStr.toLowerCase().includes('exited');
-                    const statusTag = isEntered ? 'ENTERED' : (isExited ? 'EXITED' : 'TRANSITION');
-
-                    // Extract date & time portion
-                    const timeMatch = itemStr.match(/on (.*?) at (.*)/i) || itemStr.match(/(?:at|on)\s+(.*)/i);
-                    const datetimeStr = timeMatch ? `${timeMatch[1]} ${timeMatch[2] || ''}`.trim() : itemStr;
-
-                    logs.push({
-                        datetime: datetimeStr || "Recorded Event",
-                        status: statusTag,
-                        zone: zone.zoneName,
-                        duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter",
-                        rawText: itemStr
-                    });
+                        logs.push({
+                            datetime: datetimeStr || "Recorded Event",
+                            status: isEntered ? "ENTERED" : (isExited ? "EXITED" : "TRANSITION"),
+                            zone: zone.zoneName,
+                            duration: isEntered ? "Inside Safe Zone Perimeter" : "Outside Safe Zone Perimeter"
+                        });
+                    }
                 }
             });
         }
 
-        // 2. Default Fallback Array (Verified Firebase RTDB Group Audit Ledger)
         if (logs.length === 0) {
-            if (device.name.toLowerCase().includes('pushpa') || device.agentId === '96F0E18F') {
-                logs.push(
-                    { datetime: "02 Sep 2026, 07:54:31 AM", status: "ENTERED", zone: zone.zoneName, duration: "Inside Perimeter (Active)" },
-                    { datetime: "01 Sep 2026, 03:01:20 PM", status: "EXITED", zone: zone.zoneName, duration: "Outside Perimeter (16h 53m)" },
-                    { datetime: "01 Sep 2026, 02:58:18 PM", status: "ENTERED", zone: zone.zoneName, duration: "Inside Perimeter (3m 2s)" },
-                    { datetime: "01 Sep 2026, 02:51:21 PM", status: "EXITED", zone: zone.zoneName, duration: "Outside Perimeter (6m 57s)" },
-                    { datetime: "01 Sep 2026, 07:51:34 AM", status: "ENTERED", zone: zone.zoneName, duration: "Inside Perimeter (6h 59m)" },
-                    { datetime: "31 Aug 2026, 07:14:40 PM", status: "EXITED", zone: zone.zoneName, duration: "Outside Perimeter (12h 36m)" }
-                );
-            } else if (device.name.toLowerCase().includes('redmi 5') || device.agentId === '2B75E1E9') {
-                logs.push(
-                    { datetime: "31 Aug 2026, 02:37:43 PM", status: "EXITED", zone: zone.zoneName, duration: "Outside Perimeter" }
-                );
-            } else {
-                logs.push(
-                    { datetime: "31 Aug 2026, 02:21:24 PM", status: "EXITED", zone: zone.zoneName, duration: "Outside Perimeter" }
-                );
-            }
+            return `<div class="text-[9px] text-slate-500 italic py-2 text-center font-mono">No recorded geofence transitions for ${device.name} in ${zone.zoneName}.</div>`;
         }
 
         return logs.map(log => `
-            <div class="p-1.5 rounded-lg bg-white/5 border border-white/5 space-y-0.5">
+            <div class="p-1.5 rounded-lg bg-white/5 border border-white/5 space-y-0.5 font-mono">
                 <div class="flex items-center justify-between text-[9px] font-normal">
                     <span class="${log.status === 'ENTERED' ? 'text-emerald-400' : 'text-amber-400'}">
                         ${log.status === 'ENTERED' ? '🟢 ENTERED' : '🔴 EXITED'} ${log.zone}
                     </span>
                     <span class="text-slate-400 text-[8px]">${log.datetime}</span>
                 </div>
-                <div class="text-[8px] text-slate-300 font-mono">
+                <div class="text-[8px] text-slate-300">
                     Device: <span class="text-white">${device.name}</span> • ${log.duration}
                 </div>
             </div>
