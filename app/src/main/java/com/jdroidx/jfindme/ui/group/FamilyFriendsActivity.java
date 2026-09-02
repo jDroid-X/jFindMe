@@ -85,9 +85,22 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     private List<RosterNode> currentRoster = new ArrayList<>();
     private String searchFilter = "";
     private final Map<String, Boolean> collapsedBranches = new HashMap<>();
+    private String requestedFocusCategory = null;
+    private TextView tvHeaderTitle;
+    private TextView tvHeaderSubtitle;
 
     @Override
     protected View createLayout() {
+        Intent it = getIntent();
+        if (it != null) {
+            if (it.hasExtra("REQUESTED_TAB")) {
+                activeTab = it.getIntExtra("REQUESTED_TAB", TAB_FAMILY);
+            }
+            if (it.hasExtra("FOCUS_CATEGORY")) {
+                requestedFocusCategory = it.getStringExtra("FOCUS_CATEGORY");
+            }
+        }
+
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
         mainRoot.setBackgroundColor(getPrimaryColor());
@@ -104,18 +117,37 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         titleCluster.setOrientation(LinearLayout.VERTICAL);
         titleCluster.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        TextView title = new TextView(this);
-        title.setText("FAMILY & FRIENDS");
-        title.setTextColor(getGradientOverlayText());
-        UiArchitect.applyText(this, title, "TEXT_HEADER");
-        titleCluster.addView(title);
+        tvHeaderTitle = new TextView(this);
+        tvHeaderTitle.setText("FAMILY & FRIENDS");
+        tvHeaderTitle.setTextColor(getGradientOverlayText());
+        UiArchitect.applyText(this, tvHeaderTitle, "TEXT_HEADER");
+        titleCluster.addView(tvHeaderTitle);
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Relational Organization & Telemetry Mesh");
-        subtitle.setTextColor(getGradientOverlayText());
-        subtitle.setAlpha(0.85f);
-        UiArchitect.applyText(this, subtitle, "TEXT_SUB");
-        titleCluster.addView(subtitle);
+        tvHeaderSubtitle = new TextView(this);
+        tvHeaderSubtitle.setText("Relational Organization & Telemetry Mesh");
+        tvHeaderSubtitle.setTextColor(getGradientOverlayText());
+        tvHeaderSubtitle.setAlpha(0.85f);
+        UiArchitect.applyText(this, tvHeaderSubtitle, "TEXT_SUB");
+        titleCluster.addView(tvHeaderSubtitle);
+
+        // Apply contextual titles and initial branch focus
+        if ("CHILD".equalsIgnoreCase(requestedFocusCategory)) {
+            tvHeaderTitle.setText("CHILDREN DEVICES");
+            tvHeaderSubtitle.setText("Monitored Dependents & Kids Roster");
+            collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", true);
+            collapsedBranches.put("💍 SPOUSE ENTITIES", true);
+            collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", false);
+        } else if ("GUARDIAN".equalsIgnoreCase(requestedFocusCategory)) {
+            tvHeaderTitle.setText("GUARDIANS & FAMILY");
+            tvHeaderSubtitle.setText("Primary Caregivers & Family Roster");
+            collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", false);
+            collapsedBranches.put("💍 SPOUSE ENTITIES", true);
+            collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", true);
+        } else if ("FRIEND".equalsIgnoreCase(requestedFocusCategory) || activeTab == TAB_FRIENDS) {
+            tvHeaderTitle.setText("FRIENDS & PEER CIRCLES");
+            tvHeaderSubtitle.setText("Social Circles & Peer Network");
+            activeTab = TAB_FRIENDS;
+        }
 
         header.addView(titleCluster);
 

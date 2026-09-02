@@ -1951,6 +1951,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             }
             recenterCamera();
             drawerLayout.closeDrawers();
+            Toast.makeText(this, "📊 Command Telemetry Dashboard", Toast.LENGTH_SHORT).show();
         }));
 
         // 2. Live Map (Spatial Tracking)
@@ -1960,6 +1961,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             }
             recenterCamera();
             drawerLayout.closeDrawers();
+            Toast.makeText(this, "🛰️ Full-Screen Live Radar Active", Toast.LENGTH_SHORT).show();
         }));
 
         // 3. Location History (Chronological Trails)
@@ -1987,6 +1989,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         items.addView(createDrawerItem("Guardians / Family", "Primary Caregivers & Family Roster", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 0); 
+            i.putExtra("FOCUS_CATEGORY", "GUARDIAN");
             startActivity(i); 
             drawerLayout.closeDrawers(); 
         }));
@@ -1995,6 +1998,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         items.addView(createDrawerItem("Children Devices", "Kids & Monitored Dependents", com.jdroidx.jfindme.R.drawable.ic_people, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 0); 
+            i.putExtra("FOCUS_CATEGORY", "CHILD");
             startActivity(i); 
             drawerLayout.closeDrawers(); 
         }));
@@ -2003,6 +2007,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         items.addView(createDrawerItem("Friends & Peer Circles", "Social Circles & Peers", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 1); 
+            i.putExtra("FOCUS_CATEGORY", "FRIEND");
             startActivity(i); 
             drawerLayout.closeDrawers(); 
         }));
