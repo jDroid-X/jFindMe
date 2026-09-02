@@ -293,30 +293,59 @@ app.get("/api/safe-zones", async (req, res) => {
         const devicesSnap = await db.ref("devices").once("value").catch(() => null);
         const devicesData = (devicesSnap && devicesSnap.val()) || {};
 
+        const relSnap = await db.ref("relationships").once("value").catch(() => null);
+        const relData = (relSnap && relSnap.val()) || {};
+
         const zonesList = [];
         const seenZoneIds = new Set();
 
-        // 1. Extract from Geofencing/{creatorId}/safe_zones
-        for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
-            if (!creatorNode || !creatorNode.safe_zones) continue;
-            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
-                if (!zone || typeof zone !== "object") continue;
+        // 1. Extract from relationships/{groupId}/geofences
+        for (const [groupId, groupNode] of Object.entries(relData)) {
+            if (!groupNode || !groupNode.geofences) continue;
+            for (const [zoneId, zone] of Object.entries(groupNode.geofences)) {
+                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
                 seenZoneIds.add(zoneId);
                 zonesList.push({
                     zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || "Safe Perimeter",
+                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
                     latitude: parseFloat(zone.lat || zone.latitude || 0),
                     longitude: parseFloat(zone.lng || zone.longitude || 0),
                     radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    address: zone.address || "",
+                    assignedName: zone.assignedName || zone.assigned_targets || "",
+                    creatorId: zone.created_by || zone.creator_uid || groupId,
+                    isActive: zone.isZoneActive !== false && zone.is_active !== false,
+                    alertsEnabled: Boolean(zone.alertsEnabled || zone.alerts_enabled),
+                    history: zone.history || {},
+                    connectedDevices: zone.connected_devices ? Object.keys(zone.connected_devices) : []
+                });
+            }
+        }
+
+        // 2. Extract from Geofencing/{creatorId}/safe_zones
+        for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
+            if (!creatorNode || !creatorNode.safe_zones) continue;
+            for (const [zoneId, zone] of Object.entries(creatorNode.safe_zones)) {
+                if (!zone || typeof zone !== "object" || seenZoneIds.has(zoneId)) continue;
+                seenZoneIds.add(zoneId);
+                zonesList.push({
+                    zoneId: zone.zone_id || zoneId,
+                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
+                    latitude: parseFloat(zone.lat || zone.latitude || 0),
+                    longitude: parseFloat(zone.lng || zone.longitude || 0),
+                    radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    address: zone.address || "",
+                    assignedName: zone.assigned_targets || zone.assignedName || "",
+                    creatorId: creatorId,
                     isActive: zone.is_active !== false,
                     alertsEnabled: Boolean(zone.alerts_enabled),
-                    creatorId: creatorId,
+                    history: zone.history || {},
                     connectedDevices: Object.keys(zone.connected_devices || {})
                 });
             }
         }
 
-        // 2. Extract from devices/{agentId}/safe_zones
+        // 3. Extract from devices/{agentId}/safe_zones
         for (const [agentId, deviceNode] of Object.entries(devicesData)) {
             if (!deviceNode || !deviceNode.safe_zones) continue;
             for (const [zoneId, zone] of Object.entries(deviceNode.safe_zones)) {
@@ -324,13 +353,16 @@ app.get("/api/safe-zones", async (req, res) => {
                 seenZoneIds.add(zoneId);
                 zonesList.push({
                     zoneId: zone.zone_id || zoneId,
-                    zoneName: zone.zone_name || "Safe Perimeter",
+                    zoneName: zone.zone_name || zone.name || "Safe Perimeter",
                     latitude: parseFloat(zone.lat || zone.latitude || 0),
                     longitude: parseFloat(zone.lng || zone.longitude || 0),
                     radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                    address: zone.address || "",
+                    assignedName: zone.assigned_targets || zone.assignedName || "",
+                    creatorId: agentId,
                     isActive: zone.is_active !== false,
                     alertsEnabled: Boolean(zone.alerts_enabled),
-                    creatorId: agentId,
+                    history: zone.history || {},
                     connectedDevices: Object.keys(zone.connected_devices || {})
                 });
             }

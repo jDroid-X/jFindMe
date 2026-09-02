@@ -12,6 +12,7 @@ import { DeviceModel } from './models/DeviceModel.js';
 import { DeviceCardView } from './views/DeviceCardView.js';
 import { MapSettingsView } from './views/MapSettingsView.js';
 import { DeviceUserView } from './views/DeviceUserView.js';
+import { GeofencingView } from './views/GeofencingView.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -71,6 +72,15 @@ class App {
                 setTimeout(() => {
                     const dev = this.mapController?.deviceController.getDeviceById(agentId);
                     if (dev) this.mapController?.handleDeviceSelected(dev);
+                }, 400);
+            }
+        });
+
+        this.geofencingView = new GeofencingView('workspace-root', {
+            onNavigateMap: (zoneId) => {
+                window.showLiveMap();
+                setTimeout(() => {
+                    if (this.mapController) this.mapController.fitAll();
                 }, 400);
             }
         });
@@ -629,6 +639,31 @@ class App {
             } catch (err) {
                 console.error("[DEVICE_USER] Failed to load devices:", err);
                 this.deviceUserView.render([], agentId);
+            }
+        };
+
+        window.showGeofencing = async () => {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-geofencing')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Geofencing Perimeter Oversight Matrix";
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            try {
+                const [devRes, zoneRes] = await Promise.all([
+                    fetch('/api/devices-live').then(r => r.json()),
+                    fetch('/api/safe-zones').then(r => r.json())
+                ]);
+                const rawDevices = devRes.devices || devRes;
+                this.cachedDevices = rawDevices.map(d => new DeviceModel(d));
+                const safeZones = zoneRes.safeZones || [];
+                this.geofencingView.render(this.cachedDevices, safeZones);
+            } catch (err) {
+                console.error("[GEOFENCING] Failed to load data:", err);
+                this.geofencingView.render([], []);
             }
         };
 

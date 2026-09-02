@@ -234,15 +234,23 @@ export class LeafletMapView {
 
         safeZones.forEach(zone => {
             if (!zone.latitude || !zone.longitude) return;
-            L.circle([zone.latitude, zone.longitude], {
+            const color = (typeof zone.getColor === 'function') ? zone.getColor() : (zone.isActive !== false ? '#0284C7' : '#64748B');
+            const circle = L.circle([zone.latitude, zone.longitude], {
                 radius: zone.radius || 100,
-                color: zone.getColor(),
-                weight: 1.5,
-                opacity: 0.8,
-                fillColor: zone.getColor(),
-                fillOpacity: 0.08,
-                dashArray: '5, 5'
+                color: color,
+                weight: 2,
+                opacity: 0.85,
+                fillColor: color,
+                fillOpacity: 0.12,
+                dashArray: '6, 6'
             }).addTo(this.safeZonesLayerGroup);
+
+            const zName = zone.zoneName || zone.name || "Safe Zone";
+            circle.bindTooltip(`<b>🛡️ ${zName}</b><br>Radius: ${zone.radius || 100}m`, {
+                permanent: false,
+                direction: 'top',
+                className: 'glass-panel text-xs text-sky-400 font-sans'
+            });
         });
     }
 

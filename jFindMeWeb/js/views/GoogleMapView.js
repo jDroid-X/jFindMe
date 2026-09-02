@@ -263,15 +263,17 @@ export class GoogleMapView {
         safeZones.forEach(zone => {
             if (!zone.latitude || !zone.longitude) return;
 
+            const color = (typeof zone.getColor === 'function') ? zone.getColor() : (zone.isActive !== false ? '#0284C7' : '#64748B');
+
             const circle = new this.google.maps.Circle({
                 map: this.map,
                 center: { lat: zone.latitude, lng: zone.longitude },
                 radius: zone.radius || 100,
-                strokeColor: zone.getColor(),
-                strokeOpacity: 0.8,
-                strokeWeight: 1.5,
-                fillColor: zone.getColor(),
-                fillOpacity: 0.08
+                strokeColor: color,
+                strokeOpacity: 0.85,
+                strokeWeight: 2,
+                fillColor: color,
+                fillOpacity: 0.12
             });
 
             this.safeZoneCircles.push(circle);
