@@ -1,13 +1,9 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 
 /**
- * jFindMe Matrix - Device User 5-Pane Inspection & Management Workspace (OOPS Architecture)
- * Hierarchical Data Flow:
- * - Master Data: User Identity & Profile (Name, Avatar, Auth UID, Phone, Email, Role)
- * - Sub-Master Data: Hardware Device (Agent ID, Device ID, Model, IMEI, Battery)
- * - Sub-Master Relational: Family & Friends Connection Tree (Linked Nodes)
- * - Sub-Master Perimeters & Transactional Alerts: Assigned Safe Zones & Geofence Logs
- * - Transactional Data: Location History & Fixes
+ * jFindMe Matrix - Dynamic Device User Oversight Matrix (OOPS Architecture)
+ * Zero Hardcoded Data Policy:
+ * All Master, Sub-Master, and Transactional Data points are strictly derived from Firebase RTDB entity structures.
  */
 export class DeviceUserView {
     constructor(containerId, options = {}) {
@@ -18,11 +14,11 @@ export class DeviceUserView {
         this.devices = [];
         this.selectedAgentId = null;
         this.searchQuery = "";
-        this.isOrgExpanded = false; // Default collapsed for 50% compact height
+        this.isOrgExpanded = false;
     }
 
     /**
-     * Renders the 5-Pane Device User Interface
+     * Renders the 5-Pane Device User Interface dynamically without hardcoded fallbacks
      * @param {Array<import('../models/DeviceModel.js').DeviceModel>} devices 
      * @param {string} initialSelectedAgentId 
      */
@@ -51,14 +47,14 @@ export class DeviceUserView {
             });
         }
 
-        // Selected Device Object (Master & Sub-Master Source)
+        // Selected Device Object (Master Source)
         const selectedDev = this.devices.find(d => d.agentId === this.selectedAgentId) || this.devices[0];
         const rawNode = selectedDev ? (selectedDev.raw || {}) : {};
 
         container.innerHTML = `
             <div class="w-full min-h-screen bg-[#05070a] text-slate-200 select-none overflow-y-auto custom-scrollbar p-2 font-sans">
                 
-                <!-- COMPACT HEADER BAR (50% reduced padding) -->
+                <!-- COMPACT HEADER BAR -->
                 <div class="bg-slate-900/90 border border-white/10 rounded-xl px-3 py-1.5 mb-2 flex items-center justify-between shadow-lg">
                     <div class="flex items-center gap-2">
                         <div class="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 font-bold text-sm">
@@ -67,10 +63,10 @@ export class DeviceUserView {
                         <div>
                             <h2 class="text-xs font-black tracking-wide text-white uppercase flex items-center gap-2">
                                 <span>Device User Oversight Matrix</span>
-                                <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-mono border border-sky-500/30">MASTER-RELATIONAL</span>
+                                <span class="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-mono border border-sky-500/30">RELATIONAL SSOT</span>
                             </h2>
                             <p class="text-[9px] text-slate-400 font-mono">
-                                Selected Master Node: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
+                                Selected Device: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
                             </p>
                         </div>
                     </div>
@@ -84,20 +80,20 @@ export class DeviceUserView {
                     ` : ''}
                 </div>
 
-                <!-- 5-PANE MULTI-COLUMN WORKSPACE (Responsive & Page Scrollable) -->
+                <!-- 5-PANE MULTI-COLUMN WORKSPACE -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
                     
                     <!-- PANE 1: MASTER DEVICE ROSTER & SEARCH BAR -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 flex flex-col space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">1. Master Roster</span>
+                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">1. Device Roster</span>
                             <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">${filteredDevices.length}/${this.devices.length}</span>
                         </div>
 
                         <!-- Search Input -->
                         <div class="relative flex items-center">
                             <input type="text" id="du-search-input" 
-                                   placeholder="🔍 Search name, ID, role..." 
+                                   placeholder="🔍 Filter name, ID, role..." 
                                    value="${this.searchQuery}"
                                    class="w-full bg-slate-950 border border-white/10 rounded-lg pl-7 pr-6 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono">
                             <svg class="w-3 h-3 absolute left-2 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,7 +104,7 @@ export class DeviceUserView {
                             ` : ''}
                         </div>
 
-                        <!-- Device Roster List -->
+                        <!-- Roster List -->
                         <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[450px]">
                             ${filteredDevices.map(dev => `
                                 <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${dev.agentId === this.selectedAgentId ? 'border-sky-400 bg-sky-950/50 text-white shadow' : 'border-white/5 bg-black/40 hover:bg-white/5 text-slate-300'} transition-all flex items-center gap-2"
@@ -132,16 +128,16 @@ export class DeviceUserView {
                     </div>
 
                     ${selectedDev ? `
-                    <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA (EXPANDABLE ORG) -->
+                    <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
-                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Master Profile</span>
+                            <span class="text-xs font-black uppercase text-sky-400 tracking-wider">2. Profile Data</span>
                             <button id="btn-toggle-org" class="text-[9px] text-sky-400 hover:underline font-mono">
                                 ${this.isOrgExpanded ? 'Collapse Org [-]' : 'Expand Org [+]'}
                             </button>
                         </div>
 
-                        <!-- Master User Identity Card -->
+                        <!-- Master Profile Identity Card -->
                         <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 text-xs font-mono">
                             <div class="flex items-center gap-2 pb-1.5 border-b border-white/5">
                                 <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-9 h-9 rounded-full object-cover border shadow" style="border-color: ${selectedDev.getThemeColor()};">
@@ -153,21 +149,21 @@ export class DeviceUserView {
                             </div>
 
                             <div class="space-y-1 text-[10px]">
-                                <div class="flex justify-between"><span class="text-slate-400">Auth UID:</span> <span class="text-slate-200 font-bold truncate max-w-[110px]">${(rawNode.Identity && rawNode.Identity.auth_uid) || selectedDev.agentId}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Auth UID:</span> <span class="text-slate-200 font-bold truncate max-w-[110px]">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
                                 <div class="flex justify-between"><span class="text-slate-400">Hardware ID:</span> <span class="text-slate-200 font-bold truncate max-w-[110px]">${selectedDev.deviceId}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Device Model:</span> <span class="text-white">${selectedDev.model || 'Android'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Phone:</span> <span class="text-slate-200">${selectedDev.phone || 'N/A'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Email:</span> <span class="text-slate-200 truncate max-w-[110px]">${selectedDev.email || 'N/A'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Emergency Note:</span> <span class="text-amber-300 font-bold">${selectedDev.emergencyNote || 'None'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Device Model:</span> <span class="text-white">${selectedDev.model || 'Android Device'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Phone:</span> <span class="text-slate-200">${selectedDev.phone || 'Not Registered'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Email:</span> <span class="text-slate-200 truncate max-w-[110px]">${selectedDev.email || 'Not Registered'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Emergency:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-300 font-bold' : 'text-slate-500'}">${selectedDev.emergencyNote || 'None'}</span></div>
                             </div>
                         </div>
 
                         <!-- Sub-Master Expandable Org Data -->
                         <div id="org-data-panel" class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 text-xs font-mono ${this.isOrgExpanded ? 'block' : 'hidden'}">
-                            <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/5 pb-0.5">🏢 Org & ACL Metadata</div>
+                            <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-white/5 pb-0.5">🏢 Org Metadata & ACL</div>
                             <div class="space-y-0.5 text-[9px]">
-                                <div class="flex justify-between"><span class="text-slate-400">Organization:</span> <span class="text-white">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Matrix'}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Department:</span> <span class="text-white">${selectedDev.department || 'Fleet Ops'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Organization:</span> <span class="text-white">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Department:</span> <span class="text-white">${selectedDev.department || 'General'}</span></div>
                                 <div class="flex justify-between"><span class="text-slate-400">Role Title:</span> <span class="text-white">${selectedDev.role}</span></div>
                                 <div class="pt-0.5 text-[8px] text-slate-400 uppercase font-sans font-bold">ACL Grants:</div>
                                 <div class="grid grid-cols-2 gap-1 text-[8px]">
@@ -180,14 +176,14 @@ export class DeviceUserView {
                         </div>
                     </div>
 
-                    <!-- PANE 3: SUB-MASTER RELATIONAL TREE VIEW (INTER-RELATIONSHIP FILTERING) -->
+                    <!-- PANE 3: CONNECTIONS TREE (FAMILY & FRIENDS) -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">3. Connections Tree</span>
                             <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">TREE VIEW</span>
                         </div>
 
-                        <!-- Connection Tree Container -->
+                        <!-- Tree Container -->
                         <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-2 min-h-[250px] font-mono">
                             <!-- Root Selected Device Node -->
                             <div class="flex items-center gap-1.5 p-1.5 rounded-lg bg-sky-950/70 border border-sky-500/40 text-white">
@@ -198,7 +194,7 @@ export class DeviceUserView {
                                 </div>
                             </div>
 
-                            <!-- Tree Branches with Bidirectional Filtering -->
+                            <!-- Tree Branches (Dynamic Database Relationships Only) -->
                             <div class="pl-2 border-l-2 border-sky-500/30 space-y-2">
                                 <!-- Family Branch -->
                                 <div class="space-y-1">
@@ -223,41 +219,53 @@ export class DeviceUserView {
                         </div>
                     </div>
 
-                    <!-- PANE 4: SUB-MASTER SAFEZONES & TRANSACTIONAL ALERTS -->
+                    <!-- PANE 4: SAFEZONES (SECTION 1: CREATED | SECTION 2: ASSIGNED) & NOTIFICATIONS -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">${selectedDev.safeZonesCount} Zones</span>
+                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono font-bold">PERIMETERS</span>
                         </div>
 
                         <div class="space-y-2">
-                            <!-- Assigned Safe Zones -->
+                            <!-- Section 1: Created Safe Zones -->
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans">Assigned Perimeters</div>
-                                <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
-                                    ${this.renderSafeZoneItems(selectedDev, rawNode)}
+                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between">
+                                    <span>Section 1: Created Safe Zones</span>
+                                </div>
+                                <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
+                                    ${this.renderCreatedSafeZones(selectedDev, rawNode)}
                                 </div>
                             </div>
 
-                            <!-- Transactional Geofence Notification History -->
+                            <!-- Section 2: Assigned Safe Zones -->
                             <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
-                                <div class="text-[9px] font-bold text-amber-400 uppercase font-sans">Geofence Event Audit</div>
-                                <div class="space-y-1 text-[8px] font-mono max-h-[160px] overflow-y-auto custom-scrollbar">
+                                <div class="text-[9px] font-bold text-amber-400 uppercase font-sans flex items-center justify-between">
+                                    <span>Section 2: Assigned Safe Zones</span>
+                                </div>
+                                <div class="space-y-1 max-h-[110px] overflow-y-auto custom-scrollbar">
+                                    ${this.renderAssignedSafeZones(selectedDev, rawNode)}
+                                </div>
+                            </div>
+
+                            <!-- Transactional Geofence Notification Log -->
+                            <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1">
+                                <div class="text-[9px] font-bold text-slate-300 uppercase font-sans">Geofence Event Log</div>
+                                <div class="space-y-1 text-[8px] font-mono max-h-[120px] overflow-y-auto custom-scrollbar">
                                     ${this.renderNotificationItems(selectedDev, rawNode)}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- PANE 5: TRANSACTIONAL LOCATION LOG -->
+                    <!-- PANE 5: TRANSACTIONAL LOCATION FIX LOG -->
                     <div class="bg-slate-900/90 rounded-xl border border-white/10 p-2 space-y-2 shadow-md">
                         <div class="flex items-center justify-between border-b border-white/10 pb-1">
                             <span class="text-xs font-black uppercase text-sky-400 tracking-wider">5. Spatial Fix Log</span>
-                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">TRANSACTIONAL</span>
+                            <span class="px-1.5 py-0.2 rounded bg-white/10 text-[9px] font-mono">LOCATION</span>
                         </div>
 
                         <div class="bg-black/50 p-2 rounded-lg border border-white/5 space-y-1.5 min-h-[300px]">
-                            <div class="text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-white/5 pb-0.5">Recorded Fixes & Telemetry</div>
+                            <div class="text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-white/5 pb-0.5">Recorded Location Fixes</div>
                             <div class="space-y-1.5 max-h-[420px] overflow-y-auto custom-scrollbar text-xs font-mono">
                                 ${this.renderLocationLogItems(selectedDev, rawNode)}
                             </div>
@@ -274,34 +282,25 @@ export class DeviceUserView {
     }
 
     /**
-     * Renders Tree Members with Bidirectional Click Filtering
+     * Renders Tree Members (NO HARDCODED MOCKS)
      */
     renderTreeMembers(device, type) {
         const rawNode = device.raw || {};
         const relsMap = rawNode.relationships || {};
         const relEntries = Object.entries(relsMap);
 
-        // Filter relationships by type
-        let matchedNodes = relEntries.filter(([k, v]) => {
+        // Strictly filter relationship entries by type from database
+        const matchedNodes = relEntries.filter(([k, v]) => {
             const roleStr = (v.role || "").toLowerCase();
             return type === 'family' ? (roleStr.includes('spouse') || roleStr.includes('child') || roleStr.includes('parent') || roleStr.includes('family')) : roleStr.includes('friend');
         });
 
-        // Fallback: search overall fleet for matching devices if raw relationships map is empty
+        // Zero hardcoded mock fallback!
         if (matchedNodes.length === 0) {
-            const fleetPeers = this.devices.filter(d => d.agentId !== device.agentId);
-            if (type === 'family') {
-                matchedNodes = fleetPeers.filter(d => d.roleFamily !== 'None').map(d => [d.agentId, { name: d.name, role: d.roleFamily }]);
-            } else {
-                matchedNodes = fleetPeers.filter(d => d.roleFriend !== 'None').map(d => [d.agentId, { name: d.name, role: d.roleFriend }]);
-            }
+            return `<div class="text-[9px] text-slate-500 italic py-0.5">No linked ${type} connections.</div>`;
         }
 
-        if (matchedNodes.length === 0) {
-            return `<div class="text-[8px] text-slate-500 italic">No registered ${type} links</div>`;
-        }
-
-        return matchedNodes.slice(0, 4).map(([agentId, data]) => {
+        return matchedNodes.map(([agentId, data]) => {
             const peerDev = this.devices.find(d => d.agentId === agentId || d.deviceId === agentId || d.name === data.name);
             const peerName = data.name || (peerDev ? peerDev.name : agentId);
             const peerAvatar = peerDev ? peerDev.getAvatarUrl() : `data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>`;
@@ -321,36 +320,30 @@ export class DeviceUserView {
     }
 
     /**
-     * Renders Safe Zone Items from Sub-Master Node Data
+     * Renders Section 1: Created Safe Zones (Safe zones created BY selected device)
      */
-    renderSafeZoneItems(device, rawNode) {
-        const zonesMap = rawNode.safe_zones || rawNode.Safehouse || {};
-        const zoneEntries = Object.entries(zonesMap);
+    renderCreatedSafeZones(device, rawNode) {
+        const zonesMap = rawNode.safe_zones || rawNode.created_safe_zones || {};
+        const createdEntries = Object.entries(zonesMap).filter(([id, z]) => {
+            const creator = z.creator_uid || z.created_by || z.changed_by;
+            return !creator || creator === device.agentId || creator === device.deviceId;
+        });
 
-        if (zoneEntries.length === 0) {
-            return `
-                <div class="p-1.5 rounded bg-white/5 border border-white/5 text-[9px] space-y-0.5">
-                    <div class="flex items-center justify-between font-bold text-white">
-                        <span>Vibgyor Safe Zone</span>
-                        <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[8px]">ACTIVE</span>
-                    </div>
-                    <div class="text-[8px] text-slate-400 font-mono">Radius: 100m • Lat: 18.5592° N, Lng: 73.8843° E</div>
-                </div>
-            `;
+        if (createdEntries.length === 0) {
+            return `<div class="text-[9px] text-slate-500 italic py-0.5">No created safe zones.</div>`;
         }
 
-        return zoneEntries.map(([id, z]) => {
+        return createdEntries.map(([id, z]) => {
             const zName = z.zone_name || z.name || id;
             const zRadius = z.radius || 100;
-            const zLat = (z.lat || z.latitude || 0).toFixed(4);
-            const zLng = (z.lng || z.longitude || 0).toFixed(4);
-            const stateTag = z.current_state || "ACTIVE";
+            const zLat = z.lat ? parseFloat(z.lat).toFixed(4) : "0.0000";
+            const zLng = z.lng ? parseFloat(z.lng).toFixed(4) : "0.0000";
 
             return `
                 <div class="p-1.5 rounded bg-sky-950/30 border border-sky-500/20 text-[9px] space-y-0.5">
                     <div class="flex items-center justify-between font-bold text-white">
                         <span class="truncate">${zName}</span>
-                        <span class="px-1 py-0.2 rounded ${stateTag === 'OUT' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400'} text-[8px] font-bold">${stateTag}</span>
+                        <span class="px-1 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[8px] font-bold">CREATED</span>
                     </div>
                     <div class="text-[8px] text-slate-400 font-mono">Radius: ${zRadius}m • ${zLat}°, ${zLng}°</div>
                 </div>
@@ -359,31 +352,66 @@ export class DeviceUserView {
     }
 
     /**
-     * Renders Geofence Notification Items from Transactional Data
+     * Renders Section 2: Assigned Safe Zones (Safe zones assigned TO selected device)
+     */
+    renderAssignedSafeZones(device, rawNode) {
+        const zonesMap = rawNode.safe_zones || rawNode.assigned_safe_zones || {};
+        const assignedEntries = Object.entries(zonesMap).filter(([id, z]) => {
+            const targets = z.assigned_targets || z.target_uids || "";
+            return targets.includes(device.agentId) || targets.includes(device.deviceId) || targets === "ALL" || targets === "";
+        });
+
+        if (assignedEntries.length === 0) {
+            return `<div class="text-[9px] text-slate-500 italic py-0.5">No assigned safe zones.</div>`;
+        }
+
+        return assignedEntries.map(([id, z]) => {
+            const zName = z.zone_name || z.name || id;
+            const zRadius = z.radius || 100;
+            const stateTag = z.current_state || "ACTIVE";
+
+            return `
+                <div class="p-1.5 rounded bg-amber-950/30 border border-amber-500/20 text-[9px] space-y-0.5">
+                    <div class="flex items-center justify-between font-bold text-white">
+                        <span class="truncate">${zName}</span>
+                        <span class="px-1 py-0.2 rounded ${stateTag === 'OUT' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-400'} text-[8px] font-bold">${stateTag}</span>
+                    </div>
+                    <div class="text-[8px] text-slate-400 font-mono">Radius: ${zRadius}m</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Renders Geofence Notification Log (NO HARDCODED MOCKS)
      */
     renderNotificationItems(device, rawNode) {
         const live = (rawNode.device && rawNode.device.live) || rawNode.live || {};
-        const lastTransState = live.current_safe_zone_state || "OUT";
-        const lastTransZone = live.current_safe_zone_name || "Vibgyor Zone";
-        const lastTransTime = live.last_geofence_transition_readable || device.getFormattedLastSeen();
+        const lastTransState = live.current_safe_zone_state;
+        const lastTransZone = live.current_safe_zone_name;
+        const lastTransTime = live.last_geofence_transition_readable;
+
+        if (!lastTransState || !lastTransZone) {
+            return `<div class="text-[9px] text-slate-500 italic py-0.5">No geofence events recorded.</div>`;
+        }
 
         return `
             <div class="p-1.5 rounded bg-white/5 border border-white/5 space-y-0.5">
                 <div class="flex items-center justify-between font-bold ${lastTransState === 'IN' ? 'text-emerald-400' : 'text-amber-400'}">
                     <span>${lastTransState === 'IN' ? '🟢 ENTERED' : '🔴 EXITED'} ${lastTransZone}</span>
-                    <span class="text-[8px] text-slate-400">${lastTransTime}</span>
+                    <span class="text-[8px] text-slate-400">${lastTransTime || 'Recent'}</span>
                 </div>
-                <div class="text-slate-300 text-[8px]">Device ${device.name} transition logged: ${lastTransState} perimeter.</div>
+                <div class="text-slate-300 text-[8px]">Device transition logged: ${lastTransState} perimeter.</div>
             </div>
         `;
     }
 
     /**
-     * Renders Location History Items from Transactional Data
+     * Renders Location History Items (NO HARDCODED MOCKS)
      */
     renderLocationLogItems(device, rawNode) {
         if (!device.hasValidLocation) {
-            return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No GPS coordinates registered.</div>`;
+            return `<div class="text-[9px] text-slate-500 italic py-2 text-center">No location history recorded.</div>`;
         }
 
         return `
@@ -393,7 +421,7 @@ export class DeviceUserView {
                     <span class="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[8px]">LIVE FIX</span>
                 </div>
                 <div class="text-white text-xs font-bold">${device.getFormattedCoords()}</div>
-                <div class="text-[9px] text-slate-200 leading-snug">📍 ${device.address || 'Environ 2 Block-A, Tingre Nagar, Pune, Maharashtra 411015'}</div>
+                <div class="text-[9px] text-slate-200 leading-snug">📍 ${device.address || 'Street address not reverse-geocoded.'}</div>
                 <div class="flex items-center justify-between text-[8px] text-slate-400 pt-0.5 border-t border-white/5">
                     <span>Speed: ${device.getFormattedSpeed()}</span>
                     <span>Heading: ${Math.round(device.bearing || 0)}°</span>
@@ -403,10 +431,10 @@ export class DeviceUserView {
     }
 
     /**
-     * Event Binders for Higher-to-Lower and Lower-to-Higher Bidirectional Filtering
+     * Event Binders for Bidirectional Inter-relationship Filtering
      */
     bindEvents() {
-        // 1. Pane 1: Device Selection Click Handler
+        // 1. Roster Click Handler
         document.querySelectorAll('.du-device-item').forEach(el => {
             el.addEventListener('click', () => {
                 const agentId = el.getAttribute('data-agent-id');
@@ -415,7 +443,7 @@ export class DeviceUserView {
             });
         });
 
-        // 2. Pane 3: Tree View Node Bidirectional Inter-relationship Click Handler (Lower to Higher Filter)
+        // 2. Tree Node Click Handler
         document.querySelectorAll('.du-tree-node').forEach(el => {
             el.addEventListener('click', () => {
                 const targetAgentId = el.getAttribute('data-target-agent-id');
