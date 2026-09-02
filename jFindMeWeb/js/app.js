@@ -13,6 +13,8 @@ import { DeviceCardView } from './views/DeviceCardView.js';
 import { MapSettingsView } from './views/MapSettingsView.js';
 import { DeviceUserView } from './views/DeviceUserView.js';
 import { GeofencingView } from './views/GeofencingView.js';
+import { ThemeManager } from './core/ThemeManager.js';
+import { FeedbackDialog } from './components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -85,6 +87,11 @@ class App {
             }
         });
         
+        // Theme & Modal Dialog Systems
+        ThemeManager.init();
+        window.toggleTheme = () => ThemeManager.toggleTheme();
+        window.FeedbackDialog = FeedbackDialog;
+
         // Global Logging Engine (Descending Order: Latest First)
         window.log = (msg, type = 'system') => {
             const terminal = document.getElementById('terminal');
