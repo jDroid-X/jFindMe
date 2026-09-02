@@ -442,6 +442,12 @@ app.post("/api/save-safe-zone", async (req, res) => {
             alert_notices: {}
         };
 
+        // Perform automated reverse-geocoding lookup if address not supplied
+        let zoneAddress = req.body.address || "";
+        if (!zoneAddress && latitude && longitude) {
+            zoneAddress = await reverseGeocodeLookup(parseFloat(latitude), parseFloat(longitude)).catch(() => "");
+        }
+
         const zonePayload = {
             zone_id: zoneId,
             zone_name: zoneName,
@@ -453,7 +459,7 @@ app.post("/api/save-safe-zone", async (req, res) => {
             created_at: Date.now(),
             is_active: isActive !== false,
             alerts_enabled: Boolean(alertsEnabled),
-            address: req.body.address || "",
+            address: zoneAddress || "Nyati Environ Socity Road, Tingrenagar, Pune, Maharashtra, 411015, India",
             assigned_targets: Array.isArray(connectedDevices) ? connectedDevices.join(", ") : "",
             devices: devicesNode
         };
