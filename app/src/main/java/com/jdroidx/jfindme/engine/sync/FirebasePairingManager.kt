@@ -68,13 +68,12 @@ object FirebasePairingManager {
                         pairingRequestsEndpoint.child(inviteCode).get().addOnSuccessListener { freshSnap ->
                             val freshChildId   = freshSnap.child("childDeviceId").getValue(String::class.java) ?: ""
                             val childName      = freshSnap.child("child_name").getValue(String::class.java) ?: "Target"
-                            val childRole      = freshSnap.child("child_role_preliminary").getValue(String::class.java) ?: ""
+                            val childRoleRaw   = freshSnap.child("child_role_preliminary").getValue(String::class.java)
+                            val childRole      = if (!childRoleRaw.isNullOrBlank()) childRoleRaw else "Member"
 
-                            if (freshChildId.isNotEmpty() && childRole.isNotEmpty()) {
+                            if (freshChildId.isNotEmpty()) {
                                 SystemLogger.i(TAG, "Child Knock (Server-Fresh): $freshChildId ($childName) as $childRole")
                                 onChildRequestReceived(freshChildId, childName, childRole)
-                            } else {
-                                SystemLogger.e(TAG, "Child role not yet propagated for $freshChildId — skipping")
                             }
                         }.addOnFailureListener { ex ->
                             SystemLogger.e(TAG, "Fresh fetch failed for knock: ${ex.message}")
