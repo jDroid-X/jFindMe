@@ -3,5 +3,6 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/apk/GitHub" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/scratch/jButterfly_clone" vcs="Git" />
   </component>
 </project>

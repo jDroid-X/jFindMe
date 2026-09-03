@@ -63,9 +63,12 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -116,7 +119,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     // Architectural MVVM
     private GroupViewModel viewModel;
-    private String forensicAgentId = RegistryManager.DEFAULT_FALLBACK_OWNER_ID;
+    private String forensicAgentId = "";
     private String safeUid = "LOCAL_DEVICE";
 
     // QR Code Scanner Result Launcher
@@ -132,14 +135,14 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         if (etLocalCode != null) etLocalCode.setText(rawCode);
                         switchToTab(TAB_NEARBY_P2P);
                         showRoleSelectionDialogForLocalJoin(rawCode);
-                        Toast.makeText(this, "Local Node Scanned (8-Digit). Select your role...", Toast.LENGTH_SHORT).show();
+                        UiArchitect.showSlideNotificationBanner(this, "Local Node Scanned", "8-digit hardware PIN identified. Confirm role to connect.", false, 3000, null, null);
                     } else if (rawCode.length() == 6) {
                         if (etCode != null) etCode.setText(rawCode);
                         switchToTab(TAB_REMOTE_CLOUD);
                         showRoleSelectionDialogBeforeJoin(rawCode);
-                        Toast.makeText(this, "Cloud Node Scanned (6-Digit). Select your role...", Toast.LENGTH_SHORT).show();
+                        UiArchitect.showSlideNotificationBanner(this, "Cloud Invite Scanned", "6-digit circle code verified. Select relationship role.", false, 3000, null, null);
                     } else {
-                        Toast.makeText(this, "Unrecognized QR Code Format (" + rawCode.length() + " chars)", Toast.LENGTH_LONG).show();
+                        UiArchitect.showSlideNotificationBanner(this, "QR Format Warning", "Unrecognized QR code (" + rawCode.length() + " chars). Expected 6 or 8 digits.", true, 3500, null, null);
                     }
                 }
             }
@@ -196,7 +199,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         DatabaseHelper db = DatabaseHelper.getInstance(this);
         String authUid = FirebaseAuth.getInstance().getUid();
         String resolvedAgentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
-        forensicAgentId = (resolvedAgentId != null) ? resolvedAgentId : jPrefs.getString("agent_id", RegistryManager.DEFAULT_FALLBACK_OWNER_ID);
+        forensicAgentId = (resolvedAgentId != null) ? resolvedAgentId : jPrefs.getString("agent_id", RegistryManager.getOwnerAgentId(this));
         safeUid = (authUid != null) ? authUid : forensicAgentId;
 
         // Reactive Observers
@@ -1358,13 +1361,22 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             }
 
             if (guardians.isEmpty() && spouses.isEmpty() && children.isEmpty()) {
+                boolean isFiltered = rosterSearchFilter != null && !rosterSearchFilter.isEmpty();
+                String desc = isFiltered
+                        ? "No family members match \"" + rosterSearchFilter + "\". Tap below to clear filter."
+                        : "Pair a family member using the Remote Cloud or Nearby P2P tab.";
+                String action = isFiltered ? "CLEAR SEARCH" : "GENERATE CLOUD PIN";
+                Runnable run = isFiltered 
+                        ? () -> { rosterSearchFilter = ""; rebuildRosterView(currentCachedRoster); }
+                        : () -> switchToTab(TAB_REMOTE_CLOUD);
+
                 View empty = UiArchitect.createEmptyStateCard(
                         this,
-                        "No Family Members Added",
-                        "Pair a family member using the Remote Cloud or Nearby P2P tab above.",
+                        isFiltered ? "No Matching Family" : "No Family Members Added",
+                        desc,
                         android.R.drawable.ic_menu_add,
-                        null,
-                        null
+                        action,
+                        run
                 );
                 rosterContainer.addView(empty);
             }
@@ -1376,13 +1388,22 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     rosterContainer.addView(buildMemberCard(node, getGradientEnd()));
                 }
             } else {
+                boolean isFiltered = rosterSearchFilter != null && !rosterSearchFilter.isEmpty();
+                String desc = isFiltered
+                        ? "No friends match \"" + rosterSearchFilter + "\". Tap below to clear filter."
+                        : "Pair a friend using the Nearby P2P or Remote Cloud tab.";
+                String action = isFiltered ? "CLEAR SEARCH" : "START P2P SESSION";
+                Runnable run = isFiltered 
+                        ? () -> { rosterSearchFilter = ""; rebuildRosterView(currentCachedRoster); }
+                        : () -> switchToTab(TAB_NEARBY_P2P);
+
                 View empty = UiArchitect.createEmptyStateCard(
                         this,
-                        "No Friends Linked",
-                        "Pair a friend using the Nearby P2P or Remote Cloud tab above.",
+                        isFiltered ? "No Matching Friends" : "No Friends Linked",
+                        desc,
                         android.R.drawable.ic_menu_share,
-                        null,
-                        null
+                        action,
+                        run
                 );
                 rosterContainer.addView(empty);
             }
@@ -2182,67 +2203,187 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     private void showRestoreOldGroupDialog() {
         triggerHapticFeedback();
-        final String safeAgentId = forensicAgentId;
+        final String safeAgentId = forensicAgentId != null && !forensicAgentId.isEmpty() ? forensicAgentId : DeviceIdentityHelper.getOrGenerateAgentId(this);
         Toast.makeText(this, "Scanning cloud history for legacy assets...", Toast.LENGTH_SHORT).show();
 
-        FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").get().addOnSuccessListener(grpSnap -> {
-            String myGrp = grpSnap.getValue(String.class);
-            final String finalGrp = (myGrp != null) ? myGrp : "";
+        FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").get().addOnCompleteListener(grpTask -> {
+            String myGrp = null;
+            if (grpTask.isSuccessful() && grpTask.getResult() != null) {
+                myGrp = grpTask.getResult().getValue(String.class);
+            }
+            if (myGrp == null || myGrp.isEmpty() || myGrp.equals("DEFAULT_GROUP")) {
+                myGrp = "GRP_" + safeAgentId;
+            }
+            final String finalGrp = myGrp;
 
-            FirebaseComm.INSTANCE.getLocationsRef().get().addOnSuccessListener(snapshot -> {
-                List<String> assetNames = new ArrayList<>();
-                List<String> assetUids = new ArrayList<>();
+            // 🛰️ Precise Circle Discovery: Check direct relationships + shared circle history
+            FirebaseComm.getDeviceRef(safeAgentId).child("relationships").get().addOnCompleteListener(relTask -> {
+                final Set<String> authorizedLinkedUids = new HashSet<>();
+                final Map<String, String> assetRoles = new HashMap<>();
+                final Map<String, Boolean> assetIsAdmin = new HashMap<>();
+                final Map<String, Boolean> assetIsFriend = new HashMap<>();
 
-                for (DataSnapshot child : snapshot.getChildren()) {
-                    UserLocation loc = child.getValue(UserLocation.class);
-                    if (loc != null) {
-                        String rId = loc.getResolvedUserId();
-                        if (rId != null && !rId.equals(safeAgentId) && !assetUids.contains(rId)) {
-                            assetNames.add(loc.getUserName() != null ? loc.getUserName() : rId);
-                            assetUids.add(rId);
+                if (relTask.isSuccessful() && relTask.getResult() != null) {
+                    for (DataSnapshot child : relTask.getResult().getChildren()) {
+                        String key = child.getKey();
+                        if (key != null && !key.equals(safeAgentId)) {
+                            authorizedLinkedUids.add(key);
+                            String r = null;
+                            if (child.hasChild("role_title")) r = child.child("role_title").getValue(String.class);
+                            else if (child.hasChild("role")) r = child.child("role").getValue(String.class);
+
+                            String branch = child.child("branch_type").getValue(String.class);
+                            boolean isFr = "friends".equalsIgnoreCase(branch) || (r != null && r.toLowerCase().contains("friend"));
+                            boolean isAdm = (r != null && (r.toUpperCase().contains("GUARDIAN") || r.toUpperCase().contains("ADMIN") || r.toUpperCase().contains("MOTHER") || r.toUpperCase().contains("FATHER") || r.toUpperCase().contains("PARENT")));
+
+                            if (r == null || r.isEmpty()) {
+                                r = isFr ? "Friend" : "Child";
+                            }
+                            assetRoles.put(key, r);
+                            assetIsFriend.put(key, isFr);
+                            assetIsAdmin.put(key, isAdm);
                         }
                     }
                 }
 
-                if (assetNames.isEmpty()) {
-                    Toast.makeText(this, "No legacy assets detected in cloud backup.", Toast.LENGTH_LONG).show();
-                    return;
-                }
-
-                final String[] items = assetNames.toArray(new String[0]);
-                final boolean[] checkedItems = new boolean[items.length];
-                Arrays.fill(checkedItems, true);
-
-                new AlertDialog.Builder(this)
-                        .setTitle("Reclaim Legacy Assets")
-                        .setMultiChoiceItems(items, checkedItems, (dialog, which, isChecked) -> checkedItems[which] = isChecked)
-                        .setPositiveButton("RESTORE SELECTED", (dialog, which) -> {
-                            String targetGroup = finalGrp.isEmpty()
-                                    ? FirebaseComm.INSTANCE.getRelationshipsRef().push().getKey()
-                                    : finalGrp;
-
-                            if (targetGroup != null) {
-                                FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
-                                FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(safeAgentId).setValue(true);
-                                getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
-
-                                int count = 0;
-                                for (int i = 0; i < checkedItems.length; i++) {
-                                    if (checkedItems[i]) {
-                                        String nodeUid = assetUids.get(i);
-                                        FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(nodeUid).setValue(true);
-                                        FirebaseComm.INSTANCE.getIdentityRef(nodeUid).child("active_group").setValue(targetGroup);
-                                        count++;
+                // Also check all shared groups where safeAgentId is a member
+                FirebaseComm.getRelationshipsRef().get().addOnCompleteListener(groupsTask -> {
+                    if (groupsTask.isSuccessful() && groupsTask.getResult() != null) {
+                        for (DataSnapshot grpChild : groupsTask.getResult().getChildren()) {
+                            if (grpChild.hasChild("members") && grpChild.child("members").hasChild(safeAgentId)) {
+                                for (DataSnapshot m : grpChild.child("members").getChildren()) {
+                                    String mKey = m.getKey();
+                                    if (mKey != null && !mKey.equals(safeAgentId)) {
+                                        authorizedLinkedUids.add(mKey);
+                                        if (!assetRoles.containsKey(mKey)) {
+                                            String mRole = m.child("role").getValue(String.class);
+                                            if (mRole == null || mRole.isEmpty() || mRole.equalsIgnoreCase("Member")) {
+                                                mRole = "Child";
+                                            }
+                                            boolean isFr = mRole.toLowerCase().contains("friend");
+                                            boolean isAdm = mRole.toUpperCase().contains("GUARDIAN") || mRole.toUpperCase().contains("ADMIN") || mRole.toUpperCase().contains("PARENT");
+                                            assetRoles.put(mKey, mRole);
+                                            assetIsFriend.put(mKey, isFr);
+                                            assetIsAdmin.put(mKey, isAdm);
+                                        }
                                     }
                                 }
-                                Toast.makeText(this, "Restored " + count + " assets to group!", Toast.LENGTH_LONG).show();
-                                initiateCloudSync(safeAgentId);
                             }
-                        })
-                        .setNegativeButton("CANCEL", null)
-                        .show();
+                        }
+                    }
+
+                    // Query profiles for verified linked nodes only
+                    FirebaseComm.getDevicesRef().get().addOnCompleteListener(devicesTask -> {
+                        final List<String> assetNames = new ArrayList<>();
+                        final List<String> assetUids = new ArrayList<>();
+                        final Map<String, String> assetAvatars = new HashMap<>();
+
+                        if (devicesTask.isSuccessful() && devicesTask.getResult() != null) {
+                            DataSnapshot devSnap = devicesTask.getResult();
+                            for (String linkedId : authorizedLinkedUids) {
+                                if (devSnap.hasChild(linkedId)) {
+                                    DataSnapshot child = devSnap.child(linkedId);
+                                    String name = null;
+                                    if (child.hasChild("profile") && child.child("profile").hasChild("name")) {
+                                        name = child.child("profile").child("name").getValue(String.class);
+                                    } else if (child.hasChild("Identity") && child.child("Identity").hasChild("name")) {
+                                        name = child.child("Identity").child("name").getValue(String.class);
+                                    } else if (child.hasChild("name")) {
+                                        name = child.child("name").getValue(String.class);
+                                    }
+                                    if (name == null || name.isEmpty() || name.startsWith("Agent_")) {
+                                        name = "Node " + linkedId;
+                                    }
+                                    String avatarId = "1";
+                                    if (child.hasChild("profile") && child.child("profile").hasChild("avatar_id")) {
+                                        avatarId = String.valueOf(child.child("profile").child("avatar_id").getValue());
+                                    }
+
+                                    String rTitle = assetRoles.containsKey(linkedId) ? assetRoles.get(linkedId) : "Family Member";
+                                    assetNames.add(name + " [" + rTitle + "] (" + linkedId + ")");
+                                    assetUids.add(linkedId);
+                                    assetAvatars.put(linkedId, avatarId);
+                                }
+                            }
+                        }
+                        displayRestoreDialog(safeAgentId, finalGrp, assetNames, assetUids, assetAvatars, assetRoles, assetIsAdmin, assetIsFriend);
+                    });
+                });
             });
         });
+    }
+
+    private void displayRestoreDialog(String safeAgentId, String finalGrp, List<String> assetNames, List<String> assetUids, Map<String, String> assetAvatars,
+                                       Map<String, String> assetRoles, Map<String, Boolean> assetIsAdmin, Map<String, Boolean> assetIsFriend) {
+        if (assetNames.isEmpty()) {
+            showValidationDialog("NO LEGACY NODES FOUND", "No other registered device nodes found in Cloud Matrix. Use the QR Scan or PIN Pairing tabs to link new devices.");
+            return;
+        }
+
+        final String[] items = assetNames.toArray(new String[0]);
+        final boolean[] checkedItems = new boolean[items.length];
+        Arrays.fill(checkedItems, true);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("🔄 Reclaim Legacy Circle Nodes")
+                .setMultiChoiceItems(items, checkedItems, (d, which, isChecked) -> checkedItems[which] = isChecked)
+                .setPositiveButton("RESTORE SELECTED", (d, which) -> {
+                    String targetGroup = finalGrp.isEmpty() ? ("GRP_" + safeAgentId) : finalGrp;
+                    DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
+
+                    // 1. Ensure Self is registered as OWNER in Cloud Group
+                    Map<String, Object> selfMember = new HashMap<>();
+                    selfMember.put("name", RegistryManager.getUserNickname(this));
+                    selfMember.put("role", "OWNER");
+                    selfMember.put("status", "Active");
+                    selfMember.put("avatar_id", String.valueOf(getSharedPreferences("system_registry", MODE_PRIVATE).getInt("equipped_avatar_id", 0)));
+                    selfMember.put("joined_at", System.currentTimeMillis());
+
+                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(safeAgentId).setValue(selfMember);
+                    FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
+                    getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
+
+                    int count = 0;
+                    for (int i = 0; i < checkedItems.length; i++) {
+                        if (checkedItems[i]) {
+                            String nodeUid = assetUids.get(i);
+                            String rawName = assetNames.get(i);
+                            String cleanName = rawName.contains(" [") ? rawName.substring(0, rawName.indexOf(" [")) : rawName;
+                            String avatarId = assetAvatars.get(nodeUid);
+                            if (avatarId == null) avatarId = "1";
+
+                            String nodeRole = assetRoles.containsKey(nodeUid) ? assetRoles.get(nodeUid) : "Child";
+                            boolean isAdmin = assetIsAdmin.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsAdmin.get(nodeUid));
+                            boolean isFriend = assetIsFriend.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsFriend.get(nodeUid));
+
+                            // Cloud Member Payload
+                            Map<String, Object> nodeMember = new HashMap<>();
+                            nodeMember.put("name", cleanName);
+                            nodeMember.put("role", nodeRole);
+                            nodeMember.put("status", "Active");
+                            nodeMember.put("avatar_id", avatarId);
+                            nodeMember.put("is_admin", isAdmin);
+                            nodeMember.put("is_friend", isFriend);
+                            nodeMember.put("joined_at", System.currentTimeMillis());
+
+                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(nodeUid).setValue(nodeMember);
+                            FirebaseComm.INSTANCE.getIdentityRef(nodeUid).child("active_group").setValue(targetGroup);
+
+                            // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation
+                            dbLocal.saveRosterNode(nodeUid, cleanName, nodeRole, "Active", isAdmin, isFriend, "Cloud Group", null, null, null, avatarId, targetGroup);
+                            count++;
+                        }
+                    }
+
+                    showSlideNotification("Circle Restored", "Successfully restored " + count + " node(s) with family/friends roles to group " + targetGroup,
+                            android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
+                    initiateCloudSync(safeAgentId);
+                })
+                .setNegativeButton("CANCEL", null)
+                .create();
+
+        dialog.show();
+        applyDialogTheme(dialog);
     }
 
     private void initiateCloudSync(String agentId) {

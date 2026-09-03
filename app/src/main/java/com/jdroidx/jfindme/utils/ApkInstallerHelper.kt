@@ -75,20 +75,22 @@ object ApkInstallerHelper {
 
         val folderId = extractDriveFolderId(trimmed)
         if (folderId != null) {
-            // Direct Git LFS media CDN endpoint for seamless zero-redirect download
-            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/app-universal-release.apk"
+            // Direct GitHub raw endpoint for compact release APK
+            return "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
         }
 
-        // Handle GitHub tree/blob folder links
+        // Handle GitHub tree/blob folder links or base repo links
         if (trimmed.contains("github.com/jDroid-X/jButterfly/tree/main/jbutterfly") || 
             trimmed.contains("github.com/jDroid-X/jButterfly/blob/main/jbutterfly") ||
             trimmed.equals("https://github.com/jDroid-X/jButterfly", ignoreCase = true) ||
-            trimmed.equals("https://github.com/jDroid-X/jButterfly/", ignoreCase = true) ||
-            trimmed.contains("github.com/jDroid-X/jButterfly/raw/main/jbutterfly/app-universal-release.apk")) {
-            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/app-universal-release.apk"
+            trimmed.equals("https://github.com/jDroid-X/jButterfly/", ignoreCase = true)) {
+            return "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
         }
         if (trimmed.contains("github.com") && trimmed.contains("/blob/")) {
             return trimmed.replace("/blob/", "/raw/")
+        }
+        if (trimmed.contains("media.githubusercontent.com/media/")) {
+            return trimmed.replace("media.githubusercontent.com/media/", "raw.githubusercontent.com/")
         }
         return trimmed
     }
@@ -153,13 +155,21 @@ object ApkInstallerHelper {
         // Storage Space Check
         val freeBytes = getAvailableCacheSpaceBytes(activity)
         if (freeBytes < 150L * 1024 * 1024) {
-            AlertDialog.Builder(activity)
-                .setTitle("⚠️ Low Storage Space")
-                .setMessage("Your device has less than 150 MB free internal space (${freeBytes / (1024 * 1024)} MB available). Please free up space before downloading this update.")
-                .setPositiveButton("OK", null)
-                .show()
-            onComplete?.invoke(false)
-            return
+            // Attempt cache purge of old files
+            try {
+                activity.cacheDir.listFiles()?.forEach { if (it.name != apkFile.name) it.deleteRecursively() }
+            } catch (ignored: Exception) {}
+
+            val updatedFree = getAvailableCacheSpaceBytes(activity)
+            if (updatedFree < 100L * 1024 * 1024) {
+                AlertDialog.Builder(activity)
+                    .setTitle("⚠️ Low Storage Space")
+                    .setMessage("Your device has less than 100 MB free internal space (${updatedFree / (1024 * 1024)} MB available). Please free up space before downloading this update.")
+                    .setPositiveButton("OK", null)
+                    .show()
+                onComplete?.invoke(false)
+                return
+            }
         }
 
         // Custom Progress Modal
@@ -245,9 +255,9 @@ object ApkInstallerHelper {
             try {
                 var currentUrl = directUrl
                 var redirectCount = 0
-                val maxRedirects = 8
+                val maxRedirects = 10
 
-                // Follow HTTP 301/302/303/307 redirects (including Google Drive confirm tokens & GitHub LFS S3 URLs)
+                // Follow HTTP 301/302/303/307 redirects (including Google Drive confirm tokens & GitHub raw URLs)
                 while (redirectCount < maxRedirects) {
                     if (isCancelled) return@launch
 
@@ -255,7 +265,7 @@ object ApkInstallerHelper {
                     connection = (urlObj.openConnection() as HttpURLConnection).apply {
                         instanceFollowRedirects = true
                         connectTimeout = 15000
-                        readTimeout = 30000
+                        readTimeout = 25000
                         setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                         setRequestProperty("Accept", "*/*")
                     }
@@ -283,7 +293,7 @@ object ApkInstallerHelper {
                 if (apkFile.exists()) apkFile.delete()
 
                 outputStream = FileOutputStream(apkFile)
-                val data = ByteArray(8192)
+                val data = ByteArray(16384)
                 var total: Long = 0
                 var count: Int
 
@@ -302,7 +312,9 @@ object ApkInstallerHelper {
                                 progressBar.isIndeterminate = false
                                 progressBar.progress = progressPercent
                                 tvStatus.text = "Downloading binary stream..."
-                                tvPercent.text = "${(total / (1024 * 1024))} MB / ${(fileLength / (1024 * 1024))} MB ($progressPercent%)"
+                                val curMb = String.format(Locale.US, "%.1f", total / (1024.0 * 1024.0))
+                                val totalMb = String.format(Locale.US, "%.1f", fileLength / (1024.0 * 1024.0))
+                                tvPercent.text = "$curMb MB / $totalMb MB ($progressPercent%)"
                             }
                         }
                     } else {
@@ -310,7 +322,8 @@ object ApkInstallerHelper {
                             if (!activity.isFinishing && !activity.isDestroyed && dialog.isShowing) {
                                 progressBar.isIndeterminate = true
                                 tvStatus.text = "Downloading binary stream..."
-                                tvPercent.text = "${(total / (1024 * 1024))} MB"
+                                val curMb = String.format(Locale.US, "%.1f", total / (1024.0 * 1024.0))
+                                tvPercent.text = "$curMb MB"
                             }
                         }
                     }
@@ -330,7 +343,7 @@ object ApkInstallerHelper {
                         onComplete?.invoke(true)
                     } else {
                         if (apkFile.exists()) apkFile.delete()
-                        showDownloadErrorDialog(activity, downloadUrl, "The downloaded file is corrupted or is an HTML error page (not an APK package).")
+                        showDownloadErrorDialog(activity, downloadUrl, "The downloaded file is corrupted or incomplete. Please check your network connection.")
                         onComplete?.invoke(false)
                     }
                 }
@@ -379,11 +392,11 @@ object ApkInstallerHelper {
                 }
                 isPackageMatch
             } else {
-                true
+                false // If null, the APK is invalid or corrupted!
             }
         } catch (e: Exception) {
             SystemLogger.w(TAG, "PackageArchiveInfo warning: ${e.message}")
-            true
+            false
         }
     }
 
@@ -391,6 +404,46 @@ object ApkInstallerHelper {
         MATCH,
         MISMATCH,
         UNKNOWN
+    }
+
+    enum class VersionStatus {
+        UPGRADE,
+        SAME_VERSION,
+        DOWNGRADE,
+        UNKNOWN
+    }
+
+    /**
+     * 🛡️ Version Inspection: Compares installed package version with downloaded APK.
+     */
+    fun checkVersionStatus(context: Context, apkFile: File): VersionStatus {
+        return try {
+            val pm = context.packageManager
+            val installedPkg = pm.getPackageInfo(context.packageName, 0)
+            val archivePkg = pm.getPackageArchiveInfo(apkFile.absolutePath, 0) ?: return VersionStatus.UNKNOWN
+
+            val installedCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                installedPkg.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                installedPkg.versionCode.toLong()
+            }
+
+            val archiveCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                archivePkg.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                archivePkg.versionCode.toLong()
+            }
+
+            when {
+                archiveCode > installedCode -> VersionStatus.UPGRADE
+                archiveCode == installedCode -> VersionStatus.SAME_VERSION
+                else -> VersionStatus.DOWNGRADE
+            }
+        } catch (e: Exception) {
+            VersionStatus.UNKNOWN
+        }
     }
 
     /**
@@ -436,7 +489,7 @@ object ApkInstallerHelper {
     /**
      * 💾 Verifies that device internal storage has sufficient space for download & extraction.
      */
-    fun hasAvailableStorage(context: Context, requiredBytes: Long = 150 * 1024 * 1024L): Boolean {
+    fun hasAvailableStorage(context: Context, requiredBytes: Long = 100 * 1024 * 1024L): Boolean {
         return try {
             val stat = android.os.StatFs(context.cacheDir.path)
             val available = stat.availableBlocksLong * stat.blockSizeLong
@@ -455,7 +508,7 @@ object ApkInstallerHelper {
         RegistryManager.recordInstallFailure(
             activity,
             curVer,
-            "SIGNATURE MISMATCH: Installed build is DEBUG (Android Studio) while update is RELEASE (GitHub). Clean uninstall required."
+            "SIGNATURE MISMATCH: Installed build is DEBUG (Android Studio) while update is RELEASE (GitHub). Clean upgrade required."
         )
 
         // Save a copy of the APK to the public Downloads folder so it is preserved even after uninstalling the old app!
@@ -472,13 +525,13 @@ object ApkInstallerHelper {
 
         if (activity is com.jdroidx.jfindme.ui.base.BaseActivityJava) {
             val options = arrayOf(
-                UiArchitect.OptionItem("⚡ YES, OVERRIDE & INSTALL LATEST", "1-Click Replacement: Uninstalls current app and launches the latest downloaded APK fresh", android.R.drawable.ic_menu_rotate),
-                UiArchitect.OptionItem("📦 PROCEED WITH STANDARD INSTALLER", "Attempt direct overwrite with Android PackageInstaller (may be rejected by OS)", android.R.drawable.ic_menu_save),
-                UiArchitect.OptionItem("🌐 OPEN RELEASES IN WEB BROWSER", "Visit GitHub repository in mobile browser to inspect release notes", android.R.drawable.ic_menu_view),
+                UiArchitect.OptionItem("⚡ YES, 1-CLICK CLEAN UPGRADE", "Safely uninstalls debug build and launches the latest production release package", android.R.drawable.ic_menu_rotate),
+                UiArchitect.OptionItem("📦 ATTEMPT DIRECT OVERWRITE", "Attempt in-place install via Android PackageInstaller (may be blocked by OS)", android.R.drawable.ic_menu_save),
+                UiArchitect.OptionItem("🌐 OPEN RELEASES IN WEB BROWSER", "Visit GitHub repository in mobile browser to inspect release assets", android.R.drawable.ic_menu_view),
                 UiArchitect.OptionItem("✕ CANCEL & KEEP CURRENT VERSION", "Dismiss update and keep running current installed version", android.R.drawable.ic_menu_close_clear_cancel)
             )
 
-            UiArchitect.showRichOptionsDialog(activity, "⚠️ SIGNATURE MISMATCH: OVERRIDE APP?", options) { index, _ ->
+            UiArchitect.showRichOptionsDialog(activity, "⚠️ SIGNATURE MISMATCH: CLEAN UPGRADE", options) { index, _ ->
                 when (index) {
                     0 -> executeAppOverrideFlow(activity, preservedApk)
                     1 -> proceedWithInstallerIntent(activity, apkFile)
@@ -488,13 +541,13 @@ object ApkInstallerHelper {
             }
         } else {
             val items = arrayOf(
-                "⚡ YES, OVERRIDE & INSTALL LATEST",
-                "📦 PROCEED WITH STANDARD INSTALLER",
+                "⚡ YES, 1-CLICK CLEAN UPGRADE",
+                "📦 ATTEMPT DIRECT OVERWRITE",
                 "🌐 OPEN RELEASES IN WEB BROWSER",
                 "✕ CANCEL & KEEP CURRENT VERSION"
             )
             AlertDialog.Builder(activity)
-                .setTitle("⚠️ SIGNATURE MISMATCH: OVERRIDE APP?")
+                .setTitle("⚠️ SIGNATURE MISMATCH: CLEAN UPGRADE")
                 .setItems(items) { _, index ->
                     when (index) {
                         0 -> executeAppOverrideFlow(activity, preservedApk)
@@ -517,22 +570,28 @@ object ApkInstallerHelper {
             }
         } catch (ignored: Exception) {}
 
-        // Step 2: Show clear confirmation modal before invoking the replacement
+        // Step 2: Post persistent completion notification so user can tap right after uninstallation
+        try {
+            notifyUpdateReadyToInstall(activity, apkFile, com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
+        } catch (ignored: Exception) {}
+
+        // Step 3: Show clear confirmation modal before invoking the clean replacement
         AlertDialog.Builder(activity)
-            .setTitle("🔄 Confirm App Replacement")
+            .setTitle("🔄 Confirm Clean App Upgrade")
             .setMessage(
-                "The update package has been safely saved to your phone's Downloads folder:\n" +
+                "The update package is safely preserved in your phone's storage:\n" +
                 "📁 Download/jfindme-latest-release.apk\n\n" +
-                "Next Steps:\n" +
-                "1. Tap 'CONTINUE' to remove the old conflicting version.\n" +
-                "2. The installer will prompt to install the latest version immediately!\n\n" +
-                "Proceed with override?"
+                "Steps:\n" +
+                "1. Tap 'PROCEED' to remove the old debug version.\n" +
+                "2. Tap the system notification or installer prompt to install the new release immediately!\n\n" +
+                "Proceed with clean upgrade?"
             )
-            .setPositiveButton("CONTINUE") { _, _ ->
+            .setPositiveButton("PROCEED") { _, _ ->
                 try {
-                    val uninstallIntent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
+                    val uninstallIntent = Intent(Intent.ACTION_DELETE).apply {
                         data = Uri.parse("package:${activity.packageName}")
                         putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     activity.startActivity(uninstallIntent)
                 } catch (e: Exception) {

@@ -34,6 +34,64 @@ export class DeviceController {
     }
 
     /**
+     * Sorts device array by Latest Timestamp on Top (Reverse-Chronological)
+     * Primary: Latest Timestamp (descending)
+     * Secondary: Active Session State (Online before Offline if timestamps tie)
+     * @param {Array<DeviceModel>} devicesList
+     * @returns {Array<DeviceModel>}
+     */
+    static sortByLatestFirst(devicesList) {
+        if (!Array.isArray(devicesList)) return [];
+        return [...devicesList].sort((a, b) => {
+            const timeA = typeof a.getEpochTimestamp === 'function' ? a.getEpochTimestamp() : (Number(a.timestamp) || 0);
+            const timeB = typeof b.getEpochTimestamp === 'function' ? b.getEpochTimestamp() : (Number(b.timestamp) || 0);
+            if (timeB !== timeA) {
+                return timeB - timeA; // Descending: Newest on Top
+            }
+            return (b.isOnline ? 1 : 0) - (a.isOnline ? 1 : 0);
+        });
+    }
+
+    /**
+     * Filters devices by Time Window:
+     * - 'live': Active in last 15 minutes (or currently online)
+     * - 'today': Active since 00:00:00 of current day
+     * - '24h': Active within past 24 hours
+     * - 'all': All fleet devices
+     * @param {Array<DeviceModel>} devicesList
+     * @param {'live'|'today'|'24h'|'all'} windowType
+     * @returns {Array<DeviceModel>}
+     */
+    static filterByTimeWindow(devicesList, windowType = 'all') {
+        if (!Array.isArray(devicesList)) return [];
+        const now = Date.now();
+
+        switch (windowType) {
+            case 'live':
+                return devicesList.filter(d => {
+                    if (d.isOnline) return true;
+                    const epoch = typeof d.getEpochTimestamp === 'function' ? d.getEpochTimestamp() : 0;
+                    return epoch > 0 && (now - epoch) <= 15 * 60 * 1000;
+                });
+            case 'today': {
+                const startOfToday = new Date().setHours(0, 0, 0, 0);
+                return devicesList.filter(d => {
+                    const epoch = typeof d.getEpochTimestamp === 'function' ? d.getEpochTimestamp() : 0;
+                    return epoch >= startOfToday;
+                });
+            }
+            case '24h':
+                return devicesList.filter(d => {
+                    const epoch = typeof d.getEpochTimestamp === 'function' ? d.getEpochTimestamp() : 0;
+                    return epoch > 0 && (now - epoch) <= 24 * 60 * 60 * 1000;
+                });
+            case 'all':
+            default:
+                return devicesList;
+        }
+    }
+
+    /**
      * Fetches all registered devices and their live locations from Firebase Bridge
      * @returns {Promise<Array<DeviceModel>>}
      */
@@ -42,7 +100,8 @@ export class DeviceController {
         try {
             const res = await FBBridge.fetchRaw('/api/devices-live');
             if (res && res.devices && Array.isArray(res.devices)) {
-                this.devices = res.devices.map(d => new DeviceModel(d));
+                const mapped = res.devices.map(d => new DeviceModel(d));
+                this.devices = DeviceController.sortByLatestFirst(mapped);
                 this.recalculateProximities();
                 this.lastFetchTime = Date.now();
                 this.notify();
@@ -154,18 +213,49 @@ export class DeviceController {
     /**
      * Fetches historical breadcrumbs for a device
      * @param {string} agentId 
-     * @param {number} limit 
+     * @param {number|Object} optionsOrLimit 
      * @returns {Promise<Array>}
      */
-    async fetchDeviceHistory(agentId, limit = 100) {
+    async fetchDeviceHistory(agentId, optionsOrLimit = 100) {
         try {
-            const res = await FBBridge.fetchRaw(`/api/device-history?agentId=${encodeURIComponent(agentId)}&limit=${limit}`);
+            let queryParams = `agentId=${encodeURIComponent(agentId)}`;
+            if (typeof optionsOrLimit === 'number') {
+                queryParams += `&limit=${optionsOrLimit}`;
+            } else if (typeof optionsOrLimit === 'object' && optionsOrLimit !== null) {
+                if (optionsOrLimit.limit) queryParams += `&limit=${optionsOrLimit.limit}`;
+                if (optionsOrLimit.startDate) queryParams += `&startDate=${encodeURIComponent(optionsOrLimit.startDate)}`;
+                if (optionsOrLimit.endDate) queryParams += `&endDate=${encodeURIComponent(optionsOrLimit.endDate)}`;
+                if (optionsOrLimit.startTime) queryParams += `&startTime=${encodeURIComponent(optionsOrLimit.startTime)}`;
+                if (optionsOrLimit.endTime) queryParams += `&endTime=${encodeURIComponent(optionsOrLimit.endTime)}`;
+                if (optionsOrLimit.deadband !== undefined) queryParams += `&deadband=${Boolean(optionsOrLimit.deadband)}`;
+                if (optionsOrLimit.order) queryParams += `&order=${encodeURIComponent(optionsOrLimit.order)}`;
+            }
+
+            const res = await FBBridge.fetchRaw(`/api/device-history?${queryParams}`);
             if (res && res.breadcrumbs) {
                 return res.breadcrumbs;
             }
             return [];
         } catch (err) {
             console.error(`[DEVICE_CTRL] History fetch error for ${agentId}:`, err);
+            return [];
+        }
+    }
+
+    /**
+     * Discovers all distinct dates containing recorded telemetry for a device
+     * @param {string} agentId 
+     * @returns {Promise<Array<{date: string, count: number, firstTs: number, lastTs: number}>>}
+     */
+    async fetchHistoricalDates(agentId) {
+        try {
+            const res = await FBBridge.fetchRaw(`/api/history-dates?agentId=${encodeURIComponent(agentId)}`);
+            if (res && res.dates) {
+                return res.dates;
+            }
+            return [];
+        } catch (err) {
+            console.error(`[DEVICE_CTRL] Historical dates fetch error for ${agentId}:`, err);
             return [];
         }
     }

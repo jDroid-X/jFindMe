@@ -11,6 +11,7 @@ import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.utils.SecureVault
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.utils.RegistryManager
 import kotlinx.coroutines.launch
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -19,50 +20,108 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * OfflineSyncManager: Handles data persistence and queueing during network loss.
  * Strategic Update: Integrated AES-256 Persistent Vault for GPS points.
  */
-class OfflineSyncManager(private val context: Context) {
+class OfflineSyncManager private constructor(context: Context) {
 
+    private val context = context.applicationContext
     private val TAG = "OfflineSyncManager"
     private val PREF_OFFLINE_QUEUE = "offline_gps_queue"
     private val syncQueue: Queue<UserLocation> = ConcurrentLinkedQueue()
-    private var isNetworkAvailable = false
+    @Volatile private var isNetworkAvailable = false
     private val gson = Gson()
+    private var isNetworkMonitoringActive = false
+
+    // 📡 HUMAN-IN-THE-LOOP STATE BROADCASTERS
+    val isOnlineLiveData = androidx.lifecycle.MutableLiveData<Boolean>(false)
+    val pendingQueueCountLiveData = androidx.lifecycle.MutableLiveData<Int>(0)
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<OfflineSyncListener>()
+
+    interface OfflineSyncListener {
+        fun onNetworkStatusChanged(isOnline: Boolean)
+        fun onSyncFlushed(itemsFlushed: Int)
+    }
+
+    fun addListener(listener: OfflineSyncListener) {
+        if (!listeners.contains(listener)) listeners.add(listener)
+    }
+
+    fun removeListener(listener: OfflineSyncListener) {
+        listeners.remove(listener)
+    }
+
+    fun getPendingQueueCount(): Int {
+        return syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()
+    }
+
+    companion object {
+        @Volatile private var instance: OfflineSyncManager? = null
+
+        @JvmStatic
+        fun getInstance(context: Context): OfflineSyncManager {
+            return instance ?: synchronized(this) {
+                instance ?: OfflineSyncManager(context).also { instance = it }
+            }
+        }
+    }
 
     init {
         loadPersistedQueue()
         
-        // QA Bug Fix: Actively check true physical network state at Boot. Do NOT blindly assume 'Offline'!
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val activeNetwork = connectivityManager.activeNetwork
-        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-        isNetworkAvailable = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        // QA Bug Fix: Actively check true physical network state at Boot.
+        try {
+            val connectivityManager = this.context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNetwork = connectivityManager?.activeNetwork
+            val caps = connectivityManager?.getNetworkCapabilities(activeNetwork)
+            isNetworkAvailable = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            isOnlineLiveData.postValue(isNetworkAvailable)
+        } catch (e: Exception) {
+            isNetworkAvailable = true
+            isOnlineLiveData.postValue(true)
+        }
         
         monitorNetwork()
     }
 
+    @Synchronized
     private fun monitorNetwork() {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val networkRequest = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
+        if (isNetworkMonitoringActive) return
+        try {
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val networkRequest = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
 
-        connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                isNetworkAvailable = true
-                SystemLogger.i(TAG, "Network Restored. Processing Sync Queue: ${syncQueue.size} items.")
-                processQueue()
-            }
+            connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    isNetworkAvailable = true
+                    isOnlineLiveData.postValue(true)
+                    SystemLogger.i(TAG, "Network Restored. Processing Sync Queue: ${syncQueue.size} items.")
+                    listeners.forEach { it.onNetworkStatusChanged(true) }
+                    processQueue()
+                    reconcileMetadataWithCloud()
+                }
 
-            override fun onLost(network: Network) {
-                isNetworkAvailable = false
-                SystemLogger.w(TAG, "Network Lost. Entering Offline Queue Mode.")
-            }
-        })
+                override fun onLost(network: Network) {
+                    isNetworkAvailable = false
+                    isOnlineLiveData.postValue(false)
+                    SystemLogger.w(TAG, "Network Lost. Entering Offline Queue Mode.")
+                    listeners.forEach { it.onNetworkStatusChanged(false) }
+                }
+            })
+            isNetworkMonitoringActive = true
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Could not register network callback (handled gracefully): ${e.message}")
+        }
     }
 
     /**
      * Strategic Update: Sync or Persist in AES-256 Vault.
      */
     fun syncLocation(location: UserLocation) {
+        // 🛡️ Anti-GIGO Guard: Do not sync corrupt, NaN, or null-island coordinates
+        if (!location.isValidLocation()) {
+            SystemLogger.w(TAG, "Rejected invalid GPS ping (lat: ${location.latitude}, lng: ${location.longitude})")
+            return
+        }
         val rUserId = location.getResolvedUserId()
         
         // 🔒 Save locally into Database first (Zero Data Loss)
@@ -90,10 +149,31 @@ class OfflineSyncManager(private val context: Context) {
                 processQueue()
             }
         } else {
-            if (syncQueue.size >= 500) syncQueue.poll() // GAP-003: Increased cap from 100 to 500
+            val maxQueue = RegistryManager.getOfflineQueueMaxPoints(context)
+            if (syncQueue.size >= maxQueue) syncQueue.poll()
             syncQueue.offer(location)
+
+            // Also persist into SQLite PendingSyncQueueTable for Zero Data Loss
+            try {
+                val db = DatabaseHelper.getInstance(context)
+                db.enqueuePendingSync(
+                    payloadType = if (location.isSosActive) "SOS" else "LOCATION",
+                    targetUid = rUserId,
+                    lat = location.latitude,
+                    lng = location.longitude,
+                    bearing = location.bearing,
+                    speed = location.speed,
+                    battery = location.batteryLevel.toInt(),
+                    isSos = location.isSosActive
+                )
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "SQLite pending queue enqueue error: ${e.message}")
+            }
+
+            val totalPending = syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()
+            pendingQueueCountLiveData.postValue(totalPending)
             persistQueue()
-            SystemLogger.d(TAG, "Offline: Location persisted to Secure Vault. Total: ${syncQueue.size}")
+            SystemLogger.d(TAG, "Offline: Location persisted to Secure Vault. Total: $totalPending (Limit: $maxQueue)")
             
             // LOOP-005: Schedule WorkManager for deferred background sync
             scheduleDeferredSync()
@@ -101,8 +181,13 @@ class OfflineSyncManager(private val context: Context) {
     }
 
     private fun scheduleDeferredSync() {
+        val networkType = if (RegistryManager.isSyncWifiOnly(context)) 
+            androidx.work.NetworkType.UNMETERED 
+        else 
+            androidx.work.NetworkType.CONNECTED
+
         val constraints = androidx.work.Constraints.Builder()
-            .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+            .setRequiredNetworkType(networkType)
             .build()
             
         val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.jdroidx.jfindme.engine.sync.OfflineSyncWorker>()
@@ -117,7 +202,7 @@ class OfflineSyncManager(private val context: Context) {
     }
 
     private fun isTrackingAuthorized(userId: String): Boolean {
-        return true // Enterprise policy: Always allow authorized telemetry stream for connected devices
+        return true
     }
 
     fun triggerBackgroundSync() {
@@ -135,8 +220,48 @@ class OfflineSyncManager(private val context: Context) {
                     itemsProcessed++
                 }
             }
+
+            // Also drain persistent SQLite pending_sync_queue
+            try {
+                val db = DatabaseHelper.getInstance(context)
+                val sqlitePending = db.getPendingSyncQueue(50)
+                for (item in sqlitePending) {
+                    val id = (item["id"] as? Long) ?: continue
+                    val targetUid = (item["target_uid"] as? String) ?: ""
+                    val lat = (item["lat"] as? Double) ?: 0.0
+                    val lng = (item["lng"] as? Double) ?: 0.0
+                    val bearing = (item["bearing"] as? Double)?.toFloat() ?: 0f
+                    val speed = (item["speed"] as? Double)?.toFloat() ?: 0f
+                    val battery = (item["battery"] as? Long)?.toInt() ?: 100
+                    val isSos = (item["is_sos"] as? Long) == 1L
+                    val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
+
+                    if (targetUid.isNotBlank() && (lat != 0.0 || lng != 0.0)) {
+                        val ul = UserLocation(
+                            userId = targetUid,
+                            latitude = lat,
+                            longitude = lng,
+                            bearing = bearing,
+                            speed = speed,
+                            batteryLevel = battery,
+                            isSosActive = isSos,
+                            timestamp = FirebaseComm.getForensicTimestamp(ts)
+                        )
+                        FirebaseComm.syncAnalyticalEvent(targetUid, ul)
+                        db.deletePendingSyncItem(id)
+                        itemsProcessed++
+                    }
+                }
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Error draining sqlite pending sync queue: ${e.message}")
+            }
+
+            val totalRemaining = syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()
+            pendingQueueCountLiveData.postValue(totalRemaining)
+            persistQueue()
             if (itemsProcessed > 0) {
-                persistQueue() // Clear persisted data after successful sync
+                listeners.forEach { it.onSyncFlushed(itemsProcessed) }
+                SystemLogger.i(TAG, "Successfully flushed $itemsProcessed offline trace points to Cloud Matrix.")
             }
         }
     }
@@ -186,6 +311,56 @@ class OfflineSyncManager(private val context: Context) {
                         )
                     }
                     SystemLogger.d(TAG, "Reconciled ${relSnap.childrenCount} relationship nodes for: $finalId")
+                }
+            }
+
+            // 3. Reconcile SafeZones (Primary: /Geofencing/{creator}/safe_zones, Fallback: /devices/{creator}/safe_zones)
+            val primarySafeZonesRef = FirebaseComm.getGeofencingSafeZonesRef(finalId)
+            primarySafeZonesRef.get().addOnSuccessListener { zoneSnap ->
+                val activeSnap = if (zoneSnap.exists()) zoneSnap else null
+                val processZones = { snap: com.google.firebase.database.DataSnapshot ->
+                    for (child in snap.children) {
+                        val zoneId = child.key ?: continue
+                        val name = child.child("zone_name").value?.toString() ?: child.child("name").value?.toString() ?: "Safe Zone"
+                        val lat = child.child("lat").value?.toString()?.toDoubleOrNull() ?: 0.0
+                        val lng = child.child("lng").value?.toString()?.toDoubleOrNull() ?: 0.0
+                        val radius = child.child("radius").value?.toString()?.toDoubleOrNull() ?: child.child("radius_meters").value?.toString()?.toDoubleOrNull() ?: 100.0
+                        val isActive = child.child("is_active").getValue(Boolean::class.java) ?: true
+                        val alertsEnabled = child.child("alerts_enabled").getValue(Boolean::class.java) ?: true
+                        val polygonPoints = child.child("polygon_points").value?.toString() 
+                            ?: child.child("polygonPointsJson").value?.toString() 
+                            ?: ""
+                        val dwellMinutes = child.child("dwell_minutes").value?.toString()?.toIntOrNull() 
+                            ?: child.child("dwellThresholdMinutes").value?.toString()?.toIntOrNull() 
+                            ?: 0
+                        
+                        if (lat != 0.0 && lng != 0.0) {
+                            com.jdroidx.jfindme.data.local.tables.SafeZoneTable.save(
+                                db.writableDatabase,
+                                zoneId,
+                                name,
+                                lat,
+                                lng,
+                                radius,
+                                if (internalId != -1L) internalId else null,
+                                finalId,
+                                isActive,
+                                alertsEnabled,
+                                false,
+                                polygonPoints,
+                                dwellMinutes
+                            )
+                        }
+                    }
+                    SystemLogger.d(TAG, "Reconciled ${snap.childrenCount} SafeZone nodes into SQLite for: $finalId")
+                }
+
+                if (activeSnap != null) {
+                    processZones(activeSnap)
+                } else {
+                    FirebaseComm.devicesRef.child(finalId).child("safe_zones").get().addOnSuccessListener { fallbackSnap ->
+                        if (fallbackSnap.exists()) processZones(fallbackSnap)
+                    }
                 }
             }
         }

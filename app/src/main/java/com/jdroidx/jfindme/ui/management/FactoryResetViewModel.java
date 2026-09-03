@@ -106,8 +106,7 @@ public class FactoryResetViewModel extends AndroidViewModel {
                             // Merge into a single map for the handshake
                             profile.putAll(identity);
 
-                            String rawHw = android.provider.Settings.Secure.getString(getApplication().getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-                            String hardwareUid = "HW_" + (rawHw != null ? rawHw.toUpperCase() : "NODE");
+                            String hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication());
 
                             db.commitHandshakeDossier(authUid, profile, "NODE", profile.get("name"), agentId, hardwareUid, "RECOVERY_SYNC", "CLOUD");
                             

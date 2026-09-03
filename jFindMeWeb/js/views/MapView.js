@@ -12,6 +12,18 @@ export class MapView {
         this.options = options;
         this.activeEngineType = AppConfig.MAP_DEFAULTS.ENGINE || "google";
         this.activeEngine = null;
+        this._onDeviceClickCallback = options.onDeviceClick || null;
+    }
+
+    set onDeviceClickCallback(cb) {
+        this._onDeviceClickCallback = cb;
+        if (this.activeEngine) {
+            this.activeEngine.onDeviceClickCallback = cb;
+        }
+    }
+
+    get onDeviceClickCallback() {
+        return this._onDeviceClickCallback;
     }
 
     /**
@@ -28,6 +40,7 @@ export class MapView {
         if (this.activeEngineType === "google") {
             try {
                 this.activeEngine = new GoogleMapView(this.containerId, this.options);
+                if (this._onDeviceClickCallback) this.activeEngine.onDeviceClickCallback = this._onDeviceClickCallback;
                 await this.activeEngine.init(centerLat, centerLng, zoom, theme);
                 console.log("[MAP_FACADE] Primary Google Maps V3 Engine Activated.");
                 return;
@@ -39,6 +52,7 @@ export class MapView {
 
         // Leaflet Engine Fallback
         this.activeEngine = new LeafletMapView(this.containerId, this.options);
+        if (this._onDeviceClickCallback) this.activeEngine.onDeviceClickCallback = this._onDeviceClickCallback;
         this.activeEngine.init(centerLat, centerLng, zoom, theme);
         console.log("[MAP_FACADE] Leaflet Fallback Engine Activated.");
     }

@@ -340,8 +340,7 @@ object FirebasePairingManager {
     }
 
     fun getDeviceId(context: android.content.Context): String {
-        val hwId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "FALLBACK_HW"
-        return "HW_" + hwId.uppercase()
+        return com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
     }
 
     private fun generateSecureToken(): String {

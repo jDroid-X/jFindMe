@@ -369,9 +369,19 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         applySorting(spouses);
         applySorting(children);
 
-        renderCollapsibleTreeBranch("👑 CO-GUARDIANS & PARENTS", admins, "Guardian");
-        renderCollapsibleTreeBranch("💍 SPOUSE ENTITIES", spouses, "Spouse");
-        renderCollapsibleTreeBranch("🧸 DEPENDENT TARGETS (CHILDREN)", children, "Child");
+        if (admins.isEmpty() && spouses.isEmpty() && children.isEmpty()) {
+            rosterContainer.addView(buildEmptyRosterView(true, !searchFilter.isEmpty()));
+        } else {
+            if (!admins.isEmpty() || searchFilter.isEmpty()) {
+                renderCollapsibleTreeBranch("👑 CO-GUARDIANS & PARENTS", admins, "Guardian");
+            }
+            if (!spouses.isEmpty() || searchFilter.isEmpty()) {
+                renderCollapsibleTreeBranch("💍 SPOUSE ENTITIES", spouses, "Spouse");
+            }
+            if (!children.isEmpty() || searchFilter.isEmpty()) {
+                renderCollapsibleTreeBranch("🧸 DEPENDENT TARGETS (CHILDREN)", children, "Child");
+            }
+        }
     }
 
     private void renderFriendsTab() {
@@ -399,7 +409,70 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         }
 
         applySorting(friends);
-        renderCollapsibleTreeBranch("🌐 EXTENDED FRIEND MESH (P2P)", friends, "Friend");
+        if (friends.isEmpty()) {
+            rosterContainer.addView(buildEmptyRosterView(false, !searchFilter.isEmpty()));
+        } else {
+            renderCollapsibleTreeBranch("🌐 EXTENDED FRIEND MESH (P2P)", friends, "Friend");
+        }
+    }
+
+    private View buildEmptyRosterView(boolean isFamilyTab, boolean isFiltered) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        int pad = scale(24);
+        card.setPadding(pad, pad * 2, pad, pad * 2);
+        UiArchitect.applyCard(this, card, "CARD_STANDARD");
+
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.setMargins(0, scale(16), 0, scale(24));
+        card.setLayoutParams(clp);
+
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(isFiltered ? android.R.drawable.ic_menu_search : (isFamilyTab ? com.jdroidx.jfindme.R.drawable.ic_people : android.R.drawable.ic_menu_share));
+        iv.setColorFilter(getGradientStart());
+        int is = scale(48);
+        card.addView(iv, new LinearLayout.LayoutParams(is, is));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText(isFiltered ? "No Matching Members" : (isFamilyTab ? "No Family Members Linked" : "No Friends In Mesh"));
+        tvTitle.setTextColor(getTextColor());
+        tvTitle.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TITLE"));
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        tvTitle.setGravity(Gravity.CENTER);
+        tvTitle.setPadding(0, scale(12), 0, scale(6));
+        card.addView(tvTitle);
+
+        TextView tvSub = new TextView(this);
+        if (isFiltered) {
+            tvSub.setText("No active devices match \"" + searchFilter + "\". Check for typos or reset your filter.");
+        } else if (isFamilyTab) {
+            tvSub.setText("Link your children, spouse, or co-guardians to track their live coordinates, battery health, and safe zone departures.");
+        } else {
+            tvSub.setText("Pair with friends nearby or connect via cloud invite to create a temporary peer-to-peer tracking mesh.");
+        }
+        tvSub.setTextColor(getSecondaryTextColor());
+        tvSub.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
+        tvSub.setGravity(Gravity.CENTER);
+        tvSub.setPadding(scale(16), 0, scale(16), scale(16));
+        card.addView(tvSub);
+
+        if (isFiltered) {
+            View btnClear = UiArchitect.createOutlinedButton(this, "CLEAR SEARCH FILTER", android.R.drawable.ic_menu_close_clear_cancel, v -> {
+                if (etSearchInput != null) etSearchInput.setText("");
+                searchFilter = "";
+            });
+            card.addView(btnClear);
+        } else {
+            View btnPair = UiArchitect.createPrimaryButton(this, isFamilyTab ? "+ PAIR FAMILY DEVICE" : "+ ADD FRIEND P2P", android.R.drawable.ic_menu_add, v -> {
+                Intent intent = new Intent(this, NetworkGatewayActivity.class);
+                intent.putExtra("LAUNCH_MODE", isFamilyTab ? "FAMILY_PAIR" : "FRIEND_PAIR");
+                startActivity(intent);
+            });
+            card.addView(btnPair);
+        }
+
+        return card;
     }
 
     private void applySorting(List<RosterNode> list) {
@@ -636,7 +709,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         UiArchitect.applyCard(this, logCard, "CARD_STANDARD");
 
         int batt = (node.getBatteryPercent() > 0) ? node.getBatteryPercent() : 100;
-        long lastSeenMs = node.isOnline() ? System.currentTimeMillis() : 0L;
+        long lastSeenMs = node.getLastSeenTimestamp() > 0L ? node.getLastSeenTimestamp() : (node.isOnline() ? System.currentTimeMillis() : 0L);
         com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
             com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batt, false, false, false);
 

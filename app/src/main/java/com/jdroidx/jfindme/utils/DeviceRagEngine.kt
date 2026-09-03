@@ -18,10 +18,10 @@ object DeviceRagEngine {
         val label: String,
         val emoji: String
     ) {
-        GREEN("#00E676", Color.parseColor("#00E676"), "ONLINE", "🟢"),
-        AMBER("#FFD600", Color.parseColor("#FFD600"), "STALE / LOW BATTERY", "🟡"),
-        RED("#FF1744", Color.parseColor("#FF1744"), "OFFLINE / SOS", "🔴"),
-        GREY("#9E9E9E", Color.parseColor("#9E9E9E"), "UNLINKED / GHOST", "⚪")
+        GREEN("#22C55E", Color.parseColor("#22C55E"), "ACTIVE (LIVE)", "🟢"),
+        AMBER("#F59E0B", Color.parseColor("#F59E0B"), "INACTIVE (< 6H)", "🟡"),
+        RED("#EF4444", Color.parseColor("#EF4444"), "INACTIVE (> 6H)", "🔴"),
+        GREY("#64748B", Color.parseColor("#64748B"), "UNLINKED / GHOST", "⚪")
     }
 
     data class EvaluationResult(
@@ -50,7 +50,7 @@ object DeviceRagEngine {
                 statusText = "⏳ UNLINK REQUESTED (PARKED)",
                 cardAlpha = 0.55f,
                 isDesaturated = true,
-                strokeColor = Color.parseColor("#9E9E9E")
+                strokeColor = Color.parseColor("#64748B")
             )
         }
 
@@ -61,47 +61,57 @@ object DeviceRagEngine {
                 statusText = if (isDeleted) "⚪ DELETED / UNLINKED" else "⚪ GHOST MODE (PRIVATE)",
                 cardAlpha = 0.60f,
                 isDesaturated = true,
-                strokeColor = Color.parseColor("#757575")
+                strokeColor = Color.parseColor("#64748B")
             )
         }
 
         if (isSos) {
             return EvaluationResult(
                 status = RagStatus.RED,
-                statusColor = Color.parseColor("#FF1744"),
+                statusColor = Color.parseColor("#EF4444"),
                 statusText = "🚨 EMERGENCY SOS ACTIVE",
                 cardAlpha = 1.0f,
                 isDesaturated = false,
-                strokeColor = Color.parseColor("#FF1744")
+                strokeColor = Color.parseColor("#EF4444")
             )
         }
 
         val now = System.currentTimeMillis()
         val deltaMs = if (timestamp > 0L) (now - timestamp).coerceAtLeast(0L) else 0L
 
-        // 1. Critical Inactive (> 5 minutes / 300s without heartbeat)
-        if (timestamp <= 0L || deltaMs > 300_000L) {
-            val mins = (deltaMs / 60_000L).coerceAtLeast(5L)
-            val timeText = if (mins >= 60L) "${mins / 60L}h ago" else "${mins}m ago"
+        val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val staleMins = if (context != null) RegistryManager.getStaleInactiveMinutes(context) else 15
+        val criticalHours = if (context != null) RegistryManager.getCriticalOfflineHours(context) else 6
+        val lowBatteryPct = if (context != null) RegistryManager.getLowBatteryThreshold(context) else 20
+
+        val staleMs = staleMins * 60 * 1000L
+        val criticalMs = criticalHours * 60 * 60 * 1000L
+
+        // 1. Critical Inactive (> criticalHours without heartbeat/location update)
+        if (timestamp <= 0L || deltaMs > criticalMs) {
+            val hours = (deltaMs / (3600_000L)).coerceAtLeast(criticalHours.toLong())
+            val timeText = if (hours >= 24L) "${hours / 24L}d ago" else "${hours}h ago"
             return EvaluationResult(
                 status = RagStatus.RED,
-                statusColor = Color.parseColor("#FF5252"),
-                statusText = "🔴 OFFLINE • LAST SEEN $timeText",
+                statusColor = RagStatus.RED.colorInt,
+                statusText = "🔴 INACTIVE • LAST SEEN $timeText",
                 cardAlpha = 0.75f,
                 isDesaturated = true,
-                strokeColor = Color.parseColor("#EF5350")
+                strokeColor = RagStatus.RED.colorInt
             )
         }
 
-        // 2. Warning / Degraded State (120s – 300s Stale OR Low Battery ≤ 20%)
-        val isStale = deltaMs > 120_000L
-        val isLowBattery = batteryLevel in 1..20
+        // 2. Warning / Inactive Recent (staleMins – criticalHours OR Low Battery ≤ lowBatteryPct%)
+        val isStale = deltaMs > staleMs
+        val isLowBattery = batteryLevel in 1..lowBatteryPct
 
         if (isStale || isLowBattery) {
+            val mins = (deltaMs / 60_000L)
+            val timeText = if (mins >= 60L) "${mins / 60L}h ago" else "${mins}m ago"
             val reason = when {
-                isStale && isLowBattery -> "🟡 STALE SIGNAL (${deltaMs / 1000L}s) • BATTERY $batteryLevel%"
+                isStale && isLowBattery -> "🟡 INACTIVE ($timeText) • BATTERY $batteryLevel%"
                 isLowBattery -> "🟡 LOW BATTERY ($batteryLevel%)"
-                else -> "🟡 STALE SIGNAL (${deltaMs / 1000L}s ago)"
+                else -> "🟡 INACTIVE • LAST SEEN $timeText"
             }
             return EvaluationResult(
                 status = RagStatus.AMBER,
@@ -113,13 +123,13 @@ object DeviceRagEngine {
             )
         }
 
-        // 3. Optimal Active (Green)
+        // 3. Optimal Active (Green - within 15 minutes)
         val timeFormatted = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
             .format(java.util.Date(timestamp))
         return EvaluationResult(
             status = RagStatus.GREEN,
             statusColor = RagStatus.GREEN.colorInt,
-            statusText = "🟢 ONLINE NOW @ $timeFormatted",
+            statusText = "🟢 ACTIVE • LIVE @ $timeFormatted",
             cardAlpha = 1.0f,
             isDesaturated = false,
             strokeColor = RagStatus.GREEN.colorInt

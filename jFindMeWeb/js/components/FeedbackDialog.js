@@ -451,6 +451,192 @@ export class FeedbackDialog {
         }, duration);
     }
 
+    /**
+     * Shows an Enterprise Slide-in/out Notification from the Right Bottom with Interactive Action Options
+     * @param {Object} options
+     * @param {string} options.title
+     * @param {string} options.message
+     * @param {'success'|'warning'|'error'|'info'} [options.type='info']
+     * @param {Array<{id: string, label: string, variant?: 'primary'|'secondary'|'danger'}>} [options.actions=[]]
+     * @param {number} [options.duration=6500] 0 to keep open until closed
+     * @param {Function} [options.onAction]
+     * @param {Function} [options.onClose]
+     */
+    static showSlideNotification({
+        title = "System Notification",
+        message = "",
+        type = "info",
+        actions = [],
+        duration = 6500,
+        onAction = null,
+        onClose = null
+    } = {}) {
+        let slideContainer = document.getElementById("jfindme-slide-notif-container");
+        if (!slideContainer) {
+            slideContainer = document.createElement("div");
+            slideContainer.id = "jfindme-slide-notif-container";
+            slideContainer.className = "fixed bottom-5 right-5 z-[10001] flex flex-col gap-2.5 max-w-sm w-[90vw] pointer-events-none font-sans";
+            document.body.appendChild(slideContainer);
+        }
+
+        const icons = {
+            success: "🛡️",
+            warning: "⚠️",
+            error: "🚨",
+            info: "📡"
+        };
+
+        const themeStyles = {
+            success: "border-emerald-500/40 bg-emerald-950/90 text-emerald-100 shadow-emerald-500/20",
+            warning: "border-amber-500/40 bg-amber-950/90 text-amber-100 shadow-amber-500/20",
+            error: "border-rose-500/40 bg-rose-950/90 text-rose-100 shadow-rose-500/20",
+            info: "border-sky-500/40 bg-sky-950/90 text-sky-100 shadow-sky-500/20"
+        };
+
+        const notifCard = document.createElement("div");
+        notifCard.className = `p-3.5 rounded-2xl border backdrop-blur-xl shadow-2xl transition-all duration-400 ease-out transform translate-x-full opacity-0 pointer-events-auto select-none space-y-2.5 ${themeStyles[type] || themeStyles.info}`;
+
+        notifCard.innerHTML = `
+            <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-base shrink-0">${icons[type] || '📡'}</span>
+                    <h4 class="text-xs font-bold tracking-wide truncate uppercase">${title}</h4>
+                </div>
+                <button class="btn-slide-close text-xs text-muted-theme hover:text-white font-bold p-0.5 transition-colors">✕</button>
+            </div>
+            <p class="text-[11px] leading-relaxed opacity-90">${message}</p>
+            ${actions.length > 0 ? `
+                <div class="flex items-center justify-end gap-1.5 pt-1.5 border-t border-white/10">
+                    ${actions.map(act => {
+                        const isPrimary = act.variant === 'primary';
+                        const isDanger = act.variant === 'danger';
+                        const btnClass = isPrimary 
+                            ? 'btn-action-primary text-[10px] py-1 px-2.5 shadow-sm' 
+                            : (isDanger ? 'btn-action-danger text-[10px] py-1 px-2.5' : 'btn-action-secondary text-[10px] py-1 px-2');
+                        return `<button class="btn-slide-action ${btnClass}" data-action-id="${act.id}">${act.label}</button>`;
+                    }).join('')}
+                </div>
+            ` : ''}
+        `;
+
+        slideContainer.appendChild(notifCard);
+
+        const dismiss = () => {
+            notifCard.classList.remove("translate-x-0", "opacity-100");
+            notifCard.classList.add("translate-x-full", "opacity-0");
+            setTimeout(() => {
+                notifCard.remove();
+                if (onClose) onClose();
+            }, 400);
+        };
+
+        // Slide In Animation
+        requestAnimationFrame(() => {
+            notifCard.classList.remove("translate-x-full", "opacity-0");
+            notifCard.classList.add("translate-x-0", "opacity-100");
+        });
+
+        notifCard.querySelector(".btn-slide-close")?.addEventListener("click", dismiss);
+
+        notifCard.querySelectorAll(".btn-slide-action").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const actId = btn.getAttribute("data-action-id");
+                dismiss();
+                if (onAction) onAction(actId);
+            });
+        });
+
+        if (duration > 0) {
+            setTimeout(dismiss, duration);
+        }
+    }
+
+    /**
+     * Renders an interactive custom rich dropdown with avatars, subtitles, search, and badges
+     * @param {Object} options
+     */
+    static createRichDropdown({
+        container,
+        items = [],
+        selectedId = null,
+        placeholder = "Select Option...",
+        onSelect = null
+    }) {
+        if (!container) return;
+        container.classList.add("relative", "select-none");
+        
+        let currentItem = items.find(i => i.id === selectedId) || null;
+        
+        container.innerHTML = `
+            <div class="rich-dropdown-trigger input-theme p-2 text-xs flex items-center justify-between cursor-pointer">
+                <div class="flex items-center gap-2 min-w-0">
+                    ${currentItem ? `
+                        ${currentItem.avatarUrl ? `<img src="${currentItem.avatarUrl}" class="w-5 h-5 rounded-full object-cover">` : `<span class="text-sm">${currentItem.icon || '📱'}</span>`}
+                        <span class="font-bold text-primary-theme truncate">${currentItem.title}</span>
+                        ${currentItem.tag ? `<span class="badge-status badge-accent text-[8px]">${currentItem.tag}</span>` : ''}
+                    ` : `<span class="text-muted-theme">${placeholder}</span>`}
+                </div>
+                <span class="text-muted-theme text-xs ml-1">▼</span>
+            </div>
+            <div class="rich-dropdown-menu hidden absolute top-full left-0 right-0 z-50 mt-1 card-theme p-2 shadow-2xl border rounded-xl space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
+                <input type="text" class="rich-dropdown-search input-theme w-full px-2 py-1 text-xs font-mono" placeholder="🔍 Filter list...">
+                <div class="rich-dropdown-items space-y-1"></div>
+            </div>
+        `;
+
+        const trigger = container.querySelector(".rich-dropdown-trigger");
+        const menu = container.querySelector(".rich-dropdown-menu");
+        const search = container.querySelector(".rich-dropdown-search");
+        const listWrapper = container.querySelector(".rich-dropdown-items");
+
+        const renderItems = (filter = "") => {
+            const q = filter.toLowerCase();
+            const filtered = items.filter(it => !q || it.title.toLowerCase().includes(q) || (it.subtitle && it.subtitle.toLowerCase().includes(q)));
+            if (filtered.length === 0) {
+                listWrapper.innerHTML = `<div class="text-[10px] text-muted-theme italic p-2 text-center">No options found.</div>`;
+                return;
+            }
+            listWrapper.innerHTML = filtered.map(it => `
+                <div class="rich-dropdown-item p-1.5 rounded-lg hover:bg-card-hover cursor-pointer flex items-center justify-between transition-all ${it.id === selectedId ? 'bg-sky-500/15 border border-sky-500/30' : ''}" data-id="${it.id}">
+                    <div class="flex items-center gap-2 min-w-0">
+                        ${it.avatarUrl ? `<img src="${it.avatarUrl}" class="w-5 h-5 rounded-full object-cover">` : `<span class="text-sm">${it.icon || '📱'}</span>`}
+                        <div class="min-w-0">
+                            <div class="text-xs font-bold text-primary-theme truncate">${it.title}</div>
+                            ${it.subtitle ? `<div class="text-[9px] text-secondary-theme font-mono truncate">${it.subtitle}</div>` : ''}
+                        </div>
+                    </div>
+                    ${it.tag ? `<span class="badge-status badge-accent text-[8px]">${it.tag}</span>` : ''}
+                </div>
+            `).join('');
+
+            listWrapper.querySelectorAll(".rich-dropdown-item").forEach(el => {
+                el.addEventListener("click", () => {
+                    const id = el.getAttribute("data-id");
+                    selectedId = id;
+                    currentItem = items.find(i => i.id === id);
+                    menu.classList.add("hidden");
+                    FeedbackDialog.createRichDropdown({ container, items, selectedId, placeholder, onSelect });
+                    if (onSelect) onSelect(id, currentItem);
+                });
+            });
+        };
+
+        trigger.addEventListener("click", (e) => {
+            e.stopPropagation();
+            menu.classList.toggle("hidden");
+            if (!menu.classList.contains("hidden")) {
+                renderItems();
+                search.focus();
+            }
+        });
+
+        search.addEventListener("input", (e) => renderItems(e.target.value));
+
+        document.addEventListener("click", (e) => {
+            if (!container.contains(e.target)) menu.classList.add("hidden");
+        });
+    }
+
     static closeModal() {
         const modal = document.getElementById("jfindme-feedback-modal");
         if (modal) modal.remove();

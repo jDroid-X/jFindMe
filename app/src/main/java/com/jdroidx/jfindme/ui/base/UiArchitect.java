@@ -252,8 +252,11 @@ public class UiArchitect {
         HeaderTable.applyHeader(activity, header, tableKey);
     }
 
-    public static View createButton(BaseActivityJava activity, String tableKey, View.OnClickListener listener) {
-        return ActionButtonTable.createButton(activity, tableKey, listener);
+    public static View createButton(BaseActivityJava activity, String tableKeyOrText, View.OnClickListener listener) {
+        if (ActionButtonTable.getRegistry().containsKey(tableKeyOrText)) {
+            return ActionButtonTable.createButton(activity, tableKeyOrText, listener);
+        }
+        return createButton(activity, tableKeyOrText, ButtonStyle.PRIMARY, listener);
     }
 
     public static View createBottomNav(BaseActivityJava activity, String[] tableKeys, String activeKey) {
@@ -624,8 +627,264 @@ public class UiArchitect {
         return card;
     }
 
+    // ============================================================================================
+    // V-A. ENTERPRISE INTERACTIVE CONTROLS (Toggles, Switches, Flippers & Slide Notifications)
+    // ============================================================================================
+
+    public interface ToggleCallback extends OnToggleChangeListener {
+    }
+
+    public interface SwitchCallback {
+        void onSwitchChanged(boolean isChecked);
+    }
+
+    public interface MultiConditionCallback {
+        void onChoicesSelected(int[] selectedIndices, String[] selectedLabels);
+    }
+
+    public interface DropdownCallback {
+        void onItemSelected(int index, String value);
+    }
+
     /**
-     * 🛡️ PERMISSION REQUIRED DIALOG
+     * 🔘 DYNAMIC ON/OFF SWITCH WITH LABELS
+     */
+    public static View createSwitchWithLabel(BaseActivityJava activity, String label, String sublabel, 
+                                             boolean initialChecked, SwitchCallback callback) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(12);
+        row.setPadding(pad, pad, pad, pad);
+        applyCard(activity, row, "CARD_STANDARD");
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvLabel = new TextView(activity);
+        tvLabel.setText(label);
+        tvLabel.setTextColor(activity.getTextColor());
+        tvLabel.setTextSize(14f);
+        tvLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(tvLabel);
+
+        if (sublabel != null && !sublabel.isEmpty()) {
+            TextView tvSub = new TextView(activity);
+            tvSub.setText(sublabel);
+            tvSub.setTextColor(activity.getSecondaryTextColor());
+            tvSub.setTextSize(11.5f);
+            textCol.addView(tvSub);
+        }
+        row.addView(textCol);
+
+        android.widget.Switch sw = new android.widget.Switch(activity);
+        sw.setChecked(initialChecked);
+        sw.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (callback != null) callback.onSwitchChanged(isChecked);
+        });
+        row.addView(sw);
+
+        row.setOnClickListener(v -> sw.toggle());
+        return row;
+    }
+
+    /**
+     * 📽️ ANIMATED VIEW FLIPPER
+     */
+    public static android.widget.ViewFlipper createAnimatedFlipper(Context context, View... views) {
+        android.widget.ViewFlipper flipper = new android.widget.ViewFlipper(context);
+        flipper.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        
+        android.view.animation.Animation inAnim = new android.view.animation.AlphaAnimation(0f, 1f);
+        inAnim.setDuration(250);
+        android.view.animation.Animation outAnim = new android.view.animation.AlphaAnimation(1f, 0f);
+        outAnim.setDuration(250);
+
+        flipper.setInAnimation(inAnim);
+        flipper.setOutAnimation(outAnim);
+
+        for (View v : views) {
+            if (v != null) flipper.addView(v);
+        }
+        return flipper;
+    }
+
+    /**
+     * 🔔 SLIDE-IN NOTIFICATION POPUP (Bottom-Right / Floating Docked Banner)
+     */
+    public static void showSlideNotification(BaseActivityJava activity, String title, String message, 
+                                             int statusType, Runnable onAction) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+
+        ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
+        
+        LinearLayout banner = new LinearLayout(activity);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(14);
+        banner.setPadding(pad, pad, pad, pad);
+
+        int accentColor = (statusType == 1) ? Color.parseColor("#22C55E") : (statusType == 2 ? Color.parseColor("#F59E0B") : Color.parseColor("#EF4444"));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(245, 15, 23, 42));
+        bg.setCornerRadius(activity.scale(16));
+        bg.setStroke(activity.scale(2), accentColor);
+        banner.setBackground(bg);
+        banner.setElevation(activity.scale(12));
+
+        TextView tvIcon = new TextView(activity);
+        tvIcon.setText(statusType == 1 ? "🟢" : (statusType == 2 ? "🟡" : "🔴"));
+        tvIcon.setTextSize(16f);
+        tvIcon.setPadding(0, 0, activity.scale(10), 0);
+        banner.addView(tvIcon);
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvTitle = new TextView(activity);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(Color.WHITE);
+        tvTitle.setTextSize(13.5f);
+        tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(tvTitle);
+
+        TextView tvMsg = new TextView(activity);
+        tvMsg.setText(message);
+        tvMsg.setTextColor(Color.parseColor("#94A3B8"));
+        tvMsg.setTextSize(11.5f);
+        textCol.addView(tvMsg);
+        banner.addView(textCol);
+
+        if (onAction != null) {
+            TextView btn = new TextView(activity);
+            btn.setText("VIEW");
+            btn.setTextColor(accentColor);
+            btn.setTypeface(Typeface.DEFAULT_BOLD);
+            btn.setTextSize(12f);
+            btn.setPadding(activity.scale(12), activity.scale(6), activity.scale(12), activity.scale(6));
+            btn.setOnClickListener(v -> {
+                decor.removeView(banner);
+                onAction.run();
+            });
+            banner.addView(btn);
+        }
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.gravity = Gravity.BOTTOM | Gravity.END;
+        int m = activity.scale(16);
+        lp.setMargins(m, 0, m, activity.scale(32));
+        banner.setLayoutParams(lp);
+
+        // Slide In Animation from Bottom-Right
+        banner.setTranslationY(activity.scale(100));
+        banner.setAlpha(0f);
+        decor.addView(banner);
+
+        banner.animate()
+            .translationY(0f)
+            .alpha(1f)
+            .setDuration(300)
+            .setInterpolator(new android.view.animation.DecelerateInterpolator())
+            .start();
+
+        // Auto dismiss after 4 seconds
+        banner.postDelayed(() -> {
+            if (banner.getParent() != null) {
+                banner.animate()
+                    .translationY(activity.scale(100))
+                    .alpha(0f)
+                    .setDuration(250)
+                    .withEndAction(() -> decor.removeView(banner))
+                    .start();
+            }
+        }, 4000);
+    }
+
+    /**
+     * 📋 INTERACTIVE DROPDOWN LIST BOX (With Dynamic Item Selection)
+     */
+    public static View createDropdownListBox(BaseActivityJava activity, String hint, java.util.List<String> items, 
+                                             DropdownCallback callback) {
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        int padH = activity.scale(14);
+        int padV = activity.scale(10);
+        box.setPadding(padH, padV, padH, padV);
+        applyCard(activity, box, "CARD_STANDARD");
+
+        TextView tvSelected = new TextView(activity);
+        tvSelected.setText(hint != null ? hint : "Select from list...");
+        tvSelected.setTextColor(activity.getTextColor());
+        tvSelected.setTextSize(13.5f);
+        tvSelected.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+        box.addView(tvSelected);
+
+        TextView tvArrow = new TextView(activity);
+        tvArrow.setText("▾");
+        tvArrow.setTextColor(activity.getGradientStart());
+        tvArrow.setTextSize(16f);
+        tvArrow.setTypeface(Typeface.DEFAULT_BOLD);
+        box.addView(tvArrow);
+
+        box.setClickable(true);
+        box.setFocusable(true);
+        box.setOnClickListener(v -> {
+            if (items == null || items.isEmpty()) {
+                android.widget.Toast.makeText(activity, "No items available in list", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String[] arr = items.toArray(new String[0]);
+            showOptionsDialog(activity, hint != null ? hint : "Select Option", arr, -1, (index, label) -> {
+                tvSelected.setText(label);
+                if (callback != null) callback.onItemSelected(index, label);
+            });
+        });
+
+        return box;
+    }
+
+    /**
+     * ☑️ MULTI-CHOICE CONDITION DIALOG WITH POPUP OPTIONS
+     */
+    public static void showMultiConditionDialog(BaseActivityJava activity, String title, String[] choices, 
+                                                 boolean[] initialChecked, MultiConditionCallback callback) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed() || choices == null) return;
+
+        boolean[] checkedItems = initialChecked != null ? initialChecked.clone() : new boolean[choices.length];
+
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity);
+        builder.setTitle(title != null ? title : "Select Conditions");
+        builder.setMultiChoiceItems(choices, checkedItems, (dialog, which, isChecked) -> {
+            checkedItems[which] = isChecked;
+        });
+        builder.setPositiveButton("CONFIRM", (dialog, which) -> {
+            java.util.List<Integer> selIdx = new java.util.ArrayList<>();
+            java.util.List<String> selLbl = new java.util.ArrayList<>();
+            for (int i = 0; i < checkedItems.length; i++) {
+                if (checkedItems[i]) {
+                    selIdx.add(i);
+                    selLbl.add(choices[i]);
+                }
+            }
+            int[] outIndices = new int[selIdx.size()];
+            for (int i = 0; i < selIdx.size(); i++) outIndices[i] = selIdx.get(i);
+            if (callback != null) callback.onChoicesSelected(outIndices, selLbl.toArray(new String[0]));
+        });
+        builder.setNegativeButton("CANCEL", null);
+
+        android.app.AlertDialog dialog = builder.create();
+        dialog.show();
+        activity.applyDialogTheme(dialog);
+    }
+
+    /**
+     * 🛡️ PERMISSION REQUIRED DIALOG 
      */
     public static void showPermissionRequiredDialog(BaseActivityJava activity, String permissionTitle, 
                                                     String rationale, Runnable onOpenSettings) {
@@ -1003,7 +1262,10 @@ public class UiArchitect {
     }
 
     public interface MultiChoiceCallback {
-        void onItemsSelected(boolean[] checkedItems);
+        void onConfirmed(boolean[] selectedStates, String[] selectedItems);
+        default void onItemsSelected(boolean[] checkedItems) {
+            onConfirmed(checkedItems, new String[0]);
+        }
     }
 
     public static void showMultiChoiceOptionsDialog(BaseActivityJava activity, String title, String[] items, 
@@ -1158,7 +1420,8 @@ public class UiArchitect {
     }
 
     public interface TextValidator {
-        boolean isValid(String input);
+        boolean validate(String text);
+        default boolean isValid(String input) { return validate(input); }
         String getErrorMessage();
     }
 
@@ -1277,28 +1540,723 @@ public class UiArchitect {
         activity.applyDialogTheme(dialog);
     }
 
-    public interface OnOptionSelectListener {
-        void onOptionSelected(int index, String optionText);
+    // ============================================================================================
+    // IX. ENTERPRISE RICH UI WIDGET SUITE (OOPS MVC/MVVM Component Engine)
+    // ============================================================================================
+
+    /**
+     * 🔘 Tactile On/Off Switch Row with Dynamic Haptic & Visual Feedback
+     */
+    public static View createInteractiveSwitch(BaseActivityJava activity, String title, String subtitle, 
+                                               boolean initialChecked, android.widget.CompoundButton.OnCheckedChangeListener listener) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(12);
+        row.setPadding(pad, pad, pad, pad);
+        applyCard(activity, row, "CARD_STANDARD");
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvTitle = new TextView(activity);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(activity.getTextColor());
+        tvTitle.setTextSize(getResponsiveTextSize(activity, "TEXT_TITLE"));
+        tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(tvTitle);
+
+        if (subtitle != null && !subtitle.isEmpty()) {
+            TextView tvSub = new TextView(activity);
+            tvSub.setText(subtitle);
+            tvSub.setTextColor(activity.getSecondaryTextColor());
+            tvSub.setTextSize(getResponsiveTextSize(activity, "TEXT_SUB"));
+            textCol.addView(tvSub);
+        }
+        row.addView(textCol);
+
+        androidx.appcompat.widget.SwitchCompat switchCompat = new androidx.appcompat.widget.SwitchCompat(activity);
+        switchCompat.setChecked(initialChecked);
+        switchCompat.setOnCheckedChangeListener(listener);
+        row.addView(switchCompat);
+
+        return row;
     }
 
-    public static void showPopupNotificationWithOptions(BaseActivityJava activity, String title, String message, 
-                                                         String[] options, OnOptionSelectListener listener) {
+    /**
+     * ↔️ Segmented Multi-Toggle Switcher (Left/Right/Tab selection)
+     */
+    public static View createSegmentedToggle(BaseActivityJava activity, String[] segments, int initialIndex, OptionSelectedCallback listener) {
+        LinearLayout container = new LinearLayout(activity);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setGravity(Gravity.CENTER);
+        int p = activity.scale(4);
+        container.setPadding(p, p, p, p);
+
+        boolean isDark = ThemeManager.isDarkTheme(activity.getResolvedThemeId());
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(isDark ? Color.parseColor("#26FFFFFF") : Color.parseColor("#14000000"));
+        bg.setCornerRadius(activity.scale(25));
+        container.setBackground(bg);
+
+        TextView[] tabViews = new TextView[segments.length];
+        final int[] currentIndex = new int[]{initialIndex};
+
+        for (int i = 0; i < segments.length; i++) {
+            final int idx = i;
+            TextView tab = new TextView(activity);
+            tab.setText(segments[i]);
+            tab.setGravity(Gravity.CENTER);
+            tab.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+            tab.setTypeface(Typeface.DEFAULT_BOLD);
+            int vPad = activity.scale(8);
+            int hPad = activity.scale(16);
+            tab.setPadding(hPad, vPad, hPad, vPad);
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            tab.setLayoutParams(lp);
+
+            tab.setOnClickListener(v -> {
+                currentIndex[0] = idx;
+                for (int j = 0; j < tabViews.length; j++) {
+                    boolean isSel = (j == idx);
+                    GradientDrawable tabBg = new GradientDrawable();
+                    if (isSel) {
+                        tabBg.setColor(activity.getGradientStart());
+                        tabBg.setCornerRadius(activity.scale(20));
+                        tabViews[j].setBackground(tabBg);
+                        tabViews[j].setTextColor(Color.WHITE);
+                    } else {
+                        tabViews[j].setBackgroundColor(Color.TRANSPARENT);
+                        tabViews[j].setTextColor(activity.getSecondaryTextColor());
+                    }
+                }
+                if (listener != null) listener.onOptionSelected(idx, segments[idx]);
+            });
+
+            tabViews[i] = tab;
+            container.addView(tab);
+        }
+
+        // Apply initial selection
+        for (int j = 0; j < tabViews.length; j++) {
+            boolean isSel = (j == initialIndex);
+            GradientDrawable tabBg = new GradientDrawable();
+            if (isSel) {
+                tabBg.setColor(activity.getGradientStart());
+                tabBg.setCornerRadius(activity.scale(20));
+                tabViews[j].setBackground(tabBg);
+                tabViews[j].setTextColor(Color.WHITE);
+            } else {
+                tabViews[j].setBackgroundColor(Color.TRANSPARENT);
+                tabViews[j].setTextColor(activity.getSecondaryTextColor());
+            }
+        }
+
+        return container;
+    }
+
+    /**
+     * 📑 Dynamic Dropdown List Box with Selection Anchor
+     */
+    public static View createDropdownListBox(BaseActivityJava activity, String label, String[] items, int selectedIndex, OptionSelectedCallback listener) {
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+
+        if (label != null && !label.isEmpty()) {
+            TextView tvLabel = new TextView(activity);
+            tvLabel.setText(label);
+            tvLabel.setTextColor(activity.getSecondaryTextColor());
+            tvLabel.setTextSize(getResponsiveTextSize(activity, "TEXT_LABEL"));
+            tvLabel.setTypeface(Typeface.DEFAULT_BOLD);
+            tvLabel.setPadding(activity.scale(4), 0, 0, activity.scale(4));
+            root.addView(tvLabel);
+        }
+
+        LinearLayout dropdownBtn = new LinearLayout(activity);
+        dropdownBtn.setOrientation(LinearLayout.HORIZONTAL);
+        dropdownBtn.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(12);
+        dropdownBtn.setPadding(pad, pad, pad, pad);
+        applyCard(activity, dropdownBtn, "CARD_STANDARD");
+
+        TextView tvSelected = new TextView(activity);
+        String selText = (selectedIndex >= 0 && selectedIndex < items.length) ? items[selectedIndex] : "Select Option...";
+        tvSelected.setText(selText);
+        tvSelected.setTextColor(activity.getTextColor());
+        tvSelected.setTextSize(getResponsiveTextSize(activity, "TEXT_BODY"));
+        dropdownBtn.addView(tvSelected, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        ImageView arrow = new ImageView(activity);
+        arrow.setImageResource(android.R.drawable.arrow_down_float);
+        arrow.setColorFilter(activity.getGradientStart());
+        int is = activity.scale(16);
+        dropdownBtn.addView(arrow, new LinearLayout.LayoutParams(is, is));
+
+        dropdownBtn.setOnClickListener(v -> {
+            showOptionsDialog(activity, label != null ? label : "Select Option", items, selectedIndex, (idx, optionText) -> {
+                tvSelected.setText(optionText);
+                if (listener != null) listener.onOptionSelected(idx, optionText);
+            });
+        });
+
+        root.addView(dropdownBtn);
+        return root;
+    }
+
+    /**
+     * 🚀 Slide-In / Out Notification Banner from Bottom-Right
+     */
+    public static void showSlideNotification(BaseActivityJava activity, String title, String message, 
+                                             int iconRes, int accentColor, String actionText, Runnable onAction) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+
+        ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
+        FrameLayout banner = new FrameLayout(activity);
+
+        LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(14);
+        card.setPadding(pad, pad, pad, pad);
+
+        boolean isDark = ThemeManager.isDarkTheme(activity.getResolvedThemeId());
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(isDark ? Color.parseColor("#E61E293B") : Color.parseColor("#F2FFFFFF"));
+        bg.setCornerRadius(activity.scale(16));
+        bg.setStroke(activity.scale(2), accentColor != 0 ? accentColor : activity.getGradientStart());
+        card.setBackground(bg);
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(accentColor != 0 ? accentColor : activity.getGradientStart());
+            int is = activity.scale(24);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(12), 0);
+            card.addView(iv, ivLp);
+        }
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvTitle = new TextView(activity);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(activity.getTextColor());
+        tvTitle.setTextSize(getResponsiveTextSize(activity, "TEXT_TITLE"));
+        tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(tvTitle);
+
+        TextView tvMsg = new TextView(activity);
+        tvMsg.setText(message);
+        tvMsg.setTextColor(activity.getSecondaryTextColor());
+        tvMsg.setTextSize(getResponsiveTextSize(activity, "TEXT_SUB"));
+        textCol.addView(tvMsg);
+        card.addView(textCol);
+
+        if (actionText != null && !actionText.isEmpty()) {
+            TextView btn = new TextView(activity);
+            btn.setText(actionText);
+            btn.setTextColor(accentColor != 0 ? accentColor : activity.getGradientStart());
+            btn.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+            btn.setTypeface(Typeface.DEFAULT_BOLD);
+            btn.setPadding(activity.scale(10), activity.scale(6), activity.scale(10), activity.scale(6));
+            btn.setOnClickListener(v -> {
+                decor.removeView(banner);
+                if (onAction != null) onAction.run();
+            });
+            card.addView(btn);
+        }
+
+        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        flp.gravity = Gravity.BOTTOM | Gravity.END;
+        int m = activity.scale(16);
+        flp.setMargins(m, 0, m, m + activity.scale(40));
+        banner.addView(card, flp);
+
+        // Slide-in translation animation
+        card.setTranslationY(activity.scale(120));
+        card.setAlpha(0f);
+        card.animate().translationY(0f).alpha(1f).setDuration(350).start();
+
+        decor.addView(banner);
+
+        // Auto-dismiss after 4 seconds
+        card.postDelayed(() -> {
+            try {
+                card.animate().translationY(activity.scale(120)).alpha(0f).setDuration(300).withEndAction(() -> {
+                    decor.removeView(banner);
+                }).start();
+            } catch (Exception ignored) {}
+        }, 4000);
+    }
+
+    // ============================================================================================
+    // X. STANDARDIZED ENTERPRISE UI CONTROLS SUITE (Agent 3 Protocol)
+    // ============================================================================================
+
+    public interface OnToggleChangeListener {
+        void onToggle(boolean isLeft);
+    }
+
+    public interface OnSwitchChangeListener {
+        void onCheckChanged(boolean isChecked);
+    }
+
+    // 1. BUTTON SUITE (Primary, Secondary, Destructive, Outlined, Icon)
+    public static View createPrimaryButton(BaseActivityJava activity, String text, int iconRes, View.OnClickListener listener) {
+        LinearLayout btn = new LinearLayout(activity);
+        btn.setOrientation(LinearLayout.HORIZONTAL);
+        btn.setGravity(Gravity.CENTER);
+        int hPad = activity.scale(20);
+        int vPad = activity.scale(12);
+        btn.setPadding(hPad, vPad, hPad, vPad);
+        btn.setClickable(true);
+        btn.setFocusable(true);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColors(new int[]{activity.getGradientStart(), activity.getGradientEnd()});
+        bg.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
+        bg.setCornerRadius(activity.scale(25));
+        btn.setBackground(bg);
+        btn.setElevation(activity.scale(8));
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(Color.WHITE);
+            int is = activity.scale(18);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(8), 0);
+            btn.addView(iv, ivLp);
+        }
+
+        TextView tv = new TextView(activity);
+        tv.setText(text != null ? text.toUpperCase() : "");
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.addView(tv);
+
+        if (listener != null) btn.setOnClickListener(listener);
+        return btn;
+    }
+
+    public static View createSecondaryButton(BaseActivityJava activity, String text, int iconRes, View.OnClickListener listener) {
+        LinearLayout btn = new LinearLayout(activity);
+        btn.setOrientation(LinearLayout.HORIZONTAL);
+        btn.setGravity(Gravity.CENTER);
+        int hPad = activity.scale(18);
+        int vPad = activity.scale(12);
+        btn.setPadding(hPad, vPad, hPad, vPad);
+        btn.setClickable(true);
+        btn.setFocusable(true);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(activity.getCardColor());
+        bg.setStroke(activity.scale(2), activity.getGradientStart());
+        bg.setCornerRadius(activity.scale(25));
+        btn.setBackground(bg);
+        btn.setElevation(activity.scale(4));
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(activity.getGradientStart());
+            int is = activity.scale(18);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(8), 0);
+            btn.addView(iv, ivLp);
+        }
+
+        TextView tv = new TextView(activity);
+        tv.setText(text != null ? text.toUpperCase() : "");
+        tv.setTextColor(activity.getTextColor());
+        tv.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.addView(tv);
+
+        if (listener != null) btn.setOnClickListener(listener);
+        return btn;
+    }
+
+    public static View createDestructiveButton(BaseActivityJava activity, String text, int iconRes, View.OnClickListener listener) {
+        LinearLayout btn = new LinearLayout(activity);
+        btn.setOrientation(LinearLayout.HORIZONTAL);
+        btn.setGravity(Gravity.CENTER);
+        int hPad = activity.scale(18);
+        int vPad = activity.scale(12);
+        btn.setPadding(hPad, vPad, hPad, vPad);
+        btn.setClickable(true);
+        btn.setFocusable(true);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#DC2626")); // Crimson Red
+        bg.setCornerRadius(activity.scale(25));
+        btn.setBackground(bg);
+        btn.setElevation(activity.scale(6));
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(Color.WHITE);
+            int is = activity.scale(18);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(8), 0);
+            btn.addView(iv, ivLp);
+        }
+
+        TextView tv = new TextView(activity);
+        tv.setText(text != null ? text.toUpperCase() : "");
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.addView(tv);
+
+        if (listener != null) btn.setOnClickListener(listener);
+        return btn;
+    }
+
+    public static View createOutlinedButton(BaseActivityJava activity, String text, int iconRes, View.OnClickListener listener) {
+        LinearLayout btn = new LinearLayout(activity);
+        btn.setOrientation(LinearLayout.HORIZONTAL);
+        btn.setGravity(Gravity.CENTER);
+        int hPad = activity.scale(16);
+        int vPad = activity.scale(10);
+        btn.setPadding(hPad, vPad, hPad, vPad);
+        btn.setClickable(true);
+        btn.setFocusable(true);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.TRANSPARENT);
+        bg.setStroke(activity.scale(2), activity.getSecondaryTextColor());
+        bg.setCornerRadius(activity.scale(25));
+        btn.setBackground(bg);
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(activity.getSecondaryTextColor());
+            int is = activity.scale(16);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(6), 0);
+            btn.addView(iv, ivLp);
+        }
+
+        TextView tv = new TextView(activity);
+        tv.setText(text != null ? text : "");
+        tv.setTextColor(activity.getSecondaryTextColor());
+        tv.setTextSize(getResponsiveTextSize(activity, "BUTTON_TEXT"));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.addView(tv);
+
+        if (listener != null) btn.setOnClickListener(listener);
+        return btn;
+    }
+
+    public static View createIconButton(BaseActivityJava activity, int iconRes, View.OnClickListener listener) {
+        ImageView iv = new ImageView(activity);
+        iv.setImageResource(iconRes);
+        iv.setColorFilter(activity.getGradientStart());
+        iv.setClickable(true);
+        iv.setFocusable(true);
+
+        int size = activity.scale(44);
+        int pad = activity.scale(10);
+        iv.setPadding(pad, pad, pad, pad);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(activity.getCardColor());
+        bg.setStroke(activity.scale(2), activity.getGradientStart());
+        iv.setBackground(bg);
+        iv.setElevation(activity.scale(6));
+
+        iv.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        if (listener != null) iv.setOnClickListener(listener);
+        return iv;
+    }
+
+    // 2. VALIDATED TEXTBOX (Label with red asterisk, clear button, dynamic error banner)
+    public static View createValidatedTextBox(BaseActivityJava activity, String label, String hint, boolean isRequired, TextValidator validator) {
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(0, activity.scale(4), 0, activity.scale(8));
+
+        // Label row
+        LinearLayout labelRow = new LinearLayout(activity);
+        labelRow.setOrientation(LinearLayout.HORIZONTAL);
+        labelRow.setGravity(Gravity.CENTER_VERTICAL);
+        labelRow.setPadding(activity.scale(4), 0, 0, activity.scale(4));
+
+        TextView tvLabel = new TextView(activity);
+        tvLabel.setText(label != null ? label : "");
+        tvLabel.setTextColor(activity.getTextColor());
+        tvLabel.setTextSize(getResponsiveTextSize(activity, "TEXT_LABEL"));
+        tvLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        labelRow.addView(tvLabel);
+
+        if (isRequired) {
+            TextView tvStar = new TextView(activity);
+            tvStar.setText(" *");
+            tvStar.setTextColor(Color.parseColor("#EF4444"));
+            tvStar.setTextSize(getResponsiveTextSize(activity, "TEXT_LABEL"));
+            tvStar.setTypeface(Typeface.DEFAULT_BOLD);
+            labelRow.addView(tvStar);
+        }
+        root.addView(labelRow);
+
+        // Input container (Box + Clear button)
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        int pad = activity.scale(12);
+        box.setPadding(pad, pad / 2, pad, pad / 2);
+
+        GradientDrawable boxBg = new GradientDrawable();
+        boxBg.setColor(activity.getCardColor());
+        boxBg.setCornerRadius(activity.scale(14));
+        boxBg.setStroke(activity.scale(1), Color.parseColor("#33888888"));
+        box.setBackground(boxBg);
+
+        EditText edt = new EditText(activity);
+        edt.setHint(hint != null ? (hint + (isRequired ? " *" : "")) : "");
+        edt.setHintTextColor(activity.getSecondaryTextColor());
+        edt.setTextColor(activity.getTextColor());
+        edt.setTextSize(getResponsiveTextSize(activity, "TEXT_BODY"));
+        edt.setBackground(null);
+        edt.setSingleLine(true);
+        box.addView(edt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        ImageView btnClear = new ImageView(activity);
+        btnClear.setImageResource(android.R.drawable.ic_menu_close_clear_cancel);
+        btnClear.setColorFilter(activity.getSecondaryTextColor());
+        int is = activity.scale(18);
+        btnClear.setVisibility(View.GONE);
+        box.addView(btnClear, new LinearLayout.LayoutParams(is, is));
+
+        btnClear.setOnClickListener(v -> edt.setText(""));
+
+        root.addView(box);
+
+        // Error message banner (hidden by default)
+        TextView tvError = new TextView(activity);
+        tvError.setTextColor(Color.parseColor("#EF4444"));
+        tvError.setTextSize(getResponsiveTextSize(activity, "TEXT_MINI"));
+        tvError.setTypeface(Typeface.DEFAULT_BOLD);
+        tvError.setPadding(activity.scale(6), activity.scale(4), 0, 0);
+        tvError.setVisibility(View.GONE);
+        root.addView(tvError);
+
+        edt.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String str = s.toString();
+                btnClear.setVisibility(str.length() > 0 ? View.VISIBLE : View.GONE);
+                if (validator != null) {
+                    boolean valid = validator.validate(str);
+                    if (!valid) {
+                        tvError.setText("⚠️ " + validator.getErrorMessage());
+                        tvError.setVisibility(View.VISIBLE);
+                        boxBg.setStroke(activity.scale(2), Color.parseColor("#EF4444"));
+                    } else {
+                        tvError.setVisibility(View.GONE);
+                        boxBg.setStroke(activity.scale(1), Color.parseColor("#33888888"));
+                    }
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        });
+
+        root.setTag(edt); // Allow calling view.getTag() to retrieve the EditText
+        return root;
+    }
+
+    // 3. DYNAMIC ON/OFF SWITCH
+    public static View createSwitch(BaseActivityJava activity, boolean initialChecked, OnSwitchChangeListener listener) {
+        androidx.appcompat.widget.SwitchCompat sc = new androidx.appcompat.widget.SwitchCompat(activity);
+        sc.setChecked(initialChecked);
+        if (listener != null) {
+            sc.setOnCheckedChangeListener((btn, isChecked) -> listener.onCheckChanged(isChecked));
+        }
+        return sc;
+    }
+
+    public static View createSwitch(BaseActivityJava activity, boolean initialChecked, 
+                                    android.widget.CompoundButton.OnCheckedChangeListener listener) {
+        androidx.appcompat.widget.SwitchCompat sc = new androidx.appcompat.widget.SwitchCompat(activity);
+        sc.setChecked(initialChecked);
+        if (listener != null) sc.setOnCheckedChangeListener(listener);
+        return sc;
+    }
+
+    public static View createSwitch(BaseActivityJava activity, String label, boolean initialChecked, 
+                                    android.widget.CompoundButton.OnCheckedChangeListener listener) {
+        return createInteractiveSwitch(activity, label, null, initialChecked, listener);
+    }
+
+    // 4. SEGMENTED LEFT/RIGHT TOGGLE
+    public static View createSegmentedToggle(BaseActivityJava activity, String leftOption, String rightOption, 
+                                             boolean isLeftSelected, OnToggleChangeListener listener) {
+        String[] segments = new String[]{leftOption, rightOption};
+        return createSegmentedToggle(activity, segments, isLeftSelected ? 0 : 1, (idx, option) -> {
+            if (listener != null) listener.onToggle(idx == 0);
+        });
+    }
+
+    // 5. ANIMATED VIEW FLIPPER
+    public static android.widget.ViewFlipper createAnimatedFlipper(BaseActivityJava activity, View... childViews) {
+        android.widget.ViewFlipper flipper = new android.widget.ViewFlipper(activity);
+        
+        // Slide left animation programmatically
+        android.view.animation.TranslateAnimation inLeft = new android.view.animation.TranslateAnimation(
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 1.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f
+        );
+        inLeft.setDuration(250);
+        flipper.setInAnimation(inLeft);
+
+        android.view.animation.TranslateAnimation outLeft = new android.view.animation.TranslateAnimation(
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, -1.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f,
+            android.view.animation.Animation.RELATIVE_TO_PARENT, 0.0f
+        );
+        outLeft.setDuration(250);
+        flipper.setOutAnimation(outLeft);
+
+        if (childViews != null) {
+            for (View cv : childViews) {
+                if (cv != null) flipper.addView(cv);
+            }
+        }
+        return flipper;
+    }
+
+    // 6. DROPDOWN LIST BOX (ACCORDION WITH LIST DETAILS)
+    public static View createExpandableListBox(BaseActivityJava activity, String title, String subtitle, 
+                                               int iconRes, View detailContentView) {
+        LinearLayout container = new LinearLayout(activity);
+        container.setOrientation(LinearLayout.VERTICAL);
+        applyCard(activity, container, "CARD_STANDARD");
+        int pad = activity.scale(14);
+        container.setPadding(pad, pad, pad, pad);
+
+        // Header Row
+        LinearLayout headerRow = new LinearLayout(activity);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setClickable(true);
+        headerRow.setFocusable(true);
+
+        if (iconRes != 0) {
+            ImageView iv = new ImageView(activity);
+            iv.setImageResource(iconRes);
+            iv.setColorFilter(activity.getGradientStart());
+            int is = activity.scale(24);
+            LinearLayout.LayoutParams ivLp = new LinearLayout.LayoutParams(is, is);
+            ivLp.setMargins(0, 0, activity.scale(12), 0);
+            headerRow.addView(iv, ivLp);
+        }
+
+        LinearLayout textCol = new LinearLayout(activity);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvTitle = new TextView(activity);
+        tvTitle.setText(title);
+        tvTitle.setTextColor(activity.getTextColor());
+        tvTitle.setTextSize(getResponsiveTextSize(activity, "TEXT_TITLE"));
+        tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(tvTitle);
+
+        if (subtitle != null && !subtitle.isEmpty()) {
+            TextView tvSub = new TextView(activity);
+            tvSub.setText(subtitle);
+            tvSub.setTextColor(activity.getSecondaryTextColor());
+            tvSub.setTextSize(getResponsiveTextSize(activity, "TEXT_SUB"));
+            textCol.addView(tvSub);
+        }
+        headerRow.addView(textCol);
+
+        ImageView chevron = new ImageView(activity);
+        chevron.setImageResource(android.R.drawable.arrow_down_float);
+        chevron.setColorFilter(activity.getGradientStart());
+        int cs = activity.scale(18);
+        headerRow.addView(chevron, new LinearLayout.LayoutParams(cs, cs));
+
+        container.addView(headerRow);
+
+        // Details Body Container
+        if (detailContentView != null) {
+            detailContentView.setVisibility(View.GONE);
+            detailContentView.setPadding(0, activity.scale(10), 0, 0);
+            container.addView(detailContentView);
+
+            headerRow.setOnClickListener(v -> {
+                boolean isExpanded = detailContentView.getVisibility() == View.VISIBLE;
+                detailContentView.setVisibility(isExpanded ? View.GONE : View.VISIBLE);
+                chevron.animate().rotation(isExpanded ? 0f : 180f).setDuration(200).start();
+            });
+        }
+
+        return container;
+    }
+
+    // 7. DIALOG BOX WITH MULTIPLE OPTIONS (MULTI-CHOICE)
+    public static void showMultiChoiceDialog(BaseActivityJava activity, String title, String[] options, 
+                                             boolean[] initialChecked, MultiChoiceCallback callback) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed() || options == null) return;
 
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity);
-        if (title != null) builder.setTitle(title);
-        if (message != null) builder.setMessage(message);
+        boolean[] states = new boolean[options.length];
+        if (initialChecked != null) {
+            System.arraycopy(initialChecked, 0, states, 0, Math.min(initialChecked.length, states.length));
+        }
 
-        builder.setItems(options, (dialog, which) -> {
-            if (listener != null && which >= 0 && which < options.length) {
-                listener.onOptionSelected(which, options[which]);
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity);
+        builder.setTitle(title != null ? title : "Select Options");
+        builder.setMultiChoiceItems(options, states, (dialog, which, isChecked) -> {
+            states[which] = isChecked;
+        });
+
+        builder.setPositiveButton("CONFIRM", (dialog, which) -> {
+            if (callback != null) {
+                java.util.List<String> selected = new java.util.ArrayList<>();
+                for (int i = 0; i < options.length; i++) {
+                    if (states[i]) selected.add(options[i]);
+                }
+                callback.onConfirmed(states, selected.toArray(new String[0]));
             }
         });
-        builder.setNegativeButton("DISMISS", null);
+
+        builder.setNegativeButton("CANCEL", null);
+
+        builder.setNeutralButton("TOGGLE ALL", (dialog, which) -> {
+            boolean allChecked = true;
+            for (boolean b : states) if (!b) { allChecked = false; break; }
+            for (int i = 0; i < states.length; i++) states[i] = !allChecked;
+            showMultiChoiceDialog(activity, title, options, states, callback);
+        });
 
         android.app.AlertDialog dialog = builder.create();
         dialog.show();
         activity.applyDialogTheme(dialog);
     }
+
+    // 8. SLIDE IN/OUT BOTTOM-RIGHT NOTIFICATION BANNER
+    public static void showSlideNotificationBanner(BaseActivityJava activity, String title, String message, 
+                                                   boolean isAlert, long durationMs, String actionText, Runnable actionCallback) {
+        int accentColor = isAlert ? Color.parseColor("#EF4444") : activity.getGradientStart();
+        int iconRes = isAlert ? android.R.drawable.ic_dialog_alert : android.R.drawable.ic_dialog_info;
+        showSlideNotification(activity, title, message, iconRes, accentColor, actionText, actionCallback);
+    }
 }
+
 

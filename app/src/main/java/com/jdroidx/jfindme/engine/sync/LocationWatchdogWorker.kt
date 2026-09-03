@@ -56,8 +56,8 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
                         val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
                         val resolvedAvatarId = if (dynamicIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynamicIdx"
                         val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
-                        val rawHw = android.provider.Settings.Secure.getString(applicationContext.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "NULL_HW"
-                        val deviceId = "HW_" + rawHw.uppercase()
+                        val rawHw = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(applicationContext)
+                        val deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext)
 
                         val userLoc = com.jdroidx.jfindme.data.model.UserLocation(
                             userId = localAgentId,

@@ -189,6 +189,9 @@ public class UiConfigActivity extends BaseActivityJava {
             renderMatrixSection("MARQUEE MATRIX (TICKER)", marques);
         });
 
+        // --- LAYER 11: ENTERPRISE UI CONTROLS SHOWCASE (Agent 3 Protocol) ---
+        renderEnterpriseUiControlsShowcase();
+
         // --- LAYER 11: STATUS PILL MATRIX (Waterfall) ---
         viewModel.getStatusMatrix().observe(this, status -> {
             renderMatrixSection("STATUS PILL MATRIX (HEALTH)", status);
@@ -1348,6 +1351,190 @@ public class UiConfigActivity extends BaseActivityJava {
         }));
 
         content.addView(createSectionHeader("VISUAL ARCHITECT & PREVIEW"));
+        content.addView(container, getSectionParams());
+    }
+
+    private void renderEnterpriseUiControlsShowcase() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, container, "CARD_STANDARD");
+        int pad = scale(16);
+        container.setPadding(pad, pad, pad, pad);
+
+        // 1. Buttons Row
+        TextView lblButtons = new TextView(this);
+        lblButtons.setText("1. BUTTONS SUITE (PRIMARY, SECONDARY, DESTRUCTIVE, OUTLINED, ICON)");
+        lblButtons.setTextColor(getGradientStart());
+        lblButtons.setTextSize(10f);
+        lblButtons.setTypeface(null, Typeface.BOLD);
+        lblButtons.setPadding(0, 0, 0, scale(8));
+        container.addView(lblButtons);
+
+        LinearLayout btnRow1 = new LinearLayout(this);
+        btnRow1.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow1.setGravity(Gravity.CENTER_VERTICAL);
+        btnRow1.setPadding(0, 0, 0, scale(8));
+
+        View btnPrim = UiArchitect.createPrimaryButton(this, "Primary", android.R.drawable.ic_menu_send, v -> {
+            UiArchitect.showSlideNotificationBanner(this, "Button Clicked", "Primary Action Executed", false, 3000, "OK", null);
+        });
+        View btnSec = UiArchitect.createSecondaryButton(this, "Secondary", 0, v -> {
+            UiArchitect.showSlideNotificationBanner(this, "Secondary", "Secondary Action Triggered", false, 3000, null, null);
+        });
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        bLp.setMargins(scale(4), 0, scale(4), 0);
+        btnRow1.addView(btnPrim, bLp);
+        btnRow1.addView(btnSec, bLp);
+        container.addView(btnRow1);
+
+        LinearLayout btnRow2 = new LinearLayout(this);
+        btnRow2.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow2.setGravity(Gravity.CENTER_VERTICAL);
+        btnRow2.setPadding(0, 0, 0, scale(12));
+
+        View btnDest = UiArchitect.createDestructiveButton(this, "Destructive", android.R.drawable.ic_menu_delete, v -> {
+            UiArchitect.showSlideNotificationBanner(this, "Alert", "Destructive Action Pressed", true, 3000, "UNDO", null);
+        });
+        View btnOutl = UiArchitect.createOutlinedButton(this, "Outlined", 0, v -> {
+            UiArchitect.showSlideNotificationBanner(this, "Outlined", "Outlined Button Pressed", false, 3000, null, null);
+        });
+        btnRow2.addView(btnDest, bLp);
+        btnRow2.addView(btnOutl, bLp);
+        container.addView(btnRow2);
+
+        // 2. Validated Textbox
+        TextView lblText = new TextView(this);
+        lblText.setText("2. VALIDATED TEXTBOX (WITH LIVE VALIDATION)");
+        lblText.setTextColor(getGradientStart());
+        lblText.setTextSize(10f);
+        lblText.setTypeface(null, Typeface.BOLD);
+        lblText.setPadding(0, scale(6), 0, scale(4));
+        container.addView(lblText);
+
+        View validatedInput = UiArchitect.createValidatedTextBox(this, "Device Call-Sign", "Enter at least 4 characters", true, new UiArchitect.TextValidator() {
+            @Override
+            public boolean validate(String text) {
+                return text != null && text.trim().length() >= 4;
+            }
+            @Override
+            public String getErrorMessage() {
+                return "Call-Sign must contain at least 4 characters";
+            }
+        });
+        container.addView(validatedInput);
+
+        // 3. Dynamic On/Off Switch
+        TextView lblSwitch = new TextView(this);
+        lblSwitch.setText("3. DYNAMIC ON/OFF SWITCH");
+        lblSwitch.setTextColor(getGradientStart());
+        lblSwitch.setTextSize(10f);
+        lblSwitch.setTypeface(null, Typeface.BOLD);
+        lblSwitch.setPadding(0, scale(8), 0, scale(4));
+        container.addView(lblSwitch);
+
+        View switchView = UiArchitect.createSwitch(this, "Autonomous Background Telemetry", true, (btnView, isChecked) -> {
+            UiArchitect.showSlideNotificationBanner(this, "Telemetry Mode", isChecked ? "Telemetry Enabled" : "Telemetry Suspended", !isChecked, 3000, null, null);
+        });
+        container.addView(switchView);
+
+        // 4. Segmented Left/Right Toggle
+        TextView lblToggle = new TextView(this);
+        lblToggle.setText("4. SEGMENTED LEFT/RIGHT TOGGLE");
+        lblToggle.setTextColor(getGradientStart());
+        lblToggle.setTextSize(10f);
+        lblToggle.setTypeface(null, Typeface.BOLD);
+        lblToggle.setPadding(0, scale(8), 0, scale(4));
+        container.addView(lblToggle);
+
+        View toggleView = UiArchitect.createSegmentedToggle(this, "METRIC (KM/H)", "IMPERIAL (MPH)", true, isLeft -> {
+            UiArchitect.showSlideNotificationBanner(this, "Unit Switch", isLeft ? "Units: Metric" : "Units: Imperial", false, 2500, null, null);
+        });
+        container.addView(toggleView);
+
+        // 5. Animated ViewFlipper
+        TextView lblFlipper = new TextView(this);
+        lblFlipper.setText("5. ANIMATED VIEW FLIPPER");
+        lblFlipper.setTextColor(getGradientStart());
+        lblFlipper.setTextSize(10f);
+        lblFlipper.setTypeface(null, Typeface.BOLD);
+        lblFlipper.setPadding(0, scale(10), 0, scale(4));
+        container.addView(lblFlipper);
+
+        TextView fView1 = new TextView(this);
+        fView1.setText("📍 FLIPPER VIEW A: Primary Tactical Radar Overview");
+        fView1.setTextColor(getTextColor());
+        fView1.setTextSize(12f);
+        fView1.setPadding(scale(12), scale(12), scale(12), scale(12));
+
+        TextView fView2 = new TextView(this);
+        fView2.setText("🛰️ FLIPPER VIEW B: Deep Hardware Sensor Telemetry Deck");
+        fView2.setTextColor(getGradientStart());
+        fView2.setTextSize(12f);
+        fView2.setPadding(scale(12), scale(12), scale(12), scale(12));
+
+        android.widget.ViewFlipper flipper = UiArchitect.createAnimatedFlipper(this, fView1, fView2);
+        container.addView(flipper);
+
+        View btnFlip = UiArchitect.createOutlinedButton(this, "FLIP VIEW", android.R.drawable.ic_popup_sync, v -> flipper.showNext());
+        container.addView(btnFlip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // 6. Dropdown List Box (Accordion)
+        TextView lblAccordion = new TextView(this);
+        lblAccordion.setText("6. DROPDOWN LIST BOX (ACCORDION DETAILS)");
+        lblAccordion.setTextColor(getGradientStart());
+        lblAccordion.setTextSize(10f);
+        lblAccordion.setTypeface(null, Typeface.BOLD);
+        lblAccordion.setPadding(0, scale(10), 0, scale(4));
+        container.addView(lblAccordion);
+
+        String dynAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+        String dynHwSerial = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
+        TextView detailsBody = new TextView(this);
+        detailsBody.setText("• Hardware Agent ID: " + (dynAgentId.isEmpty() ? "LOCAL_SENTINEL" : dynAgentId) + 
+                            "\n• Silicon Key: " + (dynHwSerial.isEmpty() ? "Verified Hardware Node" : dynHwSerial) + 
+                            "\n• Zero-Leak SQLite Master Index Active\n• AES-256 Telemetry Encryption Engaged");
+        detailsBody.setTextColor(getSecondaryTextColor());
+        detailsBody.setTextSize(11f);
+        detailsBody.setLineSpacing(scale(4), 1.0f);
+
+        View accordion = UiArchitect.createExpandableListBox(this, "Hardware Diagnostics Dossier", "Tap to expand hardware metadata", android.R.drawable.ic_menu_info_details, detailsBody);
+        container.addView(accordion);
+
+        // 7. Multi-Option Dialog Launch Button
+        TextView lblDialog = new TextView(this);
+        lblDialog.setText("7. DIALOG BOX WITH MULTIPLE OPTIONS (MULTI-CHOICE)");
+        lblDialog.setTextColor(getGradientStart());
+        lblDialog.setTextSize(10f);
+        lblDialog.setTypeface(null, Typeface.BOLD);
+        lblDialog.setPadding(0, scale(10), 0, scale(4));
+        container.addView(lblDialog);
+
+        String[] sampleOptions = {"Speed Alert (>60 km/h)", "Geofence Exit Siren", "Battery Critical (<15%)", "Anti-Tamper Root Trip"};
+        boolean[] sampleStates = {true, true, false, true};
+        View btnMultiDialog = UiArchitect.createSecondaryButton(this, "OPEN MULTI-CHOICE DIALOG", android.R.drawable.ic_menu_preferences, v -> {
+            UiArchitect.showMultiChoiceDialog(this, "Configure Alert Matrix", sampleOptions, sampleStates, (states, selected) -> {
+                UiArchitect.showSlideNotificationBanner(this, "Alerts Updated", selected.length + " Triggers Active", false, 3000, null, null);
+            });
+        });
+        container.addView(btnMultiDialog);
+
+        // 8. Slide In/Out Notification Banner Launch Button
+        TextView lblBanner = new TextView(this);
+        lblBanner.setText("8. SLIDE IN/OUT BOTTOM-RIGHT NOTIFICATION BANNER");
+        lblBanner.setTextColor(getGradientStart());
+        lblBanner.setTextSize(10f);
+        lblBanner.setTypeface(null, Typeface.BOLD);
+        lblBanner.setPadding(0, scale(10), 0, scale(4));
+        container.addView(lblBanner);
+
+        View btnBanner = UiArchitect.createPrimaryButton(this, "TRIGGER SLIDE NOTIFICATION BANNER", android.R.drawable.ic_dialog_info, v -> {
+            UiArchitect.showSlideNotificationBanner(this, "⚡ Network Reconnect", "Synchronized 14 offline fixes with Cloud SSOT.", false, 4000, "VIEW MAP", () -> {
+                android.widget.Toast.makeText(this, "Navigating to Map...", android.widget.Toast.LENGTH_SHORT).show();
+            });
+        });
+        container.addView(btnBanner);
+
+        content.addView(createSectionHeader("ENTERPRISE UI CONTROLS SHOWCASE (AGENT 3)"));
         content.addView(container, getSectionParams());
     }
 }

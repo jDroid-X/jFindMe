@@ -943,7 +943,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
 
             default:
                 title = "💡 SENTINEL HELP & GUIDANCE";
-                msg.append("🛡️ jFindMe Sentinel continuously safeguards your circle with AES-256 encrypted peer-to-peer telemetry.\n\n");
+                msg.append("🛡️ jFindMe - Butterfly - Sentinel continuously safeguards your circle with AES-256 encrypted peer-to-peer telemetry.\n\n");
                 msg.append("• Use the bottom navigation to jump between Live Map, SafeZones, Roster, and System Logs.\n");
                 msg.append("• For technical assistance or bug reports, visit Help & Support in Settings.");
                 break;
@@ -982,8 +982,36 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     /**
      * 👑 Universal Popup Notification with Selectable Options
      */
-    public void showNotificationOptionsDialog(String title, String message, String[] options, UiArchitect.OnOptionSelectListener listener) {
-        UiArchitect.showPopupNotificationWithOptions(this, title, message, options, listener);
+    public void showNotificationOptionsDialog(String title, String message, String[] options, UiArchitect.OptionSelectedCallback listener) {
+        UiArchitect.showOptionsDialog(this, title, options, -1, listener);
+    }
+
+    /**
+     * 👑 Universal Interactive Switch Row (On/Off)
+     */
+    public View createInteractiveSwitch(String title, String subtitle, boolean initialChecked, android.widget.CompoundButton.OnCheckedChangeListener listener) {
+        return UiArchitect.createInteractiveSwitch(this, title, subtitle, initialChecked, listener);
+    }
+
+    /**
+     * 👑 Universal Segmented Multi-Toggle Switcher
+     */
+    public View createSegmentedToggle(String[] segments, int initialIndex, UiArchitect.OptionSelectedCallback listener) {
+        return UiArchitect.createSegmentedToggle(this, segments, initialIndex, listener);
+    }
+
+    /**
+     * 👑 Universal Dropdown List Box with Selection Anchor
+     */
+    public View createDropdownListBox(String label, String[] items, int selectedIndex, UiArchitect.OptionSelectedCallback listener) {
+        return UiArchitect.createDropdownListBox(this, label, items, selectedIndex, listener);
+    }
+
+    /**
+     * 👑 Universal Slide-In Notification Banner from Bottom-Right
+     */
+    public void showSlideNotification(String title, String message, int iconRes, int accentColor, String actionText, Runnable onAction) {
+        UiArchitect.showSlideNotification(this, title, message, iconRes, accentColor, actionText, onAction);
     }
 }
 

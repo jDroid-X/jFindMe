@@ -76,6 +76,9 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     private ScrollView mainScrollView; 
     
     private boolean isReplaying = false;
+    private int replaySpeedMultiplier = 1;
+    private ValueAnimator currentReplayAnimator;
+    private final List<TextView> speedButtons = new ArrayList<>();
     private String currentTargetUid;
     private String currentTargetName;
     private String currentTargetAvatarId = "butterfly";
@@ -340,6 +343,45 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         replayButtonsRow.addView(wrapInRow(playBtn), btnLp);
         replayButtonsRow.addView(wrapInRow(stopBtn), btnLp);
         replayCard.addView(replayButtonsRow);
+
+        // ⚡ Speed Multiplier Chip Bar: [1x] [2x] [5x]
+        LinearLayout speedRow = new LinearLayout(this);
+        speedRow.setOrientation(LinearLayout.HORIZONTAL);
+        speedRow.setGravity(Gravity.CENTER_VERTICAL);
+        speedRow.setPadding(scale(10), scale(6), scale(10), scale(6));
+
+        TextView lblSpeed = new TextView(this);
+        lblSpeed.setText("REPLAY SPEED:");
+        lblSpeed.setTextColor(getSecondaryTextColor());
+        lblSpeed.setTextSize(10);
+        lblSpeed.setTypeface(null, Typeface.BOLD);
+        lblSpeed.setPadding(0, 0, scale(10), 0);
+        speedRow.addView(lblSpeed);
+
+        speedButtons.clear();
+        int[] speeds = {1, 2, 5};
+        for (int spd : speeds) {
+            TextView btnSpd = new TextView(this);
+            btnSpd.setText(spd + "x");
+            btnSpd.setTextSize(10);
+            btnSpd.setTypeface(null, Typeface.BOLD);
+            btnSpd.setGravity(Gravity.CENTER);
+            btnSpd.setPadding(scale(14), scale(6), scale(14), scale(6));
+            applySolidCardGeometry(btnSpd, getCardColor(), 10f);
+            btnSpd.setTextColor(spd == replaySpeedMultiplier ? getGradientStart() : getTextColor());
+            btnSpd.setOnClickListener(v -> {
+                replaySpeedMultiplier = spd;
+                for (int si = 0; si < speedButtons.size(); si++) {
+                    speedButtons.get(si).setTextColor(speeds[si] == spd ? getGradientStart() : getTextColor());
+                }
+                Toast.makeText(this, "Replay Speed: " + spd + "x", Toast.LENGTH_SHORT).show();
+            });
+            LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            sLp.setMargins(scale(4), 0, scale(4), 0);
+            speedRow.addView(btnSpd, sLp);
+            speedButtons.add(btnSpd);
+        }
+        replayCard.addView(speedRow);
 
         tvWaypointsCount = new TextView(this);
         tvWaypointsCount.setText("0 WAYPOINTS LOADED SECURELY");
@@ -706,8 +748,10 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         final UserLocation start = historyPoints.get(index);
         final UserLocation end = historyPoints.get(index + 1);
 
+        long animDuration = Math.max(75L, 500L / replaySpeedMultiplier);
         ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
-        animator.setDuration(500); 
+        currentReplayAnimator = animator;
+        animator.setDuration(animDuration); 
         animator.setInterpolator(new LinearInterpolator());
         animator.addUpdateListener(animation -> {
             float v = animation.getAnimatedFraction();
@@ -900,10 +944,10 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             View emptyCard = UiArchitect.createEmptyStateCard(
                 this,
                 "No Location History Recorded",
-                "Historical breadcrumbs will automatically populate here as location points are tracked over time.",
+                "Historical breadcrumbs will automatically populate here as location points are tracked over time for " + (currentTargetName != null ? currentTargetName : "this target") + ".",
                 android.R.drawable.ic_menu_recent_history,
-                null,
-                null
+                "SWITCH TARGET DEVICE",
+                this::showTargetSelector
             );
             logsContainer.addView(emptyCard);
             return;
@@ -1087,12 +1131,20 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     protected void onPause() {
         super.onPause();
         isReplaying = false;
+        if (currentReplayAnimator != null) {
+            currentReplayAnimator.cancel();
+            currentReplayAnimator = null;
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         isReplaying = false;
+        if (currentReplayAnimator != null) {
+            currentReplayAnimator.cancel();
+            currentReplayAnimator = null;
+        }
         if (replayAvatar != null) {
             replayAvatar.remove();
             replayAvatar = null;
@@ -1113,9 +1165,14 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             // ≡ƒÜÇ QA Rule: Contextual Anchor (Owner Location)
             new Thread(() -> {
                 com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                String myAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
                 String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-                if (myUid != null) {
-                    List<Map<String, Object>> logs = db.getHistoryLogsFiltered(myUid, 0L);
+                String queryId = (myAgentId != null && !myAgentId.isEmpty()) ? myAgentId : myUid;
+                if (queryId != null) {
+                    List<Map<String, Object>> logs = db.getHistoryLogsFiltered(queryId, 0L);
+                    if (logs.isEmpty() && myUid != null && !myUid.equals(queryId)) {
+                        logs = db.getHistoryLogsFiltered(myUid, 0L);
+                    }
                     if (!logs.isEmpty()) {
                         double lat = (double) logs.get(0).get("lat");
                         double lng = (double) logs.get(0).get("lng");

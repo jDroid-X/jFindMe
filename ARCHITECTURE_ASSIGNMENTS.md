@@ -1,4 +1,4 @@
-# jFindMe Enterprise Architecture: Specialist Assignments
+# jFindMe Enterprise Architecture: Specialist Assignments (V3.0)
 
 This document outlines the current division of labor and active execution branches for the jFindMe project, following the **Waterfall MVVM Enterprise Level** standard.
 
@@ -6,33 +6,47 @@ This document outlines the current division of labor and active execution branch
 
 ## 🏗️ Active Agent Assignments
 
-### Agent 1: Product Architect & Planner
-**Status:** ACTIVE
-**Task:** Forensic Schema Governance
-- **Deliverable:** Maintain `FIREBASE_SCHEMA_ARCHITECT.md`.
-- **Focus:** Define the "Closed-Loop" data structure for Avatars and Grouping to ensure relational integrity.
-- **Audit Purpose:** Ensure every sub-scenario has a corresponding validation logic entry.
+### Agent 1: Product Architect & Hardware Identity Sentinel
+**Status:** ACTIVE  
+**Task:** Forensic Schema Governance & Hardware Key Anchoring  
+- **Deliverable:** Maintain `FIREBASE_SCHEMA_ARCHITECT.md` & Hardware Key SSOT resolution.
+- **Focus:** Silicon hardware identity (`ro.ril.oem.sno`) validation and relational integrity across clusters.
 
-### Agent 2: Logic & Data Engineer
-**Status:** ACTIVE
-**Task:** MVVM Backend & Unified Hub
-- **Deliverable:** Update `FirebaseComm.kt` and `LocationRepository.kt`.
-- **Focus:** Implement the `syncUnifiedProfile` function that propagates Name/Avatar changes across all device clusters in a single atomic operation. (**COMPLETED**)
-- **Standard:** Unified naming conventions and Waterfall MVVM separation.
+### Agent 2: Dual-Engine Database & Backend Logic Architect
+**Status:** ACTIVE  
+**Task:** MVVM Backend & Unified Hub  
+- **Deliverable:** Update `FirebaseComm.kt`, `LocationRepository.kt`, and SQLite synchronization.
+- **Focus:** Atomic synchronization between SQLite (`MASTER_ROSTER`, `SAFE_ZONES`) and Firebase Realtime Database.
 
-### Agent 3: UI/UX Lead
-**Status:** ACTIVE
-**Task:** L7 Enterprise UI Reflow
-- **Deliverable:** Update `ProfileActivity.java`, `OrgActivity.java`, and layout resources.
-- **Focus:** Implement Glassmorphism, Capsule Geometry, and deterministic Tab-Sequence.
-- **Standard:** Every input field must follow the Label-and-Box format with mandatory check indicators.
+### Agent 3: Frontend UI/UX & Lightweight Viewport Architect
+**Status:** ACTIVE  
+**Task:** L7 Enterprise UI Reflow & Lightweight Map Standard  
+- **Deliverable:** Custom UI components, `UiArchitect` enterprise controls, responsive layouts.
+- **Focus:** Glassmorphism, capsule geometry, clean live map markers (Name Pill + Avatar + RAG Dot + Chevron).
 
-### Agent 4: Integrity Auditor
-**Status:** STANDBY
-**Task:** Waterfall Project Integrity Audit
-- **Deliverable:** QA Audit Report.
-- **Focus:** Validate cross-module synchronization and device pairing handshake reliability.
-- **Standard:** Perform 3-stage validation for all links and dependencies before release.
+### Agent 4: Integration, QA & Build Quarantine Agent
+**Status:** ACTIVE  
+**Task:** Offline-Online Handshake Verification & Build Quarantine  
+- **Deliverable:** QA audit reports and edge-case lifecycle recovery validation.
+- **Focus:** Strict build quarantine enforcement and end-to-end integration safety.
+
+### Agent 5: Crash & Silent Failure Hunter (Diagnostic Sentinel)
+**Status:** ACTIVE  
+**Task:** Background Lifecycle & Zero-Crash Resilience  
+- **Deliverable:** Foreground service crash prevention, null-safety audit, and exception boundary containment.
+- **Focus:** Eliminating ANRs, Doze mode terminations, and background location crashes.
+
+### Agent 6: GIS, Spatial & Geofencing Architect
+**Status:** ACTIVE  
+**Task:** Geofencing Engine & Spatial Trajectory Tracking  
+- **Deliverable:** Polygon/Radius boundary math, heading smoothing, and SafeZone trigger engine.
+- **Focus:** Low-latency spatial calculations for SafeZones and smooth live location rendering.
+
+### Agent 7: Performance & Battery Optimization Agent
+**Status:** ACTIVE  
+**Task:** Adaptive Telemetry & Query Latency Optimization  
+- **Deliverable:** Dynamic polling throttler, SQLite indexing, and network payload minimization.
+- **Focus:** Maximizing battery life while retaining real-time RAG accuracy.
 
 ---
 
@@ -42,15 +56,18 @@ This document outlines the current division of labor and active execution branch
 | :--- | :--- | :--- | :--- | :--- |
 | **SCN-AUTH-01** | Agent 3 | Solutioning | Register/Login UI (L7 Standard) | COMPLETED |
 | **SCN-SYNC-02** | Agent 2 | Implementation | Closed-Loop Profile Core (Avatar/Name) | COMPLETED |
-| **SCN-SAFE-03** | Agent 1 | Analysis | SafeZone Assignment Hierarchy | COMPLETED |
+| **SCN-SAFE-03** | Agent 6 | Analysis & Math | SafeZone Polygon & Radius Detection Engine | COMPLETED |
 | **SCN-QA-04** | Agent 4 | Execution | Offline-Online Handshake Verification | IN_PROGRESS |
+| **SCN-CRASH-05** | Agent 5 | Monitoring | Foreground Service & Background Crash Audit | ACTIVE |
+| **SCN-PERF-06** | Agent 7 | Optimization | Adaptive Location Polling & SQLite Indexing | ACTIVE |
 
 ---
 
-## 🔄 Feedback Loop Protocol
-1. **Trigger**: If a performance metric (e.g., Cloud Latency > 500ms) or UI scale factor is breached.
-2. **Action**: Re-route task to **Agent 4** for immediate Audit and **Agent 2** for logic optimization.
-3. **Closure**: Validation Report must be approved by **Agent 1** before the branch is merged.
+## 🔄 Closed-Loop Feedback Flow
+1. **Trigger**: Performance metric breach (e.g., Cloud Latency > 500ms, Frame Drop > 16ms, or Crash Event).
+2. **Diagnosis**: Re-route immediately to **Agent 5** (Crash Hunter) and **Agent 7** (Performance) for root cause identification.
+3. **Remediation**: Execute closed-loop patch via **Agent 2** (Logic) or **Agent 6** (GIS).
+4. **Validation & Sign-Off**: Verification by **Agent 4** (QA) and final architectural approval by **Agent 1**.
 
 ---
 *Generated by the Antigravity Kit (.kit) Controller.*

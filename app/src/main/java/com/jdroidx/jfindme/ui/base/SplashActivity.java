@@ -84,6 +84,7 @@ public class SplashActivity extends Activity {
                 transitionHandler.postDelayed(transitionRunnable, 500);
                 return;
             }
+            isSyncInProgress = false; // 🛡️ Offline-First Fallback: Release sync latch and continue with local SQLite cache
             
             com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Splash screen transition triggered.");
             

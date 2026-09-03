@@ -213,6 +213,9 @@ public class OrgActivity extends BaseActivityJava {
 
     private void loadActiveOrgDossier() {
         String safeUid = FirebaseAuth.getInstance().getUid();
+        if (safeUid == null || safeUid.isEmpty()) {
+            safeUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+        }
         if (safeUid == null) return;
 
         // 🚀 V61 Forensic Sync: Use the centralized Dossier Retrieval bridge
@@ -230,8 +233,11 @@ public class OrgActivity extends BaseActivityJava {
 
     private void handleOrgSave() {
         String safeUid = FirebaseAuth.getInstance().getUid();
+        if (safeUid == null || safeUid.isEmpty()) {
+            safeUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+        }
         if (safeUid == null) {
-            Toast.makeText(this, "Hardware Identity Missing.", Toast.LENGTH_SHORT).show();
+            UiArchitect.showSlideNotificationBanner(this, "Identity Unresolved", "Hardware identity anchor not found.", true, 3000, null, null);
             return;
         }
 

@@ -91,6 +91,31 @@ object RegistryManager {
     const val KEY_CACHED_APK_PATH           = "cached_apk_path"
     const val KEY_CACHED_APK_SIZE           = "cached_apk_size"
 
+    // 🌐 Geofence Sentinel Configuration Keys
+    const val KEY_GEOFENCE_JITTER_DEBOUNCE_MS = "pref_geofence_jitter_debounce_ms"
+    const val KEY_GEOFENCE_LATCH_ENABLED      = "pref_geofence_latch_enabled"
+    const val KEY_GEOFENCE_LOCAL_NOTIF_ENABLED = "pref_geofence_local_notif_enabled"
+    const val KEY_GEOFENCE_FCM_RELAY_ENABLED   = "pref_geofence_fcm_relay_enabled"
+    const val KEY_GEOFENCE_SNAP_CENTER_ENABLED = "pref_geofence_snap_center_enabled"
+
+    // 📍 Adaptive GPS & Displacement
+    const val KEY_MIN_DISPLACEMENT_METERS    = "pref_min_displacement_meters"
+    const val KEY_STRICT_ACCURACY_WAIT       = "pref_strict_accuracy_wait"
+
+    // 🚦 RAG Telemetry Thresholds
+    const val KEY_LOW_BATTERY_THRESHOLD      = "pref_low_battery_threshold"
+    const val KEY_STALE_INACTIVE_MINUTES     = "pref_stale_inactive_minutes"
+    const val KEY_CRITICAL_OFFLINE_HOURS     = "pref_critical_offline_hours"
+
+    // 🔊 Emergency Siren Settings
+    const val KEY_SIREN_DURATION_SEC         = "pref_siren_duration_sec"
+    const val KEY_SIREN_VIBRATION_ENABLED    = "pref_siren_vibration_enabled"
+    const val KEY_SIREN_DND_BYPASS_ENABLED   = "pref_siren_dnd_bypass_enabled"
+
+    // 📦 Offline Vault & Sync
+    const val KEY_OFFLINE_QUEUE_MAX_POINTS   = "pref_offline_queue_max_points"
+    const val KEY_SYNC_WIFI_ONLY             = "pref_sync_wifi_only"
+
     // Default Fallbacks
     const val DEFAULT_FALLBACK_LAT   = 18.5204
     const val DEFAULT_FALLBACK_LNG   = 73.8567
@@ -108,6 +133,20 @@ object RegistryManager {
     const val DEFAULT_HISTORY_REPLAY_SPEED = 1
     const val DEFAULT_EMAIL_REGEX    = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$"
     const val DEFAULT_FALLBACK_OWNER_ID = "OWNER_001"
+
+    // 🌐 Geofence Sentinel Default Values (Min, Mid, Max)
+    const val DEFAULT_GEOFENCE_JITTER_DEBOUNCE_MS = 15000L // 15 seconds (Balanced Mid)
+    const val MIN_GEOFENCE_JITTER_DEBOUNCE_MS     = 5000L  // 5 seconds (Min)
+    const val MID_GEOFENCE_JITTER_DEBOUNCE_MS     = 15000L // 15 seconds (Mid)
+    const val MAX_GEOFENCE_JITTER_DEBOUNCE_MS     = 60000L // 60 seconds (Max)
+
+    // Extended Telemetry Defaults
+    const val DEFAULT_MIN_DISPLACEMENT_METERS = 0f
+    const val DEFAULT_LOW_BATTERY_THRESHOLD   = 20
+    const val DEFAULT_STALE_INACTIVE_MINUTES  = 15
+    const val DEFAULT_CRITICAL_OFFLINE_HOURS  = 6
+    const val DEFAULT_SIREN_DURATION_SEC      = 30
+    const val DEFAULT_OFFLINE_QUEUE_MAX_POINTS= 500
     const val DEFAULT_SYSTEM_UPDATE_LINK = "https://drive.google.com/drive/folders/1qs1JRgku7SjfU59EMhZHCc7Kq2yFBGdC"
     const val DEFAULT_GITHUB_UPDATE_LINK = "https://github.com/jDroid-X/jButterfly/tree/main/jbutterfly"
     const val DEFAULT_PURGE_SAFETY_PHRASE = "RESET"
@@ -157,7 +196,7 @@ object RegistryManager {
 
     // ─── TYPED CONVENIENCE GETTERS ────────────────────────────────────────────
 
-    @JvmStatic fun getAgentId(context: Context): String = getString(context, KEY_AGENT_ID)
+    @JvmStatic fun getAgentId(context: Context): String = DeviceIdentityHelper.getOrGenerateAgentId(context)
     @JvmStatic fun getUserNickname(context: Context): String = getString(context, KEY_USER_NICKNAME, "Active Tracker")
     @JvmStatic fun getThemeId(context: Context): Int = getInt(context, KEY_THEME_ID, 0)
     @JvmStatic fun getTrackingInterval(context: Context): Long = getLong(context, KEY_TRACKING_INTERVAL, 60000L)
@@ -270,7 +309,117 @@ object RegistryManager {
     @JvmStatic fun getOwnerAgentId(context: Context): String {
         val agentId = getAgentId(context)
         if (agentId.isNotEmpty()) return agentId
-        return DEFAULT_FALLBACK_OWNER_ID
+        return DeviceIdentityHelper.getOrGenerateAgentId(context)
+    }
+
+    // 🌐 Geofence Sentinel Telemetry Accessors
+    @JvmStatic fun getGeofenceJitterDebounceMs(context: Context): Long =
+        getLong(context, KEY_GEOFENCE_JITTER_DEBOUNCE_MS, DEFAULT_GEOFENCE_JITTER_DEBOUNCE_MS)
+
+    @JvmStatic fun setGeofenceJitterDebounceMs(context: Context, ms: Long) {
+        putLong(context, KEY_GEOFENCE_JITTER_DEBOUNCE_MS, ms)
+    }
+
+    @JvmStatic fun isGeofenceLatchEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_GEOFENCE_LATCH_ENABLED, true)
+
+    @JvmStatic fun setGeofenceLatchEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_GEOFENCE_LATCH_ENABLED, enabled)
+    }
+
+    @JvmStatic fun isGeofenceLocalNotifEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_GEOFENCE_LOCAL_NOTIF_ENABLED, true)
+
+    @JvmStatic fun setGeofenceLocalNotifEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_GEOFENCE_LOCAL_NOTIF_ENABLED, enabled)
+    }
+
+    @JvmStatic fun isGeofenceFcmRelayEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_GEOFENCE_FCM_RELAY_ENABLED, true)
+
+    @JvmStatic fun setGeofenceFcmRelayEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_GEOFENCE_FCM_RELAY_ENABLED, enabled)
+    }
+
+    @JvmStatic fun isGeofenceSnapCenterEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_GEOFENCE_SNAP_CENTER_ENABLED, true)
+
+    @JvmStatic fun setGeofenceSnapCenterEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_GEOFENCE_SNAP_CENTER_ENABLED, enabled)
+    }
+
+    // 📍 Adaptive GPS & Displacement
+    @JvmStatic fun getMinDisplacementMeters(context: Context): Float =
+        getFloat(context, KEY_MIN_DISPLACEMENT_METERS, DEFAULT_MIN_DISPLACEMENT_METERS)
+
+    @JvmStatic fun setMinDisplacementMeters(context: Context, meters: Float) {
+        putFloat(context, KEY_MIN_DISPLACEMENT_METERS, meters)
+    }
+
+    @JvmStatic fun isStrictAccuracyWait(context: Context): Boolean =
+        getBoolean(context, KEY_STRICT_ACCURACY_WAIT, false)
+
+    @JvmStatic fun setStrictAccuracyWait(context: Context, wait: Boolean) {
+        putBoolean(context, KEY_STRICT_ACCURACY_WAIT, wait)
+    }
+
+    // 🚦 RAG Telemetry Thresholds
+    @JvmStatic fun getLowBatteryThreshold(context: Context): Int =
+        getInt(context, KEY_LOW_BATTERY_THRESHOLD, DEFAULT_LOW_BATTERY_THRESHOLD)
+
+    @JvmStatic fun setLowBatteryThreshold(context: Context, percent: Int) {
+        putInt(context, KEY_LOW_BATTERY_THRESHOLD, percent)
+    }
+
+    @JvmStatic fun getStaleInactiveMinutes(context: Context): Int =
+        getInt(context, KEY_STALE_INACTIVE_MINUTES, DEFAULT_STALE_INACTIVE_MINUTES)
+
+    @JvmStatic fun setStaleInactiveMinutes(context: Context, mins: Int) {
+        putInt(context, KEY_STALE_INACTIVE_MINUTES, mins)
+    }
+
+    @JvmStatic fun getCriticalOfflineHours(context: Context): Int =
+        getInt(context, KEY_CRITICAL_OFFLINE_HOURS, DEFAULT_CRITICAL_OFFLINE_HOURS)
+
+    @JvmStatic fun setCriticalOfflineHours(context: Context, hours: Int) {
+        putInt(context, KEY_CRITICAL_OFFLINE_HOURS, hours)
+    }
+
+    // 🔊 Emergency Siren Settings
+    @JvmStatic fun getSirenDurationSec(context: Context): Int =
+        getInt(context, KEY_SIREN_DURATION_SEC, DEFAULT_SIREN_DURATION_SEC)
+
+    @JvmStatic fun setSirenDurationSec(context: Context, sec: Int) {
+        putInt(context, KEY_SIREN_DURATION_SEC, sec)
+    }
+
+    @JvmStatic fun isSirenVibrationEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_SIREN_VIBRATION_ENABLED, true)
+
+    @JvmStatic fun setSirenVibrationEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_SIREN_VIBRATION_ENABLED, enabled)
+    }
+
+    @JvmStatic fun isSirenDndBypassEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_SIREN_DND_BYPASS_ENABLED, true)
+
+    @JvmStatic fun setSirenDndBypassEnabled(context: Context, enabled: Boolean) {
+        putBoolean(context, KEY_SIREN_DND_BYPASS_ENABLED, enabled)
+    }
+
+    // 📦 Offline Vault & Sync
+    @JvmStatic fun getOfflineQueueMaxPoints(context: Context): Int =
+        getInt(context, KEY_OFFLINE_QUEUE_MAX_POINTS, DEFAULT_OFFLINE_QUEUE_MAX_POINTS)
+
+    @JvmStatic fun setOfflineQueueMaxPoints(context: Context, points: Int) {
+        putInt(context, KEY_OFFLINE_QUEUE_MAX_POINTS, points)
+    }
+
+    @JvmStatic fun isSyncWifiOnly(context: Context): Boolean =
+        getBoolean(context, KEY_SYNC_WIFI_ONLY, false)
+
+    @JvmStatic fun setSyncWifiOnly(context: Context, wifiOnly: Boolean) {
+        putBoolean(context, KEY_SYNC_WIFI_ONLY, wifiOnly)
     }
 
     @JvmStatic

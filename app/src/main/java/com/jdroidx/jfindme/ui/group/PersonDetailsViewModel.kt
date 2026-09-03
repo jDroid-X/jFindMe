@@ -305,13 +305,11 @@ class PersonDetailsViewModel : ViewModel() {
                 val myGrp = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
                 if (myGrp != null) {
                     val rosterUpdate = mapOf(
-                        "fullName" to targetName,
                         "name" to targetName,
                         "avatar_id" to targetAvatar,
                         "role" to (sRole ?: "Member")
                     )
                     FirebaseComm.relationshipsRef.child(myGrp).child("members").child(finalTargetId).updateChildren(rosterUpdate)
-                    FirebaseComm.relationshipsRef.child(myGrp).child("roster").child(finalTargetId).updateChildren(rosterUpdate)
                     // Send group signal
                     FirebaseComm.relationshipsRef.child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
                 }

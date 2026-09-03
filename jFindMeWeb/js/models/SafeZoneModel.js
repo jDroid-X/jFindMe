@@ -13,16 +13,62 @@ export class SafeZoneModel {
         this.alertsEnabled = Boolean(data.alertsEnabled);
         this.creatorId = data.creatorId || "";
         this.connectedDevices = Array.isArray(data.connectedDevices) ? data.connectedDevices : [];
+
+        // Parse polygon boundary points
+        this.polygonPoints = [];
+        const rawPoly = data.polygonPoints || data.polygon_points || data.polygonPointsJson;
+        if (typeof rawPoly === 'string' && rawPoly.trim().startsWith('[')) {
+            try {
+                this.polygonPoints = JSON.parse(rawPoly);
+            } catch (e) {
+                this.polygonPoints = [];
+            }
+        } else if (Array.isArray(rawPoly)) {
+            this.polygonPoints = rawPoly;
+        }
+        this.dwellMinutes = parseInt(data.dwellMinutes || data.dwell_minutes || 0, 10);
     }
 
     /**
-     * Checks if a given coordinate is within this safe zone
+     * Checks if this zone is configured with a polygon boundary
+     * @returns {boolean}
+     */
+    get isPolygon() {
+        return Array.isArray(this.polygonPoints) && this.polygonPoints.length >= 3;
+    }
+
+    /**
+     * Checks if a given coordinate is within this safe zone (Polygon Ray-Casting or Circle Haversine)
      * @param {number} lat 
      * @param {number} lng 
      * @returns {boolean}
      */
     contains(lat, lng) {
-        if (!this.latitude || !this.longitude || !lat || !lng) return false;
+        if (!lat || !lng) return false;
+
+        // 1. Polygon Ray-Casting containment
+        if (this.isPolygon) {
+            let inside = false;
+            const pts = this.polygonPoints;
+            const n = pts.length;
+            let j = n - 1;
+            for (let i = 0; i < n; i++) {
+                const piLat = parseFloat(pts[i].lat ?? pts[i].latitude ?? 0);
+                const piLng = parseFloat(pts[i].lng ?? pts[i].longitude ?? 0);
+                const pjLat = parseFloat(pts[j].lat ?? pts[j].latitude ?? 0);
+                const pjLng = parseFloat(pts[j].lng ?? pts[j].longitude ?? 0);
+
+                if ((piLng > lng) !== (pjLng > lng) &&
+                    (lat < (pjLat - piLat) * (lng - piLng) / (pjLng - piLng) + piLat)) {
+                    inside = !inside;
+                }
+                j = i;
+            }
+            return inside;
+        }
+
+        // 2. Circular Haversine containment
+        if (!this.latitude || !this.longitude) return false;
         const R = 6371000; // Radius of Earth in meters
         const toRad = deg => (deg * Math.PI) / 180;
         const dLat = toRad(lat - this.latitude);

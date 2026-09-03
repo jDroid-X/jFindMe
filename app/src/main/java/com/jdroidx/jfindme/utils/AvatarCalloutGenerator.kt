@@ -141,62 +141,125 @@ object AvatarCalloutGenerator {
         initPaints(density)
 
         val roleColor = getRoleColor(roleStr, isSelf)
-        val avatarSize = (64 * density).toInt() // Standard 64dp Avatar
+        val avatarSize = (56 * density).toInt() // Standard 56dp Avatar
         val halfAv = avatarSize / 2f
 
-        // Freshness Tag
-        val freshnessTag = when {
-            isSos -> "🚨 SOS"
-            timestamp <= 0L -> "LIVE"
-            System.currentTimeMillis() - timestamp < 60_000L -> "NOW"
-            System.currentTimeMillis() - timestamp < 3600_000L -> "${(System.currentTimeMillis() - timestamp) / 60_000L}m"
-            else -> "${(System.currentTimeMillis() - timestamp) / 3600_000L}h"
+        // Evaluate RAG status (Web Parity)
+        val ragResult = if (isSelf) {
+            DeviceRagEngine.evaluate(System.currentTimeMillis(), batteryLevel, isSos)
+        } else {
+            DeviceRagEngine.evaluate(timestamp, batteryLevel, isSos)
         }
+        val isOnline = ragResult.status == DeviceRagEngine.RagStatus.GREEN || (System.currentTimeMillis() - timestamp < 15 * 60 * 1000L)
 
-        // Motion Badge Text: Only show active High-Speed Driving or SOS alert (Zero static numbers cluttering the map)
+        // Motion Badge Text: Active Driving or SOS
         val speedKmh = speedMps * 3.6f
         val motionBadgeText = when {
             isSos -> "🚨 SOS"
-            speedKmh >= 20f -> "🚗 ${speedKmh.toInt()} km/h" // Active Driving Mode
-            else -> "" // Keep map ultra-clean and uncluttered!
+            speedKmh >= 20f -> "🚗 ${speedKmh.toInt()} km/h"
+            else -> ""
         }
 
         val hasName = name.isNotEmpty()
         val displayName = if (isSos && hasName) "$name • 🚨 SOS" else name
         val textWidth = if (hasName) textPaint.measureText(displayName) else 0f
         val hPad = 8f * density
-        val vPad = 4f * density
-        val bubbleWidth = if (hasName) textWidth + (hPad * 2f) else 0f
-        val bubbleHeight = if (hasName) (18f * density) + (vPad * 2f) else 0f
-        val gap = 4f * density
+        val vPad = 3f * density
+        val pillWidth = if (hasName) (textWidth + (hPad * 2f)).coerceAtLeast(40f * density) else 0f
+        val pillHeight = if (hasName) (14f * density) + (vPad * 2f) else 0f
+        val gap = 3f * density
 
-        // Motion Badge sizing (Emergency SOS & High-Speed Transit only)
         val hasMotionBadge = motionBadgeText.isNotEmpty()
         val badgeWidth = if (hasMotionBadge) badgeTextPaint.measureText(motionBadgeText) + (10f * density) else 0f
-        val badgeHeight = if (hasMotionBadge) 16f * density else 0f
+        val badgeHeight = if (hasMotionBadge) 14f * density else 0f
 
         val totalWidth = Math.max(
-            avatarSize + (30 * density).toInt(),
-            Math.max((bubbleWidth + (16 * density)).toInt(), (badgeWidth + (16 * density)).toInt())
+            avatarSize + (32 * density).toInt(),
+            Math.max((pillWidth + (16 * density)).toInt(), (badgeWidth + (16 * density)).toInt())
         )
-        val totalHeight = (avatarSize + (if (hasName) bubbleHeight + gap else 0f) + (if (hasMotionBadge) badgeHeight + (2f * density) else 0f) + (16 * density)).toInt()
+        val totalHeight = (avatarSize + (if (hasName) pillHeight + gap else 0f) + (if (hasMotionBadge) badgeHeight + (2f * density) else 0f) + (24 * density)).toInt()
 
         val resultBmp = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(resultBmp)
 
         val cx = totalWidth / 2f
-        val cyAvatar = (if (hasName) bubbleHeight + gap else 0f) + halfAv + (4f * density)
+        val cyAvatar = (if (hasName) pillHeight + gap else 0f) + halfAv + (4f * density)
 
-        // 1. Render Directional Heading Chevron when in motion (>1.0 m/s)
-        if (speedMps > 1.0f) {
+        // 1. Render Top Callout Pill (Border stroke and font color based on Role and RAG status)
+        if (hasName) {
+            val pillTop = 2f * density
+            val pillBottom = pillTop + pillHeight
+            val pillLeft = cx - (pillWidth / 2f)
+            val pillRight = cx + (pillWidth / 2f)
+            val pRadius = pillHeight / 2f
+
+            val pillRect = RectF(pillLeft, pillTop, pillRight, pillBottom)
+            
+            // Capsule Background
+            bubbleBgPaint.color = Color.argb(242, 8, 12, 22)
+            canvas.drawRoundRect(pillRect, pRadius, pRadius, bubbleBgPaint)
+
+            // Capsule Border (Role Color / Theme Color)
+            bubbleStrokePaint.color = if (isSos) Color.parseColor("#FF1744") else roleColor
+            bubbleStrokePaint.strokeWidth = 1.5f * density
+            canvas.drawRoundRect(pillRect, pRadius, pRadius, bubbleStrokePaint)
+
+            // Name Text Color matching RAG status
+            textPaint.color = ragResult.statusColor
+            val textY = pillTop + (pillHeight / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+            canvas.drawText(displayName, cx, textY, textPaint)
+        }
+
+        // 2. Render Clean Avatar Graphic directly (No artificial circular crop or glowing halo on map)
+        if (avatarBmp != null) {
+            val scaledAvatar = Bitmap.createScaledBitmap(avatarBmp, avatarSize, avatarSize, true)
+
+            if (ragResult.isDesaturated && !isSelf) {
+                val greyPaint = Paint(avatarPaint).apply {
+                    val cm = ColorMatrix()
+                    cm.setSaturation(0f)
+                    colorFilter = ColorMatrixColorFilter(cm)
+                    alpha = (ragResult.cardAlpha * 255).toInt()
+                }
+                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, greyPaint)
+            } else {
+                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
+            }
+        }
+
+        // 3. Render Live Status Pulsar Dot (Bottom-Right of Avatar)
+        val dotRadius = 4f * density
+        val dotCx = cx + halfAv - (2f * density)
+        val dotCy = cyAvatar + halfAv - (2f * density)
+
+        // Dark Border Ring for Dot
+        val dotBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.parseColor("#0F172A")
+        }
+        canvas.drawCircle(dotCx, dotCy, dotRadius + (1.5f * density), dotBorderPaint)
+
+        // Status Fill
+        val dotFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = when {
+                isSos -> Color.parseColor("#FF1744")
+                isOnline -> Color.parseColor("#22C55E")
+                else -> Color.parseColor("#64748B")
+            }
+        }
+        canvas.drawCircle(dotCx, dotCy, dotRadius, dotFillPaint)
+
+        // 4. Render Directional Heading Chevron when in motion (>0.8 m/s)
+        if (speedMps > 0.8f) {
             arrowPaint.color = roleColor
             val rad = Math.toRadians((bearing - 90.0))
-            val arrowDist = halfAv + (8f * density)
+            val arrowDist = halfAv + (6f * density)
             val tipX = (cx + arrowDist * cos(rad)).toFloat()
             val tipY = (cyAvatar + arrowDist * sin(rad)).toFloat()
 
-            val baseRad1 = Math.toRadians((bearing - 90.0 + 150.0))
-            val baseRad2 = Math.toRadians((bearing - 90.0 - 150.0))
+            val baseRad1 = Math.toRadians((bearing - 90.0 + 145.0))
+            val baseRad2 = Math.toRadians((bearing - 90.0 - 145.0))
             val baseDist = halfAv + (2f * density)
             val p1X = (cx + baseDist * cos(baseRad1)).toFloat()
             val p1Y = (cyAvatar + baseDist * sin(baseRad1)).toFloat()
@@ -212,59 +275,13 @@ object AvatarCalloutGenerator {
             canvas.drawPath(arrowPath, arrowPaint)
         }
 
-        // Evaluate RAG status
-        val ragResult = if (isSelf) {
-            DeviceRagEngine.evaluate(System.currentTimeMillis(), batteryLevel, isSos)
-        } else {
-            DeviceRagEngine.evaluate(timestamp, batteryLevel, isSos)
-        }
-
-        // 2. Render Clean Name with 100% Transparent Background (Green/Amber/Red per RAG)
-        if (hasName) {
-            val nameColor = ragResult.statusColor
-
-            val top = 2f * density
-            val textY = top + (bubbleHeight / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
-
-            // Text Outline for crisp contrast on transparent background
-            val outlinePaint = Paint(textPaint).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = 3f * density
-                color = Color.argb(220, 10, 15, 25)
-                setShadowLayer(4f * density, 0f, 1f * density, Color.BLACK)
-            }
-            canvas.drawText(displayName, cx, textY, outlinePaint)
-            
-            // Name Text Color: Green if Online, Amber if Stale/LowBatt, Red if Offline/SOS
-            textPaint.color = nameColor
-            canvas.drawText(displayName, cx, textY, textPaint)
-        }
-
-        // 3. Render Clean Avatar Graphic with Grey Mode desaturation when offline/degraded
-        if (avatarBmp != null) {
-            val scaledAvatar = Bitmap.createScaledBitmap(avatarBmp, avatarSize, avatarSize, true)
-            
-            if (ragResult.isDesaturated && !isSelf) {
-                // 🛡️ Grey Ghost Pin Mode: Desaturate offline node avatar on map
-                val greyPaint = Paint(avatarPaint).apply {
-                    val cm = ColorMatrix()
-                    cm.setSaturation(0f)
-                    colorFilter = ColorMatrixColorFilter(cm)
-                    alpha = (ragResult.cardAlpha * 255).toInt()
-                }
-                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, greyPaint)
-            } else {
-                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
-            }
-        }
-
-        // 4. Render Motion / Speed / SOS Micro-Badge (Bottom Overlay)
+        // 5. Motion / Speed / SOS Badge (Bottom Overlay if applicable)
         if (hasMotionBadge) {
-            val badgeTop = cyAvatar + halfAv - (6f * density)
+            val badgeTop = cyAvatar + halfAv + (3f * density)
             val badgeBottom = badgeTop + badgeHeight
             val badgeLeft = cx - (badgeWidth / 2f)
             val badgeRight = cx + (badgeWidth / 2f)
-            val bRadius = 8f * density
+            val bRadius = badgeHeight / 2f
 
             val badgeRect = RectF(badgeLeft, badgeTop, badgeRight, badgeBottom)
             badgeBgPaint.color = if (isSos) Color.RED else Color.argb(240, 15, 23, 42)
@@ -272,7 +289,7 @@ object AvatarCalloutGenerator {
 
             val bStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                strokeWidth = 1.5f * density
+                strokeWidth = 1.2f * density
                 color = if (isSos) Color.WHITE else roleColor
             }
             canvas.drawRoundRect(badgeRect, bRadius, bRadius, bStroke)

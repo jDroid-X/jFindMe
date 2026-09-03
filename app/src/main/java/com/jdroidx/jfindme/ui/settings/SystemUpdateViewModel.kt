@@ -215,10 +215,12 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             val link = _driveLink.value ?: RegistryManager.getSystemUpdateLink(context)
             val normalized = normalizeDownloadUrl(link)
             val currentVer = "V${com.jdroidx.jfindme.BuildConfig.VERSION_NAME} (Build ${com.jdroidx.jfindme.BuildConfig.VERSION_CODE})"
+            val sizeBytes = com.jdroidx.jfindme.data.remote.FirebaseComm.getInstalledPackageSizeBytes(context)
+            val sizeFormatted = com.jdroidx.jfindme.data.remote.FirebaseComm.formatByteSize(sizeBytes)
             val promptData = InstallPromptData(
                 downloadUrl = normalized,
                 targetVersion = currentVer,
-                packageSizeEst = "~101.67 MB (Universal Release APK)",
+                packageSizeEst = "$sizeFormatted (Release Package)",
                 sha256Verification = "VERIFIED_VALID_NODE_SIGNATURE"
             )
             _showInstallPrompt.value = promptData

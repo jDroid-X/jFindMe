@@ -98,14 +98,23 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     for (child in snapshot.children) {
                         try {
                             val model = child.getValue(com.jdroidx.jfindme.data.model.SafeZoneModel::class.java)
-                            if (model != null && (model.lat != 0.0 || model.lng != 0.0)) {
+                            if (model != null && (model.lat != 0.0 || model.lng != 0.0 || model.isPolygon)) {
                                 if (model.zoneId.isEmpty()) model.zoneId = child.key ?: ""
+                                if (model.polygonPointsJson.isBlank()) {
+                                    val polyRaw = child.child("polygon_points").value?.toString() ?: ""
+                                    if (polyRaw.isNotBlank()) model.polygonPointsJson = polyRaw
+                                }
+                                if (model.dwellThresholdMinutes == 0) {
+                                    val dwellRaw = child.child("dwell_minutes").value?.toString()?.toIntOrNull() ?: 0
+                                    model.dwellThresholdMinutes = dwellRaw
+                                }
                                 cloudZones.add(model)
                                 db.writableDatabase.let { sdb ->
                                     com.jdroidx.jfindme.data.local.tables.SafeZoneTable.save(
                                         sdb, model.zoneId, model.name, model.lat, model.lng,
                                         model.radius.toDouble(), null, model.assignedName,
-                                        model.alertsEnabled, model.isZoneActive
+                                        model.alertsEnabled, model.isZoneActive,
+                                        false, model.polygonPointsJson, model.dwellThresholdMinutes
                                     )
                                 }
                             }
@@ -315,17 +324,24 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                     val list = mutableListOf<com.jdroidx.jfindme.data.model.SafeZoneModel>()
                                     for (child in snapshot.children) {
                                         val name = child.child("name").getValue(String::class.java) ?: child.key ?: ""
-                                        val lat = child.child("lat").value?.toString()?.toDoubleOrNull() ?: continue
-                                        val lng = child.child("lng").value?.toString()?.toDoubleOrNull() ?: continue
+                                        val lat = child.child("lat").value?.toString()?.toDoubleOrNull() ?: 0.0
+                                        val lng = child.child("lng").value?.toString()?.toDoubleOrNull() ?: 0.0
                                         val rad = child.child("radius").value?.toString()?.toFloatOrNull() ?: 100f
                                         val isActive = child.child("isZoneActive").getValue(Boolean::class.java) ?: true
-                                        if (isActive) {
+                                        val polyJson = child.child("polygon_points").value?.toString() 
+                                            ?: child.child("polygonPointsJson").value?.toString() ?: ""
+                                        val dwellMin = child.child("dwell_minutes").value?.toString()?.toIntOrNull() 
+                                            ?: child.child("dwellThresholdMinutes").value?.toString()?.toIntOrNull() ?: 0
+
+                                        if (isActive && (lat != 0.0 || lng != 0.0 || polyJson.isNotBlank())) {
                                             list.add(com.jdroidx.jfindme.data.model.SafeZoneModel(
                                                 zoneId = child.key ?: name,
                                                 name = name,
-                                                latitude = lat,
-                                                longitude = lng,
-                                                radiusMeters = rad
+                                                lat = lat,
+                                                lng = lng,
+                                                radius = rad,
+                                                polygonPointsJson = polyJson,
+                                                dwellThresholdMinutes = dwellMin
                                             ))
                                         }
                                     }

@@ -27,7 +27,7 @@ public class SilentUpdateWorker extends Worker {
             FirebaseComm.syncDeviceAccessPermissions(context, agentId);
             
             // 2. Synchronize Current Version Metadata to Firebase
-            FirebaseComm.syncVersionUpdateMetadata(context, agentId, "INSTALLED", 106615515L, "101.67 MB");
+            FirebaseComm.syncVersionUpdateMetadata(context, agentId, "INSTALLED");
         }
 
         boolean isEnabled = RegistryManager.isSilentUpdateEnabled(context);

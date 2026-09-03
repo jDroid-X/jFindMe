@@ -225,6 +225,14 @@ object AlertManager {
     }
 
     @JvmStatic
+    fun showGeofenceNotification(context: Context, zoneName: String, transitionName: String, userName: String) {
+        val nowTime = java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(java.util.Date())
+        val nowDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+        val notificationMessage = "$userName has $transitionName the '$zoneName' Safe Zone.\nDate: $nowDate • Time: $nowTime"
+        showGeofenceNotification(context, notificationMessage)
+    }
+
+    @JvmStatic
     fun showGeofenceNotification(context: Context, payload: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val geoChannelId = "geofence_sentinel"

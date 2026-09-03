@@ -105,9 +105,12 @@ export class MapSettingsView {
                             </div>
                         </div>
 
-                        <div class="flex items-center gap-2 pt-1 border-t border-subtle-theme text-xs text-secondary-theme">
-                            <input type="checkbox" id="setting-show-circle" ${settings.showRadiusCircle ? 'checked' : ''} class="accent-sky-500 rounded">
-                            <label for="setting-show-circle" class="text-[11px]">Display Radial Perimeter Circle on Map</label>
+                        <div class="flex items-center justify-between pt-1 border-t border-subtle-theme text-xs">
+                            <span class="text-[11px] text-secondary-theme font-bold">Display Radial Perimeter Circle</span>
+                            <label class="switch-toggle switch-sm" title="Toggle Radius Circle">
+                                <input type="checkbox" id="setting-show-circle" ${settings.showRadiusCircle ? 'checked' : ''}>
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
                     </div>
 

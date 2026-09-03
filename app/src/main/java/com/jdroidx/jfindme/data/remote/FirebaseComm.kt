@@ -95,8 +95,13 @@ object FirebaseComm {
     @JvmStatic fun getGeofencingTargetDeviceRef(creatorId: String, zoneId: String, targetDeviceId: String): DatabaseReference = getGeofencingConnectedDevicesRef(creatorId, zoneId).child(sanitizePathKey(targetDeviceId))
     @JvmStatic fun getGeofencingNotificationsRef(creatorId: String, zoneId: String, targetDeviceId: String, dateStr: String): DatabaseReference = getGeofencingTargetDeviceRef(creatorId, zoneId, targetDeviceId).child("notifications").child(sanitizePathKey(dateStr))
 
-    // 🛡️ GRANULAR SUB-NODE ACCESSORS (Grouped by DeviceId)
-    @JvmStatic fun getDeviceRef(agentId: String): DatabaseReference = devicesRef.child(agentId)
+    // 🛡️ GRANULAR SUB-NODE ACCESSORS (Strictly Grouped by Canonical 8-Char DeviceId)
+    @JvmStatic fun getDeviceRef(agentId: String): DatabaseReference {
+        if (!isAgentIdValid(agentId)) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "CRITICAL_BLOCKED: Attempted getDeviceRef with non-canonical key: '$agentId'")
+        }
+        return devicesRef.child(agentId)
+    }
     @JvmStatic fun getProfileRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_PROFILE)
     @JvmStatic fun getIdentityRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_IDENTITY)
     @JvmStatic fun getTelemetryRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_TELEMETRY)
@@ -231,17 +236,35 @@ object FirebaseComm {
         }
     }
 
+    @JvmStatic
+    fun formatByteSize(bytes: Long): String {
+        if (bytes <= 0L) return "Unknown Size"
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        return String.format(java.util.Locale.US, "%.1f MB", mb)
+    }
+
+    @JvmStatic
+    fun getInstalledPackageSizeBytes(context: android.content.Context): Long {
+        return try {
+            val sourceDir = context.applicationInfo.sourceDir
+            if (sourceDir != null) java.io.File(sourceDir).length() else 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
     /**
      * 📦 VERSION UPDATE METADATA: Synchronizes version update metadata under /Version_Update/{agentId}/{version_name}
      * and /Version_Update/latest
      */
     @JvmStatic
+    @JvmOverloads
     fun syncVersionUpdateMetadata(
         context: android.content.Context,
         agentId: String,
         status: String = "INSTALLED",
-        packageSizeBytes: Long = 106615515L,
-        packageSizeFormatted: String = "101.67 MB"
+        packageSizeBytes: Long = getInstalledPackageSizeBytes(context),
+        packageSizeFormatted: String = formatByteSize(if (packageSizeBytes > 0) packageSizeBytes else getInstalledPackageSizeBytes(context))
     ) {
         if (agentId.isBlank()) return
         try {
@@ -322,8 +345,8 @@ object FirebaseComm {
                 // Fallback to Production Master Defaults
                 val defaultCode = 62
                 val defaultName = "1.0.0"
-                val defaultUrl = "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/app-universal-release.apk"
-                val defaultSize = "107.0 MB"
+                val defaultUrl = "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
+                val defaultSize = "84.1 MB"
                 val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
                 val hasNew = defaultCode > currentCode
 
@@ -478,12 +501,11 @@ object FirebaseComm {
                             }
                         }
 
-                        // 🧹 Clean root level fcm_token and move to Identity & device subnodes
+                        // 🧹 Clean root level fcm_token and move to Identity subnode (SSOT)
                         if (child.hasChild("fcm_token")) {
                             val tokenVal = child.child("fcm_token").getValue(String::class.java)
                             if (!tokenVal.isNullOrEmpty()) {
                                 child.child("Identity").child("fcm_token").ref.setValue(tokenVal)
-                                child.child("device").child("fcm_token").ref.setValue(tokenVal)
                             }
                             child.child("fcm_token").ref.removeValue()
                         }
@@ -595,22 +617,20 @@ object FirebaseComm {
 
         // 🧬 CLEAN HIERARCHY MIRROR (V67.8): All table data even blank
         
-        // 1. IDENTITY NODE (Tier 1 Mirror)
+        // 1. IDENTITY NODE (Tier 1 Authentication & Hardware Anchor)
         val idPath = "$NODE_DEVICES/$agentId/Identity"
         atomicPayload["$idPath/auth_uid"] = authUid
         atomicPayload["$idPath/uid_1"] = agentId
         atomicPayload["$idPath/uid_2"] = hardwareId
-        val fullName = payload["name"] ?: payload["userName"] ?: payload["id_full_name"] ?: ""
-        atomicPayload["$idPath/id_full_name"] = fullName
         atomicPayload["$idPath/node_index"] = 1
         atomicPayload["$idPath/is_admin"] = "1"
-        atomicPayload["$idPath/owner_name"] = payload["owner_name"] ?: fullName
         atomicPayload["$idPath/connected_id"] = payload["connected_id"] ?: hardwareId
         atomicPayload["$idPath/qr_code_ref"] = payload["qr_code_ref"] ?: ""
+        atomicPayload["$idPath/active_group"] = activeGroupId ?: payload["active_group"] ?: "GRP_$agentId"
         atomicPayload["$idPath/status"] = "Active"
         atomicPayload["$idPath/updated_at"] = now
 
-        // 2. PROFILE NODE (Tier 1 Metadata)
+        // 2. PROFILE NODE (Single Source of Truth: Persona & Organization Dossier)
         val profPath = "$NODE_DEVICES/$agentId/profile"
         atomicPayload["$profPath/name"] = payload["name"] ?: payload["userName"] ?: ""
         atomicPayload["$profPath/email"] = payload["email"] ?: payload["userEmail"] ?: ""
@@ -625,19 +645,17 @@ object FirebaseComm {
         atomicPayload["$profPath/org_name"] = payload["org_name"] ?: ""
         atomicPayload["$profPath/dept_name"] = payload["dept_name"] ?: ""
         atomicPayload["$profPath/avatar_id"] = payload["avatar_id"] ?: "1"
+        atomicPayload["$profPath/active_group"] = activeGroupId ?: payload["active_group"] ?: "GRP_$agentId"
         atomicPayload["$profPath/note"] = payload["emergency_note"] ?: payload["note"] ?: ""
         atomicPayload["$profPath/updated_at"] = now
 
-        // 3. DEVICE NODE (Tier 2 Hardware Hub)
+        // 3. DEVICE NODE (Tier 2 Hardware Specifications & Fingerprints)
         val devPath = "$NODE_DEVICES/$agentId/device"
         atomicPayload["$devPath/device_id"] = hardwareId
         atomicPayload["$devPath/model"] = payload["model"] ?: android.os.Build.MODEL
         atomicPayload["$devPath/imei"] = payload["imei"] ?: ""
         atomicPayload["$devPath/is_rooted"] = if (payload["is_rooted"] == true) "1" else "0"
         atomicPayload["$devPath/fingerprint"] = payload["fingerprint"] ?: ""
-        atomicPayload["$devPath/latitude"] = payload["latitude"] ?: 0.0
-        atomicPayload["$devPath/longitude"] = payload["longitude"] ?: 0.0
-        atomicPayload["$devPath/Address"] = payload["Address"] ?: payload["address"] ?: ""
         atomicPayload["$devPath/updated_at"] = now
 
         // 🛡️ V67.8: ALL OTHER NODES DECOMMISSIONED
@@ -752,7 +770,7 @@ object FirebaseComm {
 
     @JvmStatic
     fun syncAnalyticalEvent(agentId: String, eventData: UserLocation) {
-        if (!isAgentIdValid(agentId)) return
+        if (!isAgentIdValid(agentId) || !eventData.isValidLocation()) return
         val now = getForensicTimestamp()
         val updates = mutableMapOf<String, Any>()
         
@@ -767,11 +785,11 @@ object FirebaseComm {
         
         // 2. DEVICE HISTORY NODE: Only latest point under device
         val historyKey = getInvertedForensicKey()
-        updates["$NODE_DEVICES/$agentId/history"] = mapOf(historyKey to eventData.toMap())
+        updates["$NODE_DEVICES/$agentId/history"] = mapOf(historyKey to eventData.toHistoryMap())
 
-        // 3. TOP-LEVEL /History ARCHIVE: Time-Series Stream (Latest - 1 data)
+        // 3. TOP-LEVEL /History ARCHIVE: Time-Series Stream (Pure Telemetry Metadata Only)
         val archiveHistPath = "$NODE_HISTORY_ARCHIVE/$agentId/history/$historyKey"
-        updates[archiveHistPath] = eventData.toMap()
+        updates[archiveHistPath] = eventData.toHistoryMap()
         
         database.reference.updateChildren(updates).addOnFailureListener {
             com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${it.message}")
@@ -785,7 +803,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun syncPartitionedLocationTrace(authUid: String, agentId: String, epochId: String, eventData: UserLocation) {
-        if (!isAgentIdValid(agentId)) return
+        if (!isAgentIdValid(agentId) || !eventData.isValidLocation()) return
         val now = getForensicTimestamp()
         val updates = mutableMapOf<String, Any>()
 
@@ -804,10 +822,9 @@ object FirebaseComm {
         updates["$livePath/epoch_id"] = epochId
         updates["$livePath/updated_at"] = now
 
-        // 2. Device History Node: Only latest 1 data point under device
+        // 2. Device History Node: Only latest 1 data point under device (Pure Telemetry)
         val historyKey = getInvertedForensicKey()
-        val payload = eventData.toMap().toMutableMap()
-        payload["auth_uid"] = authUid
+        val payload = eventData.toHistoryMap().toMutableMap()
         payload["epoch_id"] = if (epochId.isNotEmpty()) epochId else "DEFAULT_EPOCH"
         payload["timestamp"] = now
         updates["$NODE_DEVICES/$agentId/history"] = mapOf(historyKey to payload)
@@ -852,7 +869,23 @@ object FirebaseComm {
      */
     @JvmStatic
     fun rehydrateCloudLocationHistory(authUid: String, agentId: String, onComplete: ((List<Map<String, Any>>) -> Unit)) {
-        val targetId = if (isAgentIdValid(agentId)) agentId else authUid
+        val cleanCandidate = agentId.removePrefix("HW_")
+        val targetId = if (isAgentIdValid(cleanCandidate)) {
+            cleanCandidate
+        } else {
+            val ctx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+            val resolved = if (ctx != null) {
+                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx).resolveAgentIdLocally(cleanCandidate)
+                    ?: com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx).resolveAgentIdLocally(authUid)
+            } else null
+            if (resolved != null && isAgentIdValid(resolved)) {
+                resolved
+            } else {
+                SystemLogger.w("FirebaseComm", "Blocked history query with non-canonical ID: '$agentId' (Auth UID: '$authUid')")
+                onComplete(emptyList())
+                return
+            }
+        }
         if (targetId.isEmpty()) {
             onComplete(emptyList())
             return

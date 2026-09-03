@@ -82,14 +82,16 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     val lastTime = prefs.getLong(stateTimeKey, 0L)
                     val now = System.currentTimeMillis()
 
-                    if (lastState != null && lastState.equals(transitionName, ignoreCase = true)) {
+                    val isLatchEnabled = RegistryManager.isGeofenceLatchEnabled(context)
+                    if (isLatchEnabled && lastState != null && lastState.equals(transitionName, ignoreCase = true)) {
                         SystemLogger.i(TAG, "GEOFENCE_DORMANT_STATE: Zone '$zoneName' is already latched as '$transitionName'. Alert dormant until opposite perimeter transition occurs.")
                         continue
                     }
 
-                    // Debounce rapid hardware boundary jitter (15s threshold)
-                    if (now - lastTime < 15000L) {
-                        SystemLogger.i(TAG, "GEOFENCE_JITTER_SUPPRESSED: Rapid perimeter flutter suppressed (${now - lastTime}ms).")
+                    // Debounce rapid hardware boundary jitter (Dynamic threshold: 5s Min, 15s Mid, 60s Max)
+                    val jitterDebounceMs = RegistryManager.getGeofenceJitterDebounceMs(context)
+                    if (jitterDebounceMs > 0L && (now - lastTime < jitterDebounceMs)) {
+                        SystemLogger.i(TAG, "GEOFENCE_JITTER_SUPPRESSED: Rapid perimeter flutter suppressed (${now - lastTime}ms < ${jitterDebounceMs}ms threshold).")
                         continue
                     }
 
@@ -135,8 +137,14 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                             "uid" to myUid
                         )
 
+                        val transitionTag = if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) "IN" else "OUT"
+                        val rawCleanZone = if (geofence.requestId.contains("___")) geofence.requestId.split("___")[0] else geofence.requestId
+                        val cleanZoneId = FirebaseComm.sanitizePathKey(rawCleanZone)
+
                         // 🌳 GEOFENCING TREE DISPATCH: Creator -> SafeZone -> Target Device -> Notifications (Group by Date)
-                        val hostDeviceCode = prefs.getString("agent_id", null)
+                        val creatorFromDb = db.getSafeZoneCreatorAgentId(cleanZoneId)
+                        val hostDeviceCode = creatorFromDb
+                            ?: prefs.getString("agent_id", null)
                             ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
                             ?: db.resolveAgentIdLocally(myUid)
                             ?: FirebaseComm.sanitizePathKey(groupId)
@@ -148,9 +156,6 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         val cleanTargetCode = FirebaseComm.sanitizePathKey(targetDeviceCode)
 
                         val eventId = "EVT_${now}_${cleanTargetCode.takeLast(4)}"
-                        val transitionTag = if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) "IN" else "OUT"
-                        val rawCleanZone = if (geofence.requestId.contains("___")) geofence.requestId.split("___")[0] else geofence.requestId
-                        val cleanZoneId = FirebaseComm.sanitizePathKey(rawCleanZone)
 
                         val avatarId = prefs.getString("user_avatar_id", "butterfly") ?: "butterfly"
 
@@ -195,8 +200,8 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                             "avatar_id" to avatarId
                         )
 
-                        // If ENTERING safe zone, query zone coordinate from SQLite and update live GPS
-                        if (transitionTag == "IN") {
+                        // If ENTERING safe zone, optionally query zone coordinate from SQLite and update live GPS
+                        if (transitionTag == "IN" && RegistryManager.isGeofenceSnapCenterEnabled(context)) {
                             try {
                                 val zoneModel = db.getSafeZoneById(cleanZoneId)
                                 if (zoneModel != null && zoneModel.lat != 0.0 && zoneModel.lng != 0.0) {
@@ -209,12 +214,6 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
                         val targetDeviceLiveRef = FirebaseComm.getDeviceRef(cleanTargetCode)
                         targetDeviceLiveRef.child("device").child("live").updateChildren(liveUpdateMap)
-                        targetDeviceLiveRef.child("safe_zones").child(cleanZoneId).updateChildren(mapOf(
-                            "current_state" to transitionTag,
-                            "last_transition_ts" to now,
-                            "last_transition_readable" to shortDateTime,
-                            "updated_at" to now
-                        ))
 
                         // 🛰️ DISPATCH 1: Instantaneous handshake to Admin's Notification Screen & Map HUD
                         FirebaseComm.relationshipsRef.child(cleanGroupId)
@@ -238,24 +237,28 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                             "time" to timeFormatted,
                             "datetime" to dateTimeFormatted
                         )
-                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                            .collection("fcm_queue").add(fcmPayload)
-                            .addOnSuccessListener {
-                                SystemLogger.i(TAG, "FCM Push Event Queued for: $zoneName ($transitionName) at $dateTimeFormatted")
-                            }
+                        if (RegistryManager.isGeofenceFcmRelayEnabled(context)) {
+                            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                .collection("fcm_queue").add(fcmPayload)
+                                .addOnSuccessListener {
+                                    SystemLogger.i(TAG, "FCM Push Event Queued for: $zoneName ($transitionName) at $dateTimeFormatted")
+                                }
+                        }
                     } catch (e: Exception) {
                         SystemLogger.e(TAG, "GEOFENCE_CLOUD_DISPATCH_ERR", e)
                     }
                 }
 
                 // 🔔 UX ALERT: Natively pop local OS notification for the Subject with explicit date & time
-                val nowTime = java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(java.util.Date())
-                val nowDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
-                val notificationMessage = "$userName has $transitionName the '$zoneName' Safe Zone.\nDate: $nowDate • Time: $nowTime"
-                AlertManager.showGeofenceNotification(context, notificationMessage)
+                if (RegistryManager.isGeofenceLocalNotifEnabled(context)) {
+                    val nowTime = java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()).format(java.util.Date())
+                    val nowDate = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+                    val notificationMessage = "$userName has $transitionName the '$zoneName' Safe Zone.\nDate: $nowDate • Time: $nowTime"
+                    AlertManager.showGeofenceNotification(context, notificationMessage)
+                }
 
                 // 🚀 MASTER-CHILD CLUSTER SYNC: Local Analytic Archival (V50.0)
-                val fallbackOwner = RegistryManager.DEFAULT_FALLBACK_OWNER_ID
+                val fallbackOwner = RegistryManager.getOwnerAgentId(context)
                 val activeUid = prefs.getString("user_uid", fallbackOwner) ?: fallbackOwner
                 
                 db.saveGeofenceLog(activeUid, userName, geofence.requestId, zoneName, transitionName)

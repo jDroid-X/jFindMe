@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  */
 class LocationRepository(internal val context: Context) {
 
-    private val offlineSyncManager = OfflineSyncManager(context)
+    private val offlineSyncManager = OfflineSyncManager.getInstance(context)
     private val _userLocations = MutableLiveData<List<UserLocation>>()
     val userLocations: LiveData<List<UserLocation>> get() = _userLocations
 
@@ -364,7 +364,6 @@ class LocationRepository(internal val context: Context) {
 
         if (timeElapsed < 60000 && distanceMoved < 50f) {
             finalizeLocationPush(userLocation, cachedHumanAddress)
-            offlineSyncManager.syncLocation(userLocation)
             return
         }
 
@@ -388,26 +387,11 @@ class LocationRepository(internal val context: Context) {
             
             finalizeLocationPush(userLocation, humanAddress)
         }
-        
-        offlineSyncManager.syncLocation(userLocation)
     }
 
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val enrichedLocation = userLocation.copy(address = finalAddress)
-
-        db.saveHistoryPoint(
-            enrichedLocation.getResolvedUserId(),
-            enrichedLocation.getResolvedDeviceId(),
-            enrichedLocation.latitude,
-            enrichedLocation.longitude,
-            enrichedLocation.speed,
-            enrichedLocation.batteryLevel.toInt(),
-            enrichedLocation.isSosActive,
-            finalAddress,
-            enrichedLocation.getResolvedTimestamp()
-        )
-        
+        offlineSyncManager.syncLocation(enrichedLocation)
         updateUserLocation(enrichedLocation)
     }
 
@@ -420,7 +404,7 @@ class LocationRepository(internal val context: Context) {
             if (authUid.isNotEmpty()) {
                 FirebaseComm.syncPartitionedLocationTrace(authUid, rId, epochId, userLocation)
             } else {
-                FirebaseComm.syncAnalyticalEvent(rId, userLocation)
+                SystemLogger.d("LocationRepository", "Standby fix: Cached in secure offline vault while awaiting authentication.")
             }
         }
     }

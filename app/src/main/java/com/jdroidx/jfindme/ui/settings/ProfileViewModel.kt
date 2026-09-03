@@ -130,7 +130,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
 
                 // TIER 2: Hardware Matrix Alignment (Waterfall Heartbeat)
                 val authUid = FirebaseAuth.getInstance().uid ?: return@launch
-                val hardwareId = fullPayload["uid_2"]?.toString()?.takeIf { it.isNotBlank() } ?: ("HW_" + (Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "NULL").uppercase())
+                val hardwareId = fullPayload["uid_2"]?.toString()?.takeIf { it.isNotBlank() } ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
                 
                 FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
                 db.syncDeviceAnalytical(finalAgentId, hardwareId, hardwareMetadata["model"]?.toString(), "REDACTED", false, hardwareMetadata["fingerprint"]?.toString())
@@ -177,16 +177,12 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
                 val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
                 val avatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
-                val hardwareId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "HW_$safeUid"
+                val hardwareId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
                 
                 val profilePayload = existingTruth.toMutableMap()
                 profilePayload.putAll(mapOf(
                     "name" to nameVal, 
-                    "fullName" to nameVal,
-                    "userName" to nameVal,
-                    "owner_name" to nameVal,
                     "avatar_id" to avatarId,
-                    "equipped_avatar_id" to rawBaseId,
                     "phone" to phoneVal, 
                     "dob" to dobVal, 
                     "gender" to genderVal, 

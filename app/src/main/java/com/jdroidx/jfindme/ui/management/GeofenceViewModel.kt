@@ -47,8 +47,13 @@ data class RenderedGeofence @JvmOverloads constructor(
     val endTime: Int = 2359,
     val activeDays: String = "1,2,3,4,5,6,0", // 0=Sun, 1=Mon...
     val creatorUid: String? = null,
-    val creatorAgentId: String? = null
-)
+    val creatorAgentId: String? = null,
+    val polygonPointsJson: String? = null,
+    val dwellMinutes: Int = 0
+) {
+    val isPolygon: Boolean
+        get() = !polygonPointsJson.isNullOrBlank()
+}
 
 /**
  * Hardened MVVM Geofence ViewModel (V36 MASTER)
@@ -179,8 +184,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     val activeDays = snap.child("activeDays").getValue(String::class.java) ?: "1,2,3,4,5,6,0"
                     val creatorUid = snap.child("creator_uid").getValue(String::class.java)
                     val creatorAgentId = snap.child("creator_agent_id").getValue(String::class.java)
+                    val polyPoints = snap.child("polygon_points").getValue(String::class.java)
+                    val dwellMin = snap.child("dwell_minutes").value?.toString()?.toIntOrNull() ?: 0
                     
-                    list.add(RenderedGeofence(id, name, lat, lng, radius, assignedName, address, alertsEnabled, isZoneActive, startTime, endTime, activeDays, creatorUid, creatorAgentId))
+                    list.add(RenderedGeofence(id, name, lat, lng, radius, assignedName, address, alertsEnabled, isZoneActive, startTime, endTime, activeDays, creatorUid, creatorAgentId, polyPoints, dwellMin))
                 }
                 
                 // 🚀 V36 Optimized Sync: Single Batch Commit (Forensic Efficiency)
@@ -193,6 +200,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                                 put("sync_status", "CLOUD_SYNCED")
                                 put("flag_a", if (zone.alertsEnabled) 1 else 0)
                                 put("flag_b", if (zone.isZoneActive) 1 else 0)
+                                put("polygon_points", zone.polygonPointsJson)
+                                put("dwell_minutes", zone.dwellMinutes)
                             }
                             dbDelegate.saveSafeZone(v)
                         }
@@ -208,7 +217,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                                     map["lat"] as? Double ?: 0.0, map["lng"] as? Double ?: 0.0,
                                     map["radius"] as? Double ?: 100.0, map["target"] as? String ?: "All",
                                     "Local Forensic Cache", (map["flag_a"] as? Int ?: 1) == 1,
-                                    (map["flag_b"] as? Int ?: 1) == 1, 0, 2359, "1,2,3,4,5,6,0"
+                                    (map["flag_b"] as? Int ?: 1) == 1, 0, 2359, "1,2,3,4,5,6,0",
+                                    null, null,
+                                    map["polygon_points"] as? String,
+                                    (map["dwell_minutes"] as? Int) ?: 0
                                 ))
                             }
                         }
@@ -300,9 +312,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     val zRef = creatorRef.child("safe_zones").child(cleanZoneId)
                     zRef.updateChildren(zoneData)
 
-                    // 📱 DEVICE NODE: Keep latest safe zone configuration synchronized under /devices/{hostDeviceCode}/
-                    FirebaseComm.getDeviceRef(cleanCreatorId).child("safe_zones").child(cleanZoneId).updateChildren(zoneData)
-
                     // 📝 AUDIT CHANGE LOG: Record Safehouse mutation under /devices/{cleanCreatorId}/Change_Log/Safehouse
                     FirebaseComm.logChange(cleanCreatorId, FirebaseComm.LOG_ITEM_SAFEHOUSE, "ZONE_UPDATE", cleanZoneId, zoneData)
 
@@ -329,7 +338,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                                 "assigned_at" to System.currentTimeMillis()
                             )
                             zRef.child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
-                            FirebaseComm.getDeviceRef(cleanCreatorId).child("safe_zones").child(cleanZoneId).child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
                         } catch (tErr: Exception) {
                             SystemLogger.e("GeofenceSync", "TARGET_NODE_SYNC_ERR: $code", tErr)
                         }
@@ -360,7 +368,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         (map["flag_b"] as? Int ?: 1) == 1,
                         0, // Default Start
                         2359, // Default End
-                        "1,2,3,4,5,6,0" // Default Days
+                        "1,2,3,4,5,6,0", // Default Days
+                        null, null,
+                        map["polygon_points"] as? String,
+                        (map["dwell_minutes"] as? Int) ?: 0
                     )
                 }
                 _activeZones.postValue(list)
@@ -634,8 +645,20 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    @kotlin.jvm.JvmOverloads
-    fun submitCloudCoordinateSync(rawName: String, assignedName: String, lat: Double, lng: Double, radius: Double, startTime: Int = 0, endTime: Int = 2359, activeDays: String = "1,2,3,4,5,6,0", existingId: String? = null) {
+    @JvmOverloads
+    fun submitCloudCoordinateSync(
+        rawName: String,
+        assignedName: String,
+        lat: Double,
+        lng: Double,
+        radius: Double,
+        startTime: Int = 0,
+        endTime: Int = 2359,
+        activeDays: String = "1,2,3,4,5,6,0",
+        existingId: String? = null,
+        polygonPointsJson: String? = null,
+        dwellMinutes: Int = 0
+    ) {
         try {
             val name = rawName // 🚀 L7 PURE-SOURCE: Remove cluster redundancy from the name title
             _uiToastEvent.postValue(SingleEvent("Acquiring Hardware Sync..."))
@@ -645,10 +668,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
                     override fun onGeocode(addresses: MutableList<android.location.Address>) {
                         val addr = if (addresses.isNotEmpty()) addresses[0].getAddressLine(0) else "Unknown Target"
-                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addr, startTime, endTime, activeDays, existingId)
+                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addr, startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
                     }
                     override fun onError(errorMessage: String?) {
-                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, "Address Offline", startTime, endTime, activeDays, existingId)
+                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, "Address Offline", startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
                     }
                 })
             } else {
@@ -660,7 +683,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                             if (!res.isNullOrEmpty()) res[0].getAddressLine(0) else "Unknown Target"
                         } catch (e: Exception) { "Address Offline" }
                     }
-                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addressString, startTime, endTime, activeDays, existingId)
+                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addressString, startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
                 }
             }
         } catch (e: Exception) {
@@ -669,7 +692,20 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun finalizeCloudGeofencePush(name: String, assignedName: String, lat: Double, lng: Double, radius: Double, addr: String, startTime: Int, endTime: Int, activeDays: String, existingId: String? = null) {
+    private fun finalizeCloudGeofencePush(
+        name: String,
+        assignedName: String,
+        lat: Double,
+        lng: Double,
+        radius: Double,
+        addr: String,
+        startTime: Int,
+        endTime: Int,
+        activeDays: String,
+        existingId: String? = null,
+        polygonPointsJson: String? = null,
+        dwellMinutes: Int = 0
+    ) {
         val activeId = currentGroupId ?: return
         val hostCode = getHostDeviceCode()
         val cleanHostCode = FirebaseComm.sanitizePathKey(hostCode)
@@ -685,6 +721,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             "startTime" to startTime,
             "endTime" to endTime,
             "activeDays" to activeDays,
+            "polygon_points" to (polygonPointsJson ?: ""),
+            "dwell_minutes" to dwellMinutes,
             "created_by" to (com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: "ADMIN"),
             "timestamp" to System.currentTimeMillis()
         )
@@ -714,13 +752,13 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 "startTime" to startTime,
                 "endTime" to endTime,
                 "activeDays" to activeDays,
+                "polygon_points" to (polygonPointsJson ?: ""),
+                "dwell_minutes" to dwellMinutes,
                 "address" to addr,
                 "created_on" to FirebaseComm.getForensicTimestamp(),
                 "updated_at" to System.currentTimeMillis()
             )
             val geofencingSafeZoneRef = FirebaseComm.getGeofencingSafeZoneRef(cleanHostCode, uniqueZoneId)
-            // 📱 DEVICE NODE: Keep latest safe zone configuration synchronized under /devices/{hostDeviceCode}/
-            FirebaseComm.getDeviceRef(cleanHostCode).child("safe_zones").child(uniqueZoneId).updateChildren(geofencingZoneData)
 
             // Build canonical lookup from offline roster
             val roster = dbDelegate.getOfflineRoster()
@@ -770,7 +808,6 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         "assigned_at" to System.currentTimeMillis()
                     )
                     geofencingSafeZoneRef.child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
-                    FirebaseComm.getDeviceRef(cleanHostCode).child("safe_zones").child(uniqueZoneId).child("connected_devices").child(cleanTargetCode).updateChildren(connectedDeviceData)
                 } catch (tErr: Exception) {
                     SystemLogger.e("GeofenceViewModel", "TARGET_NODE_PUSH_ERR: $code", tErr)
                 }
@@ -787,6 +824,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 put("lat", lat); put("lng", lng); put("radius", radius)
                 put("target", assignedName)
                 put("sync_status", "CLOUD_SYNCED")
+                put("is_active", 1)
+                put("is_alerts_enabled", 1)
+                put("polygon_points", polygonPointsJson)
+                put("dwell_minutes", dwellMinutes)
                 put("flag_a", 1); put("flag_b", 1)
             }
             dbDelegate.saveSafeZone(v)
@@ -957,7 +998,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                         "Archive Vault",
                         (map["flag_a"] as? Int ?: 1) == 1,
                         false, // Inactive
-                        0, 2359, "1,2,3,4,5,6,0"
+                        0, 2359, "1,2,3,4,5,6,0",
+                        null, null,
+                        map["polygon_points"] as? String,
+                        (map["dwell_minutes"] as? Int) ?: 0
                     )
                 }
                 _archivedZones.postValue(list)

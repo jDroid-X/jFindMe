@@ -72,7 +72,14 @@
     },
     "Geofencing": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      ".write": "auth != null",
+      "$creatorDeviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "safe_zones": {
+          ".indexOn": ["zone_id", "is_active", "updated_at"]
+        }
+      }
     },
     "safe_zones": {
       ".read": "auth != null",

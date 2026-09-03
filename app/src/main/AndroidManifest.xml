@@ -242,6 +242,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- L5.9: Background Self-Healing Watchdog Sentinel -->
+        <receiver
+            android:name=".receiver.WatchdogAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.jdroidx.jfindme.action.WATCHDOG_HEARTBEAT" />
+            </intent-filter>
+        </receiver>
+
         <!-- L6: Hardware Camera Bridge (High Resolution Injection) -->
         <provider
             android:name="androidx.core.content.FileProvider"

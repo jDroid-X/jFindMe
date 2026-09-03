@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 73 // 🧬 V73: SafeZone Archival & Realtime Tree Parity Migrations
+        const val DATABASE_VERSION = 74 // 🧬 V74: Master-Transactional Schema, Deduplication & Anti-GIGO Engine
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -323,6 +323,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             }
         }
 
+        // 🚀 Self-Healing: Verify PendingSyncQueueTable and DeviceVitalsTable presence
+        try {
+            db.execSQL(PendingSyncQueueTable.CREATE_TABLE)
+            db.execSQL(DeviceVitalsTable.CREATE_TABLE)
+        } catch (e: Exception) { }
+
         // 🚀 Self-Healing: Verify ChangeLogTable presence
         try {
             db.execSQL(ChangeLogTable.CREATE_TABLE)
@@ -331,6 +337,23 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         // 🚀 Data Sanitization: Purge corrupted legacy logs saved as safe zones
         try {
             db.execSQL("DELETE FROM ${SafeZoneTable.TABLE_NAME} WHERE ${SafeZoneTable.COL_ZONE_ID} LIKE 'HANDSHAKE%' OR (${SafeZoneTable.COL_LAT} = 0 AND ${SafeZoneTable.COL_LNG} = 0)")
+        } catch (e: Exception) { }
+
+        // 🛡️ De-duplication Protocol: Eliminate duplicate rows from junction tables and enforce unique constraints
+        try {
+            db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE rowid NOT IN (SELECT MIN(rowid) FROM ${GroupMemberTable.TABLE_NAME} GROUP BY ${GroupMemberTable.COL_GROUP_ID}, ${GroupMemberTable.COL_IDENTITY_ID})")
+            db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE rowid NOT IN (SELECT MIN(rowid) FROM ${DevicePairingTable.TABLE_NAME} GROUP BY ${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
+            db.execSQL("DELETE FROM ${SafeZoneUserMapTable.TABLE_NAME} WHERE rowid NOT IN (SELECT MIN(rowid) FROM ${SafeZoneUserMapTable.TABLE_NAME} GROUP BY ${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
+            db.execSQL("DELETE FROM ${UserOrgMapTable.TABLE_NAME} WHERE rowid NOT IN (SELECT MIN(rowid) FROM ${UserOrgMapTable.TABLE_NAME} GROUP BY ${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_group_member ON ${GroupMemberTable.TABLE_NAME} (${GroupMemberTable.COL_GROUP_ID}, ${GroupMemberTable.COL_IDENTITY_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+
+            // 🛡️ V74 Anti-GIGO Deduplication Indexes
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_dedupe ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP})")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
         } catch (e: Exception) { }
     }
 
@@ -360,8 +383,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
             // TIER 5: SYSTEM & AUDIT LEDGER
             db.execSQL(SyncQueueTable.CREATE_TABLE)
+            db.execSQL(PendingSyncQueueTable.CREATE_TABLE)
+            db.execSQL(DeviceVitalsTable.CREATE_TABLE)
             db.execSQL(ChangeLogTable.CREATE_TABLE)
             db.execSQL(UserProfileTable.CREATE_TABLE_SYS_LOG)
+
+            // Performance Compound Indexes
+            try {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_id_ts ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP} DESC)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_pending_sync_status ON ${PendingSyncQueueTable.TABLE_NAME} (${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_TIMESTAMP} ASC)")
+            } catch (ex: Exception) { }
 
             // V57 HARDWARE EXTENSION: SIM Transactions (Offline Ledger)
             db.execSQL("""
@@ -892,6 +923,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.endTransaction()
             }
         }
+
+        if (oldVersion < 74) {
+            try {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_dedupe ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
+                android.util.Log.i("DatabaseHelper", "V74 Schema Migration: Deduplication Indexes Deployed.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V74 Upgrade error: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -1192,6 +1233,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     map["flag_b"] = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ACTIVE))
                     val archIdx = it.getColumnIndex(SafeZoneTable.COL_IS_ARCHIVED)
                     map["is_archived"] = if (archIdx != -1) it.getInt(archIdx) else 0
+                    val polyIdx = it.getColumnIndex(SafeZoneTable.COL_POLYGON_POINTS)
+                    map["polygon_points"] = if (polyIdx != -1) (it.getString(polyIdx) ?: "") else ""
+                    val dwellIdx = it.getColumnIndex(SafeZoneTable.COL_DWELL_MINUTES)
+                    map["dwell_minutes"] = if (dwellIdx != -1) it.getInt(dwellIdx) else 0
                     list.add(map)
                 }
             }
@@ -1216,6 +1261,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     map["flag_a"] = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ALERTS_ENABLED))
                     map["flag_b"] = 0 // Inactive when archived
                     map["is_archived"] = 1
+                    val polyIdx = it.getColumnIndex(SafeZoneTable.COL_POLYGON_POINTS)
+                    map["polygon_points"] = if (polyIdx != -1) (it.getString(polyIdx) ?: "") else ""
+                    val dwellIdx = it.getColumnIndex(SafeZoneTable.COL_DWELL_MINUTES)
+                    map["dwell_minutes"] = if (dwellIdx != -1) it.getInt(dwellIdx) else 0
                     list.add(map)
                 }
             }
@@ -1390,6 +1439,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     fun saveHistoryPoint(uid1: String, deviceId: String, lat: Double, lng: Double, speed: Float, battery: Int, sos: Boolean, source: String?, ts: String) {
+        // 🛡️ Anti-GIGO Coordinate Guard: Reject null island (0,0) and invalid coordinates
+        if (lat == 0.0 && lng == 0.0) return
+        if (lat.isNaN() || lng.isNaN() || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) return
+
         val db = writableDatabase
         // 🧬 V68 Cleanup: No more HW_REMOTE_ dummy keys. Use NULL if unknown.
         var iId = resolveInternalId(uid1)
@@ -1684,7 +1737,23 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         val iId = if (uid != null) resolveInternalId(uid) else -1L
         val alerts = if (v.containsKey("flag_a")) (v.getAsInteger("flag_a") == 1) else true
         val active = if (v.containsKey("flag_b")) (v.getAsInteger("flag_b") == 1) else true
-        SafeZoneTable.save(db, v.getAsString("zone_id"), v.getAsString("name"), v.getAsDouble("lat"), v.getAsDouble("lng"), v.getAsDouble("radius"), if(iId != -1L) iId else null, v.getAsString("target"), alerts, active)
+        val polyPoints = v.getAsString("polygon_points")
+        val dwellMin = if (v.containsKey("dwell_minutes")) (v.getAsInteger("dwell_minutes") ?: 0) else 0
+        SafeZoneTable.save(
+            db = db,
+            zoneId = v.getAsString("zone_id") ?: "",
+            name = v.getAsString("name"),
+            lat = v.getAsDouble("lat") ?: 0.0,
+            lng = v.getAsDouble("lng") ?: 0.0,
+            radius = v.getAsDouble("radius") ?: 100.0,
+            createdBy = if(iId != -1L) iId else null,
+            target = v.getAsString("target"),
+            alerts = alerts,
+            active = active,
+            archived = false,
+            polygonPoints = polyPoints,
+            dwellMinutes = dwellMin
+        )
     }
 
     fun syncSafeZoneGroup(zoneId: String, nodes: String, start: Int, end: Int, days: String, flagA: Int = 1, flagB: Int = 1, addr: String? = null) {
@@ -2437,8 +2506,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val target = it.getString(it.getColumnIndexOrThrow(SafeZoneTable.COL_TARGET_UID)) ?: "ALL"
                     val alerts = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ALERTS_ENABLED)) == 1
                     val active = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ACTIVE)) == 1
+                    val polyIdx = it.getColumnIndex(SafeZoneTable.COL_POLYGON_POINTS)
+                    val polyJson = if (polyIdx != -1) (it.getString(polyIdx) ?: "") else ""
+                    val dwellIdx = it.getColumnIndex(SafeZoneTable.COL_DWELL_MINUTES)
+                    val dwellMin = if (dwellIdx != -1) it.getInt(dwellIdx) else 0
 
-                    if (lat != 0.0 || lng != 0.0) {
+                    if (lat != 0.0 || lng != 0.0 || polyJson.isNotBlank()) {
                         list.add(
                             com.jdroidx.jfindme.data.model.SafeZoneModel(
                                 zoneId = zId,
@@ -2448,7 +2521,9 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                                 radius = if (rad > 0f) rad else 100f,
                                 assignedName = target,
                                 alertsEnabled = alerts,
-                                isZoneActive = active
+                                isZoneActive = active,
+                                polygonPointsJson = polyJson,
+                                dwellThresholdMinutes = dwellMin
                             )
                         )
                     }
@@ -2486,6 +2561,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val target = it.getString(it.getColumnIndexOrThrow(SafeZoneTable.COL_TARGET_UID)) ?: "ALL"
                     val alerts = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ALERTS_ENABLED)) == 1
                     val active = it.getInt(it.getColumnIndexOrThrow(SafeZoneTable.COL_IS_ACTIVE)) == 1
+                    val polyIdx = it.getColumnIndex(SafeZoneTable.COL_POLYGON_POINTS)
+                    val polyJson = if (polyIdx != -1) (it.getString(polyIdx) ?: "") else ""
+                    val dwellIdx = it.getColumnIndex(SafeZoneTable.COL_DWELL_MINUTES)
+                    val dwellMin = if (dwellIdx != -1) it.getInt(dwellIdx) else 0
 
                     return com.jdroidx.jfindme.data.model.SafeZoneModel(
                         zoneId = zId,
@@ -2495,13 +2574,130 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         radius = if (rad > 0f) rad else 100f,
                         assignedName = target,
                         alertsEnabled = alerts,
-                        isZoneActive = active
+                        isZoneActive = active,
+                        polygonPointsJson = polyJson,
+                        dwellThresholdMinutes = dwellMin
                     )
                 }
             }
         } catch (e: Exception) {
             SystemLogger.e("DatabaseHelper", "getSafeZoneById error: ${e.message}")
         }
+        return null
+    }
+
+    /**
+     * Resolves the canonical Agent ID of the creator of a safe zone.
+     */
+    fun getSafeZoneCreatorAgentId(zoneId: String): String? {
+        if (zoneId.isBlank()) return null
+        try {
+            val db = readableDatabase
+            val query = """
+                SELECT i.${UserIdentityTable.COL_UID_1} 
+                FROM ${SafeZoneTable.TABLE_NAME} z
+                JOIN ${UserIdentityTable.TABLE_NAME} i ON z.${SafeZoneTable.COL_CREATED_BY} = i.${UserIdentityTable.COL_ID}
+                WHERE z.${SafeZoneTable.COL_ZONE_ID} = ?
+            """.trimIndent()
+            val cursor = db.rawQuery(query, arrayOf(zoneId))
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val uid1 = it.getString(0)
+                    if (!uid1.isNullOrBlank()) return uid1
+                }
+            }
+        } catch (e: Exception) { }
+        return null
+    }
+
+    // 🛰️ OFFLINE SYNC QUEUE HELPERS
+    fun enqueuePendingSync(payloadType: String, targetUid: String, lat: Double, lng: Double, bearing: Float, speed: Float, battery: Int, isSos: Boolean, extraData: String? = null): Long {
+        return try {
+            val db = writableDatabase
+            PendingSyncQueueTable.enqueue(db, payloadType, targetUid, lat, lng, bearing, speed, battery, isSos, System.currentTimeMillis(), extraData)
+        } catch (e: Exception) { -1L }
+    }
+
+    fun getPendingSyncQueue(limit: Int = 100): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                PendingSyncQueueTable.TABLE_NAME,
+                null,
+                "${PendingSyncQueueTable.COL_STATUS} = 'PENDING'",
+                null, null, null,
+                "${PendingSyncQueueTable.COL_TIMESTAMP} ASC",
+                limit.toString()
+            )
+            cursor.use {
+                val cols = it.columnNames
+                while (it.moveToNext()) {
+                    val map = mutableMapOf<String, Any>()
+                    for (c in cols) {
+                        val idx = it.getColumnIndexOrThrow(c)
+                        map[c] = when (it.getType(idx)) {
+                            android.database.Cursor.FIELD_TYPE_INTEGER -> it.getLong(idx)
+                            android.database.Cursor.FIELD_TYPE_FLOAT -> it.getDouble(idx)
+                            else -> it.getString(idx) ?: ""
+                        }
+                    }
+                    list.add(map)
+                }
+            }
+        } catch (e: Exception) { }
+        return list
+    }
+
+    fun deletePendingSyncItem(id: Long) {
+        try {
+            writableDatabase.delete(PendingSyncQueueTable.TABLE_NAME, "${PendingSyncQueueTable.COL_ID} = ?", arrayOf(id.toString()))
+        } catch (e: Exception) { }
+    }
+
+    fun getPendingSyncCount(): Int {
+        return try {
+            val db = readableDatabase
+            val cursor = db.rawQuery("SELECT COUNT(*) FROM ${PendingSyncQueueTable.TABLE_NAME} WHERE ${PendingSyncQueueTable.COL_STATUS} = 'PENDING'", null)
+            cursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        } catch (e: Exception) { 0 }
+    }
+
+    // 🔋 DEVICE VITALS HELPERS
+    fun upsertDeviceVitals(hardwareId: String, battery: Int, isCharging: Boolean, networkType: String, signalDbm: Int, isMockGps: Boolean, isRooted: Boolean) {
+        try {
+            val db = writableDatabase
+            DeviceVitalsTable.upsertVitals(db, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted)
+        } catch (e: Exception) { }
+    }
+
+    fun getDeviceVitals(hardwareId: String): Map<String, Any>? {
+        try {
+            val db = readableDatabase
+            val cleanId = hardwareId.removePrefix("HW_")
+            val hwPrefixedId = "HW_$cleanId"
+            val cursor = db.query(
+                DeviceVitalsTable.TABLE_NAME,
+                null,
+                "${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ?",
+                arrayOf(hardwareId, cleanId, hwPrefixedId),
+                null, null, null
+            )
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val map = mutableMapOf<String, Any>()
+                    for (c in it.columnNames) {
+                        val idx = it.getColumnIndexOrThrow(c)
+                        map[c] = when (it.getType(idx)) {
+                            android.database.Cursor.FIELD_TYPE_INTEGER -> it.getLong(idx)
+                            android.database.Cursor.FIELD_TYPE_FLOAT -> it.getDouble(idx)
+                            else -> it.getString(idx) ?: ""
+                        }
+                    }
+                    return map
+                }
+            }
+        } catch (e: Exception) { }
         return null
     }
 }

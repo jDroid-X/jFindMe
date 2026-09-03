@@ -101,7 +101,22 @@ public class DatabaseManagementActivity extends BaseActivityJava {
     }
 
     private String getTableFriendlyLabel(String tName) {
-        // V54 exact table names from DatabaseHelper constants
+        // V57 canonical normalized tables
+        if (tName.equals("user_identity")) return "Master Identity Ledger";
+        if (tName.equals("user_profile")) return "Personal Dossier";
+        if (tName.equals("organization")) return "Enterprise Dossier";
+        if (tName.equals("user_org_map")) return "User Organization Bridge";
+        if (tName.equals("device")) return "Hardware Identity Ledger";
+        if (tName.equals("device_pairing")) return "P2P Pairing Matrix";
+        if (tName.equals("sim")) return "SIM Card Inventory";
+        if (tName.equals("groups")) return "Group & Circle Hub";
+        if (tName.equals("group_members")) return "Group Members Bridge";
+        if (tName.equals("location_event")) return "Location Telemetry Ledger";
+        if (tName.equals("safe_zone")) return "Safe Zone Boundaries";
+        if (tName.equals("geofence_event")) return "Geofence Transitions & Sirens";
+        if (tName.equals("sync_queue")) return "Cloud Sync Queue";
+        if (tName.equals("sys_log")) return "WatchDog Audit Log";
+        // Legacy fallback mappings
         if (tName.equals("PROFILE_TABLE")) return "Identity Dossier";
         if (tName.equals("device_table")) return "Hardware Identity Ledger";
         if (tName.equals("MASTER_ROSTER")) return "P2P Network Matrix";
@@ -117,8 +132,7 @@ public class DatabaseManagementActivity extends BaseActivityJava {
         if (tName.equals("GeofenceLog_Table")) return "Geofence Transitions";
         if (tName.equals("groups_table")) return "Group Hub";
         if (tName.equals("group_members_table")) return "Group Members Bridge";
-        if (tName.equals("sys_log")) return "WatchDog Audit Log";
-        return tName.replace("_table", "").toUpperCase();
+        return tName.replace("_table", "").replace("_", " ").toUpperCase();
     }
 
     private View createTableMenuButton(String tName, String tLabel) {

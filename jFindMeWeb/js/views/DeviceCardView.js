@@ -148,9 +148,7 @@ export class DeviceCardView {
                         </div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <button id="btn-edit-from-dossier" class="btn-action-primary text-xs">
-                            <span>✏️ Edit Profile</span>
-                        </button>
+                        <span class="badge-status badge-accent text-[9px] font-mono shrink-0">📊 READ-ONLY TELEMETRY</span>
                         <button id="btn-close-dossier" class="text-muted-theme hover:text-primary-theme p-1.5 rounded-lg text-lg font-mono">
                             ✕
                         </button>
@@ -261,6 +259,37 @@ export class DeviceCardView {
                             <div class="text-secondary-theme font-medium">${device.address || 'No physical street address recorded.'}</div>
                         </div>
                     </div>
+
+                    <!-- Interactive Security & Operational ACL Switches -->
+                    <div class="surface-theme p-3.5 rounded-xl border text-xs space-y-2 font-sans">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <span class="text-xs font-bold text-sky-400 uppercase tracking-wider">🛡️ Operational ACL Controls</span>
+                            <span class="badge-status badge-accent text-[8px]">CLOSED LOOP</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div class="flex items-center justify-between p-2 rounded-lg bg-card-subtle border border-subtle-theme">
+                                <span class="text-[10px] font-bold text-primary-theme">Live Tracking</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" class="dossier-switch-acl" data-agent-id="${device.agentId}" data-flag="acl_live_tracking" ${device.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded-lg bg-card-subtle border border-subtle-theme">
+                                <span class="text-[10px] font-bold text-primary-theme">Geofence Alerts</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" class="dossier-switch-acl" data-agent-id="${device.agentId}" data-flag="acl_geofence" ${device.raw?.acl?.acl_geofence === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded-lg bg-card-subtle border border-subtle-theme">
+                                <span class="text-[10px] font-bold text-primary-theme">Route History</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" class="dossier-switch-acl" data-agent-id="${device.agentId}" data-flag="acl_history_audit" ${device.raw?.acl?.acl_history_audit === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Footer Actions -->
@@ -296,7 +325,7 @@ export class DeviceCardView {
             if (e.target === modal) handleClose();
         });
 
-        editBtn.addEventListener('click', () => {
+        editBtn?.addEventListener('click', () => {
             modal.remove();
             if (window.MatrixApp && window.MatrixApp.openEditProfile) {
                 window.MatrixApp.openEditProfile(device.agentId);
@@ -312,13 +341,59 @@ export class DeviceCardView {
                 });
                 const resData = await res.json();
                 if (resData.status === 'SUCCESS' || resData.status === 'POKED') {
-                    FeedbackDialog.showToast(`⚡ Poke ping sent to ${device.name}!`, "success");
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Telemetry Poke Dispatched',
+                        message: `Pulse signal transmitted to ${device.name} (${device.agentId})`,
+                        type: 'success',
+                        timeout: 3500
+                    });
                 } else {
-                    FeedbackDialog.showToast(`Poke notice: ${resData.message || 'Signal transmitted'}`, "info");
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Poke Notice',
+                        message: resData.message || 'Signal transmitted',
+                        type: 'info',
+                        timeout: 3500
+                    });
                 }
             } catch (err) {
-                FeedbackDialog.showToast(`Failed to dispatch poke: ${err.message}`, "error");
+                FeedbackDialog.showSlideNotification({
+                    title: 'Poke Dispatch Failed',
+                    message: err.message,
+                    type: 'danger',
+                    timeout: 3500
+                });
             }
+        });
+
+        // Dossier ACL Tactile Switch Handlers
+        modal.querySelectorAll('.dossier-switch-acl').forEach(sw => {
+            sw.addEventListener('change', async (e) => {
+                const agentId = sw.getAttribute('data-agent-id');
+                const flag = sw.getAttribute('data-flag');
+                const val = sw.checked;
+                try {
+                    const res = await fetch('/api/device/toggle-acl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentId, flag, value: val })
+                    });
+                    if (!res.ok) throw new Error('Failed to update ACL flag');
+                    FeedbackDialog.showSlideNotification({
+                        title: 'ACL Grant Updated',
+                        message: `Flag [${flag}] set to ${val ? 'GRANTED' : 'DENIED'} for [${agentId}]`,
+                        type: val ? 'success' : 'warning',
+                        timeout: 3500
+                    });
+                } catch (err) {
+                    FeedbackDialog.showSlideNotification({
+                        title: 'ACL Update Error',
+                        message: err.message,
+                        type: 'danger',
+                        timeout: 3500
+                    });
+                    sw.checked = !val;
+                }
+            });
         });
 
         trailBtn.addEventListener('click', () => {

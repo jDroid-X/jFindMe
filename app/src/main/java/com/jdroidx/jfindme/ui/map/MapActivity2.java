@@ -1,54 +1,48 @@
 package com.jdroidx.jfindme.ui.map;
 
+import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
-import androidx.appcompat.app.AppCompatActivity;
-import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.OnMapReadyCallback;
-import com.google.android.gms.maps.SupportMapFragment;
-import com.jdroidx.jfindme.R;
-import com.jdroidx.jfindme.databinding.ActivityMapV2Binding;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.utils.SystemLogger;
 
-public class MapActivity2 extends AppCompatActivity implements OnMapReadyCallback {
+/**
+ * ============================================================
+ * MapActivity2 — Canonical Redirect Bridge
+ * ============================================================
+ * Consolidates all map rendering into MapActivity (the Single Source of Truth).
+ */
+public class MapActivity2 extends BaseActivityJava {
 
-    private ActivityMapV2Binding binding;
-    private GoogleMap googleMap;
-    private BottomSheetBehavior<View> bottomSheetBehavior;
+    private static final String TAG = "MapActivity2[REDIR]";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        binding = ActivityMapV2Binding.inflate(getLayoutInflater());
-        setContentView(binding.getRoot());
+        SystemLogger.i(TAG, "Redirecting to canonical MapActivity.");
+        redirectToCanonicalMap();
+    }
 
-        // Initialize Map
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map_container);
-        if (mapFragment != null) {
-            mapFragment.getMapAsync(this);
+    private void redirectToCanonicalMap() {
+        Intent original = getIntent();
+        Intent redirect = new Intent(this, MapActivity.class);
+
+        if (original != null && original.getExtras() != null) {
+            redirect.putExtras(original.getExtras());
         }
 
-        // Initialize Bottom Sheet
-        bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheet);
-        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-
-        // Fab Action
-        binding.fabMyLocation.setOnClickListener(v -> {
-            if (googleMap != null) {
-                if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this).getLastLocation().addOnSuccessListener(location -> {
-                        if (location != null) {
-                            googleMap.animateCamera(com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(new com.google.android.gms.maps.model.LatLng(location.getLatitude(), location.getLongitude()), 16.5f));
-                        }
-                    });
-                }
-            }
-        });
+        redirect.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        startActivity(redirect);
+        finish();
+        overridePendingTransition(0, 0);
     }
 
     @Override
-    public void onMapReady(GoogleMap map) {
-        this.googleMap = map;
-        // Apply default settings or styling here
+    protected android.view.View createLayout() {
+        return new android.view.View(this);
+    }
+
+    @Override
+    protected void setupLogic() {
+        // Zero-logic redirect bridge to canonical MapActivity
     }
 }

@@ -39,5 +39,8 @@ export class ThemeManager {
             btn.innerHTML = theme === "light" ? "🌙 Dark" : "☀️ Light";
             btn.title = `Switch to ${theme === "light" ? "Dark" : "Light"} Mode`;
         }
+
+        // Broadcast global theme change event across all active MVC controllers & map canvases
+        window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme } }));
     }
 }

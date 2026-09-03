@@ -96,6 +96,11 @@ export class MapController {
             settings.mapEngine || "leaflet"
         );
 
+        // Wire map marker click directly to device selection handler
+        this.mapView.onDeviceClickCallback = (device) => {
+            this.handleDeviceSelected(device);
+        };
+
         // 2. Render Reference Location & 10 km Radar Circle
         this.mapView.updateReferenceLocation(
             settings.referenceLat,
@@ -130,12 +135,28 @@ export class MapController {
             const sidebarEl = document.getElementById(this.sidebarContainerId);
             if (sidebarEl && this.activeSelectedDevice) {
                 sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, devices, this.selectedDeviceIds);
+                this.bindHubSwitchEvents(sidebarEl);
             }
 
             this.alertBannerView.update(devices);
         });
 
-        // 5. Initial Data Fetch
+        // 5. Global Theme Change Listener (Synchronizes Map Canvas Tiles & UI Elements)
+        this._themeListener = (e) => {
+            const currentTheme = e.detail?.theme || 'dark';
+            const targetMapTheme = currentTheme === 'light' ? 'google_clean' : 'carto_dark';
+            if (this.mapView && typeof this.mapView.setTheme === 'function') {
+                this.mapView.setTheme(targetMapTheme);
+            }
+            const sidebarEl = document.getElementById(this.sidebarContainerId);
+            if (sidebarEl && this.activeSelectedDevice) {
+                sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, this.allDevicesCache || this.deviceController.devices, this.selectedDeviceIds);
+                this.bindHubSwitchEvents(sidebarEl);
+            }
+        };
+        window.addEventListener('themeChanged', this._themeListener);
+
+        // 6. Initial Data Fetch
         await Promise.all([
             this.deviceController.fetchLiveDevices(),
             this.safeZoneController.fetchSafeZones()
@@ -146,7 +167,7 @@ export class MapController {
             this.mapView.fitAllBounds();
         }, 300);
 
-        // 6. Start Polling Engine
+        // 7. Start Polling Engine
         this.startPolling();
 
         this.isInitialized = true;
@@ -187,11 +208,24 @@ export class MapController {
     handleDeviceSelected(device) {
         if (!device) return;
         this.activeSelectedDevice = device;
+        
+        // Ensure the selected device is visible in marker set
+        if (this.selectedDeviceIds && !this.selectedDeviceIds.includes(device.agentId)) {
+            this.selectedDeviceIds.push(device.agentId);
+        }
+
+        const visibleDevices = (this.allDevicesCache || this.deviceController.devices).filter(d => !this.selectedDeviceIds || this.selectedDeviceIds.includes(d.agentId));
+        this.mapView.renderDeviceMarkers(visibleDevices);
+
         const sidebarEl = document.getElementById(this.sidebarContainerId);
         if (sidebarEl) {
-            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(device, this.deviceController.devices, this.selectedDeviceIds);
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(device, this.allDevicesCache || this.deviceController.devices, this.selectedDeviceIds);
+            this.bindHubSwitchEvents(sidebarEl);
         }
-        this.mapView.flyToDevice(device, 13);
+
+        if (device.hasValidLocation) {
+            this.mapView.flyToDevice(device, 14);
+        }
     }
 
     /**
@@ -199,8 +233,10 @@ export class MapController {
      * @param {string} agentId 
      */
     toggleDeviceSelection(agentId) {
-        if (!this.allDevicesCache) return;
-        const allIds = this.allDevicesCache.map(d => d.agentId);
+        const devices = this.allDevicesCache || this.deviceController.devices;
+        if (!devices || devices.length === 0) return;
+
+        const allIds = devices.map(d => d.agentId);
         if (!this.selectedDeviceIds) this.selectedDeviceIds = [...allIds];
 
         if (this.selectedDeviceIds.includes(agentId)) {
@@ -212,12 +248,18 @@ export class MapController {
             this.selectedDeviceIds.push(agentId);
         }
 
-        const visibleDevices = this.allDevicesCache.filter(d => this.selectedDeviceIds.includes(d.agentId));
+        const targetDev = devices.find(d => d.agentId === agentId);
+        if (targetDev) {
+            this.activeSelectedDevice = targetDev;
+        }
+
+        const visibleDevices = devices.filter(d => this.selectedDeviceIds.includes(d.agentId));
         this.mapView.renderDeviceMarkers(visibleDevices);
 
         const sidebarEl = document.getElementById(this.sidebarContainerId);
         if (sidebarEl && this.activeSelectedDevice) {
-            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, this.allDevicesCache, this.selectedDeviceIds);
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, devices, this.selectedDeviceIds);
+            this.bindHubSwitchEvents(sidebarEl);
         }
     }
 
@@ -225,8 +267,10 @@ export class MapController {
      * Selects all devices for map marker display
      */
     selectAllDevices() {
-        if (!this.allDevicesCache) return;
-        const allIds = this.allDevicesCache.map(d => d.agentId);
+        const devices = this.allDevicesCache || this.deviceController.devices;
+        if (!devices || devices.length === 0) return;
+
+        const allIds = devices.map(d => d.agentId);
         if (this.selectedDeviceIds && this.selectedDeviceIds.length === allIds.length) {
             // Toggle to only active selected device
             this.selectedDeviceIds = this.activeSelectedDevice ? [this.activeSelectedDevice.agentId] : [allIds[0]];
@@ -234,12 +278,49 @@ export class MapController {
             this.selectedDeviceIds = [...allIds];
         }
 
-        const visibleDevices = this.allDevicesCache.filter(d => this.selectedDeviceIds.includes(d.agentId));
+        const visibleDevices = devices.filter(d => this.selectedDeviceIds.includes(d.agentId));
         this.mapView.renderDeviceMarkers(visibleDevices);
 
         const sidebarEl = document.getElementById(this.sidebarContainerId);
         if (sidebarEl && this.activeSelectedDevice) {
-            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, this.allDevicesCache, this.selectedDeviceIds);
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(this.activeSelectedDevice, devices, this.selectedDeviceIds);
+            this.bindHubSwitchEvents(sidebarEl);
+        }
+    }
+
+    /**
+     * Binds Tactile Switches in the jButterfly Hub sidebar card
+     */
+    bindHubSwitchEvents(container) {
+        if (!container) return;
+        const sw = container.querySelector('.hub-switch-stream');
+        if (sw) {
+            sw.addEventListener('change', async (e) => {
+                const agentId = sw.getAttribute('data-agent-id');
+                const val = sw.checked;
+                try {
+                    const res = await fetch('/api/device/toggle-acl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
+                    });
+                    if (!res.ok) throw new Error('Failed to update live stream state');
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Live GPS Stream Toggled',
+                        message: `Telemetry stream for [${agentId}] is now ${val ? 'TRANSMITTING' : 'PAUSED'}`,
+                        type: val ? 'success' : 'warning',
+                        timeout: 3500
+                    });
+                } catch (err) {
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Stream Toggle Failed',
+                        message: err.message,
+                        type: 'danger',
+                        timeout: 3500
+                    });
+                    sw.checked = !val;
+                }
+            });
         }
     }
 
@@ -420,6 +501,9 @@ export class MapController {
 
     destroy() {
         this.stopPolling();
+        if (this._themeListener) {
+            window.removeEventListener('themeChanged', this._themeListener);
+        }
         this.historyTrailView.clear();
         this.deviceEditModalView.close();
         this.safeZoneCreateModalView.close();

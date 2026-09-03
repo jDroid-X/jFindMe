@@ -115,26 +115,41 @@ export class DeviceEditModalView {
                                class="input-theme w-full p-2 text-xs">
                     </div>
 
-                    <!-- ACL ACCESS GRANTS CHECKBOXES -->
-                    <div class="p-3 surface-theme rounded-xl border space-y-2">
-                        <label class="text-[11px] font-bold uppercase tracking-wider text-sky-400 block">Security Access Grants (ACL)</label>
+                    <!-- ACL ACCESS GRANTS TACTILE SWITCHES -->
+                    <div class="p-3 surface-theme rounded-xl border space-y-2.5">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <label class="text-[11px] font-bold uppercase tracking-wider text-sky-400 block">Security Access Grants (ACL)</label>
+                            <span class="badge-status badge-accent text-[8px]">CLOSED LOOP</span>
+                        </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            <label class="flex items-center gap-2 text-secondary-theme cursor-pointer hover:text-primary-theme">
-                                <input type="checkbox" id="acl-live-tracking" checked class="w-4 h-4 rounded accent-sky-500">
-                                <span>Live GPS Tracking Protocol</span>
-                            </label>
-                            <label class="flex items-center gap-2 text-secondary-theme cursor-pointer hover:text-primary-theme">
-                                <input type="checkbox" id="acl-history-audit" checked class="w-4 h-4 rounded accent-sky-500">
-                                <span>History Trace Audit Logs</span>
-                            </label>
-                            <label class="flex items-center gap-2 text-secondary-theme cursor-pointer hover:text-primary-theme">
-                                <input type="checkbox" id="acl-geofence" checked class="w-4 h-4 rounded accent-sky-500">
-                                <span>Safe Zone Breach Alerts</span>
-                            </label>
-                            <label class="flex items-center gap-2 text-secondary-theme cursor-pointer hover:text-primary-theme">
-                                <input type="checkbox" id="acl-ghost-override" checked class="w-4 h-4 rounded accent-sky-500">
-                                <span>Stealth Ghost Mode SOS Override</span>
-                            </label>
+                            <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                                <span class="text-secondary-theme font-medium text-[11px]">Live GPS Tracking</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" id="acl-live-tracking" ${device.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                                <span class="text-secondary-theme font-medium text-[11px]">History Trace Audit</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" id="acl-history-audit" ${device.raw?.acl?.acl_history_audit === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                                <span class="text-secondary-theme font-medium text-[11px]">Safe Zone Breach Alerts</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" id="acl-geofence" ${device.raw?.acl?.acl_geofence === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                                <span class="text-secondary-theme font-medium text-[11px]">Ghost SOS Override</span>
+                                <label class="switch-toggle switch-sm">
+                                    <input type="checkbox" id="acl-ghost-override" ${device.raw?.acl?.acl_ghost_override === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -240,6 +255,12 @@ export class DeviceEditModalView {
                     await this.onSave(device.agentId, payload);
                     this.close();
                     FeedbackDialog.showToast(`Profile for [${name}] synchronized to Firebase!`, "success");
+                    FeedbackDialog.showSlideNotification({
+                        title: "Closed-Loop Sync Complete",
+                        message: `Profile [${name}] (Avatar: ${selectedAvatarId}, Role: ${role}) synchronized atomically across all database nodes.`,
+                        type: "success",
+                        duration: 4500
+                    });
                 } catch (err) {
                     errorBox.textContent = `Sync Fault: ${err.message}`;
                     errorBox.classList.remove('hidden');

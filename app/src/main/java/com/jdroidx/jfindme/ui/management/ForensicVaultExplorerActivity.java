@@ -125,8 +125,11 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         AngelLoader.setStatus(this, "SYNCHRONIZING FORENSIC MATRIX...");
         
         // 🚀 CLOUD PATH RESOLVER: Map local table names to device-centric sub-group architecture
-        String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
-        String currentAgentId = myUid != null ? myUid : "DEFAULT_AGENT";
+        String myUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+        if (myUid == null || myUid.isEmpty()) {
+            myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        }
+        String currentAgentId = (myUid != null && !myUid.isEmpty()) ? myUid : "PRIMARY_NODE";
         
         // 5-Tier Analytical Node Mapping (Normalized Case-Insensitive Matching)
         String lowerTable = (tableName != null) ? tableName.toLowerCase() : "";
@@ -217,8 +220,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
                 "No Records to Inspect",
                 "This database table currently contains 0 records.",
                 android.R.drawable.ic_menu_info_details,
-                null,
-                null
+                "REFRESH MATRIX",
+                () -> syncExplorer()
             );
             contentMatrix.addView(emptyCard);
             return;
@@ -306,8 +309,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
                 "No Records Found",
                 isLocal ? "This local table currently has 0 rows recorded." : "No matching records found in Firebase Cloud node.",
                 android.R.drawable.ic_menu_info_details,
-                null,
-                null
+                "REFRESH DATA",
+                () -> syncExplorer()
             );
             contentMatrix.addView(emptyCard);
             return;

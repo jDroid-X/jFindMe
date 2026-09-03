@@ -1,11 +1,17 @@
-FindMe online structure
+FindMe Online Enterprise Database Architecture
+Master -> Sub-Master -> Transactional -> Sub-Transactional Hierarchy (Anti-GIGO V4.0)
 
 https://jfindme-3b15c-default-rtdb.asia-southeast1.firebasedatabase.app/
-  ├── History
-  ├── devices
-  ├── lookup_indices
-  ├── relationships
-  └── Geofencing/                                                    <-- NEW TOP-LEVEL HEADER
+  ├── Tier 1 (Master Registry): devices/{agentId}/[Identity, device, Access]
+  ├── Tier 2 (Sub-Masters): devices/{agentId}/profile, Geofencing/{creatorDeviceId}/safe_zones/{safeZoneId}
+  ├── Tier 3 (Transactional Telemetry): devices/{agentId}/device/live, devices/{agentId}/telemetry, pairing_requests/{inviteCode}
+  └── Tier 4 (Sub-Transactional Streams): History/{agentId}/history/{invertedKey}, Geofencing/.../notifications/{YYYY-MM-DD}/{eventId}, devices/{agentId}/Change_Log/
+
+  ├── History                                                           [Tier 4: Time-Series GPS Stream]
+  ├── devices                                                           [Tier 1: Master Device Registry]
+  ├── lookup_indices                                                    [Tier 1: O(1) Identity Lookups]
+  ├── relationships                                                     [Tier 2: Community Mesh Graph]
+  └── Geofencing/                                                       [Tier 2: Multi-Tenant Safe Zones & Events]
         └── {creatorDeviceId}  (Initiator / Host UID)
               ├── device_name: "Host Alpha"
               ├── updated_at: 1787900000000

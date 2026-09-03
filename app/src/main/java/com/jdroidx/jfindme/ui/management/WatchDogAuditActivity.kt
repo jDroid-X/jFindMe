@@ -30,10 +30,10 @@ class WatchDogAuditActivity : BaseActivityJava() {
 
     // Grouping mapping for UI display
     private val tierMapping = mapOf(
-        "TIER 1: IDENTITY CORE" to listOf("user_identity", "user_profile", "organizations", "user_org_map"),
-        "TIER 2: DEVICE HARDWARE" to listOf("devices", "device_pairings", "sim_inventory"),
+        "TIER 1: IDENTITY CORE" to listOf("user_identity", "user_profile", "organization", "user_org_map"),
+        "TIER 2: DEVICE HARDWARE" to listOf("device", "device_pairing", "sim"),
         "TIER 3: RELATIONSHIP GRAPH" to listOf("groups", "group_members"),
-        "TIER 4: ANALYTICAL EVENTS" to listOf("location_event", "safe_zones", "geofence_events"),
+        "TIER 4: ANALYTICAL EVENTS" to listOf("location_event", "safe_zone", "geofence_event"),
         "TIER 5: SYSTEM LEDGERS" to listOf("sync_queue", "sys_log")
     )
 

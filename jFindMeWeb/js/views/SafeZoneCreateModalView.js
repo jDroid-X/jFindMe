@@ -97,6 +97,23 @@ export class SafeZoneCreateModalView {
                                     <span class="text-[10px] font-mono text-muted-theme ml-auto">${d.agentId}</span>
                                 </label>
                             `).join('')}
+                    </div>
+
+                    <!-- Operational States: Tactile Switches -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 surface-theme p-3 rounded-xl border">
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                            <span class="text-xs font-bold text-primary-theme">Perimeter Active</span>
+                            <label class="switch-toggle switch-sm" title="Enable Perimeter Surveillance">
+                                <input type="checkbox" id="sz-active" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                            <span class="text-xs font-bold text-primary-theme">Breach Alerts</span>
+                            <label class="switch-toggle switch-sm" title="Enable Push Notification Alerts">
+                                <input type="checkbox" id="sz-alerts" checked>
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -174,6 +191,9 @@ export class SafeZoneCreateModalView {
             saveBtn.disabled = true;
             saveBtn.innerHTML = `<span>⏳ Establishing...</span>`;
 
+            const isActive = modal.querySelector('#sz-active') ? modal.querySelector('#sz-active').checked : true;
+            const alertsEnabled = modal.querySelector('#sz-alerts') ? modal.querySelector('#sz-alerts').checked : true;
+
             const zoneId = `ZONE_${Date.now()}`;
             const payload = {
                 zoneId,
@@ -181,8 +201,8 @@ export class SafeZoneCreateModalView {
                 latitude: lat,
                 longitude: lng,
                 radius: radius,
-                isActive: true,
-                alertsEnabled: true,
+                isActive,
+                alertsEnabled,
                 connectedDevices: selectedDeviceIds
             };
 
@@ -191,6 +211,12 @@ export class SafeZoneCreateModalView {
                     await this.onSave(payload);
                     this.close();
                     FeedbackDialog.showToast(`Safe Zone [${name}] established successfully!`, "success");
+                    FeedbackDialog.showSlideNotification({
+                        title: "Safe Zone Established",
+                        message: `Perimeter [${name}] active with ${radius}m radius for ${selectedDeviceIds.length} devices.`,
+                        type: "success",
+                        duration: 4500
+                    });
                 } catch (err) {
                     errorBox.textContent = `Save Error: ${err.message}`;
                     errorBox.classList.remove('hidden');

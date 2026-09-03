@@ -81,7 +81,11 @@ public class ActionButtonTable {
 
     public static View createButton(BaseActivityJava activity, String tableKey, View.OnClickListener listener) {
         ActionRecord record = registry.get(tableKey);
-        if (record == null) return new View(activity);
+        if (record == null) {
+            // 🛡️ Enterprise Fallback: Render visible primary button with human-readable label if key not in registry
+            String label = (tableKey != null) ? tableKey.replace('_', ' ') : "ACTION";
+            return UiArchitect.createPrimaryButton(activity, label, 0, listener);
+        }
 
         UiArchitect.DesignStage stage = UiArchitect.getStage(activity);
         TextView btn = new TextView(activity);

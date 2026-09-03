@@ -70,6 +70,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
     protected View createLayout() {
         targetUid = getIntent().getStringExtra("TARGET_UID");
         if (targetUid == null) targetUid = getIntent().getStringExtra("target_uid");
+        if (targetUid == null || targetUid.trim().isEmpty()) {
+            targetUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            if (targetUid == null || targetUid.trim().isEmpty()) {
+                targetUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+            }
+        }
         targetRoleTitle = getIntent().getStringExtra("TARGET_ROLE");
         if (targetRoleTitle == null) targetRoleTitle = getIntent().getStringExtra("target_role");
         prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
@@ -80,7 +86,11 @@ public class PersonDetailsActivity extends BaseActivityJava {
         if (targetAgentId == null) targetAgentId = targetUid; // Fallback to raw UID
         
         // 🚀 CRITICAL FIX: Identity Resolve must happen BEFORE Header construction
-        isSelf = targetUid != null && targetUid.equals(com.google.firebase.auth.FirebaseAuth.getInstance().getUid());
+        isSelf = targetUid != null && (targetUid.equals(com.google.firebase.auth.FirebaseAuth.getInstance().getUid()) 
+            || targetUid.equals(com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this)));
+        if (targetRoleTitle == null) {
+            targetRoleTitle = isSelf ? "Master Guardian (You)" : "Tracked Member";
+        }
 
         LinearLayout mainContainer = new LinearLayout(this);
         mainContainer.setOrientation(LinearLayout.VERTICAL);
@@ -342,16 +352,24 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 formBox.addView(adminSaveBtn, btnLp);
             }
             View syncBtn = createIconButton("REQUEST DEVICE SYNC", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
-                    .child("force_cloud_sync_trigger")
-                    .setValue(System.currentTimeMillis());
-                android.widget.Toast.makeText(this, "Sync Pull Request sent to Target Device network edge...", android.widget.Toast.LENGTH_LONG).show();
+                if (targetAgentId != null && !targetAgentId.trim().isEmpty()) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
+                        .child("force_cloud_sync_trigger")
+                        .setValue(System.currentTimeMillis());
+                    UiArchitect.showSlideNotificationBanner(this, "Sync Dispatched", "Sync pull request dispatched to target device edge.", false, 3000, null, null);
+                } else {
+                    UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
+                }
             });
             formBox.addView(syncBtn, btnLp);
 
             View ringBtn = createIconButton("🔊 RING DEVICE (ACOUSTIC SIREN - 30S)", android.R.drawable.ic_lock_idle_alarm, v -> {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
-                android.widget.Toast.makeText(this, "🔊 Acoustic Siren dispatched to " + (etFullName != null ? etFullName.getText().toString() : "Target") + " (30s)", android.widget.Toast.LENGTH_LONG).show();
+                if (targetAgentId != null && !targetAgentId.trim().isEmpty()) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
+                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", "30-second emergency siren sent to target node.", false, 4000, null, null);
+                } else {
+                    UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
+                }
             });
             formBox.addView(ringBtn, btnLp);
 

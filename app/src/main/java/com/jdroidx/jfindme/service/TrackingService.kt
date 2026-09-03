@@ -16,6 +16,7 @@ import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.engine.alert.AlertManager
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.utils.RegistryManager
 import com.google.firebase.database.*
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.*
@@ -39,28 +40,55 @@ class TrackingService : Service() {
     private val PING_INTERVAL_MS = 60000L // 60 Second Forensic Cycle
     private var serviceStartEpoch: Long = System.currentTimeMillis()
 
+    private fun hasLocationPermission(): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+               androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     override fun onCreate() {
         super.onCreate()
         SystemLogger.i(TAG, "Service Created")
         repository = LocationRepository(this)
         createNotificationChannel()
-        
-        // QA OS14 Compliance Patch
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(SERVICE_NOTIFICATION_ID, getNotification("Initializing tracking..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(SERVICE_NOTIFICATION_ID, getNotification("Initializing tracking..."))
-        }
-        
-        // 🚀 QA Fix: Force Doze Mode Bypass via Hardware CPU Wakelock
-        val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        cpuWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::TelemetryWakeLock")
-        // AUDIT FIX [AUD-005]: Added 10-minute timeout to prevent permanent CPU lock if service dies
-        cpuWakeLock?.acquire(10 * 60 * 1000L) // 10-minute maximum hold; refreshed by battery ping job
 
-        // 🧠 IDENTITY SYNC: Connect to the Global System Registry (L7 Authoritative Source)
+        // 🛡️ FORENSIC FIX: Call startForeground IMMEDIATELY on line 1 of onCreate to prevent RemoteServiceException
+        try {
+            val hasLocPerm = hasLocationPermission()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasLocPerm) {
+                startForeground(SERVICE_NOTIFICATION_ID, getNotification("jFindMe Sentinel Active"), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(SERVICE_NOTIFICATION_ID, getNotification("jFindMe Sentinel Standby"))
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "startForeground error: ${e.message}")
+        }
+
+        ensureLocationEngineInitialized()
+        registerBatteryMonitor()
+        setupBackgroundSyncListener()
+        setupRemoteCommandListener()
+        startSilentBatteryValidation()
+        requestBatteryOptimizationBypass()
+    }
+
+    private fun ensureLocationEngineInitialized() {
+        if (!hasLocationPermission()) {
+            SystemLogger.w(TAG, "Location permission not yet granted. TrackingService running in Standby Mode.")
+            return
+        }
+        if (::locationEngine.isInitialized) {
+            locationEngine.startTracking()
+            return
+        }
+
+        // 🚀 Force Doze Mode Bypass via Hardware CPU Wakelock
+        if (cpuWakeLock == null) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            cpuWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::TelemetryWakeLock")
+            cpuWakeLock?.acquire(10 * 60 * 1000L) // 10-minute maximum hold; refreshed by battery ping job
+        }
+
         val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
-        val userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
 
         locationEngine = LocationEngine(this) { location ->
             val p = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
@@ -69,8 +97,9 @@ class TrackingService : Service() {
                 return@LocationEngine
             }
 
-            // Rule 5: Security Agent - Background Mock Check
-            if (com.jdroidx.jfindme.engine.security.SecurityEngine.isMockLocation(location)) {
+            // Rule 5: Security Agent - Anti-Tamper & Mock Check
+            val secReport = com.jdroidx.jfindme.engine.security.AntiTamperSentinel.auditDeviceSecurity(applicationContext, location)
+            if (secReport.isMockGps) {
                 SystemLogger.e(TAG, "MOCK_LOCATION_BLOCKED_IN_BACKGROUND")
                 return@LocationEngine
             }
@@ -84,11 +113,14 @@ class TrackingService : Service() {
                 }
             } catch (e: Exception) {}
 
-            // 🚀 Authoritative SSOT Background Avatar Sync
+            // 🛡️ SOFTWARE GEOFENCING: Ray-Casting Polygon Perimeter Evaluation
+            evaluateSoftwareGeofences(location.latitude, location.longitude)
+
+            // 🚀 Authoritative SSOT Background Avatar Sync & Vitals Logging
             val db = DatabaseHelper.getInstance(applicationContext)
             val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
             val ssotAvatar = db.getDeviceCentricAvatar(myAgentId)
-            val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
+            val rawBaseId = p.getInt("equipped_avatar_id", 1)
             val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
             val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") {
                 ssotAvatar
@@ -98,12 +130,31 @@ class TrackingService : Service() {
                 "butterfly"
             }
 
-            // 🛡️ V59.3 Forensic Pulse Throttle (Responsive 15s Default)
-            val frequencyMs = prefs.getLong("pref_tracking_interval", 15000L)
+            // Cache Device Vitals in local SQLite for offline health inspection
+            try {
+                db.upsertDeviceVitals(
+                    hardwareId = myAgentId,
+                    battery = p.getInt("last_known_battery", 100),
+                    isCharging = p.getBoolean("last_known_charging", false),
+                    networkType = "CELLULAR",
+                    signalDbm = -75,
+                    isMockGps = secReport.isMockGps,
+                    isRooted = secReport.isRooted
+                )
+            } catch (e: Exception) { }
+
+            // 🛡️ Adaptive Telemetry Polling Throttle (GisSpatialEngine)
+            val adaptiveInterval = com.jdroidx.jfindme.engine.location.GisSpatialEngine.computeAdaptivePollingInterval(
+                isSosActive = p.getBoolean("is_sos_active", false),
+                speedMps = location.speed,
+                batteryPct = p.getInt("last_known_battery", 100),
+                isCharging = p.getBoolean("last_known_charging", false),
+                isStationary = location.speed < 0.5f
+            )
             val currentTime = System.currentTimeMillis()
             
-            if (currentTime - lastPulseTime < frequencyMs) {
-                SystemLogger.d(TAG, "THROTTLE: Ignoring high-frequency pulse (Delta: ${(currentTime - lastPulseTime)/1000}s)")
+            if (currentTime - lastPulseTime < adaptiveInterval) {
+                SystemLogger.d(TAG, "THROTTLE: Adaptive throttle holding fix (Interval: ${adaptiveInterval / 1000}s, Delta: ${(currentTime - lastPulseTime) / 1000}s)")
                 return@LocationEngine
             }
             
@@ -112,8 +163,8 @@ class TrackingService : Service() {
 
             // 🧬 V59.6: Forensic Identity Resolution (Reliable Non-Blocking Fallback)
             val authUid = FirebaseAuth.getInstance().uid
-            val rawHw = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "NULL_HW"
-            val deviceId = "HW_" + rawHw.uppercase()
+            val rawHw = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(applicationContext)
+            val deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext)
             val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
 
             val publishLocation = { targetAgentId: String ->
@@ -141,10 +192,10 @@ class TrackingService : Service() {
                         bearing = location.bearing,
                         speed = location.speed,
                         timestamp = timeStampSign,
-                        allowDependents = prefs.getBoolean("allow_dependents", true),
-                        active_group = prefs.getString("active_group", "") ?: "",
+                        allowDependents = p.getBoolean("allow_dependents", true),
+                        active_group = p.getString("active_group", "") ?: "",
                         isForensicAudit = true,
-                        userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
+                        userName = p.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
                         avatar_id = resolvedAvatarId
                     )
                     repository.updateMyLocation(userLocation)
@@ -161,19 +212,50 @@ class TrackingService : Service() {
             }
         }
         locationEngine.startTracking()
-        registerBatteryMonitor()
-        
-        // 🚀 MISSION CONNECTIVITY: Autonomous Geofence Handshake Listener (V47)
-        setupBackgroundSyncListener()
+    }
 
-        // 🔊 ACOUSTIC BEACON: Listen for remote sirens & ring commands
-        setupRemoteCommandListener()
+    private fun evaluateSoftwareGeofences(lat: Double, lng: Double) {
+        try {
+            val db = DatabaseHelper.getInstance(applicationContext)
+            val activeZones = db.getActiveSafeZones()
+            if (activeZones.isEmpty()) return
 
-        // 🔋 BATTERY TELEMETRY: Launch Silent Validation Ping
-        startSilentBatteryValidation()
+            val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val debounceMs = RegistryManager.getGeofenceJitterDebounceMs(applicationContext)
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            val userName = prefs.getString("user_nickname", "Agent") ?: "Agent"
 
-        // 🛡️ OPTIMIZATION BYPASS: Verify permanent background status
-        requestBatteryOptimizationBypass()
+            for (zone in activeZones) {
+                if (!zone.isPolygon) continue
+                if (!com.jdroidx.jfindme.engine.location.GisSpatialEngine.isSafeZoneInSchedule(zone)) continue
+
+                val isInside = com.jdroidx.jfindme.engine.location.GisSpatialEngine.isLocationInsideSafeZone(lat, lng, zone)
+                val stateKey = "POLY_LATCH_${zone.zoneId}"
+                val timeKey = "POLY_LATCH_TIME_${zone.zoneId}"
+                val lastState = prefs.getString(stateKey, null)
+                val lastTime = prefs.getLong(timeKey, 0L)
+                val currentState = if (isInside) "IN" else "OUT"
+
+                if (lastState == null) {
+                    prefs.edit().putString(stateKey, currentState).putLong(timeKey, now).apply()
+                    continue
+                }
+
+                if (!lastState.equals(currentState, ignoreCase = true) && (now - lastTime >= debounceMs)) {
+                    prefs.edit().putString(stateKey, currentState).putLong(timeKey, now).apply()
+                    val transitionName = if (isInside) "ENTERED" else "EXITED"
+                    SystemLogger.i(TAG, "POLYGON_GEOFENCE_TRANSITION: $transitionName ${zone.name} (State: $currentState)")
+
+                    if (zone.alertsEnabled) {
+                        AlertManager.showGeofenceNotification(applicationContext, zone.name, transitionName, userName)
+                        db.saveGeofenceEvent(myAgentId, zone.zoneId, currentState)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "evaluateSoftwareGeofences error: ${e.message}")
+        }
     }
 
     private var remoteCommandListener: ValueEventListener? = null
@@ -425,16 +507,19 @@ class TrackingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SystemLogger.i(TAG, "onStartCommand received (flags: $flags, startId: $startId)")
-        val notification = getNotification("Live Location Tracking Active")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(SERVICE_NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(SERVICE_NOTIFICATION_ID, notification)
+        val hasPerm = hasLocationPermission()
+        val notification = getNotification(if (hasPerm) "Live Location Tracking Active" else "jFindMe Sentinel Standby")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasPerm) {
+                startForeground(SERVICE_NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(SERVICE_NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "startForeground error: ${e.message}")
         }
         
-        if (::locationEngine.isInitialized) {
-            locationEngine.startTracking()
-        }
+        ensureLocationEngineInitialized()
         
         return START_STICKY
     }
@@ -468,7 +553,9 @@ class TrackingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         SystemLogger.w(TAG, "Service Destroyed")
-        locationEngine.stopTracking()
+        if (::locationEngine.isInitialized) {
+            locationEngine.stopTracking()
+        }
         batteryPingJob?.cancel()
         
         // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
@@ -506,6 +593,8 @@ class TrackingService : Service() {
     }
 
     companion object {
+        const val ACTION_START_TRACKING = "com.jdroidx.jfindme.ACTION_START_TRACKING"
+        const val ACTION_STOP_TRACKING = "com.jdroidx.jfindme.ACTION_STOP_TRACKING"
         private const val CHANNEL_ID = "tracking_channel"
         private const val SERVICE_NOTIFICATION_ID = 101
     }

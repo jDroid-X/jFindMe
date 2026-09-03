@@ -405,11 +405,15 @@ public class NotifActivity extends BaseActivityJava {
             
             com.jdroidx.jfindme.engine.location.GeofenceHelper helper = new com.jdroidx.jfindme.engine.location.GeofenceHelper(NotifActivity.this);
             String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            if (myUid == null || myUid.isEmpty()) {
+                myUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(NotifActivity.this);
+            }
             helper.addGeofence(cleanZoneId + (myUid != null ? "___" + myUid : ""), reqLat, reqLng, reqRad.floatValue());
             
             if (myUid != null) {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(myUid, agentId -> {
-                    String finalId = agentId != null ? agentId : myUid;
+                final String currentIdentity = myUid;
+                com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(currentIdentity, agentId -> {
+                    String finalId = agentId != null ? agentId : currentIdentity;
                     String cleanReqId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizePathKey(reqId);
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef().child(finalId).child("Identity").child("geofence_sync_requests").child(cleanReqId).child("status").setValue("SYNC_CONFIRMED");
                     return null;
@@ -451,11 +455,15 @@ public class NotifActivity extends BaseActivityJava {
                             
                             com.jdroidx.jfindme.engine.location.GeofenceHelper helper = new com.jdroidx.jfindme.engine.location.GeofenceHelper(NotifActivity.this);
                             String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                            if (myUid == null || myUid.isEmpty()) {
+                                myUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(NotifActivity.this);
+                            }
                             helper.addGeofence(cleanZoneId + (myUid != null ? "___" + myUid : ""), lat, lng, rad.floatValue());
                             
                             if (myUid != null) {
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(myUid, agentId -> {
-                                    String finalId = agentId != null ? agentId : myUid;
+                                final String currentIdentity = myUid;
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(currentIdentity, agentId -> {
+                                    String finalId = agentId != null ? agentId : currentIdentity;
                                     String cleanReqId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizePathKey(reqId);
                                     com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef().child(finalId).child("Identity").child("geofence_sync_requests").child(cleanReqId).child("status").setValue("SYNC_CONFIRMED");
                                     return null;

@@ -69,11 +69,13 @@ class LocationEngine(private val context: Context, private val onLocationChanged
 
 
     private fun buildLocationRequest(): LocationRequest {
+        val minDisplacement = RegistryManager.getMinDisplacementMeters(context)
+        val waitAccurate = RegistryManager.isStrictAccuracyWait(context)
         return LocationRequest.Builder(trackingPriority, updateInterval).apply {
             setMinUpdateIntervalMillis(maxOf(1000L, updateInterval / 2))
-            setMinUpdateDistanceMeters(0f)
+            setMinUpdateDistanceMeters(minDisplacement)
             setMaxUpdateDelayMillis(updateInterval)
-            setWaitForAccurateLocation(false)
+            setWaitForAccurateLocation(waitAccurate)
         }.build()
     }
 

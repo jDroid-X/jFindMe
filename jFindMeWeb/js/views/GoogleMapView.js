@@ -20,6 +20,7 @@ export class GoogleMapView {
         this.radarCircle = null;
         this.customMarkers = new Map(); // agentId -> CustomOverlay
         this.safeZoneCircles = [];
+        this.safeZonePolygons = [];
         this.trailPolyline = null;
         this.trailCheckpoints = [];
         
@@ -247,7 +248,7 @@ export class GoogleMapView {
     }
 
     /**
-     * Renders Safe Zone Geofence Circles
+     * Renders Safe Zone Geofence Circles & Polygons
      * @param {Array<import('../models/SafeZoneModel.js').SafeZoneModel>} safeZones 
      * @param {boolean} visible 
      */
@@ -257,13 +258,44 @@ export class GoogleMapView {
         // Clear existing
         this.safeZoneCircles.forEach(c => c.setMap(null));
         this.safeZoneCircles = [];
+        if (this.safeZonePolygons) {
+            this.safeZonePolygons.forEach(p => p.setMap(null));
+            this.safeZonePolygons = [];
+        } else {
+            this.safeZonePolygons = [];
+        }
 
         if (!visible || !safeZones) return;
 
         safeZones.forEach(zone => {
-            if (!zone.latitude || !zone.longitude) return;
-
             const color = (typeof zone.getColor === 'function') ? zone.getColor() : (zone.isActive !== false ? '#0284C7' : '#64748B');
+
+            // 1. Render custom polygon boundary if defined
+            const polyPts = zone.polygonPoints || (typeof zone.polygon_points === 'string' ? JSON.parse(zone.polygon_points || '[]') : []);
+            if (zone.isPolygon || (Array.isArray(polyPts) && polyPts.length >= 3)) {
+                const paths = polyPts.map(pt => ({
+                    lat: parseFloat(pt.lat ?? pt.latitude ?? 0),
+                    lng: parseFloat(pt.lng ?? pt.longitude ?? 0)
+                })).filter(pt => pt.lat !== 0 || pt.lng !== 0);
+
+                if (paths.length >= 3) {
+                    const polygon = new this.google.maps.Polygon({
+                        map: this.map,
+                        paths: paths,
+                        strokeColor: color,
+                        strokeOpacity: 0.85,
+                        strokeWeight: 2,
+                        fillColor: color,
+                        fillOpacity: 0.15,
+                        clickable: true
+                    });
+                    this.safeZonePolygons.push(polygon);
+                    return;
+                }
+            }
+
+            // 2. Fallback to circular safe zone
+            if (!zone.latitude || !zone.longitude) return;
 
             const circle = new this.google.maps.Circle({
                 map: this.map,

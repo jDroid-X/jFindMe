@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">jFindMe Sentinel</string>
+    <string name="app_name">jButterFly</string>
     <string name="app_tagline">Enterprise Spatial Telemetry &amp; Family Safety Matrix</string>
-    <string name="title_auth">jFindMe Sentinel Gateway</string>
+    <string name="title_auth">jButterFly Sentinel Gateway</string>
     <string name="hint_email">Enter Enterprise Email</string>
     <string name="hint_password">Enter Secure Password</string>
     <string name="btn_authorize">AUTHORIZE ACCESS</string>

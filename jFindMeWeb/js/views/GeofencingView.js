@@ -1,5 +1,6 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 import { FeedbackDialog } from '../components/FeedbackDialog.js';
+import { UIControls } from '../components/UIControls.js';
 
 /**
  * jFindMe Matrix - Dedicated Geofencing 4-Pane Oversight Workspace (OOPS Architecture)
@@ -21,17 +22,34 @@ export class GeofencingView {
     }
 
     /**
-     * Renders the 4-Pane Geofencing Workspace
-     * @param {Array<import('../models/DeviceModel.js').DeviceModel>} devices 
-     * @param {Array<Object>} safeZones 
+     * Renders the 4-Pane Geofencing Workspace (Polymorphic inputs)
+     * @param {Array<any>} arg1 Devices or SafeZones
+     * @param {Array<any>} arg2 SafeZones or Devices
      */
-    render(devices = [], safeZones = []) {
-        this.devices = devices || [];
+    render(arg1 = [], arg2 = []) {
+        let inputDevices = [];
+        let inputZones = [];
+
+        const isSafeZoneArray = (arr) => Array.isArray(arr) && arr.length > 0 && Boolean(arr[0].zoneId || arr[0].zoneName || arr[0].radius || arr[0].center);
+        const isDeviceArray = (arr) => Array.isArray(arr) && arr.length > 0 && Boolean(arr[0].agentId || arr[0].deviceId || arr[0].isOnline !== undefined || arr[0].battery !== undefined);
+
+        if (isSafeZoneArray(arg1)) {
+            inputZones = arg1;
+            inputDevices = arg2;
+        } else if (isSafeZoneArray(arg2)) {
+            inputZones = arg2;
+            inputDevices = arg1;
+        } else {
+            inputDevices = arg1;
+            inputZones = arg2;
+        }
+
+        this.devices = Array.isArray(inputDevices) ? inputDevices : [];
 
         // Deduplicate safe zones by unique zoneId
         const seenZones = new Set();
         const uniqueZones = [];
-        for (const z of (Array.isArray(safeZones) ? safeZones : [])) {
+        for (const z of (Array.isArray(inputZones) ? inputZones : [])) {
             const zId = z.zoneId || z.id;
             if (zId && !seenZones.has(zId)) {
                 seenZones.add(zId);
@@ -85,6 +103,7 @@ export class GeofencingView {
                             <h2 class="text-xs font-bold tracking-wide text-primary-theme uppercase flex items-center gap-2">
                                 <span>Geofencing Perimeter Oversight Matrix</span>
                                 <span class="badge-status badge-accent text-[9px]">REAL-TIME PERIMETERS</span>
+                                <span class="badge-status badge-accent text-[9px] font-mono">📊 READ-ONLY ANALYTICS</span>
                             </h2>
                             <p class="text-[11px] text-secondary-theme font-mono truncate">
                                 Selected Perimeter: <span class="text-sky-400 font-bold">${selectedZone ? selectedZone.zoneName : 'None'}</span> (${selectedZone ? selectedZone.radius + 'm Radius' : 'N/A'})
@@ -269,14 +288,15 @@ export class GeofencingView {
                         <span class="text-[9px] text-muted-theme truncate">${createdTimeStr}</span>
                     </div>
 
-                    <!-- Line 3: Address + Status Badge -->
-                    <div class="text-[9px] text-secondary-theme border-t border-subtle-theme pt-1 flex items-start justify-between gap-2">
+                    <!-- Line 3: Address + Tactile Switch -->
+                    <div class="text-[9px] text-secondary-theme border-t border-subtle-theme pt-1 flex items-center justify-between gap-2">
                         <div class="line-clamp-2 flex-1 leading-snug">
                             ${z.address || 'Local Coordinates'}
                         </div>
-                        <span class="badge-status ${z.isActive ? 'badge-success' : 'badge-danger'} text-[7px] shrink-0">
-                            ${z.isActive ? 'ACTIVE' : 'OFF'}
-                        </span>
+                        <label class="switch-toggle switch-sm shrink-0" title="Toggle Perimeter Monitoring">
+                            <input type="checkbox" class="gf-switch-active" data-zone-id="${z.zoneId}" ${z.isActive !== false ? 'checked' : ''}>
+                            <span class="switch-slider"></span>
+                        </label>
                     </div>
                 </div>
             `;
@@ -509,6 +529,38 @@ export class GeofencingView {
         document.getElementById('btn-gf-delete-zone')?.addEventListener('click', () => {
             this.openDeleteZoneModal();
         });
+
+        // 7. Safe Zone Active Tactile Switch Trigger
+        document.querySelectorAll('.gf-switch-active').forEach(sw => {
+            sw.addEventListener('click', (e) => e.stopPropagation());
+            sw.addEventListener('change', async (e) => {
+                e.stopPropagation();
+                const zoneId = sw.getAttribute('data-zone-id');
+                const val = sw.checked;
+                try {
+                    const res = await fetch('/api/safezone/toggle-state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ zoneId, isActive: val })
+                    });
+                    if (!res.ok) throw new Error('Failed to update safe zone state');
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Safe Zone State Updated',
+                        message: `Perimeter monitoring for [${zoneId}] is now ${val ? 'ACTIVE' : 'DISABLED'}`,
+                        type: val ? 'success' : 'warning',
+                        timeout: 3500
+                    });
+                } catch (err) {
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Perimeter Update Failed',
+                        message: err.message,
+                        type: 'danger',
+                        timeout: 3500
+                    });
+                    sw.checked = !val;
+                }
+            });
+        });
     }
 
     openEditTargetsModal() {
@@ -570,7 +622,7 @@ export class GeofencingView {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         zoneId: selectedZone.zoneId,
-                        creatorUid: selectedZone.creatorId || 'Fleet_Admin',
+                        creatorUid: selectedZone.creatorId || (this.devices[0] ? this.devices[0].agentId : 'SYSTEM_HOST'),
                         assignedTargets: targetNames || 'All Devices',
                         connectedDevices: checked
                     })
@@ -608,7 +660,7 @@ export class GeofencingView {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             zoneId: selectedZone.zoneId,
-                            creatorUid: selectedZone.creatorId || 'Fleet_Admin'
+                            creatorUid: selectedZone.creatorId || (this.devices[0] ? this.devices[0].agentId : 'SYSTEM_HOST')
                         })
                     });
                     const res = await r.json();

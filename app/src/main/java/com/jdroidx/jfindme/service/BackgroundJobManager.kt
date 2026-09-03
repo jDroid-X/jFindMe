@@ -423,7 +423,7 @@ object BackgroundJobManager {
                 }
             }
             "JOB_OFFLINE_SYNC" -> {
-                val syncManager = OfflineSyncManager(context)
+                val syncManager = OfflineSyncManager.getInstance(context)
                 syncManager.triggerBackgroundSync()
                 callback(true, "Offline queue flush & cloud metadata reconciliation initiated.")
             }

@@ -23,9 +23,10 @@ class GeofenceHelper(context: Context) {
     }
 
     fun addGeofence(id: String, lat: Double, lng: Double, radius: Float) {
+        val effectiveRadius = if (radius >= 50f) radius else 100f
         val geofence = Geofence.Builder()
             .setRequestId(id)
-            .setCircularRegion(lat, lng, radius)
+            .setCircularRegion(lat, lng, effectiveRadius)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
             .build()

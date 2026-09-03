@@ -364,6 +364,180 @@ header {
 }
 
 /* ==========================================================================
+   Tactile Switch (On/Off)
+   ========================================================================== */
+.switch-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+.switch-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.switch-slider {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background-color: var(--border-medium);
+    border-radius: 9999px;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+.switch-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.switch-toggle input:checked + .switch-slider {
+    background-color: var(--accent-primary);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+.switch-toggle input:checked + .switch-slider::after {
+    transform: translateX(16px);
+}
+.switch-toggle.switch-sm .switch-slider {
+    width: 28px;
+    height: 16px;
+}
+.switch-toggle.switch-sm .switch-slider::after {
+    width: 12px;
+    height: 12px;
+}
+.switch-toggle.switch-sm input:checked + .switch-slider::after {
+    transform: translateX(12px);
+}
+
+/* ==========================================================================
+   Segmented Toggle (Left / Right)
+   ========================================================================== */
+.toggle-segment-group {
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 3px;
+    gap: 2px;
+    user-select: none;
+}
+.toggle-segment-btn {
+    padding: 5px 12px;
+    border-radius: var(--radius-md);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.toggle-segment-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-card-hover);
+}
+.toggle-segment-btn.active {
+    background-color: var(--accent-primary);
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+/* ==========================================================================
+   3D Card Flipper
+   ========================================================================== */
+.flip-card-container {
+    perspective: 1200px;
+    width: 100%;
+}
+.flip-card-inner {
+    position: relative;
+    width: 100%;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-style: preserve-3d;
+}
+.flip-card-inner.is-flipped {
+    transform: rotateY(180deg);
+}
+.flip-card-front, .flip-card-back {
+    position: relative;
+    width: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border-radius: var(--radius-xl);
+}
+.flip-card-back {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    transform: rotateY(180deg);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow-y: auto;
+}
+
+/* ==========================================================================
+   Slide In/Out Notification Drawer (Right Bottom)
+   ========================================================================== */
+.slide-notification-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10050;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    max-width: 380px;
+    width: 100%;
+}
+.slide-notification-item {
+    pointer-events: auto;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+}
+.slide-notification-item.slide-in {
+    transform: translateX(0);
+    opacity: 1;
+}
+.slide-notification-item.slide-out {
+    transform: translateX(120%);
+    opacity: 0;
+}
+.slide-notification-progress {
+    height: 3px;
+    background: var(--accent-primary);
+    width: 100%;
+    transform-origin: left;
+    transition: width linear;
+}
+
+/* ==========================================================================
    Smart-Fit Responsive Grids
    ========================================================================== */
 .smart-grid-5 {
@@ -554,3 +728,71 @@ html.light-theme h3:not(button *),
 html.light-theme h4:not(button *) {
     color: var(--text-heading) !important;
 }
+
+/* ==========================================================================
+   UIControls Interactive Component Suite CSS Styles
+   ========================================================================== */
+
+/* 1. Switch Component */
+.ui-switch-wrapper input:checked ~ .ui-switch-bg {
+    background-color: #4f46e5 !important; /* Indigo-600 */
+    border-color: #6366f1 !important;
+}
+.ui-switch-wrapper input:checked ~ .ui-switch-dot {
+    transform: translateX(20px);
+}
+.ui-switch-dot {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 2. 3D Flipper Card Styles */
+.ui-flipper-perspective {
+    perspective: 1200px;
+}
+.ui-flipper-inner {
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ui-flipper-inner.flipped {
+    transform: rotateY(180deg);
+}
+.backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+.rotate-y-180 {
+    transform: rotateY(180deg);
+}
+
+/* 3. Toast Notifications & Dialog Animations */
+@keyframes slideInRight {
+    from {
+        transform: translateX(120%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+@keyframes scaleUpModal {
+    from {
+        transform: scale(0.92);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+.animate-scale-up {
+    animation: scaleUpModal 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-fade-in {
+    animation: fadeIn 0.2s ease-out forwards;
+}
+.animate-fade-out {
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+

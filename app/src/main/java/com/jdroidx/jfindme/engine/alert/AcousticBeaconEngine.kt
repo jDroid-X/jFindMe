@@ -14,6 +14,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import com.jdroidx.jfindme.ui.alert.AcousticSirenActivity
 import com.jdroidx.jfindme.utils.SystemLogger
+import com.jdroidx.jfindme.utils.RegistryManager
 
 /**
  * AcousticBeaconEngine: Handles acoustic sirens and remote ringing with DND bypass.
@@ -40,11 +41,12 @@ object AcousticBeaconEngine {
      */
     @Synchronized
     @JvmStatic
-    fun startSiren(context: Context, durationSec: Int = 30, initiatorName: String = "Guardian") {
+    fun startSiren(context: Context, durationSec: Int = -1, initiatorName: String = "Guardian") {
+        val effectiveDuration = if (durationSec > 0) durationSec else RegistryManager.getSirenDurationSec(context)
         if (isSirenActive) {
             SystemLogger.d(TAG, "Siren is already active. Refreshing timer.")
             autoStopRunnable?.let { mainHandler.removeCallbacks(it) }
-            scheduleAutoStop(context, durationSec)
+            scheduleAutoStop(context, effectiveDuration)
             return
         }
 
@@ -53,8 +55,10 @@ object AcousticBeaconEngine {
             originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
 
-            // Force max volume on Alarm Stream (bypasses silent/vibrate mode)
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
+            // Force max volume on Alarm Stream if DND bypass enabled
+            if (RegistryManager.isSirenDndBypassEnabled(context)) {
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
+            }
 
             // Get default alarm sound or fallback to ringtone
             var alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
@@ -78,20 +82,22 @@ object AcousticBeaconEngine {
             }
 
             isSirenActive = true
-            SystemLogger.i(TAG, "🔊 Acoustic Siren ACTIVATED at 100% volume for ${durationSec}s by $initiatorName")
+            SystemLogger.i(TAG, "🔊 Acoustic Siren ACTIVATED for ${effectiveDuration}s by $initiatorName")
 
-            // Start vibration pulse
-            triggerContinuousVibration(context)
+            // Start vibration pulse if enabled
+            if (RegistryManager.isSirenVibrationEnabled(context)) {
+                triggerContinuousVibration(context)
+            }
 
             // Launch full-screen interactive overlay
             val sirenIntent = Intent(context, AcousticSirenActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra("INITIATOR_NAME", initiatorName)
-                putExtra("DURATION_SEC", durationSec)
+                putExtra("DURATION_SEC", effectiveDuration)
             }
             context.startActivity(sirenIntent)
 
-            scheduleAutoStop(context, durationSec)
+            scheduleAutoStop(context, effectiveDuration)
 
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed to activate Acoustic Siren", e)

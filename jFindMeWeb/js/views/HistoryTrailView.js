@@ -13,7 +13,8 @@ export class HistoryTrailView {
         this.breadcrumbs = [];
         this.currentIndex = 0;
         this.isPlaying = false;
-        this.playSpeed = 1; // 1x, 2x, 5x
+        this.playSpeed = 1; // 1, 2, 5
+        this.autoPanFollow = true;
         this.playbackTimer = null;
         this.activeMarker = null;
         this.controlPanelElement = null;
@@ -48,6 +49,22 @@ export class HistoryTrailView {
 
         // Render Floating Playback HUD on bottom of map
         this.renderPlaybackHud(deviceName, totalDistanceKm);
+
+        // Dispatch animated bottom-right slide notification
+        FeedbackDialog.showSlideNotification({
+            title: `Trail Active: ${deviceName}`,
+            message: `Rendered ${breadcrumbs.length} GPS fixes (${GeoUtils.formatDistance(totalDistanceKm)}). Interactive playback active.`,
+            type: "info",
+            actions: [
+                { id: 'play', label: '▶ Play', variant: 'primary' },
+                { id: 'close', label: '✕ Close', variant: 'secondary' }
+            ],
+            onAction: (act) => {
+                if (act === 'play') this.play();
+                else if (act === 'close') this.clear();
+            },
+            duration: 6000
+        });
     }
 
     renderPlaybackHud(deviceName, totalDistanceKm) {
@@ -89,16 +106,27 @@ export class HistoryTrailView {
                     </div>
                 </div>
 
-                <!-- Scrubber Slider -->
-                <div class="flex items-center gap-2.5">
-                    <button id="btn-play-pause" class="btn-action-primary w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 p-0">
+                <!-- Controls: Scrubber Slider, Segmented Speed Toggle & Tactile Switch -->
+                <div class="flex items-center gap-3">
+                    <button id="btn-play-pause" class="btn-action-primary w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 p-0 shadow-md">
                         ▶
                     </button>
                     <input type="range" id="hud-scrubber" min="0" max="${this.breadcrumbs.length - 1}" value="${this.currentIndex}"
                            class="w-full h-2 bg-canvas rounded-lg appearance-none cursor-pointer accent-sky-500">
-                    <button id="btn-speed-toggle" class="btn-action-secondary px-2 py-0.5 text-[10px] font-mono font-bold shrink-0">
-                        1x
-                    </button>
+                    
+                    <!-- SEGMENTED SPEED TOGGLE (LEFT / RIGHT) -->
+                    <div class="toggle-segment-group shrink-0">
+                        <button class="toggle-segment-btn speed-btn ${this.playSpeed === 1 ? 'active' : ''}" data-speed="1">1x</button>
+                        <button class="toggle-segment-btn speed-btn ${this.playSpeed === 2 ? 'active' : ''}" data-speed="2">2x</button>
+                        <button class="toggle-segment-btn speed-btn ${this.playSpeed === 5 ? 'active' : ''}" data-speed="5">5x</button>
+                    </div>
+
+                    <!-- TACTILE SWITCH (AUTO-PAN FOLLOW) -->
+                    <label class="switch-toggle switch-sm shrink-0" title="Auto-Pan Map to Current Breadcrumb Fix">
+                        <input type="checkbox" id="hud-switch-autopan" ${this.autoPanFollow ? 'checked' : ''}>
+                        <span class="switch-slider"></span>
+                        <span class="text-[10px] text-secondary-theme font-bold">Follow</span>
+                    </label>
                 </div>
             </div>
         `;
@@ -129,15 +157,23 @@ export class HistoryTrailView {
             else this.play();
         });
 
-        speedBtn.addEventListener('click', () => {
-            if (this.playSpeed === 1) this.playSpeed = 2;
-            else if (this.playSpeed === 2) this.playSpeed = 5;
-            else this.playSpeed = 1;
-            speedBtn.textContent = `${this.playSpeed}x`;
-            if (this.isPlaying) {
-                this.pause();
-                this.play();
-            }
+        // Segmented Speed Toggle Handlers
+        hud.querySelectorAll('.speed-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const spd = parseInt(btn.getAttribute('data-speed'), 10) || 1;
+                this.playSpeed = spd;
+                hud.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (this.isPlaying) {
+                    this.pause();
+                    this.play();
+                }
+            });
+        });
+
+        // Tactile Switch: Auto-Pan Follow
+        hud.querySelector('#hud-switch-autopan')?.addEventListener('change', (e) => {
+            this.autoPanFollow = e.target.checked;
         });
     }
 
@@ -185,8 +221,8 @@ export class HistoryTrailView {
         if (speedReadout) speedReadout.textContent = `${(crumb.speed * 3.6).toFixed(1)} km/h`;
         if (pointReadout) pointReadout.textContent = `${index + 1}/${this.breadcrumbs.length}`;
 
-        // Pan map smoothly to point
-        if (this.mapView && this.mapView.map) {
+        // Pan map smoothly to point if follow switch is active
+        if (this.autoPanFollow && this.mapView && this.mapView.map) {
             this.mapView.map.panTo([crumb.latitude, crumb.longitude], { animate: true, duration: 0.3 });
         }
     }

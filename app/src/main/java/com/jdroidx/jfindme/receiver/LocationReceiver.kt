@@ -66,7 +66,7 @@ class LocationReceiver : BroadcastReceiver() {
                 
                 // Flush offline sync queue
                 try {
-                    com.jdroidx.jfindme.data.remote.OfflineSyncManager(appContext).triggerBackgroundSync()
+                    com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(appContext).triggerBackgroundSync()
                 } catch (e: Exception) {}
             }
         } catch (fatal: Throwable) {

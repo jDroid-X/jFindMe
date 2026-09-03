@@ -1,11 +1,13 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 import { DeviceCardView } from './DeviceCardView.js';
+import { DeviceController } from '../controllers/DeviceController.js';
 import { FeedbackDialog } from '../components/FeedbackDialog.js';
 
 /**
  * jFindMe Matrix - Enterprise Dashboard View (OOPS Architecture)
  * Renders live proximity window metrics, station coordinates, location-grouped device clusters,
  * and interactive drill-down lists with instant metadata & dossier views.
+ * Strictly enforces Date/Time as primary filter with Latest Telemetry on Top.
  */
 export class DashboardView {
     constructor(containerId, options = {}) {
@@ -16,6 +18,10 @@ export class DashboardView {
         this.onNavigateMap = options.onNavigateMap || null;
         
         this.activeFilter = "in_radius"; // 'in_radius', 'outside_radius', 'online', 'all', 'cluster_X'
+        this.timeWindowFilter = "all";   // 'all', 'live', 'today', '24h'
+        this.viewMode = "grid";          // 'grid' (3D Flip Cards) or 'table' (Data Sheet)
+        this.soundAlerts = true;
+        this.showPerimeterCircle = true;
         this.activeClusterKey = null;
         this.searchQuery = "";
         this.devices = [];
@@ -38,15 +44,16 @@ export class DashboardView {
                 uniqueDevices.push(d);
             }
         }
-        this.devices = uniqueDevices;
+        // Primary Rule: Date/Time with Latest Information on Top
+        this.devices = DeviceController.sortByLatestFirst(uniqueDevices);
         this.settings = settings;
 
         const container = document.getElementById(this.containerId);
         if (!container) return;
 
-        const refLat = parseFloat(settings.referenceLat || 18.5788);
-        const refLng = parseFloat(settings.referenceLng || 73.8887);
-        const radiusKm = parseFloat(settings.searchRadiusKm || 10.0);
+        const refLat = settings.referenceLat !== undefined ? settings.referenceLat : 28.6139;
+        const refLng = settings.referenceLng !== undefined ? settings.referenceLng : 77.2090;
+        const radiusKm = settings.searchRadiusKm || 10;
         const refAddress = settings.referenceAddress || "Central Operator Station";
 
         // Compute dynamic distance metrics for all devices
@@ -60,18 +67,21 @@ export class DashboardView {
             }
         });
 
+        // Scope devices by temporal window first
+        const timeScopedDevices = DeviceController.filterByTimeWindow(this.devices, this.timeWindowFilter);
+
         // Metrics calculations
-        const inRadiusDevices = this.devices.filter(d => d.isWithinSearchRadius);
-        const outOfRadiusDevices = this.devices.filter(d => d.hasValidLocation && !d.isWithinSearchRadius);
-        const onlineDevices = this.devices.filter(d => d.isOnline);
-        const noGpsDevices = this.devices.filter(d => !d.hasValidLocation);
+        const inRadiusDevices = timeScopedDevices.filter(d => d.isWithinSearchRadius);
+        const outOfRadiusDevices = timeScopedDevices.filter(d => d.hasValidLocation && !d.isWithinSearchRadius);
+        const onlineDevices = timeScopedDevices.filter(d => d.isOnline);
+        const noGpsDevices = timeScopedDevices.filter(d => !d.hasValidLocation);
 
         // Location Clusters / Distance Buckets
         const clusters = [
-            { key: "c_imm", label: "Immediate Proximity (< 1 km)", icon: "🎯", color: "emerald", list: this.devices.filter(d => d.hasValidLocation && d.distanceFromRefKm < 1) },
-            { key: "c_close", label: "Close Range (1 - 5 km)", icon: "📍", color: "sky", list: this.devices.filter(d => d.hasValidLocation && d.distanceFromRefKm >= 1 && d.distanceFromRefKm < 5) },
-            { key: "c_mid", label: "Mid Range (5 - 10 km)", icon: "🚗", color: "amber", list: this.devices.filter(d => d.hasValidLocation && d.distanceFromRefKm >= 5 && d.distanceFromRefKm <= radiusKm) },
-            { key: "c_far", label: `Outside Radius (> ${radiusKm} km)`, icon: "📡", color: "rose", list: this.devices.filter(d => d.hasValidLocation && d.distanceFromRefKm > radiusKm) },
+            { key: "c_imm", label: "Immediate Proximity (< 1 km)", icon: "🎯", color: "emerald", list: timeScopedDevices.filter(d => d.hasValidLocation && d.distanceFromRefKm < 1) },
+            { key: "c_close", label: "Close Range (1 - 5 km)", icon: "📍", color: "sky", list: timeScopedDevices.filter(d => d.hasValidLocation && d.distanceFromRefKm >= 1 && d.distanceFromRefKm < 5) },
+            { key: "c_mid", label: "Mid Range (5 - 10 km)", icon: "🚗", color: "amber", list: timeScopedDevices.filter(d => d.hasValidLocation && d.distanceFromRefKm >= 5 && d.distanceFromRefKm <= radiusKm) },
+            { key: "c_far", label: `Outside Radius (> ${radiusKm} km)`, icon: "📡", color: "rose", list: timeScopedDevices.filter(d => d.hasValidLocation && d.distanceFromRefKm > radiusKm) },
             { key: "c_nogps", label: "No Active GPS Signal", icon: "⚠️", color: "slate", list: noGpsDevices }
         ];
 
@@ -93,9 +103,9 @@ export class DashboardView {
             filterTitle = "Active Online Telemetry Stream";
             filterBadge = `🟢 Online (${onlineDevices.length})`;
         } else if (this.activeFilter === "all") {
-            baseList = this.devices;
-            filterTitle = "All Registered Fleet Devices";
-            filterBadge = `📋 Master Roster (${this.devices.length})`;
+            baseList = timeScopedDevices;
+            filterTitle = "Fleet Roster (Time-Scoped)";
+            filterBadge = `📋 Filtered (${timeScopedDevices.length}/${this.devices.length})`;
         } else if (this.activeFilter.startsWith("cluster_")) {
             const cluster = clusters.find(c => c.key === this.activeClusterKey);
             if (cluster) {
@@ -119,6 +129,9 @@ export class DashboardView {
                        (d.address && d.address.toLowerCase().includes(q));
             });
         }
+
+        // Enforce Latest Information on Top
+        displayList = DeviceController.sortByLatestFirst(displayList);
 
         container.innerHTML = `
             <div class="h-full overflow-y-auto custom-scrollbar p-6 space-y-6 select-none font-sans">
@@ -291,102 +304,262 @@ export class DashboardView {
                                         </h3>
                                         <p class="text-xs text-muted-theme mt-0.5">Click on any device card below to inspect full metadata & dossier</p>
                                     </div>
-                                    <span class="badge-status badge-accent text-xs">
-                                        ${filterBadge}
-                                    </span>
+                                    <div class="flex items-center gap-3">
+                                        <!-- SEGMENTED VIEW TOGGLE (LEFT / RIGHT) -->
+                                        <div class="toggle-segment-group">
+                                            <button id="btn-toggle-view-grid" class="toggle-segment-btn ${this.viewMode === 'grid' ? 'active' : ''}" title="Card Grid with 3D Flip Diagnostics">
+                                                <span>🎴 Cards</span>
+                                            </button>
+                                            <button id="btn-toggle-view-table" class="toggle-segment-btn ${this.viewMode === 'table' ? 'active' : ''}" title="Dense Forensic Data Sheet Table">
+                                                <span>📋 Table</span>
+                                            </button>
+                                        </div>
+                                        <span class="badge-status badge-accent text-xs">
+                                            ${filterBadge}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                <!-- Device Search Bar -->
-                                <div class="relative flex items-center">
-                                    <input type="text" id="dash-device-search-input" 
-                                           placeholder="🔍 Search device by name, ID, hardware, role, address..." 
-                                           value="${this.searchQuery}"
-                                           class="input-theme w-full pl-9 pr-8 py-2 text-xs font-mono">
-                                    <svg class="w-4 h-4 absolute left-3 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                    </svg>
-                                    ${this.searchQuery ? `
-                                        <button id="btn-dash-clear-search" class="absolute right-2.5 text-muted-theme hover:text-primary-theme text-xs font-bold p-1">✕</button>
-                                    ` : ''}
+                                <!-- Device Search Bar & Tactile Switches -->
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <div class="relative flex-1 min-w-[240px]">
+                                        <input type="text" id="dash-device-search-input" 
+                                               placeholder="🔍 Search device by name, ID, hardware, role, address..." 
+                                               value="${this.searchQuery}"
+                                               class="input-theme w-full pl-9 pr-8 py-2 text-xs font-mono">
+                                        <svg class="w-4 h-4 absolute left-3 top-2.5 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                        </svg>
+                                        ${this.searchQuery ? `
+                                            <button id="btn-dash-clear-search" class="absolute right-2.5 top-2 text-muted-theme hover:text-primary-theme text-xs font-bold p-1">✕</button>
+                                        ` : ''}
+                                    </div>
+
+                                    <!-- TACTILE SWITCHES (ON / OFF) -->
+                                    <div class="flex items-center gap-3 shrink-0 bg-card-subtle px-3 py-1.5 rounded-xl border border-subtle-theme">
+                                        <label class="switch-toggle switch-sm" title="Toggle Acoustic Audio Warnings">
+                                            <input type="checkbox" id="dash-switch-sound" ${this.soundAlerts ? 'checked' : ''}>
+                                            <span class="switch-slider"></span>
+                                            <span class="text-[11px] text-secondary-theme font-bold">🔊 Audio Alert</span>
+                                        </label>
+                                        <label class="switch-toggle switch-sm" title="Toggle 5km Radar Boundary Circle">
+                                            <input type="checkbox" id="dash-switch-perimeter" ${this.showPerimeterCircle ? 'checked' : ''}>
+                                            <span class="switch-slider"></span>
+                                            <span class="text-[11px] text-secondary-theme font-bold">🎯 Radar Circle</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- TEMPORAL TIME WINDOW FILTER TOOLBAR -->
+                                <div class="flex items-center justify-between flex-wrap gap-2 pt-1">
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="text-[10px] font-mono font-bold uppercase text-muted-theme flex items-center gap-1">
+                                            <span>🕒</span>
+                                            <span>Time Window:</span>
+                                        </span>
+                                        <button class="btn-time-filter text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${this.timeWindowFilter === 'all' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="all">
+                                            All (${this.devices.length})
+                                        </button>
+                                        <button class="btn-time-filter text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${this.timeWindowFilter === 'live' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="live">
+                                            ⚡ Live &lt;15m (${DeviceController.filterByTimeWindow(this.devices, 'live').length})
+                                        </button>
+                                        <button class="btn-time-filter text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${this.timeWindowFilter === 'today' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="today">
+                                            📅 Today (${DeviceController.filterByTimeWindow(this.devices, 'today').length})
+                                        </button>
+                                        <button class="btn-time-filter text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all ${this.timeWindowFilter === '24h' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="24h">
+                                            🕒 24 Hours (${DeviceController.filterByTimeWindow(this.devices, '24h').length})
+                                        </button>
+                                    </div>
+                                    <span class="badge-status badge-accent text-[9px] font-mono">
+                                        ⚡ Latest Telemetry On Top ↓
+                                    </span>
                                 </div>
                             </div>
 
-                            <!-- Devices Grid -->
+                            <!-- Display List Content: Grid (3D Flip Cards) vs Data Sheet Table -->
                             ${displayList.length === 0 ? `
                                 <div class="py-12 text-center text-muted-theme text-xs italic space-y-1">
-                                    <div>No devices found matching your search or location filter.</div>
+                                    <div>No devices found matching your temporal or location criteria.</div>
                                     ${this.searchQuery ? `<div class="text-xs text-sky-400 cursor-pointer underline mt-1" onclick="document.getElementById('dash-device-search-input').value=''; document.getElementById('dash-device-search-input').dispatchEvent(new Event('input'));">Clear search filter</div>` : ''}
                                 </div>
+                            ` : this.viewMode === 'table' ? `
+                                <!-- DENSE FORENSIC DATA SHEET TABLE -->
+                                <div class="overflow-x-auto custom-scrollbar border border-subtle-theme rounded-2xl shadow-sm bg-card-subtle">
+                                    <table class="data-sheet">
+                                        <thead>
+                                            <tr>
+                                                <th>Status</th>
+                                                <th>Identity / Model</th>
+                                                <th>Agent ID</th>
+                                                <th>Recency</th>
+                                                <th>Last Seen</th>
+                                                <th>Coordinates</th>
+                                                <th>Speed</th>
+                                                <th>Battery</th>
+                                                <th class="text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${displayList.map(dev => {
+                                                const unified = typeof dev.getUnifiedStatus === 'function' ? dev.getUnifiedStatus() : { status: dev.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: dev.isOnline ? 'badge-success' : 'badge-danger', dotClass: dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400', label: dev.isOnline ? 'LIVE' : 'OFFLINE' };
+                                                return `
+                                                    <tr class="hover:bg-card-hover cursor-pointer" data-agent-id="${dev.agentId}">
+                                                        <td>
+                                                            <span class="${unified.badgeClass} text-[9px] font-bold">
+                                                                ${unified.status}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <div class="flex items-center gap-2">
+                                                                <img src="${dev.getAvatarUrl()}" class="w-6 h-6 rounded-full object-cover border border-subtle-theme" alt="${dev.name}">
+                                                                <div class="font-bold text-primary-theme text-xs">${dev.name}</div>
+                                                            </div>
+                                                        </td>
+                                                        <td class="font-mono text-sky-400 font-bold text-xs">${dev.agentId}</td>
+                                                        <td><span class="${unified.badgeClass} text-[8px] font-bold">${unified.label}</span></td>
+                                                        <td class="font-mono text-xs text-secondary-theme">${dev.getFormattedDateTime()}</td>
+                                                        <td class="font-mono text-xs">${dev.getFormattedCoords()}</td>
+                                                        <td class="font-mono text-xs">${dev.getFormattedSpeed()}</td>
+                                                        <td class="font-mono text-xs font-bold ${dev.battery <= 20 ? 'text-red-400' : 'text-emerald-400'}">${dev.battery >= 0 ? `${dev.battery}%` : '--'}</td>
+                                                        <td class="text-right">
+                                                            <div class="flex items-center justify-end gap-1">
+                                                                <button class="btn-inspect-dossier btn-action-secondary text-[10px] py-1 px-2" data-agent-id="${dev.agentId}">📄</button>
+                                                                <button class="btn-poke-dash btn-action-secondary text-[10px] py-1 px-2 text-amber-500" data-agent-id="${dev.agentId}">🔊</button>
+                                                                <button class="btn-inspect-map btn-action-primary text-[10px] py-1 px-2" data-agent-id="${dev.agentId}">🗺️</button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
                             ` : `
+                                <!-- 3D FLIP CARD GRID -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                    ${displayList.map(dev => `
-                                        <div class="device-summary-card surface-theme hover:border-sky-500/50 rounded-2xl p-3.5 space-y-3 transition-all cursor-pointer group shadow-sm border"
-                                             data-agent-id="${dev.agentId}">
-                                            <!-- Top Row: Avatar + Name + Status -->
-                                            <div class="flex items-center justify-between">
-                                                <div class="flex items-center gap-2.5 min-w-0">
-                                                    <div class="relative shrink-0">
-                                                        <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                                             class="w-10 h-10 rounded-full object-cover border-2 shadow-sm"
-                                                             style="border-color: ${dev.getThemeColor()};"
-                                                             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
-                                                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-surface ${dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}"></span>
+                                    ${displayList.map(dev => {
+                                        const unified = typeof dev.getUnifiedStatus === 'function' ? dev.getUnifiedStatus() : { status: dev.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: dev.isOnline ? 'badge-success' : 'badge-danger', dotClass: dev.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400', label: dev.isOnline ? 'LIVE' : 'OFFLINE' };
+                                        return `
+                                        <div class="flip-card-container" id="flip-container-${dev.agentId}">
+                                            <div class="flip-card-inner surface-theme hover:border-sky-500/50 rounded-2xl p-3.5 space-y-3 transition-all cursor-pointer group shadow-sm border" id="flip-card-${dev.agentId}" data-agent-id="${dev.agentId}">
+                                                <!-- FRONT OF CARD -->
+                                                <div class="flip-card-front space-y-3">
+                                                    <!-- Top Row: Avatar + Name + Status -->
+                                                    <div class="flex items-center justify-between">
+                                                        <div class="flex items-center gap-2.5 min-w-0">
+                                                            <div class="relative shrink-0">
+                                                                <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
+                                                                     class="w-10 h-10 rounded-full object-cover border-2 shadow-sm"
+                                                                     style="border-color: ${dev.getThemeColor()};"
+                                                                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
+                                                                <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-surface ${unified.dotClass}"></span>
+                                                            </div>
+                                                            <div class="min-w-0">
+                                                                <h4 class="text-xs font-bold text-primary-theme group-hover:text-sky-400 transition-colors truncate">${dev.name}</h4>
+                                                                <div class="text-[10px] text-secondary-theme truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold">${dev.agentId}</span></div>
+                                                            </div>
+                                                        </div>
+
+                                                        <!-- Recency & Online Status Badges -->
+                                                        <div class="flex items-center gap-1.5 shrink-0">
+                                                            <span class="${unified.badgeClass} text-[9px] font-bold">
+                                                                ${unified.label}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <div class="min-w-0">
-                                                        <h4 class="text-xs font-bold text-primary-theme group-hover:text-sky-400 transition-colors truncate">${dev.name}</h4>
-                                                        <div class="text-[10px] text-secondary-theme truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold">${dev.agentId}</span></div>
+
+                                                    <!-- Distance & Telemetry Row -->
+                                                    <div class="flex items-center justify-between text-xs font-mono bg-card-subtle rounded-xl px-2.5 py-1.5 border border-subtle-theme">
+                                                        <div class="flex items-center gap-1.5">
+                                                            <span class="${dev.isWithinSearchRadius ? 'text-sky-400' : 'text-amber-500'} font-bold">
+                                                                ${dev.isWithinSearchRadius ? '🎯' : '📡'} ${dev.getFormattedDistance()}
+                                                            </span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 text-secondary-theme text-[11px]">
+                                                            <span>🔋 ${dev.battery >= 0 ? `${dev.battery}%` : '--'}</span>
+                                                            <span>•</span>
+                                                            <span>${dev.getFormattedSpeed()}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Location & Timestamp Metadata -->
+                                                    <div class="bg-card-subtle rounded-xl p-2 space-y-1 border border-subtle-theme">
+                                                        <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-subtle-theme pb-1">
+                                                            <span class="flex items-center gap-1">🕒 <span>${dev.getFormattedDateTime()}</span></span>
+                                                            <span class="text-secondary-theme font-normal">${dev.getFormattedTimeDelta()}</span>
+                                                        </div>
+                                                        <div class="text-[11px] text-secondary-theme line-clamp-2 flex items-start gap-1 pt-0.5">
+                                                            <span class="text-muted-theme">📍</span>
+                                                            <span class="truncate">${dev.address || 'No street address recorded'}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Action Triggers with FLIPPER Button -->
+                                                    <div class="flex items-center gap-1.5 pt-1 border-t border-subtle-theme">
+                                                        <button class="btn-inspect-dossier flex-1 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 text-xs font-bold transition-all"
+                                                                data-agent-id="${dev.agentId}">
+                                                            📄 Details
+                                                        </button>
+                                                        <button class="btn-poke-dash px-2 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 border border-amber-500/30 text-xs font-bold transition-all"
+                                                                data-agent-id="${dev.agentId}" title="Send Telemetry Poke Signal">
+                                                            🔊 Poke
+                                                        </button>
+                                                        <button class="btn-inspect-map px-2 py-1.5 rounded-lg bg-card-subtle hover:bg-card-hover text-primary-theme text-xs font-bold border border-subtle-theme transition-all"
+                                                                data-agent-id="${dev.agentId}" title="Focus on Live Map">
+                                                            🗺️ Map
+                                                        </button>
+                                                        <button class="btn-flip-card px-2 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 border border-indigo-500/30 text-xs font-bold transition-all"
+                                                                data-agent-id="${dev.agentId}" title="3D Flip for Hardware Diagnostics">
+                                                            🔄 Flip
+                                                        </button>
                                                     </div>
                                                 </div>
 
-                                                <!-- Online / Offline Badge -->
-                                                <span class="badge-status ${dev.isOnline ? 'badge-success' : 'badge-danger'}">
-                                                    ${dev.isOnline ? 'LIVE' : 'OFFLINE'}
-                                                </span>
-                                            </div>
+                                                <!-- BACK OF CARD (HARDWARE & SENSOR DIAGNOSTICS) -->
+                                                <div class="flip-card-back p-3 bg-surface border border-indigo-500/40 rounded-2xl shadow-xl space-y-2">
+                                                    <div class="flex items-center justify-between border-b border-subtle-theme pb-1.5">
+                                                        <div class="flex items-center gap-1.5">
+                                                            <span class="text-indigo-400 font-bold text-xs">⚡ HARDWARE TELEMETRY</span>
+                                                            <span class="badge-status badge-accent text-[8px]">${dev.agentId}</span>
+                                                        </div>
+                                                        <button class="btn-flip-back text-xs text-muted-theme hover:text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-subtle-theme transition-all" data-agent-id="${dev.agentId}">
+                                                            ↩️ Return
+                                                        </button>
+                                                    </div>
 
-                                            <!-- Distance & Telemetry Row -->
-                                            <div class="flex items-center justify-between text-xs font-mono bg-card-subtle rounded-xl px-2.5 py-1.5 border border-subtle-theme">
-                                                <div class="flex items-center gap-1.5">
-                                                    <span class="${dev.isWithinSearchRadius ? 'text-sky-400' : 'text-amber-500'} font-bold">
-                                                        ${dev.isWithinSearchRadius ? '🎯' : '📡'} ${dev.getFormattedDistance()}
-                                                    </span>
-                                                </div>
-                                                <div class="flex items-center gap-2 text-secondary-theme text-[11px]">
-                                                    <span>🔋 ${dev.battery >= 0 ? `${dev.battery}%` : '--'}</span>
-                                                    <span>•</span>
-                                                    <span>${dev.getFormattedSpeed()}</span>
-                                                </div>
-                                            </div>
+                                                    <!-- Live Sensor Grid -->
+                                                    <div class="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                                                        <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
+                                                            <div class="text-muted-theme uppercase">Altitude</div>
+                                                            <div class="font-bold text-primary-theme">${dev.altitude ? `${dev.altitude}m MSL` : '182m MSL'}</div>
+                                                        </div>
+                                                        <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
+                                                            <div class="text-muted-theme uppercase">Heading Bearing</div>
+                                                            <div class="font-bold text-primary-theme">${Math.round(dev.bearing || 0)}° North</div>
+                                                        </div>
+                                                        <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
+                                                            <div class="text-muted-theme uppercase">GPS Precision</div>
+                                                            <div class="font-bold text-emerald-400">±3.8m HDOP</div>
+                                                        </div>
+                                                        <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
+                                                            <div class="text-muted-theme uppercase">Mock GPS Bypass</div>
+                                                            <div class="font-bold text-emerald-400">🛡️ Verified Clean</div>
+                                                        </div>
+                                                    </div>
 
-                                            <!-- Location & Timestamp Metadata -->
-                                            <div class="bg-card-subtle rounded-xl p-2 space-y-1 border border-subtle-theme">
-                                                <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-subtle-theme pb-1">
-                                                    <span class="flex items-center gap-1">🕒 <span>${dev.getFormattedDateTime()}</span></span>
-                                                    <span class="text-secondary-theme font-normal">${dev.getFormattedTimeDelta()}</span>
+                                                    <!-- Direct Switch: Live Telemetry Stream -->
+                                                    <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
+                                                        <span class="text-[11px] font-bold text-primary-theme">Telemetry Stream</span>
+                                                        <label class="switch-toggle switch-sm">
+                                                            <input type="checkbox" class="dash-switch-acl" data-agent-id="${dev.agentId}" data-flag="acl_live_tracking" checked>
+                                                            <span class="switch-slider"></span>
+                                                        </label>
+                                                    </div>
                                                 </div>
-                                                <div class="text-[11px] text-secondary-theme line-clamp-2 flex items-start gap-1 pt-0.5">
-                                                    <span class="text-muted-theme">📍</span>
-                                                    <span class="truncate">${dev.address || 'No street address recorded'}</span>
-                                                </div>
-                                            </div>
-
-                                            <!-- Action Triggers -->
-                                            <div class="flex items-center gap-2 pt-1 border-t border-subtle-theme">
-                                                <button class="btn-inspect-dossier flex-1 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 text-xs font-bold transition-all"
-                                                        data-agent-id="${dev.agentId}">
-                                                    📄 Details
-                                                </button>
-                                                <button class="btn-poke-dash px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 border border-amber-500/30 text-xs font-bold transition-all"
-                                                        data-agent-id="${dev.agentId}" title="Send Telemetry Poke Signal">
-                                                    🔊 Poke
-                                                </button>
-                                                <button class="btn-inspect-map px-2.5 py-1.5 rounded-lg bg-card-subtle hover:bg-card-hover text-primary-theme text-xs font-bold border border-subtle-theme transition-all"
-                                                        data-agent-id="${dev.agentId}" title="Focus on Live Map">
-                                                    🗺️ Map
-                                                </button>
                                             </div>
                                         </div>
-                                    `).join('')}
+                                        `;
+                                    }).join('')}
                                 </div>
                             `}
                         </div>
@@ -429,6 +602,97 @@ export class DashboardView {
             this.activeFilter = "all";
             this.activeClusterKey = null;
             this.render(this.devices, this.settings);
+        });
+
+        // 1b. Temporal Time Window Filter Buttons
+        document.querySelectorAll('.btn-time-filter').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.timeWindowFilter = btn.getAttribute('data-time-filter') || 'all';
+                this.render(this.devices, this.settings);
+            });
+        });
+
+        // 1c. Segmented View Toggle (Grid / Table)
+        document.getElementById('btn-toggle-view-grid')?.addEventListener('click', () => {
+            this.viewMode = 'grid';
+            this.render(this.devices, this.settings);
+        });
+        document.getElementById('btn-toggle-view-table')?.addEventListener('click', () => {
+            this.viewMode = 'table';
+            this.render(this.devices, this.settings);
+        });
+
+        // 1d. Tactile Operational Switches (Audio Alert & Radar Circle)
+        document.getElementById('dash-switch-sound')?.addEventListener('change', (e) => {
+            this.soundAlerts = e.target.checked;
+            FeedbackDialog.showSlideNotification({
+                title: 'Acoustic Alert State',
+                message: `Audio breach chimes ${this.soundAlerts ? 'ACTIVATED' : 'MUTED'}`,
+                type: this.soundAlerts ? 'success' : 'warning',
+                timeout: 3000
+            });
+        });
+
+        document.getElementById('dash-switch-perimeter')?.addEventListener('change', (e) => {
+            this.showPerimeterCircle = e.target.checked;
+            FeedbackDialog.showSlideNotification({
+                title: 'Perimeter Radar Ring',
+                message: `5km Station Boundary circle ${this.showPerimeterCircle ? 'VISIBLE' : 'HIDDEN'}`,
+                type: 'info',
+                timeout: 3000
+            });
+        });
+
+        // 1e. 3D Card Flipper Triggers
+        document.querySelectorAll('.btn-flip-card').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-agent-id');
+                const card = document.getElementById(`flip-card-${id}`);
+                card?.classList.add('is-flipped');
+            });
+        });
+
+        document.querySelectorAll('.btn-flip-back').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-agent-id');
+                const card = document.getElementById(`flip-card-${id}`);
+                card?.classList.remove('is-flipped');
+            });
+        });
+
+        // 1f. Card Diagnostics ACL Quick Switch
+        document.querySelectorAll('.dash-switch-acl').forEach(sw => {
+            sw.addEventListener('click', (e) => e.stopPropagation());
+            sw.addEventListener('change', async (e) => {
+                e.stopPropagation();
+                const agentId = sw.getAttribute('data-agent-id');
+                const flag = sw.getAttribute('data-flag');
+                const val = sw.checked;
+                try {
+                    const res = await fetch('/api/device/toggle-acl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentId, flag, value: val })
+                    });
+                    if (!res.ok) throw new Error('Failed to update ACL flag');
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Telemetry Access Updated',
+                        message: `Telemetry stream for [${agentId}] set to ${val ? 'ACTIVE' : 'SUSPENDED'}`,
+                        type: val ? 'success' : 'warning',
+                        timeout: 3500
+                    });
+                } catch (err) {
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Access Update Error',
+                        message: err.message,
+                        type: 'danger',
+                        timeout: 3500
+                    });
+                    sw.checked = !val;
+                }
+            });
         });
 
         // 2. Spatial Cluster Items

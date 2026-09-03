@@ -31,8 +31,10 @@ export class DeviceModel {
         this.isMockGps = Boolean(data.isMockGps);
         this.isAirplaneMode = Boolean(data.isAirplaneMode);
         this.networkType = data.networkType || "UNKNOWN";
-        this.lastSeen = data.lastSeen || 0;
-        this.isOnline = Boolean(data.isOnline);
+        this.lastSeen = data.lastSeen || data.lastUpdated || data.timestamp || 0;
+        const epochInit = GeoUtils.parseTimestampToEpoch(this.lastSeen);
+        const elapsedInit = epochInit > 0 ? (Date.now() - epochInit) : Infinity;
+        this.isOnline = Boolean(data.isOnline || (data.st_session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
         this.sessionState = data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
 
         // Profile & Organization
@@ -212,4 +214,149 @@ export class DeviceModel {
         if (this.battery <= 40) return { text: `${this.battery}%`, color: "#F59E0B", icon: "🔋" };
         return { text: `${this.battery}%`, color: "#10B981", icon: "🔋" };
     }
+
+    /**
+     * Returns standard epoch milliseconds from this device's timestamp or lastSeen
+     * @returns {number}
+     */
+    getEpochTimestamp() {
+        const t = this.timestamp || this.lastSeen;
+        return GeoUtils.parseTimestampToEpoch(t);
+    }
+
+    /**
+     * Temporal Recency Tier:
+     * - LIVE: < 1 minute (or isOnline)
+     * - IDLE: 1m to 15m
+     * - STALE: > 15m
+     * @returns {{ tier: 'LIVE'|'IDLE'|'STALE', label: string, color: string, badgeClass: string, elapsedMs: number }}
+     */
+    getRecencyTier() {
+        const epoch = this.getEpochTimestamp();
+        const now = Date.now();
+        const elapsedMs = epoch > 0 ? Math.max(0, now - epoch) : Infinity;
+
+        if (this.isOnline || elapsedMs < 60 * 1000) {
+            return {
+                tier: 'LIVE',
+                label: '🟢 LIVE (Now)',
+                color: '#10b981',
+                badgeClass: 'badge-status badge-success',
+                elapsedMs
+            };
+        }
+        if (elapsedMs <= 15 * 60 * 1000) {
+            const mins = Math.max(1, Math.floor(elapsedMs / 60000));
+            return {
+                tier: 'IDLE',
+                label: `🟡 IDLE (${mins}m ago)`,
+                color: '#f59e0b',
+                badgeClass: 'badge-status badge-warning',
+                elapsedMs
+            };
+        }
+        return {
+            tier: 'STALE',
+            label: '🔴 STALE (>15m)',
+            color: '#ef4444',
+            badgeClass: 'badge-status badge-danger',
+            elapsedMs
+        };
+    }
+
+    /**
+     * Master Centralized Enterprise RAG Status Engine (Single Source of Truth across all screens):
+     * - 🚨 EMERGENCY SOS: isSos == true (Pulsing Crimson #EF4444)
+     * - 🟢 ACTIVE (LIVE): Telemetry < 15 minutes & Battery > 20% (Emerald Green #22C55E)
+     * - 🟡 INACTIVE (< 6H): Telemetry 15m–6h OR Battery <= 20% (Amber Orange #F59E0B)
+     * - 🔴 INACTIVE (> 6H): Telemetry > 6 hours (Rose Red #EF4444)
+     * - ⚪ UNLINKED / GHOST: Uninstalled, ghost, parked, or deleted (Slate Gray #64748B)
+     * @returns {{ status: string, label: string, isOnline: boolean, isMoving: boolean, color: string, badgeClass: string, dotClass: string, elapsedMs: number }}
+     */
+    getUnifiedStatus() {
+        const epoch = this.getEpochTimestamp();
+        const now = Date.now();
+        const elapsedMs = epoch > 0 ? Math.max(0, now - epoch) : Infinity;
+        const speed = parseFloat(this.speed || 0);
+
+        // 🚨 1. EMERGENCY SOS (Pulsing Crimson)
+        if (this.isSos || this.sessionState === "SOS") {
+            return {
+                status: 'EMERGENCY',
+                label: 'EMERGENCY SOS',
+                isOnline: true,
+                isMoving: speed > 2,
+                color: '#EF4444',
+                badgeClass: 'badge-status badge-danger animate-pulse font-bold',
+                dotClass: 'bg-rose-600 animate-ping',
+                elapsedMs
+            };
+        }
+
+        // ⚪ 2. UNLINKED / GHOST / UNINSTALLED (Slate Gray)
+        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED" || this.sessionState === "GHOST") {
+            return {
+                status: 'UNLINKED',
+                label: this.sessionState || 'UNLINKED',
+                isOnline: false,
+                isMoving: false,
+                color: '#64748B',
+                badgeClass: 'badge-status badge-secondary',
+                dotClass: 'bg-slate-500',
+                elapsedMs
+            };
+        }
+
+        // 🟢 3. ACTIVE (LIVE) < 15 minutes & Battery > 20%
+        if (elapsedMs <= 15 * 60 * 1000 && (this.battery < 0 || this.battery > 20)) {
+            const isMoving = speed > 2;
+            return {
+                status: 'LIVE',
+                label: isMoving ? 'LIVE (MOVING)' : 'LIVE (ACTIVE)',
+                isOnline: true,
+                isMoving,
+                color: '#22C55E',
+                badgeClass: 'badge-status badge-success',
+                dotClass: 'bg-emerald-500 animate-pulse',
+                elapsedMs
+            };
+        }
+
+        // 🟡 4. INACTIVE (< 6H) or Low Battery <= 20%
+        if (elapsedMs <= 6 * 60 * 60 * 1000 || (this.battery >= 0 && this.battery <= 20)) {
+            let label = 'INACTIVE (<6H)';
+            if (this.battery >= 0 && this.battery <= 20 && elapsedMs <= 15 * 60 * 1000) {
+                label = `LOW BATT (${this.battery}%)`;
+            } else if (elapsedMs <= 60 * 60 * 1000) {
+                const mins = Math.max(1, Math.floor(elapsedMs / 60000));
+                label = `IDLE (${mins}m)`;
+            } else {
+                const hrs = Math.floor(elapsedMs / 3600000);
+                label = `INACTIVE (${hrs}h)`;
+            }
+            return {
+                status: 'INACTIVE_RECENT',
+                label,
+                isOnline: elapsedMs <= 15 * 60 * 1000,
+                isMoving: false,
+                color: '#F59E0B',
+                badgeClass: 'badge-status badge-warning',
+                dotClass: 'bg-amber-400',
+                elapsedMs
+            };
+        }
+
+        // 🔴 5. INACTIVE (> 6H)
+        return {
+            status: 'INACTIVE_STALE',
+            label: 'INACTIVE (>6H)',
+            isOnline: false,
+            isMoving: false,
+            color: '#EF4444',
+            badgeClass: 'badge-status badge-danger',
+            dotClass: 'bg-rose-500',
+            elapsedMs
+        };
+    }
 }
+

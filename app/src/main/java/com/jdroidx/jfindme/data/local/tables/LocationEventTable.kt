@@ -50,6 +50,16 @@ object LocationEventTable {
         val dayKey = try {
             if (now.length >= 8) now.substring(0, 8).toInt() else 0
         } catch (e: Exception) { 0 }
+
+        // 🛡️ Deduplication Guard: Ignore identical duplicate pings for this identity within the same forensic timestamp
+        try {
+            val dupCheck = db.rawQuery(
+                "SELECT 1 FROM $TABLE_NAME WHERE $COL_IDENTITY_ID = ? AND $COL_TIMESTAMP = ? LIMIT 1",
+                arrayOf(identityId.toString(), now)
+            )
+            val exists = dupCheck.use { it.moveToFirst() }
+            if (exists) return
+        } catch (e: Exception) { }
         
         val v = ContentValues().apply {
             put(COL_IDENTITY_ID, identityId)

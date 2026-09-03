@@ -27,6 +27,8 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.CircleOptions;
+import com.google.android.gms.maps.model.Polygon;
+import com.google.android.gms.maps.model.PolygonOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -85,6 +87,16 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private String targetUid;
     private String targetName;
 
+    // ⬡ Polygon SafeZone Interactive Editor State
+    private boolean isPolygonMode = false;
+    private final List<LatLng> polygonDraftPoints = new ArrayList<>();
+    private final List<Marker> polygonVertexMarkers = new ArrayList<>();
+    private com.google.android.gms.maps.model.Polygon previewPolygon;
+    private TextView txtPolygonStatus;
+    private LinearLayout identityRadiusRow;
+    private LinearLayout radiusQuickBar;
+    private LinearLayout polygonControlBar;
+
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         // 🚀 QA Fix: Initialize ViewModel BEFORE super.onCreate
@@ -103,6 +115,20 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             }
         }
         super.onCreate(savedInstanceState);
+
+        // 🗺️ Initialize SupportMapFragment inside the editor container
+        try {
+            SupportMapFragment mapFrag = (SupportMapFragment) getSupportFragmentManager().findFragmentById(1005);
+            if (mapFrag == null) {
+                mapFrag = SupportMapFragment.newInstance();
+                getSupportFragmentManager().beginTransaction()
+                    .replace(1005, mapFrag)
+                    .commitAllowingStateLoss();
+            }
+            mapFrag.getMapAsync(this);
+        } catch (Exception e) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("GeofenceActivity", "MAP_INIT_ERR", e);
+        }
     }
 
     @Override
@@ -426,8 +452,54 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         bottomConfirmArea.setPadding(hubPad, scale(8), hubPad, scale(12));
         bottomConfirmArea.setBackgroundColor(getCardColor());
         
+        // 🔀 GEOMETRY MODE SWITCHER: Circle vs Polygon (Standardized Segmented Toggle)
+        polygonControlBar = new LinearLayout(this);
+        polygonControlBar.setOrientation(LinearLayout.HORIZONTAL);
+        polygonControlBar.setGravity(Gravity.CENTER_VERTICAL);
+        polygonControlBar.setPadding(0, scale(4), 0, scale(6));
+        polygonControlBar.setVisibility(View.GONE);
+
+        txtPolygonStatus = new TextView(this);
+        txtPolygonStatus.setText("Tap on map to add boundary points (min 3)");
+        txtPolygonStatus.setTextSize(10);
+        txtPolygonStatus.setTextColor(getGradientStart());
+        txtPolygonStatus.setTypeface(null, Typeface.BOLD);
+        txtPolygonStatus.setPadding(scale(4), scale(4), scale(4), scale(4));
+        polygonControlBar.addView(txtPolygonStatus, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnClearPoly = createPresetCapsule("🗑️ CLEAR", v -> clearPolygonDraft());
+        polygonControlBar.addView(btnClearPoly, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        View geomToggle = UiArchitect.createSegmentedToggle(
+            this,
+            "⭕ CIRCLE (RADIAL)",
+            "⬡ POLYGON (PERIMETER)",
+            !isPolygonMode,
+            isLeft -> {
+                isPolygonMode = !isLeft;
+                if (!isPolygonMode) {
+                    if (identityRadiusRow != null) identityRadiusRow.setVisibility(View.VISIBLE);
+                    if (radiusQuickBar != null) radiusQuickBar.setVisibility(View.VISIBLE);
+                    polygonControlBar.setVisibility(View.GONE);
+                    clearPolygonDraft();
+                    LatLng draft = (viewModel != null) ? viewModel.getDraftCoordinateLocation().getValue() : null;
+                    if (draft != null) renderMapDraftRings(draft);
+                } else {
+                    if (identityRadiusRow != null) identityRadiusRow.setVisibility(View.GONE);
+                    if (radiusQuickBar != null) radiusQuickBar.setVisibility(View.GONE);
+                    polygonControlBar.setVisibility(View.VISIBLE);
+                    if (previewCircle != null) previewCircle.remove();
+                    if (previewMarker != null) previewMarker.remove();
+                    clearPolygonDraft();
+                    UiArchitect.showSlideNotificationBanner(GeofenceActivity.this, "Polygon Mode Active", "Tap map to place at least 3 perimeter vertices.", false, 3000, null, null);
+                }
+            }
+        );
+        bottomConfirmArea.addView(geomToggle);
+        bottomConfirmArea.addView(polygonControlBar);
+
         // 📈 L7 BEST-FIT: Consolidated Identity & Radius Row
-        LinearLayout identityRadiusRow = new LinearLayout(this);
+        identityRadiusRow = new LinearLayout(this);
         identityRadiusRow.setOrientation(LinearLayout.HORIZONTAL);
         identityRadiusRow.setGravity(Gravity.CENTER_VERTICAL);
         identityRadiusRow.setPadding(0, scale(6), 0, scale(6));
@@ -501,7 +573,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         bottomConfirmArea.addView(identityRadiusRow);
 
         // 🚀 Human-in-the-Loop: Quick Radius Preset Buttons
-        LinearLayout radiusQuickBar = new LinearLayout(this);
+        radiusQuickBar = new LinearLayout(this);
         radiusQuickBar.setOrientation(LinearLayout.HORIZONTAL);
         radiusQuickBar.setGravity(Gravity.CENTER_VERTICAL);
         radiusQuickBar.setPadding(0, scale(2), 0, scale(6));
@@ -742,6 +814,54 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                     return;
                 }
                 
+                // ⬡ POLYGON MODE DISPATCH: Deploy custom polygon boundary
+                if (isPolygonMode) {
+                    if (polygonDraftPoints.size() < 3) {
+                        showForensicDialog("INCOMPLETE POLYGON", "A polygon perimeter boundary requires at least 3 perimeter vertices. Tap the map to place boundary points.");
+                        return;
+                    }
+                    if (name.isEmpty()) {
+                        showForensicDialog("MISSING ZONE NAME", "Please provide an identity name for this safe zone (e.g. Campus, Park, Warehouse).");
+                        return;
+                    }
+                    if (selectedNodes.isEmpty()) {
+                        Toast.makeText(this, "Target connected device selection is mandatory for dependent perimeter alerts.", Toast.LENGTH_LONG).show();
+                        showMultiNodeSelector();
+                        return;
+                    }
+
+                    double cLat = 0.0, cLng = 0.0;
+                    for (LatLng p : polygonDraftPoints) {
+                        cLat += p.latitude;
+                        cLng += p.longitude;
+                    }
+                    cLat /= polygonDraftPoints.size();
+                    cLng /= polygonDraftPoints.size();
+
+                    double boundingRadius = 100.0;
+                    for (LatLng p : polygonDraftPoints) {
+                        float[] dist = new float[1];
+                        android.location.Location.distanceBetween(cLat, cLng, p.latitude, p.longitude, dist);
+                        if (dist[0] > boundingRadius) boundingRadius = dist[0];
+                    }
+
+                    org.json.JSONArray jArr = new org.json.JSONArray();
+                    for (LatLng p : polygonDraftPoints) {
+                        try {
+                            org.json.JSONObject jObj = new org.json.JSONObject();
+                            jObj.put("lat", p.latitude);
+                            jObj.put("lng", p.longitude);
+                            jArr.put(jObj);
+                        } catch (Exception ignored) {}
+                    }
+                    String polyJson = jArr.toString();
+                    String assigned = android.text.TextUtils.join(", ", selectedNodes);
+
+                    com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                    viewModel.submitCloudCoordinateSync(name, assigned, cLat, cLng, boundingRadius, s, e, dStr, editingZoneId, polyJson, 0);
+                    return;
+                }
+
                 // 🛑 MANDATORY TARGET NODE VALIDATION: Target node selection is mandatory
                 if (selectedNodes.isEmpty()) {
                     Toast.makeText(this, "Target connected device selection is mandatory for dependent perimeter alerts.", Toast.LENGTH_LONG).show();
@@ -1023,7 +1143,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             // 🛑 MANDATORY TARGET VALIDATION RULE: At least 1 device must be assigned
             if (selectedNodes.isEmpty()) {
                 selectedNodes.add("ALL CONNECTED DEVICES");
-                Toast.makeText(this, "Defaulted to 'GLOBAL SECTOR BROADCAST' (At least 1 target node is mandatory).", Toast.LENGTH_SHORT).show();
+                UiArchitect.showSlideNotificationBanner(this, "Target Nodes Defaulted", "Defaulted to 'GLOBAL SECTOR BROADCAST' (All devices assigned).", false, 3000, null, null);
             }
             if (txtNodes != null) {
                 if (selectedNodes.size() == 1 && selectedNodes.contains("ALL CONNECTED DEVICES")) {
@@ -1221,8 +1341,25 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     public void onMapReady(@NonNull GoogleMap googleMap) {
         this.googleMap = googleMap;
         this.googleMap.getUiSettings().setZoomControlsEnabled(true);
-        this.googleMap.setOnMapClickListener(latLng -> viewModel.setDraftPin(latLng));
-        this.googleMap.setOnMapLongClickListener(latLng -> viewModel.setDraftPin(latLng));
+        this.googleMap.getUiSettings().setMyLocationButtonEnabled(false);
+        UiArchitect.applyMapStyle(this, this.googleMap);
+
+        this.googleMap.setOnMapClickListener(latLng -> {
+            if (isPolygonMode) {
+                addPolygonVertex(latLng);
+            } else {
+                viewModel.setDraftPin(latLng);
+                renderMapDraftRings(latLng);
+            }
+        });
+        this.googleMap.setOnMapLongClickListener(latLng -> {
+            if (isPolygonMode) {
+                addPolygonVertex(latLng);
+            } else {
+                viewModel.setDraftPin(latLng);
+                renderMapDraftRings(latLng);
+            }
+        });
         
         // 🚀 L7 MISSION ACCELERATOR: Prioritize Live GPS Telemetry for Initial Centering
         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -1625,23 +1762,17 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         });
         nodeTile.addView(ivSend, new LinearLayout.LayoutParams(sSize + getResponsivePaddingQuota(), sSize));
 
-        FrameLayout circle = new FrameLayout(this);
+        ImageView avatarView = new ImageView(this);
         int cSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
+        if (avId.isEmpty()) avId = "butterfly";
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarView, avId);
+        
         android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
         g.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        g.setColor(getGradientStart());
-        g.setAlpha(40);
-        circle.setBackground(g);
-
-        TextView initial = new TextView(this);
-        initial.setText(name.substring(0, 1).toUpperCase());
-        initial.setTextColor(getGradientStart());
-        initial.setTypeface(null, Typeface.BOLD);
-        UiArchitect.applyText(this, initial, "TEXT_LABEL");
-        FrameLayout.LayoutParams iLp = new FrameLayout.LayoutParams(-2, -2);
-        iLp.gravity = Gravity.CENTER;
-        circle.addView(initial, iLp);
-        nodeTile.addView(circle, new LinearLayout.LayoutParams(cSize, cSize));
+        g.setStroke(scale(2), getGradientStart());
+        avatarView.setBackground(g);
+        nodeTile.addView(avatarView, new LinearLayout.LayoutParams(cSize, cSize));
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -1877,8 +2008,13 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         // Profile Avatar Icon
         ImageView ivAvatar = new ImageView(this);
-        ivAvatar.setImageResource(android.R.drawable.ic_menu_myplaces);
-        ivAvatar.setColorFilter(getGradientStart());
+        String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
+        if (avId.isEmpty()) avId = "butterfly";
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, avId);
+        android.graphics.drawable.GradientDrawable gRing = new android.graphics.drawable.GradientDrawable();
+        gRing.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        gRing.setStroke(scale(1), getGradientStart());
+        ivAvatar.setBackground(gRing);
         topRow.addView(ivAvatar, new LinearLayout.LayoutParams(s, s));
 
         TextView tvName = new TextView(this);
@@ -2625,5 +2761,60 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         
         row.addView(textBlock);
         return row;
+    }
+
+    private void addPolygonVertex(LatLng point) {
+        polygonDraftPoints.add(point);
+        if (googleMap != null) {
+            Marker m = googleMap.addMarker(new MarkerOptions()
+                .position(point)
+                .title("Vertex #" + polygonDraftPoints.size())
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+            if (m != null) polygonVertexMarkers.add(m);
+            renderPolygonDraft();
+        }
+        updatePolygonStatusText();
+    }
+
+    private void renderPolygonDraft() {
+        if (googleMap == null) return;
+        if (previewPolygon != null) previewPolygon.remove();
+
+        if (polygonDraftPoints.size() >= 3) {
+            int accent = getGradientStart();
+            int fill = Color.argb(60, Color.red(accent), Color.green(accent), Color.blue(accent));
+            com.google.android.gms.maps.model.PolygonOptions polyOpts = new com.google.android.gms.maps.model.PolygonOptions()
+                .addAll(polygonDraftPoints)
+                .strokeWidth(6)
+                .strokeColor(accent)
+                .fillColor(fill);
+            previewPolygon = googleMap.addPolygon(polyOpts);
+        }
+    }
+
+    private void clearPolygonDraft() {
+        polygonDraftPoints.clear();
+        for (Marker m : polygonVertexMarkers) {
+            if (m != null) m.remove();
+        }
+        polygonVertexMarkers.clear();
+        if (previewPolygon != null) {
+            previewPolygon.remove();
+            previewPolygon = null;
+        }
+        updatePolygonStatusText();
+    }
+
+    private void updatePolygonStatusText() {
+        if (txtPolygonStatus != null) {
+            int count = polygonDraftPoints.size();
+            if (count == 0) {
+                txtPolygonStatus.setText("Tap map to drop polygon vertices (min 3)");
+            } else if (count < 3) {
+                txtPolygonStatus.setText("Vertices: " + count + " / 3 required to seal boundary");
+            } else {
+                txtPolygonStatus.setText("✅ " + count + " Vertices Sealed. Ready to Deploy.");
+            }
+        }
     }
 }

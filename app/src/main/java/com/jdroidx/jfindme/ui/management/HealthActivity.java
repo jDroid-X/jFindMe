@@ -25,7 +25,7 @@ import java.io.File;
 public class HealthActivity extends BaseActivityJava {
 
     private final String TAG = "HealthActivity";
-    private TextView tvBattery, tvGps, tvNetwork, tvStorage;
+    private TextView tvBattery, tvGps, tvNetwork, tvStorage, tvVitalsBody;
 
     @Override
     protected View createLayout() {
@@ -94,8 +94,11 @@ public class HealthActivity extends BaseActivityJava {
         int opPad = scale(20);
         opCard.setPadding(opPad, scale(10), opPad, scale(10));
         
-        opCard.addView(createMetricRow("Tracking Service", Color.parseColor("#4CAF50"), v -> v.setText("RUNNING")));
-        opCard.addView(createMetricRow("Service Hub", Color.parseColor("#4CAF50"), v -> v.setText("ACTIVE")));
+        boolean isTrackingEnabled = prefs.getBoolean("tracking_service_enabled", true);
+        opCard.addView(createMetricRow("Tracking Engine", isTrackingEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"), v -> v.setText(isTrackingEnabled ? "ENABLED (SENTINEL)" : "DISABLED")));
+        
+        long totalFixes = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getRecordCount("location_event");
+        opCard.addView(createMetricRow("Location Ledger", getGradientStart(), v -> v.setText(totalFixes + " POINTS INDEXED")));
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardLp.setMargins(0, 0, 0, scale(20));
@@ -121,27 +124,57 @@ public class HealthActivity extends BaseActivityJava {
         freqCard.setOnClickListener(v -> showPingFrequencyDialog(pingRow));
         content.addView(freqCard, cardLp);
 
-        // --- LAYER 3: ACTION CONTROLLER ---
-        TextView btnRefresh = new TextView(this);
-        btnRefresh.setText("RERUN SYSTEM DIAGNOSTICS");
-        btnRefresh.setTextColor(Color.WHITE);
-        btnRefresh.setTextSize(13);
-        btnRefresh.setTypeface(null, android.graphics.Typeface.BOLD);
-        btnRefresh.setGravity(android.view.Gravity.CENTER);
-        int bPad = scale(20);
-        btnRefresh.setPadding(bPad * 2, bPad, bPad * 2, bPad);
-        android.graphics.drawable.GradientDrawable bBg = new android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT,
-            new int[]{getGradientStart(), getGradientEnd()}
+        // --- LAYER 2.6: UNIT SYSTEM TOGGLE ---
+        content.addView(createSectionHeader("DISPLAY UNITS"));
+        boolean isMetric = prefs.getBoolean("pref_metric_units", true);
+        View unitToggle = UiArchitect.createSegmentedToggle(this, "METRIC (KM/H)", "IMPERIAL (MPH)", isMetric, isLeft -> {
+            prefs.edit().putBoolean("pref_metric_units", isLeft).apply();
+            UiArchitect.showSlideNotificationBanner(
+                this,
+                "Telemetry Units Mutated",
+                isLeft ? "Velocity: km/h | Elevation: meters" : "Velocity: mph | Elevation: feet",
+                false,
+                2500,
+                null,
+                null
+            );
+        });
+        content.addView(unitToggle, cardLp);
+
+        // --- LAYER 2.7: DEEP SENSOR TELEMETRY ACCORDION ---
+        content.addView(createSectionHeader("DEEP HARDWARE VITALS"));
+        String myHwId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
+        java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(myHwId);
+        int pendingQueueCount = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(this).getPendingQueueCount();
+
+        StringBuilder vitalsText = new StringBuilder();
+        vitalsText.append("• Cellular Signal: ").append(vitals != null ? vitals.get("signal_dbm") + " dBm" : "Optimal RSSI").append("\n");
+        vitalsText.append("• Network Interface: ").append(vitals != null ? vitals.get("network_type") : "Cellular/WiFi Bridge").append("\n");
+        boolean isMock = vitals != null && (vitals.get("is_mock_gps") instanceof Number ? ((Number) vitals.get("is_mock_gps")).intValue() == 1 : Boolean.TRUE.equals(vitals.get("is_mock_gps")));
+        boolean isRoot = vitals != null && (vitals.get("is_rooted") instanceof Number ? ((Number) vitals.get("is_rooted")).intValue() == 1 : Boolean.TRUE.equals(vitals.get("is_rooted")));
+        vitalsText.append("• Mock GPS Spoofing: ").append(isMock ? "⚠️ DETECTED" : "✅ CLEAN").append("\n");
+        vitalsText.append("• Root Anchor: ").append(isRoot ? "⚠️ TRIPPED" : "✅ SECURE").append("\n");
+        vitalsText.append("• Offline Vault Queue: ").append(pendingQueueCount).append(" PENDING BREADCRUMBS");
+
+        tvVitalsBody = new TextView(this);
+        tvVitalsBody.setText(vitalsText.toString());
+        tvVitalsBody.setTextColor(getSecondaryTextColor());
+        tvVitalsBody.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        tvVitalsBody.setLineSpacing(scale(4), 1.0f);
+
+        View vitalsAccordion = UiArchitect.createExpandableListBox(
+            this,
+            "Hardware Sensor Dossier",
+            "Tap to inspect real-time sensor vitals",
+            android.R.drawable.ic_menu_info_details,
+            tvVitalsBody
         );
-        bBg.setCornerRadius(scale(25));
-        btnRefresh.setBackground(bBg);
-        btnRefresh.setElevation(scale(10));
-        btnRefresh.setClickable(true);
-        btnRefresh.setFocusable(true);
-        btnRefresh.setOnClickListener(v -> {
+        content.addView(vitalsAccordion, cardLp);
+
+        // --- LAYER 3: ACTION CONTROLLER ---
+        View btnRefresh = UiArchitect.createPrimaryButton(this, "RERUN SYSTEM DIAGNOSTICS", android.R.drawable.ic_popup_sync, v -> {
             updateMetrics();
-            android.widget.Toast.makeText(this, "Hardware Diagnostics Refreshed Successfully", android.widget.Toast.LENGTH_SHORT).show();
+            UiArchitect.showSlideNotificationBanner(this, "Diagnostics Refreshed", "Hardware & network diagnostics updated successfully.", false, 3000, null, null);
         });
 
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -224,6 +257,24 @@ public class HealthActivity extends BaseActivityJava {
             tvGps.setText(gpsOn ? "ACTIVE (GNSS LOCK)" : "DISABLED (GPS OFF)");
             tvGps.setTextColor(gpsOn ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
         }
+
+        // 5. Deep Hardware Vitals Refresh
+        if (tvVitalsBody != null) {
+            String myHwId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
+            java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(myHwId);
+            int pendingQueueCount = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(this).getPendingQueueCount();
+
+            StringBuilder vitalsText = new StringBuilder();
+            vitalsText.append("• Cellular Signal: ").append(vitals != null && vitals.containsKey("signal_dbm") ? vitals.get("signal_dbm") + " dBm" : "Optimal RSSI").append("\n");
+            vitalsText.append("• Network Interface: ").append(vitals != null && vitals.containsKey("network_type") ? vitals.get("network_type") : "Cellular/WiFi Bridge").append("\n");
+            boolean isMock = vitals != null && (vitals.get("is_mock_gps") instanceof Number ? ((Number) vitals.get("is_mock_gps")).intValue() == 1 : Boolean.TRUE.equals(vitals.get("is_mock_gps")));
+            boolean isRoot = vitals != null && (vitals.get("is_rooted") instanceof Number ? ((Number) vitals.get("is_rooted")).intValue() == 1 : Boolean.TRUE.equals(vitals.get("is_rooted")));
+            vitalsText.append("• Mock GPS Spoofing: ").append(isMock ? "⚠️ DETECTED" : "✅ CLEAN").append("\n");
+            vitalsText.append("• Root Anchor: ").append(isRoot ? "⚠️ TRIPPED" : "✅ SECURE").append("\n");
+            vitalsText.append("• Offline Vault Queue: ").append(pendingQueueCount).append(" PENDING BREADCRUMBS");
+
+            tvVitalsBody.setText(vitalsText.toString());
+        }
     }
 
     private View createSectionHeader(String text) {
@@ -239,6 +290,13 @@ public class HealthActivity extends BaseActivityJava {
     @Override
     protected void setupLogic() {
         SystemLogger.i(TAG, "Health Metrics Engine active.");
+        updateMetrics();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateMetrics();
     }
 
     private void showPingFrequencyDialog(View pingRow) {

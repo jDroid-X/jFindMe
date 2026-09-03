@@ -56,6 +56,12 @@ data class UserLocation(
                 timestamp = value
             }
         }
+
+    @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
+    var isSos: Boolean
+        get() = isSosActive
+        set(value) { isSosActive = value }
+
     // 🛡️ RECOVERY HELPERS: Ensures legacy numerical data doesn't break the UI thread
     @com.google.firebase.database.Exclude
     fun getResolvedUserId(): String = userId?.toString() ?: ""
@@ -119,4 +125,40 @@ data class UserLocation(
             "active_group" to active_group
         )
     }
+
+    /**
+     * 🛰️ PURE HISTORY TELEMETRY METADATA (NO REDUNDANCY):
+     * Excludes userId, deviceId, and active_group since they are already
+     * defined in the parent key path /History/{agentId} and /devices/{agentId}.
+     */
+    @com.google.firebase.database.Exclude
+    fun toHistoryMap(): Map<String, Any?> {
+        return mapOf(
+            "latitude" to latitude,
+            "longitude" to longitude,
+            "speed" to speed,
+            "bearing" to bearing,
+            "battery" to batteryLevel,
+            "sos" to isSosActive,
+            "geohash" to geohash,
+            "address" to (address ?: ""),
+            "timestamp" to getLongTimestamp()
+        )
+    }
+
+    /**
+     * 🛡️ Anti-GIGO Validation Guard: Rejects null island (0,0), NaNs, infinities,
+     * invalid bounding coordinates, and wildly skewed future timestamps (>24h).
+     */
+    @com.google.firebase.database.Exclude
+    fun isValidLocation(): Boolean {
+        if (latitude == 0.0 && longitude == 0.0) return false
+        if (latitude.isNaN() || longitude.isNaN() || latitude.isInfinite() || longitude.isInfinite()) return false
+        if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) return false
+        val ts = getLongTimestamp()
+        val now = System.currentTimeMillis()
+        if (ts > now + 86400000L) return false
+        return true
+    }
 }
+

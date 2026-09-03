@@ -148,17 +148,24 @@ app.get("/api/devices-live", async (req, res) => {
             }
         }
 
-        // Merge Auth UID nodes (long 28-char keys) into canonical 8-character device nodes
+        // Merge Auth UID / Hardware Key nodes into canonical 8-character device nodes (First 4 + Last 4)
         for (const [key, node] of Object.entries(devicesData)) {
             if (!node || typeof node !== "object") continue;
-            if (key.length > 16) {
-                const targetAgentId = authToDevice[key];
-                if (targetAgentId && devicesData[targetAgentId]) {
-                    const canonical = devicesData[targetAgentId];
-                    if (node.device && node.device.live) {
-                        canonical.device = canonical.device || {};
-                        canonical.device.live = Object.assign({}, canonical.device.live || {}, node.device.live);
-                    }
+            let targetAgentId = authToDevice[key];
+            if (!targetAgentId && (key.startsWith("HW_") || key.length > 8)) {
+                const cleanKey = key.replace("HW_", "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+                if (cleanKey.length >= 8) {
+                    targetAgentId = cleanKey.slice(0, 4) + cleanKey.slice(-4);
+                }
+            }
+            if (targetAgentId && targetAgentId !== key && devicesData[targetAgentId]) {
+                const canonical = devicesData[targetAgentId];
+                if (node.device && node.device.live) {
+                    canonical.device = canonical.device || {};
+                    canonical.device.live = Object.assign({}, canonical.device.live || {}, node.device.live);
+                }
+                if (node.profile) {
+                    canonical.profile = Object.assign({}, canonical.profile || {}, node.profile);
                 }
             }
         }
@@ -167,7 +174,7 @@ app.get("/api/devices-live", async (req, res) => {
 
         for (const [agentId, node] of Object.entries(devicesData)) {
             if (!node || typeof node !== "object") continue;
-            if (agentId.length > 16) continue;
+            if (agentId.length > 16 || agentId.startsWith("HW_")) continue;
 
             const profile = node.profile || {};
             const deviceInfo = node.device || {};
@@ -376,9 +383,11 @@ app.get("/api/safe-zones", async (req, res) => {
                 latitude: parseFloat(zone.latitude || zone.lat || 0),
                 longitude: parseFloat(zone.longitude || zone.lng || 0),
                 radius: parseFloat(zone.radius || zone.radius_meters || 100),
+                polygonPoints: zone.polygon_points || zone.polygonPoints || zone.polygonPointsJson || "",
+                dwellMinutes: parseInt(zone.dwell_minutes || zone.dwellMinutes || 0, 10),
                 address: zone.address || "",
                 assignedName: zone.assigned_targets || zone.assignedName || "",
-                creatorId: resolveCanonicalDevId(zone.creator_id || creatorHint || "BE5A234A"),
+                creatorId: resolveCanonicalDevId(zone.creator_id || creatorHint || zone.created_by || "UNKNOWN_CREATOR"),
                 createdAt: zone.created_at || zone.timestamp || zone.createdAt || Date.now(),
                 isActive: zone.is_active !== false && zone.isZoneActive !== false,
                 alertsEnabled: Boolean(zone.alerts_enabled || zone.alertsEnabled),
@@ -398,145 +407,97 @@ app.get("/api/safe-zones", async (req, res) => {
                     processZoneNode(zId, zNode, key);
                 }
             } else {
-                // Root level safe zone node
-                processZoneNode(key, node, node.creator_id);
+                // Root-level zone
+                processZoneNode(key, node, node.creator_id || node.created_by || "");
             }
         }
 
-        // Enrich every safe zone history ledger with group notifications
-        zonesList.forEach(z => {
-            const zoneNameLower = (z.zoneName || "").toLowerCase();
-            const zoneIdLower = (z.zoneId || "").toLowerCase();
-            
-            for (const [groupId, groupNode] of Object.entries(relData)) {
-                if (!groupNode || !groupNode.notifications) continue;
-                for (const [nId, n] of Object.entries(groupNode.notifications)) {
-                    const notifZoneName = (n.zone_name || "").toLowerCase();
-                    const notifZoneId = (n.zone_id || "").toLowerCase();
-                    if (notifZoneName === zoneNameLower || notifZoneId === zoneIdLower || (zoneNameLower.length > 3 && notifZoneName.includes(zoneNameLower))) {
-                        z.history[nId] = {
-                            event_id: nId,
-                            datetime: n.datetime || n.readable_time || (n.timestamp ? new Date(n.timestamp).toLocaleString() : "Recorded Alert"),
-                            status: n.status || n.transition || n.event_type || "TRANSITION",
-                            target_name: n.avatar_name || n.target_name || "Device",
-                            target_uid: resolveCanonicalDevId(n.target_uid || n.creator_uid),
-                            zone_name: z.zoneName,
-                            timestamp: n.timestamp || Date.now()
-                        };
-                    }
-                }
+        // 2. Extract from relationships tree (/relationships/{groupId}/geofences/{zoneId})
+        for (const [groupId, groupNode] of Object.entries(relData)) {
+            if (!groupNode || typeof groupNode !== "object") continue;
+            const relFences = groupNode.geofences || {};
+            for (const [zId, zNode] of Object.entries(relFences)) {
+                processZoneNode(zId, zNode, groupId);
             }
-        });
+        }
 
-        const validZones = zonesList.filter(z => z.latitude !== 0 && z.longitude !== 0);
+        // 3. Extract from devices tree (/devices/{agentId}/safe_zones/{zoneId})
+        for (const [dKey, devNode] of Object.entries(devicesData)) {
+            if (!devNode || typeof devNode !== "object") continue;
+            const devZones = devNode.safe_zones || {};
+            for (const [zId, zNode] of Object.entries(devZones)) {
+                processZoneNode(zId, zNode, dKey);
+            }
+        }
+
+        // Filter valid coordinates
+        const validZones = zonesList.filter(z => (z.latitude !== 0 || z.longitude !== 0 || (z.polygonPoints && z.polygonPoints.length > 0)));
+
+        SAFE_ZONES_CACHE.data = { status: "SUCCESS", count: validZones.length, safeZones: validZones, timestamp: now };
+        SAFE_ZONES_CACHE.timestamp = now;
+
         const zonePayload = { status: "SUCCESS", count: validZones.length, safeZones: validZones, timestamp: now };
-        SAFE_ZONES_CACHE = { data: zonePayload, timestamp: now };
-        res.json(zonePayload);
-    } catch (err) {
-        console.error("[ERROR] /api/safe-zones failed:", err.message);
-        res.status(500).json({ error: err.message });
+        broadcastMatrixEvent("matrix_refresh", { entity: "safe_zones", timestamp: now, count: validZones.length });
+        return res.json(zonePayload);
+
+    } catch (error) {
+        console.error("[SAFE_ZONES] Error aggregating safe zones:", error);
+        return res.status(500).json({ error: "INTERNAL_ERROR", message: error.message });
     }
 });
 
-// Create & Save Safe Zone Endpoint (Atomic Multi-Node Write)
+// Safe Zone Creation Endpoint (Authoritative Web Admin Engine)
 app.post("/api/save-safe-zone", async (req, res) => {
-    const { zoneId, zoneName, latitude, longitude, radius, isActive, alertsEnabled, connectedDevices, creatorId } = req.body;
-    if (!zoneId || !zoneName || !latitude || !longitude) {
-        return res.status(400).json({ error: "MISSING_REQUIRED_SAFE_ZONE_FIELDS" });
-    }
-
     try {
-        const creator = creatorId || "WEB_ADMIN_HOST";
-        console.log(`[SAFE_ZONES] Saving Safe Zone [${zoneName}] (${zoneId})...`);
-
-        // Helper: Formats timestamp to DDMMYYYY_HHMMSS
-        const nowObj = new Date();
-        const dd = String(nowObj.getDate()).padStart(2, '0');
-        const mm = String(nowObj.getMonth() + 1).padStart(2, '0');
-        const yyyy = nowObj.getFullYear();
-        const hh = String(nowObj.getHours()).padStart(2, '0');
-        const minStr = String(nowObj.getMinutes()).padStart(2, '0');
-        const ss = String(nowObj.getSeconds()).padStart(2, '0');
-        const dateKeyStr = `${dd}${mm}${yyyy}_${hh}${minStr}${ss}`;
-        const zoneKey = `${zoneName}_${dateKeyStr}`;
-
-        const devicesNode = {};
-        if (Array.isArray(connectedDevices)) {
-            connectedDevices.forEach(dId => {
-                devicesNode[dId] = {
-                    agent_id: dId,
-                    device_name: dId,
-                    hardware_uid: dId.toLowerCase(),
-                    role: "Assigned Target",
-                    assigned_at: Date.now(),
-                    alert_notices: {}
-                };
-            });
+        const { zoneId, zoneName, latitude, longitude, radius, isActive, alertsEnabled, connectedDevices, polygonPoints, dwellMinutes, creatorId } = req.body;
+        if (!zoneName || isNaN(latitude) || isNaN(longitude)) {
+            return res.status(400).json({ error: "INVALID_PARAMETERS", message: "Zone name, latitude and longitude are required." });
         }
-        // Add Creator Device
-        devicesNode[creator] = {
-            agent_id: creator,
-            device_name: creator,
-            hardware_uid: creator.toLowerCase(),
-            role: "Creator / Admin",
-            assigned_at: Date.now(),
-            alert_notices: {}
-        };
 
-        // Perform automated reverse-geocoding lookup if address not supplied
-        let zoneAddress = req.body.address || "";
-        if (!zoneAddress && latitude && longitude) {
-            zoneAddress = await reverseGeocodeLookup(parseFloat(latitude), parseFloat(longitude)).catch(() => "");
-        }
+        const cleanZoneId = zoneId || `ZONE_${Date.now()}`;
+        const hostCreator = creatorId || "WEB_DISPATCHER";
+        const cleanCreator = hostCreator.replace(/[\.\#\$\[\]\/]/g, "_");
 
         const zonePayload = {
-            zone_id: zoneId,
+            zone_id: cleanZoneId,
             zone_name: zoneName,
+            lat: parseFloat(latitude),
+            lng: parseFloat(longitude),
             radius: parseFloat(radius || 100),
-            latitude: parseFloat(latitude),
-            longitude: parseFloat(longitude),
-            creator_id: creator,
-            creator_name: creator,
-            created_at: Date.now(),
             is_active: isActive !== false,
             alerts_enabled: Boolean(alertsEnabled),
-            address: zoneAddress || `${parseFloat(latitude).toFixed(5)}°, ${parseFloat(longitude).toFixed(5)}° (Custom Perimeter)`,
-            assigned_targets: Array.isArray(connectedDevices) ? connectedDevices.join(", ") : "",
-            devices: devicesNode
+            polygon_points: polygonPoints || "",
+            dwell_minutes: parseInt(dwellMinutes || 0, 10),
+            created_on: new Date().toISOString(),
+            updated_at: Date.now(),
+            created_by: cleanCreator,
+            connected_devices: {}
         };
 
-        // 1. Write directly to Geofencing/{zone_name}_<DDMMYYYY_HHMMSS> (Primary SSOT)
-        await db.ref(`Geofencing/${zoneKey}`).set(zonePayload);
-
-        // 2. Multi-cast write to each connected device's safe_zones node
         if (Array.isArray(connectedDevices)) {
-            for (const targetId of connectedDevices) {
-                await db.ref(`devices/${targetId}/safe_zones/${zoneId}`).set({
-                    zone_id: zoneId,
-                    zone_name: zoneName,
-                    lat: parseFloat(latitude),
-                    lng: parseFloat(longitude),
-                    radius: parseFloat(radius || 100),
-                    is_active: isActive !== false,
-                    alerts_enabled: Boolean(alertsEnabled)
-                }).catch(() => null);
-            }
+            connectedDevices.forEach(dId => {
+                if (dId) {
+                    const cleanDId = dId.replace(/[\.\#\$\[\]\/]/g, "_");
+                    zonePayload.connected_devices[cleanDId] = {
+                        assigned_at: Date.now(),
+                        device_name: dId,
+                        status: "ACTIVE"
+                    };
+                }
+            });
         }
 
-        // 3. Log into system audit
-        await db.ref(`system_audit/${Date.now()}_ZONE_CREATE`).set({
-            timestamp: Date.now(),
-            admin_uid: "WEB_ADMIN",
-            action: "CREATE_SAFE_ZONE",
-            target_path: `Geofencing/${zoneKey}`,
-            zone_name: zoneName
-        }).catch(() => null);
+        await db.ref(`Geofencing/${cleanCreator}/safe_zones/${cleanZoneId}`).set(zonePayload);
+        SAFE_ZONES_CACHE.timestamp = 0; // Invalidate cache
 
-        console.log(`[SAFE_ZONES] Success: Geofence [${zoneName}] stored at Geofencing/${zoneKey}.`);
-        res.json({ status: "SUCCESS", zoneId, zoneKey, zone: zonePayload });
+        return res.json({
+            status: "SUCCESS",
+            message: `Safe Zone [${zoneName}] established successfully.`,
+            zone: zonePayload
+        });
     } catch (err) {
-        console.error("[ERROR] /api/save-safe-zone failed:", err.message);
-        res.status(500).json({ error: err.message });
+        console.error("[SAFE_ZONES] Error saving safe zone from web:", err);
+        return res.status(500).json({ error: "INTERNAL_ERROR", message: err.message });
     }
 });
 
@@ -606,70 +567,12 @@ app.post("/api/safezone/delete", async (req, res) => {
     }
 });
 
-// Helper Handler for Relationship Binding / Addition
+// Helper Handler for Relationship Binding / Addition (Enforces Web Read-Only Policy)
 const handleRelationshipUpdate = async (req, res) => {
-    const agentId = req.body.agentId || req.body.sourceId;
-    const targetAgentId = req.body.targetAgentId || req.body.targetId;
-    const targetName = req.body.targetName || targetAgentId;
-    const role = req.body.role || req.body.roleTitle || "Member";
-    const type = req.body.type || req.body.branchType || "family";
-
-    if (!agentId || !targetAgentId) {
-        return res.status(400).json({ error: "MISSING_AGENT_IDS", message: "Both agentId and targetAgentId are required." });
-    }
-
-    try {
-        const cleanAgentId = await resolveCanonicalAgentId(agentId);
-        const cleanTargetId = await resolveCanonicalAgentId(targetAgentId);
-        console.log(`[RELATIONSHIP] Binding ${cleanAgentId} <-> ${cleanTargetId} (${role} • ${type})`);
-
-        // Unified Schema supporting both legacy and modern readers
-        const relDataForward = {
-            target_device: cleanTargetId,
-            target_name: targetName || cleanTargetId,
-            name: targetName || cleanTargetId,
-            role_title: role,
-            role: role,
-            branch_type: type,
-            type: type,
-            status: "ACTIVE",
-            updated_at: Date.now()
-        };
-        const relDataBackward = {
-            target_device: cleanAgentId,
-            target_name: cleanAgentId,
-            name: cleanAgentId,
-            role_title: "Member",
-            role: "Member",
-            branch_type: type,
-            type: type,
-            status: "ACTIVE",
-            updated_at: Date.now()
-        };
-
-        await Promise.all([
-            db.ref(`devices/${cleanAgentId}/relationships/${cleanTargetId}`).set(relDataForward),
-            db.ref(`devices/${cleanTargetId}/relationships/${cleanAgentId}`).set(relDataBackward)
-        ]);
-
-        // Also update role in target profile if relevant
-        if (role) {
-            const roleFamily = (type === "family" || !type) ? role : "None";
-            const roleFriend = (type === "friend") ? role : "None";
-            await db.ref(`devices/${cleanTargetId}/profile`).update({
-                role_title: role,
-                role: role,
-                role_family: roleFamily,
-                role_friend: roleFriend
-            }).catch(() => null);
-        }
-
-        LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
-        res.json({ status: "SUCCESS", agentId: cleanAgentId, targetAgentId: cleanTargetId, role, type });
-    } catch (err) {
-        console.error("[ERROR] /api/relationship/update failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
+    return res.status(403).json({
+        error: "READ_ONLY_MODE",
+        message: "Web Portal is configured as a Read-Only Analytics Engine. Relationships must be established authoritatively via mobile QR pairing."
+    });
 };
 
 // Bind / Update Device Relationship Endpoint (supports both /add and /update aliases)
@@ -733,64 +636,382 @@ app.post("/api/poke-device", async (req, res) => {
     }
 });
 
-// Device Historical Trail Endpoint
+// Device ACL Security Switch Toggle Endpoint (Atomic)
+app.post("/api/device/toggle-acl", async (req, res) => {
+    let { agentId, flag, value } = req.body;
+    if (!agentId || !flag) {
+        return res.status(400).json({ error: "MISSING_PARAMETERS", message: "Both agentId and flag are required." });
+    }
+
+    try {
+        agentId = await resolveCanonicalAgentId(agentId);
+        const boolVal = Boolean(value);
+        console.log(`[ACL_TOGGLE] Setting [${flag} = ${boolVal}] on [${agentId}]`);
+
+        const updates = {};
+        updates[`devices/${agentId}/acl/${flag}`] = boolVal ? "GRANTED" : "DENIED";
+
+        if (flag === "acl_live_tracking") {
+            updates[`devices/${agentId}/live_tracking_enabled`] = boolVal;
+        } else if (flag === "acl_ghost_override") {
+            updates[`devices/${agentId}/ghost_mode`] = !boolVal;
+        }
+
+        await db.ref().update(updates);
+        LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+
+        res.json({ status: "SUCCESS", agentId, flag, value: boolVal, timestamp: Date.now() });
+    } catch (err) {
+        console.error("[ERROR] /api/device/toggle-acl failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Safe Zone Operational State Toggle Endpoint (Atomic)
+app.post("/api/safezone/toggle-state", async (req, res) => {
+    let { zoneId, isActive, alertsEnabled, creatorUid } = req.body;
+    if (!zoneId) {
+        return res.status(400).json({ error: "MISSING_ZONE_ID" });
+    }
+
+    try {
+        console.log(`[SAFEZONE_TOGGLE] Updating state for zone [${zoneId}]`);
+        const updates = {};
+
+        if (isActive !== undefined) {
+            updates[`Geofencing/${zoneId}/isActive`] = Boolean(isActive);
+            updates[`Geofencing/${zoneId}/status`] = isActive ? "ACTIVE" : "DISABLED";
+        }
+        if (alertsEnabled !== undefined) {
+            updates[`Geofencing/${zoneId}/alertsEnabled`] = Boolean(alertsEnabled);
+        }
+        updates[`Geofencing/${zoneId}/updated_at`] = Date.now();
+
+        if (creatorUid) {
+            const cleanUid = await resolveCanonicalAgentId(creatorUid);
+            if (isActive !== undefined) {
+                updates[`devices/${cleanUid}/safe_zones/${zoneId}/isActive`] = Boolean(isActive);
+            }
+            if (alertsEnabled !== undefined) {
+                updates[`devices/${cleanUid}/safe_zones/${zoneId}/alertsEnabled`] = Boolean(alertsEnabled);
+            }
+        }
+
+        await db.ref().update(updates);
+        LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+
+        res.json({ status: "SUCCESS", zoneId, isActive, alertsEnabled, timestamp: Date.now() });
+    } catch (err) {
+        console.error("[ERROR] /api/safezone/toggle-state failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// Helper Haversine distance calculator in meters
+function haversineDistMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Device Historical Trail Endpoint with Date/Time Filtering & Deadbanding
 app.get("/api/device-history", async (req, res) => {
     let agentId = req.query.agentId || req.query.id;
-    const limit = parseInt(req.query.limit || 100, 10);
+    const limit = parseInt(req.query.limit || 500, 10);
+    const startDate = req.query.startDate; // "YYYY-MM-DD"
+    const endDate = req.query.endDate;     // "YYYY-MM-DD"
+    const startTime = req.query.startTime; // "HH:mm"
+    const endTime = req.query.endTime;     // "HH:mm"
+    const applyDeadband = req.query.deadband === "true" || req.query.deadband === "1";
+    const order = String(req.query.order || "asc").toLowerCase();
 
     if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
 
     try {
         agentId = await resolveCanonicalAgentId(agentId);
         
-        // 1. Check History/{agentId}
-        let histSnap = await db.ref(`History/${agentId}/history`).limitToLast(limit).once("value");
-        let histData = histSnap.val();
+        // Fetch historical telemetry from both History tree and devices/{agentId}/history
+        const [histSnap1, histSnap2] = await Promise.all([
+            db.ref(`History/${agentId}/history`).limitToLast(1000).once("value").catch(() => null),
+            db.ref(`devices/${agentId}/history`).limitToLast(1000).once("value").catch(() => null)
+        ]);
 
-        if (!histData) {
-            histSnap = await db.ref(`History/${agentId}`).limitToLast(limit).once("value");
-            histData = histSnap.val();
+        const rawEntries = {};
+        if (histSnap1 && histSnap1.val()) Object.assign(rawEntries, histSnap1.val());
+        if (histSnap2 && histSnap2.val()) Object.assign(rawEntries, histSnap2.val());
+
+        // Parse date-time filters to epoch boundaries if supplied
+        let startEpoch = 0;
+        let endEpoch = Infinity;
+
+        if (startDate) {
+            const timePart = startTime ? `${startTime}:00` : "00:00:00";
+            const parsedStart = new Date(`${startDate}T${timePart}`).getTime();
+            if (!isNaN(parsedStart)) startEpoch = parsedStart;
+        }
+        if (endDate) {
+            const timePart = endTime ? `${endTime}:59` : "23:59:59";
+            const parsedEnd = new Date(`${endDate}T${timePart}`).getTime();
+            if (!isNaN(parsedEnd)) endEpoch = parsedEnd;
         }
 
-        // 2. Fallback check devices/{agentId}/history
-        if (!histData) {
-            histSnap = await db.ref(`devices/${agentId}/history`).limitToLast(limit).once("value");
-            histData = histSnap.val();
+        let breadcrumbs = [];
+        for (const [key, item] of Object.entries(rawEntries)) {
+            if (!item || typeof item !== 'object') continue;
+            const lat = parseFloat(item.latitude || item.lat || 0);
+            const lng = parseFloat(item.longitude || item.lng || 0);
+            if (lat === 0 && lng === 0) continue;
+
+            const ts = parseTimestampToMillis(item.timestamp || item.updated_at || item.time || key);
+            if (ts <= 0) continue;
+
+            // Date/Time boundary filtering
+            if (ts < startEpoch || ts > endEpoch) continue;
+
+            const speed = parseFloat(item.speed || 0);
+            const bearing = parseFloat(item.bearing || 0);
+            const altitude = parseFloat(item.altitude || 0);
+            const accuracy = parseFloat(item.accuracy || 0);
+            const address = item.address || item.geo_address || "";
+
+            breadcrumbs.push({
+                id: key,
+                latitude: lat,
+                longitude: lng,
+                speed,
+                bearing,
+                altitude,
+                accuracy,
+                address,
+                timestamp: ts,
+                readableTime: new Date(ts).toLocaleString()
+            });
         }
 
-        const breadcrumbs = [];
-        if (histData && typeof histData === 'object') {
-            for (const [key, item] of Object.entries(histData)) {
-                if (!item || typeof item !== 'object') continue;
-                const lat = parseFloat(item.latitude || item.lat || 0);
-                const lng = parseFloat(item.longitude || item.lng || 0);
-                if (lat !== 0 || lng !== 0) {
-                    breadcrumbs.push({
-                        id: key,
-                        latitude: lat,
-                        longitude: lng,
-                        speed: parseFloat(item.speed || 0),
-                        bearing: parseFloat(item.bearing || 0),
-                        altitude: parseFloat(item.altitude || 0),
-                        timestamp: item.timestamp || item.updated_at || Date.now(),
-                        readableTime: item.readable_time || item.datetime || new Date(item.timestamp || Date.now()).toLocaleTimeString()
-                    });
+        // Chronological sort ascending for processing
+        breadcrumbs.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Apply Layer 4 Deadband Noise Filtering (Stationary Suppression)
+        if (applyDeadband && breadcrumbs.length > 1) {
+            const filtered = [breadcrumbs[0]];
+            for (let i = 1; i < breadcrumbs.length; i++) {
+                const prev = filtered[filtered.length - 1];
+                const curr = breadcrumbs[i];
+                const distM = haversineDistMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+                const speedKmh = curr.speed > 50 ? curr.speed : curr.speed * 3.6;
+
+                // Keep point only if user moved > 15m or moving speed > 1.5 km/h, or if it is the latest point
+                if (distM >= 15 || speedKmh >= 1.5 || i === breadcrumbs.length - 1) {
+                    filtered.push(curr);
                 }
             }
+            breadcrumbs = filtered;
         }
 
-        // Sort chronologically ascending
-        breadcrumbs.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+        // Apply limit
+        if (breadcrumbs.length > limit) {
+            breadcrumbs = breadcrumbs.slice(-limit);
+        }
+
+        // Final sort according to requested order
+        if (order === "desc") {
+            breadcrumbs.reverse();
+        }
 
         res.json({
             status: "SUCCESS",
             agentId,
             count: breadcrumbs.length,
+            startDate: startDate || null,
+            endDate: endDate || null,
+            deadbandApplied: applyDeadband,
             breadcrumbs
         });
     } catch (err) {
         console.error(`[ERROR] /api/device-history for ${agentId} failed:`, err.message);
         res.status(500).json({ error: err.message, breadcrumbs: [] });
+    }
+});
+
+// Endpoint: Distinct Historical Dates Discovery for Device
+app.get("/api/history-dates", async (req, res) => {
+    let agentId = req.query.agentId || req.query.id;
+    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
+
+    try {
+        agentId = await resolveCanonicalAgentId(agentId);
+
+        const [histSnap1, histSnap2] = await Promise.all([
+            db.ref(`History/${agentId}/history`).once("value").catch(() => null),
+            db.ref(`devices/${agentId}/history`).once("value").catch(() => null)
+        ]);
+
+        const rawEntries = {};
+        if (histSnap1 && histSnap1.val()) Object.assign(rawEntries, histSnap1.val());
+        if (histSnap2 && histSnap2.val()) Object.assign(rawEntries, histSnap2.val());
+
+        const dateMap = new Map();
+        for (const [key, item] of Object.entries(rawEntries)) {
+            if (!item || typeof item !== 'object') continue;
+            const ts = parseTimestampToMillis(item.timestamp || item.updated_at || item.time || key);
+            if (ts <= 0) continue;
+
+            const d = new Date(ts);
+            const dateStr = d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+            
+            const existing = dateMap.get(dateStr) || { date: dateStr, count: 0, firstTs: ts, lastTs: ts };
+            existing.count += 1;
+            if (ts < existing.firstTs) existing.firstTs = ts;
+            if (ts > existing.lastTs) existing.lastTs = ts;
+            dateMap.set(dateStr, existing);
+        }
+
+        // Sort descending (latest date on top)
+        const dates = Array.from(dateMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+
+        res.json({
+            status: "SUCCESS",
+            agentId,
+            totalDates: dates.length,
+            dates
+        });
+    } catch (err) {
+        console.error(`[ERROR] /api/history-dates failed:`, err.message);
+        res.status(500).json({ error: err.message, dates: [] });
+    }
+});
+
+// Endpoint: 5-Layer Telemetry Validation & Tiered Ingest
+app.post("/api/telemetry-validate-ingest", async (req, res) => {
+    const { ping, saveToDb = false } = req.body;
+    if (!ping) return res.status(400).json({ error: "MISSING_TELEMETRY_PAYLOAD" });
+
+    try {
+        const agentId = await resolveCanonicalAgentId(ping.agentId || ping.deviceId);
+        
+        // Layer 1: Security & Identity
+        if (!agentId || agentId.length < 3) {
+            return res.status(400).json({ valid: false, layer: 1, error: "LAYER1_ERR: Missing or invalid AgentID." });
+        }
+        if (ping.isMockGps === true || ping.is_mock_gps === true) {
+            return res.status(403).json({ valid: false, layer: 1, error: "LAYER1_ERR: Mock GPS detected. Quarantined." });
+        }
+
+        // Layer 2: Temporal Monotonicity & Clock Drift
+        let ts = parseTimestampToMillis(ping.timestamp || ping.time || Date.now());
+        const now = Date.now();
+        if (ts > now + 300000) {
+            return res.status(400).json({ valid: false, layer: 2, error: "LAYER2_ERR: Future timestamp drift rejected." });
+        }
+
+        // Layer 3: Spatial Kinematics Sanity
+        const lat = parseFloat(ping.latitude ?? ping.lat ?? 0);
+        const lng = parseFloat(ping.longitude ?? ping.lng ?? 0);
+        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return res.status(400).json({ valid: false, layer: 3, error: "LAYER3_ERR: Invalid spatial coordinates." });
+        }
+
+        // Layer 4: Redundancy & Stationary Deadband Check
+        const devSnap = await db.ref(`devices/${agentId}/device/live`).once("value");
+        const livePrev = devSnap.val() || {};
+        const prevLat = parseFloat(livePrev.latitude || 0);
+        const prevLng = parseFloat(livePrev.longitude || 0);
+
+        let isStationary = false;
+        if (prevLat !== 0 && prevLng !== 0) {
+            const distM = haversineDistMeters(prevLat, prevLng, lat, lng);
+            const speedKmh = parseFloat(ping.speed || 0) * (ping.speed > 50 ? 1 : 3.6);
+            if (distM < 15 && speedKmh < 1.5) {
+                isStationary = true;
+            }
+        }
+
+        // Layer 5: State & Tiered Storage Update
+        if (saveToDb) {
+            // Update HOT store (1-doc live state)
+            const liveUpdate = {
+                latitude: lat,
+                longitude: lng,
+                speed: parseFloat(ping.speed || 0),
+                bearing: parseFloat(ping.bearing || 0),
+                altitude: parseFloat(ping.altitude || 0),
+                accuracy: parseFloat(ping.accuracy || 0),
+                timestamp: ts,
+                updated_at: new Date(ts).toISOString()
+            };
+            await db.ref(`devices/${agentId}/device/live`).update(liveUpdate);
+
+            // If not stationary, append to WARM history
+            if (!isStationary) {
+                const dateKey = new Date(ts).toISOString().slice(0, 10);
+                await db.ref(`History/${agentId}/history/${ts}`).set({
+                    ...liveUpdate,
+                    date: dateKey
+                });
+            }
+        }
+
+        res.json({
+            valid: true,
+            agentId,
+            isStationary,
+            action: isStationary ? "HOT_STATE_UPDATED_ONLY (Stationary Noise Suppressed)" : "HOT_AND_WARM_PERSISTED",
+            timestamp: ts
+        });
+    } catch (err) {
+        console.error("[ERROR] /api/telemetry-validate-ingest failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint: Prune Old Telemetry History (Retention Policy)
+app.post("/api/history-purge", async (req, res) => {
+    const { agentId, beforeDate, daysOlderThan } = req.body;
+    if (!agentId) return res.status(400).json({ error: "MISSING_AGENT_ID" });
+
+    try {
+        const cleanAgentId = await resolveCanonicalAgentId(agentId);
+        let cutoffEpoch = 0;
+
+        if (beforeDate) {
+            cutoffEpoch = new Date(`${beforeDate}T00:00:00`).getTime();
+        } else if (daysOlderThan) {
+            cutoffEpoch = Date.now() - (parseInt(daysOlderThan, 10) * 86400000);
+        } else {
+            return res.status(400).json({ error: "SPECIFY_BEFORE_DATE_OR_DAYS" });
+        }
+
+        const histSnap = await db.ref(`History/${cleanAgentId}/history`).once("value");
+        const histData = histSnap.val() || {};
+        let purgedCount = 0;
+
+        const updates = {};
+        for (const [key, item] of Object.entries(histData)) {
+            const ts = parseTimestampToMillis(item.timestamp || item.time || key);
+            if (ts > 0 && ts < cutoffEpoch) {
+                updates[key] = null;
+                purgedCount++;
+            }
+        }
+
+        if (purgedCount > 0) {
+            await db.ref(`History/${cleanAgentId}/history`).update(updates);
+        }
+
+        res.json({
+            status: "SUCCESS",
+            agentId: cleanAgentId,
+            cutoffDate: new Date(cutoffEpoch).toISOString(),
+            purgedCount
+        });
+    } catch (err) {
+        console.error("[ERROR] /api/history-purge failed:", err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -822,101 +1043,29 @@ async function resolveCanonicalAgentId(rawId) {
     return cleanId;
 }
 
-// Atomic Profile & Avatar Update with Forensic Ledger
+// Atomic Profile & Avatar Update with Forensic Ledger (Enforces Web Read-Only Policy)
 app.post("/api/update-profile", async (req, res) => {
-    let { agentId, profileData } = req.body;
-    if (!agentId || !profileData) {
-        return res.status(400).json({ error: "MISSING_AGENT_ID_OR_PROFILE_DATA" });
-    }
-
-    try {
-        agentId = await resolveCanonicalAgentId(agentId);
-        console.log(`[PROFILE_UPDATE] Updating profile for Agent [${agentId}]...`);
-        const profileRef = db.ref(`devices/${agentId}/profile`);
-        const currentSnap = await profileRef.once("value");
-        const previousState = currentSnap.val() || {};
-
-        const updatedProfile = {
-            ...previousState,
-            ...profileData,
-            fullName: profileData.name || previousState.fullName || previousState.name,
-            name: profileData.name || previousState.name || previousState.fullName,
-            userName: profileData.name || previousState.userName || previousState.name,
-            updated_at: new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 16)
-        };
-
-        // 1. Write atomic profile update
-        await profileRef.update(updatedProfile);
-
-        // 2. Closed-Loop: Synchronize Identity & Live Node
-        const newName = updatedProfile.name;
-        const newAvatar = updatedProfile.avatar_id;
-        
-        await db.ref(`devices/${agentId}/Identity`).update({
-            owner_name: newName,
-            id_full_name: newName,
-            ...(newAvatar ? { avatar_id: newAvatar } : {})
-        }).catch(() => null);
-
-        await db.ref(`devices/${agentId}/device/live`).update({
-            userName: newName,
-            ...(newAvatar ? { avatar_id: newAvatar } : {})
-        }).catch(() => null);
-
-        // 5. Closed-Loop: Propagate across top-level Geofencing tree
-        const geofencingSnap = await db.ref("Geofencing").once("value").catch(() => null);
-        const geofencingData = (geofencingSnap && geofencingSnap.val()) || {};
-        for (const [zKey, zone] of Object.entries(geofencingData)) {
-            if (!zone || typeof zone !== 'object') continue;
-            if (zone.devices && zone.devices[agentId]) {
-                await db.ref(`Geofencing/${zKey}/devices/${agentId}`).update({
-                    device_name: newName
-                }).catch(() => null);
-            }
-        }
-
-        // 6. Record Forensic Audit in Change_Log
-        const logId = `${Date.now()}_WEB_${agentId.slice(0, 4)}`;
-        const logRef = db.ref(`devices/${agentId}/Change_Log/Profile/${logId}`);
-        await logRef.set({
-            log_id: logId,
-            category: "Profile",
-            action: "PROFILE_WEB_MUTATION",
-            entity_id: agentId,
-            changed_by: "Web_Matrix_Admin",
-            timestamp: new Date().toISOString(),
-            epoch_ms: Date.now(),
-            previous_state: previousState,
-            new_state: updatedProfile
-        }).catch(() => null);
-
-        console.log(`[PROFILE_UPDATE] Success: Closed-loop profile synchronized for ${agentId} (${newName}).`);
-        res.json({ status: "SUCCESS", agentId, profile: updatedProfile });
-    } catch (err) {
-        console.error("[ERROR] /api/update-profile failed:", err.message);
-        res.status(500).json({ error: err.message });
-    }
+    return res.status(403).json({
+        error: "READ_ONLY_MODE",
+        message: "Web Portal operates in Read-Only Analytics Mode. Profiles must be updated on the mobile device."
+    });
 });
 
-// Dynamic Reverse Geocoding Proxy with In-Memory Cache
+// Dynamic Reverse Geocoding Helper with In-Memory Cache (Unified SSOT)
 const GEO_CACHE = new Map();
-app.get("/api/reverse-geocode", async (req, res) => {
-    const lat = parseFloat(req.query.lat);
-    const lng = parseFloat(req.query.lng);
-
+async function reverseGeocodeLookup(lat, lng) {
     if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
-        return res.status(400).json({ error: "INVALID_COORDINATES" });
+        return `${Number(lat).toFixed(5)}°, ${Number(lng).toFixed(5)}°`;
     }
 
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (GEO_CACHE.has(key)) {
-        return res.json({ status: "CACHED", address: GEO_CACHE.get(key) });
+        return GEO_CACHE.get(key);
     }
 
-    try {
+    return new Promise((resolve) => {
         const https = require("https");
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-        
         const reqOpts = {
             headers: {
                 'User-Agent': 'jFindMe-Enterprise-Radar/2.0 (admin@jfindme.internal)'
@@ -929,21 +1078,32 @@ app.get("/api/reverse-geocode", async (req, res) => {
             geoRes.on('end', () => {
                 try {
                     const parsed = JSON.parse(data);
-                    const displayName = parsed.display_name || "Unknown Spatial Location";
-                    // Cache up to 1000 items
+                    const displayName = parsed.display_name || `${lat.toFixed(5)}°, ${lng.toFixed(5)}°`;
                     if (GEO_CACHE.size > 1000) GEO_CACHE.clear();
                     GEO_CACHE.set(key, displayName);
-                    res.json({ status: "SUCCESS", address: displayName });
+                    resolve(displayName);
                 } catch (e) {
-                    res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+                    resolve(`${lat.toFixed(5)}°, ${lng.toFixed(5)}°`);
                 }
             });
         }).on('error', () => {
-            res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+            resolve(`${lat.toFixed(5)}°, ${lng.toFixed(5)}°`);
         });
-    } catch (err) {
-        res.json({ status: "FALLBACK", address: `${lat.toFixed(5)}°, ${lng.toFixed(5)}°` });
+    });
+}
+
+app.get("/api/reverse-geocode", async (req, res) => {
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+
+    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+        return res.status(400).json({ error: "INVALID_COORDINATES" });
     }
+
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    const isCached = GEO_CACHE.has(key);
+    const address = await reverseGeocodeLookup(lat, lng);
+    res.json({ status: isCached ? "CACHED" : "SUCCESS", address });
 });
 
 
@@ -1394,6 +1554,65 @@ function initRealtimeSentinelBridge() {
     });
 }
 
+// 🛡️ Helper: Validates that an ID strictly conforms to canonical 8-char uppercase hex
+function isCanonicalAgentId(id) {
+    return typeof id === "string" && /^[A-Z0-9]{8}$/.test(id.trim());
+}
+
+// 🤖 Background Maintenance Agent: Runs periodic database integrity and cache hygiene
+function initBackgroundMaintenanceAgent() {
+    const INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+    setInterval(async () => {
+        try {
+            console.log("[BACKGROUND_AGENT] Executing scheduled maintenance & forensic cache optimization...");
+            
+            // 1. Flush stale in-memory reverse-geocoding cache if bloated
+            if (GEO_CACHE.size > 500) {
+                GEO_CACHE.clear();
+                console.log("[BACKGROUND_AGENT] Reverse geocoding cache pruned.");
+            }
+
+            // 2. Refresh live device and safe zone cache
+            LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
+            SAFE_ZONES_CACHE = { data: null, timestamp: 0 };
+
+            // 3. 🛡️ Canonical Schema Guard: Purge rogue keys under /devices/ and unregistered history under /History/
+            const [devSnap, histSnap] = await Promise.all([
+                db.ref("devices").once("value"),
+                db.ref("History").once("value")
+            ]);
+            if (devSnap.exists()) {
+                const registeredDevices = new Set(Object.keys(devSnap.val() || {}));
+                // A. Purge rogue non-canonical keys under /devices/
+                for (const k of Array.from(registeredDevices)) {
+                    if (!isCanonicalAgentId(k)) {
+                        console.warn(`[BACKGROUND_AGENT] ⚠️ Purging rogue non-canonical key under /devices/: ${k}`);
+                        await db.ref(`devices/${k}`).remove().catch(() => null);
+                        registeredDevices.delete(k);
+                    }
+                }
+                // B. Sync History: Guarantee ONLY actively registered devices have records in /History/
+                if (histSnap.exists()) {
+                    const histKeys = Object.keys(histSnap.val() || {});
+                    for (const hk of histKeys) {
+                        if (!registeredDevices.has(hk)) {
+                            console.warn(`[BACKGROUND_AGENT] ⚠️ Purging orphaned history for unregistered device: History/${hk}`);
+                            await db.ref(`History/${hk}`).remove().catch(() => null);
+                        }
+                    }
+                }
+            }
+
+            // 4. Heartbeat health ping to Firebase RTDB
+            await db.ref(".info/connected").once("value");
+            console.log("[BACKGROUND_AGENT] ✅ Closed-loop database connectivity & History-Device parity verified.");
+        } catch (err) {
+            console.warn("[BACKGROUND_AGENT] Maintenance cycle warning:", err.message);
+        }
+    }, INTERVAL_MS);
+    console.log("[BACKGROUND_AGENT] Initialized 10-minute automated background maintenance daemon with History-Device parity guard.");
+}
+
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "127.0.0.1";
 app.listen(PORT, HOST, () => {
@@ -1402,4 +1621,5 @@ app.listen(PORT, HOST, () => {
     console.log(`   Endpoint: http://${HOST}:${PORT}       `);
     console.log(`==========================================`);
     initRealtimeSentinelBridge();
+    initBackgroundMaintenanceAgent();
 });

@@ -42,12 +42,19 @@ data class SafeZoneModel(
     var activeDays: String = "1,2,3,4,5,6,0",
 
     @get:PropertyName("assignedUserIds") @set:PropertyName("assignedUserIds")
-    var assignedUserIds: List<String> = emptyList()
+    var assignedUserIds: List<String> = emptyList(),
+
+    @get:PropertyName("polygonPointsJson") @set:PropertyName("polygonPointsJson")
+    var polygonPointsJson: String = "",
+
+    @get:PropertyName("dwellThresholdMinutes") @set:PropertyName("dwellThresholdMinutes")
+    var dwellThresholdMinutes: Int = 0
 ) {
     // Backward compatibility aliases
     val latitude: Double get() = lat
     val longitude: Double get() = lng
     val radiusMeters: Float get() = radius
+    val isPolygon: Boolean get() = polygonPointsJson.isNotBlank() && polygonPointsJson != "[]"
 
     // Secondary constructor for legacy callers
     constructor(

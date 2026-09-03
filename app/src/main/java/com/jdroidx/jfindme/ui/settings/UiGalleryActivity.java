@@ -344,6 +344,9 @@ public class UiGalleryActivity extends BaseActivityJava {
         }
         content.addView(geomGrid, getCardParams());
 
+        // --- LAYER 8.5: ENTERPRISE RICH UI WIDGET SUITE (OOPS MVC/MVVM) ---
+        renderEnterpriseWidgetSuite(content);
+
         // --- LAYER 9: GLOBAL CROSS-LOOKUP MATRIX ---
         renderGlobalCrossLookupMatrix(content);
 
@@ -351,6 +354,88 @@ public class UiGalleryActivity extends BaseActivityJava {
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
         return root;
+    }
+
+    private void renderEnterpriseWidgetSuite(LinearLayout container) {
+        renderSectionHeader(container, "ENTERPRISE RICH UI WIDGET SUITE (OOPS MVC/MVVM)");
+
+        LinearLayout suitePanel = new LinearLayout(this);
+        suitePanel.setOrientation(LinearLayout.VERTICAL);
+
+        // 1. Tactile On/Off Switch
+        View switchView = createInteractiveSwitch("Realtime GNSS Mesh", "Stream location to all paired nodes", true, (buttonView, isChecked) -> {
+            showSlideNotification("Tracking Mode Changed", "Live GNSS streaming is now " + (isChecked ? "ENABLED" : "PAUSED"),
+                android.R.drawable.ic_dialog_info, getGradientStart(), null, null);
+        });
+        LinearLayout.LayoutParams slp = getCardParams();
+        slp.bottomMargin = scale(12);
+        suitePanel.addView(switchView, slp);
+
+        // 2. Segmented Multi-Toggle
+        String[] mapTiers = {"STANDARD", "SATELLITE", "TERRAIN"};
+        View toggleView = createSegmentedToggle(mapTiers, 0, (idx, opt) -> {
+            showSlideNotification("Map Canvas Switched", "Active base layer: " + opt,
+                android.R.drawable.ic_menu_mapmode, getGradientStart(), null, null);
+        });
+        LinearLayout.LayoutParams tlp = getCardParams();
+        tlp.bottomMargin = scale(12);
+        suitePanel.addView(toggleView, tlp);
+
+        // 3. Dropdown List Box with Selection Anchor
+        String dynamicSelfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String[] sampleNodes = {dynamicSelfId + " (Host Anchor)", "NODE_ALPHA (Linked)", "NODE_BETA (Linked)"};
+        View dropdownView = createDropdownListBox("PRIMARY FLEET NODE", sampleNodes, 0, (idx, opt) -> {
+            showSlideNotification("Node Focus Updated", "Active monitoring target: " + opt,
+                android.R.drawable.ic_menu_myplaces, getGradientStart(), null, null);
+        });
+        LinearLayout.LayoutParams dlp = getCardParams();
+        dlp.bottomMargin = scale(12);
+        suitePanel.addView(dropdownView, dlp);
+
+        // 4. Action Row for Dialogs and Slide Notifications
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.VERTICAL);
+
+        View btnSlide = createIconButton("TEST SLIDE NOTIFICATION (BOTTOM RIGHT)", android.R.drawable.ic_dialog_email, v -> {
+            showSlideNotification("Safe Zone Alert", "Node " + dynamicSelfId + " entered School Safe Zone",
+                android.R.drawable.ic_dialog_alert, Color.parseColor("#00E676"), "VIEW ON MAP", () -> {
+                    showValidationDialog("Perimeter Event", "Navigation anchor established for " + dynamicSelfId + ".");
+                });
+        });
+        LinearLayout.LayoutParams blp1 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp1.bottomMargin = scale(8);
+        actionRow.addView(btnSlide, blp1);
+
+        View btnMultiOption = createIconButton("TEST MULTI-OPTION DIALOG", android.R.drawable.ic_menu_agenda, v -> {
+            String[] options = {"Send Immediate Acoustic Siren", "Request Live GNSS Burst", "Audit Device Vitals", "Export SQLite Trace"};
+            showNotificationOptionsDialog("Forensic Node Actions", "Select command to dispatch to node " + dynamicSelfId + ":", options, (idx, opt) -> {
+                showSlideNotification("Command Dispatched", opt + " initiated successfully.",
+                    android.R.drawable.ic_media_play, getGradientStart(), null, null);
+            });
+        });
+        LinearLayout.LayoutParams blp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp2.bottomMargin = scale(8);
+        actionRow.addView(btnMultiOption, blp2);
+
+        View btnValidation = createIconButton("TEST INPUT & VALIDATION ENGINE", android.R.drawable.ic_menu_edit, v -> {
+            UiArchitect.showInputPromptDialog(this, "Geofence Threshold", "Enter radius in meters (50 - 5000):", "250", input -> {
+                try {
+                    int r = Integer.parseInt(input);
+                    if (r >= 50 && r <= 5000) {
+                        showSlideNotification("Validation Success", "Geofence radius set to " + r + "m",
+                            android.R.drawable.ic_input_add, Color.parseColor("#00E676"), null, null);
+                    } else {
+                        showValidationDialog("Invalid Range", "Radius must be between 50m and 5000m.");
+                    }
+                } catch (Exception e) {
+                    showValidationDialog("Input Error", "Please enter a valid numeric value.");
+                }
+            });
+        });
+        actionRow.addView(btnValidation, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        suitePanel.addView(actionRow, getCardParams());
+        container.addView(suitePanel);
     }
 
     private void renderSectionHeader(LinearLayout container, String title) {

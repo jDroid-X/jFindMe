@@ -523,13 +523,16 @@ public class ProfileActivity extends BaseActivityJava {
         
         View dossierBtn = createIconButton("DETAIL PROFILE", android.R.drawable.ic_menu_edit, true, v -> {
             String safeUid = (profileViewModel != null) ? profileViewModel.getCurrentUserId() : null;
-            if (safeUid != null) {
+            if (safeUid == null || safeUid.isEmpty()) {
+                safeUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
+            }
+            if (safeUid != null && !safeUid.isEmpty()) {
                 android.content.Intent dossierRoute = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
                 dossierRoute.putExtra("TARGET_UID", safeUid);
-                dossierRoute.putExtra("TARGET_ROLE", prefs.getString("role_family", "IDENTITY_HOLDER"));
+                dossierRoute.putExtra("TARGET_ROLE", prefs.getString("role_family", "Master Guardian"));
                 startActivity(dossierRoute);
             } else {
-                android.widget.Toast.makeText(this, "Hardware Lock Missing.", android.widget.Toast.LENGTH_SHORT).show();
+                UiArchitect.showSlideNotificationBanner(this, "Profile Unresolved", "Hardware identity anchor missing.", true, 3000, null, null);
             }
         });
 

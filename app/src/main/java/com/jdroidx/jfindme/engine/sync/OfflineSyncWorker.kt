@@ -17,7 +17,7 @@ class OfflineSyncWorker(
 
     override suspend fun doWork(): Result {
         SystemLogger.i("OfflineSyncWorker", "Executing deferred offline queue flush.")
-        val syncManager = OfflineSyncManager(applicationContext)
+        val syncManager = OfflineSyncManager.getInstance(applicationContext)
         syncManager.triggerBackgroundSync()
         return Result.success()
     }

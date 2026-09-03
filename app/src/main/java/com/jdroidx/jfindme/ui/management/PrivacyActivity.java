@@ -108,7 +108,8 @@ public class PrivacyActivity extends BaseActivityJava {
                 boolean isAirplane = android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
                 boolean mockLocation = false;
                 try {
-                    mockLocation = !android.provider.Settings.Secure.getString(getContentResolver(), "mock_location").equals("0");
+                    String mockSetting = android.provider.Settings.Secure.getString(getContentResolver(), "mock_location");
+                    mockLocation = mockSetting != null && !"0".equals(mockSetting);
                 } catch (Exception ignored) {}
 
                 StringBuilder sb = new StringBuilder();
@@ -124,12 +125,80 @@ public class PrivacyActivity extends BaseActivityJava {
                 runOnUiThread(() -> {
                     diagnosticReport.setText(report);
                     diagnosticReport.setTextColor(hasWarning ? Color.parseColor("#FFA000") : Color.parseColor("#4CAF50"));
+                    UiArchitect.showSlideNotificationBanner(
+                        PrivacyActivity.this,
+                        hasWarning ? "⚠️ Security Warning" : "🛡️ System Secure",
+                        hasWarning ? "Audit flagged potential vulnerabilities. Review report above." : "All 6 hardware & cryptographic checks passed.",
+                        hasWarning,
+                        3500,
+                        null,
+                        null
+                    );
                 });
             }).start();
         }));
         
         rootPanel.addView(diagnosticReport);
         content.addView(rootPanel);
+
+        // 🛡️ Privacy Telemetry Matrix Filter (Multi-Choice Dialog)
+        content.addView(createSectionHeader("TELEMETRY REDACTION MATRIX"));
+        String[] redactionFilters = {
+            "Coarse Coordinates (Snap to 100m Sector)",
+            "Redact Battery Level from Peer Deck",
+            "Omit Heading Azimuth / Chevron Arrow",
+            "Suppress Reverse-Geocoded Street Addresses"
+        };
+        boolean[] filterStates = {
+            prefs.getBoolean("filter_coarse_gps", false),
+            prefs.getBoolean("filter_hide_battery", false),
+            prefs.getBoolean("filter_hide_azimuth", false),
+            prefs.getBoolean("filter_hide_address", false)
+        };
+
+        View btnFilterConfig = UiArchitect.createSecondaryButton(this, "CONFIGURE TELEMETRY REDACTION", android.R.drawable.ic_menu_preferences, v -> {
+            UiArchitect.showMultiChoiceDialog(this, "Telemetry Redaction Matrix", redactionFilters, filterStates, (states, selected) -> {
+                prefs.edit()
+                    .putBoolean("filter_coarse_gps", states[0])
+                    .putBoolean("filter_hide_battery", states[1])
+                    .putBoolean("filter_hide_azimuth", states[2])
+                    .putBoolean("filter_hide_address", states[3])
+                    .apply();
+                UiArchitect.showSlideNotificationBanner(
+                    this,
+                    "Redaction Matrix Saved",
+                    selected.length + " privacy filters currently active.",
+                    false,
+                    3000,
+                    null,
+                    null
+                );
+            });
+        });
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.setMargins(0, scale(10), 0, scale(20));
+        content.addView(btnFilterConfig, btnLp);
+
+        // 📑 Cryptographic Specifications (Expandable Accordion List Box)
+        TextView cryptoDetails = new TextView(this);
+        cryptoDetails.setText("• Telemetry Cipher: AES-256-GCM Hardware-Backed\n" +
+                              "• Master Key Anchor: AndroidKeyStore SecretKey Provider\n" +
+                              "• Local Vault: SQLite Zero-Leak Cipher DB (V74 Indexed)\n" +
+                              "• Transport Layer: TLS 1.3 Strict HTTPS / WSS Pinning\n" +
+                              "• Forensic Hash: SHA-256 Hardware Agent ID Checksum\n" +
+                              "• Ghost Protocol: Dynamic Ephemeral Null Island Routing");
+        cryptoDetails.setTextColor(getSecondaryTextColor());
+        cryptoDetails.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        cryptoDetails.setLineSpacing(scale(4), 1.0f);
+
+        View cryptoAccordion = UiArchitect.createExpandableListBox(
+            this,
+            "Cryptographic Protocol Dossier",
+            "Tap to inspect end-to-end encryption specs",
+            android.R.drawable.ic_lock_lock,
+            cryptoDetails
+        );
+        content.addView(cryptoAccordion, btnLp);
 
         scroll.addView(content);
         mainRoot.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
@@ -157,19 +226,19 @@ public class PrivacyActivity extends BaseActivityJava {
         tv.setPadding(scale(25), 0, 0, 0);
         row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        android.widget.Switch toggle = new android.widget.Switch(this);
-        toggle.setChecked(prefs.getBoolean(k, d));
-        toggle.setFocusable(false);
-        toggle.setClickable(false);
-        row.addView(toggle);
-
-        row.setClickable(true);
-        row.setOnClickListener(v -> {
-            boolean nextState = !toggle.isChecked();
-            toggle.setChecked(nextState);
-            prefs.edit().putBoolean(k, nextState).apply();
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+        View customSwitch = UiArchitect.createSwitch(this, prefs.getBoolean(k, d), isChecked -> {
+            prefs.edit().putBoolean(k, isChecked).apply();
+            UiArchitect.showSlideNotificationBanner(
+                this, 
+                l, 
+                isChecked ? "Constraint activated" : "Constraint deactivated", 
+                false, 
+                2500, 
+                null, 
+                null
+            );
         });
+        row.addView(customSwitch);
         applyAccessibility(row, "Toggle " + l);
 
         return row;

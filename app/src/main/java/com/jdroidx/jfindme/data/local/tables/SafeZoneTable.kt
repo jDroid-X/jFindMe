@@ -5,7 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 
 /**
  * Tier 4: Event & Tracking Layer
- * 🛡️ safe_zone: Master Safe Zone definitions
+ * 🛡️ safe_zone: Master Safe Zone definitions with Polygon and Dwell support
  */
 object SafeZoneTable {
     const val TABLE_NAME = "safe_zone"
@@ -21,6 +21,8 @@ object SafeZoneTable {
     const val COL_IS_ALERTS_ENABLED = "is_alerts_enabled"
     const val COL_IS_ACTIVE = "is_active"
     const val COL_IS_ARCHIVED = "is_archived"
+    const val COL_POLYGON_POINTS = "polygon_points" // JSON string of [{lat, lng}, ...]
+    const val COL_DWELL_MINUTES = "dwell_minutes"
     const val COL_CREATED_ON = "created_on"
 
     val CREATE_TABLE = """
@@ -35,12 +37,29 @@ object SafeZoneTable {
             $COL_IS_ALERTS_ENABLED INTEGER DEFAULT 1,
             $COL_IS_ACTIVE INTEGER DEFAULT 1,
             $COL_IS_ARCHIVED INTEGER DEFAULT 0,
+            $COL_POLYGON_POINTS TEXT,
+            $COL_DWELL_MINUTES INTEGER DEFAULT 0,
             $COL_CREATED_ON TEXT,
             FOREIGN KEY ($COL_CREATED_BY) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE SET NULL
         )
     """.trimIndent()
 
-    fun save(db: SQLiteDatabase, zoneId: String, name: String?, lat: Double, lng: Double, radius: Double, createdBy: Long?, target: String?, alerts: Boolean, active: Boolean, archived: Boolean = false) {
+    @JvmOverloads
+    fun save(
+        db: SQLiteDatabase,
+        zoneId: String,
+        name: String?,
+        lat: Double,
+        lng: Double,
+        radius: Double,
+        createdBy: Long?,
+        target: String?,
+        alerts: Boolean,
+        active: Boolean,
+        archived: Boolean = false,
+        polygonPoints: String? = null,
+        dwellMinutes: Int = 0
+    ) {
         val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
         try {
             val v = ContentValues().apply {
@@ -54,6 +73,8 @@ object SafeZoneTable {
                 put(COL_IS_ALERTS_ENABLED, if (alerts) 1 else 0)
                 put(COL_IS_ACTIVE, if (active) 1 else 0)
                 put(COL_IS_ARCHIVED, if (archived) 1 else 0)
+                put(COL_POLYGON_POINTS, polygonPoints)
+                put(COL_DWELL_MINUTES, dwellMinutes)
             }
             val rows = db.update(TABLE_NAME, v, "$COL_ZONE_ID = ?", arrayOf(zoneId))
             if (rows == 0) {
@@ -67,6 +88,8 @@ object SafeZoneTable {
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_IS_ALERTS_ENABLED INTEGER DEFAULT 1") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_CREATED_BY INTEGER") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_TARGET_UID TEXT") } catch (ex: Exception) {}
+            try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_POLYGON_POINTS TEXT") } catch (ex: Exception) {}
+            try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_DWELL_MINUTES INTEGER DEFAULT 0") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_CREATED_ON TEXT") } catch (ex: Exception) {}
 
             try {
@@ -81,6 +104,8 @@ object SafeZoneTable {
                     put(COL_IS_ALERTS_ENABLED, if (alerts) 1 else 0)
                     put(COL_IS_ACTIVE, if (active) 1 else 0)
                     put(COL_IS_ARCHIVED, if (archived) 1 else 0)
+                    put(COL_POLYGON_POINTS, polygonPoints)
+                    put(COL_DWELL_MINUTES, dwellMinutes)
                 }
                 val rows = db.update(TABLE_NAME, v, "$COL_ZONE_ID = ?", arrayOf(zoneId))
                 if (rows == 0) {
@@ -94,6 +119,6 @@ object SafeZoneTable {
     }
 
     fun upsert(db: SQLiteDatabase, zoneId: String, name: String?, lat: Double, lng: Double, radius: Double, createdBy: Long?) {
-        save(db, zoneId, name, lat, lng, radius, createdBy, null, true, true, false)
+        save(db, zoneId, name, lat, lng, radius, createdBy, null, true, true, false, null, 0)
     }
 }

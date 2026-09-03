@@ -78,7 +78,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
         
         // 🚀 Identity Editor: Direct Nickname Modification
         nameEntryField = new android.widget.EditText(this);
-        String currentNick = prefs.getString("user_nickname", "CITIZEN_007");
+        String currentNick = prefs.getString("user_nickname", prefs.getString("user_name", "Citizen"));
         nameEntryField.setText(currentNick);
         nameEntryField.setTextColor(getGradientOverlayText());
         nameEntryField.setTextSize(24);
@@ -916,5 +916,21 @@ public class AvatarEditorActivity extends BaseActivityJava {
         });
 
         SystemLogger.i(TAG, "Avatar Customizer Workspace Booted.");
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (nameEntryField != null) {
+            String val = nameEntryField.getText().toString().trim();
+            if (!val.isEmpty()) {
+                String existing = prefs.getString("user_nickname", "");
+                if (!val.equals(existing)) {
+                    prefs.edit().putString("user_nickname", val).apply();
+                    com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE.queueCustomizationUpdate("display_name", val);
+                    SystemLogger.i(TAG, "onPause: Flushed uncommitted nickname to preferences and sync engine: " + val);
+                }
+            }
+        }
     }
 }

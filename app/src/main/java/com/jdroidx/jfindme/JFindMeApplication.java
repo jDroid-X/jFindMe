@@ -30,25 +30,52 @@ public class JFindMeApplication extends Application {
             }
         });
 
-        // 🚀 QA Fix: Global Enterprise Database Persistence
-        // MUST execute immediately on application start before any ViewModels map Firebase nodes
+        // 🚀 Step 2: Global Enterprise Database Persistence
         try {
             com.google.firebase.database.FirebaseDatabase.getInstance().setPersistenceEnabled(true);
         } catch (Exception e) {}
         
+        // 🚀 Step 3: Global System Logger Initialization
         SystemLogger.init(this);
         SystemLogger.i("AppLifecycle", "JFindMeApplication onCreate - App Started with Secure Offline Sync");
         
-        // 🚀 L7 Silent Update Check: Execute update check at boot-up
-        com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleCheck(this);
+        // 🚀 Step 4: Synchronous Notification Channel Registration (Pre-requisite for all Services & Alerts)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                android.app.NotificationChannel channel = new android.app.NotificationChannel(
+                    "tracking_channel",
+                    "jFindMe Active Tracking Sentinel",
+                    android.app.NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Maintains continuous real-time telemetry and geofence safety monitoring.");
+                channel.setShowBadge(false);
+                nm.createNotificationChannel(channel);
 
-        // 🛠️ Initialize background jobs & sentinels with persisted frequencies
+                android.app.NotificationChannel alertChannel = new android.app.NotificationChannel(
+                    "jfindme_alerts",
+                    "jFindMe Security & SOS Alerts",
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                );
+                alertChannel.setDescription("High-priority SafeZone breaches and Emergency SOS broadcasts.");
+                alertChannel.enableVibration(true);
+                nm.createNotificationChannel(alertChannel);
+            }
+        }
+
+        // 🚀 Step 5: Initialize background jobs & sentinels
         com.jdroidx.jfindme.service.BackgroundJobManager.INSTANCE.initializeAllJobs(this);
 
-        // 🚀 Persistent WhatsApp-Grade Background Service Auto-Start
+        // 🚀 Step 6: Silent Update Check
+        com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleCheck(this);
+
+        // 🚀 Step 7: Safe Persistent Tracking Service Auto-Start (Only if permissions are verified)
         try {
-            if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null ||
-                com.jdroidx.jfindme.utils.RegistryManager.isAutoLoginEnabled(this)) {
+            boolean hasLoc = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                             androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+
+            if (hasLoc && (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAutoLoginEnabled(this))) {
                 android.content.Intent serviceIntent = new android.content.Intent(this, com.jdroidx.jfindme.service.TrackingService.class);
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     startForegroundService(serviceIntent);

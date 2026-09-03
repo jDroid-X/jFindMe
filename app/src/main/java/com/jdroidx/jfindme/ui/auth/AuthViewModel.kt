@@ -74,13 +74,20 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                 if (task.isSuccessful) {
                     val authUid = auth.currentUser?.uid ?: ""
                     
-                    // 🛡️ Forensic Bridge: Unify Hardware IDENTITY Protocol via DeviceIdentityHelper
-                    val rawId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(getApplication())
-                    val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
-                    val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication())
+                    // 🛡️ Forensic Bridge: Reclaim Canonical Cloud Agent ID on Login
+                    FirebaseComm.resolveHardwareIdentity(authUid) { resolvedCloudId ->
+                        val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+                        val agentId = if (!resolvedCloudId.isNullOrEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
+                            RegistryManager.putString(getApplication(), RegistryManager.KEY_AGENT_ID, resolvedCloudId)
+                            resolvedCloudId
+                        } else {
+                            localAgentId
+                        }
+                        val rawId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(getApplication())
+                        val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication())
 
-                    // 🚀 Step 1: Cloud Meta-Data Recovery (Fetch existing profile markers)
-                    FirebaseComm.devicesRef.child(agentId).child("profile").get().addOnCompleteListener { profileTask ->
+                        // 🚀 Step 1: Cloud Meta-Data Recovery (Fetch existing profile markers)
+                        FirebaseComm.devicesRef.child(agentId).child("profile").get().addOnCompleteListener { profileTask ->
                         var finalName = nick
                         var finalEmail = cleanEmail
                         val defaultPersonalGroup = "GRP_" + agentId
@@ -193,6 +200,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                         _user.value = auth.currentUser
                         _isManualStartTriggered.value = true // Login success triggers manual start parity
                     }
+                }
                 } else {
                     val exception = task.exception
                     val errorCode = (exception as? com.google.firebase.auth.FirebaseAuthException)?.errorCode
@@ -229,11 +237,9 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                                       manualLat: Double = 0.0, manualLng: Double = 0.0, manualAddr: String = "") {
         if (uid.isEmpty()) return
         val dbHelper = DatabaseHelper.getInstance(context)
-        val rawHw = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "NODE"
-        
-        // 🧬 V58.2 Alias-Identity Alignment
-        val hardwareUid = "HW_" + rawHw.uppercase()
-        val agentId = dbHelper.resolveForensicAgentId(hardwareUid)
+        val rawHw = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(context)
+        val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
+        val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
         
         // Ensure the Display Name defaults to the Forensic Agent ID to maintain parity
         val name = if (nick.isEmpty() || nick.startsWith("Agent_")) agentId else nick

@@ -381,9 +381,8 @@ public class AuthActivity extends BaseActivityJava {
         String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         String sig = canonicalAgentId.toLowerCase();
         
-        String prefix = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getAgentPrefix(this);
         String domain = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getEnterpriseDomain(this);
-        if (etNick != null) etNick.setText(prefix + canonicalAgentId.toUpperCase());
+        if (etNick != null) etNick.setText(canonicalAgentId.toUpperCase());
         if (etEmail != null) etEmail.setText("node_" + sig + "@" + domain);
         if (etPass != null) etPass.setText("PassCode" + sig + "!");
         
@@ -458,10 +457,12 @@ public class AuthActivity extends BaseActivityJava {
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
 
-        // Auto-populate identity credentials on fresh install or re-install
-        if (etNick != null && etNick.getText().toString().trim().isEmpty()) {
-            performAutoSetup();
-        }
+        // 🛡️ User Directives: Fields always start completely BLANK by default.
+        // performAutoSetup is ONLY executed when user explicitly taps the 'AUTO SETUP' button.
+        if (etNick != null) etNick.setText("");
+        if (etEmail != null) etEmail.setText("");
+        if (etPass != null) etPass.setText("");
+        if (etAddr != null) etAddr.setText("");
 
         // 🧬 V63.5: Reactive Geolocation Auto-Sync (Display as per current location)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {

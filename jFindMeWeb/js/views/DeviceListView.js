@@ -1,3 +1,5 @@
+import { FeedbackDialog } from '../components/FeedbackDialog.js';
+
 /**
  * jFindMe Matrix - Tactical Device List Sidebar View (OOPS Architecture)
  * Renders the tactical sidebar device roster with multi-filter chips, sorting criteria,
@@ -143,9 +145,15 @@ export class DeviceListView {
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between gap-1">
                             <h4 class="text-xs font-bold text-white truncate group-hover:text-sky-300 transition-colors">${device.name}</h4>
-                            <span class="text-[10px] font-mono font-bold ${isWithin ? 'text-sky-400' : 'text-slate-500'}">
-                                ${device.getFormattedDistance()}
-                            </span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[10px] font-mono font-bold ${isWithin ? 'text-sky-400' : 'text-slate-500'}">
+                                    ${device.getFormattedDistance()}
+                                </span>
+                                <label class="switch-toggle switch-sm shrink-0" title="Toggle Live Tracking Stream" onclick="event.stopPropagation()">
+                                    <input type="checkbox" class="list-switch-stream" data-agent-id="${device.agentId}" ${device.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="flex items-center justify-between text-[10px] text-slate-400 mt-0.5 font-mono">
@@ -291,6 +299,38 @@ export class DeviceListView {
                 const device = devices.find(d => d.agentId === agentId);
                 if (device && this.onSelectDevice) {
                     this.onSelectDevice(device);
+                }
+            });
+        });
+
+        // Tactile Switch Handlers for Stream Toggle
+        container.querySelectorAll('.list-switch-stream').forEach(sw => {
+            sw.addEventListener('click', (e) => e.stopPropagation());
+            sw.addEventListener('change', async (e) => {
+                e.stopPropagation();
+                const agentId = sw.getAttribute('data-agent-id');
+                const val = sw.checked;
+                try {
+                    const res = await fetch('/api/device/toggle-acl', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
+                    });
+                    if (!res.ok) throw new Error('Failed to update live stream ACL');
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Telemetry Stream Toggled',
+                        message: `Device [${agentId}] live stream set to ${val ? 'ACTIVE' : 'MUTED'}`,
+                        type: val ? 'success' : 'warning',
+                        timeout: 3500
+                    });
+                } catch (err) {
+                    FeedbackDialog.showSlideNotification({
+                        title: 'Stream Toggle Failed',
+                        message: err.message,
+                        type: 'danger',
+                        timeout: 3500
+                    });
+                    sw.checked = !val;
                 }
             });
         });

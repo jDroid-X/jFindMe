@@ -36,6 +36,8 @@ import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polygon;
+import com.google.android.gms.maps.model.PolygonOptions;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.firebase.auth.FirebaseAuth;
@@ -83,6 +85,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private List<LatLng> pathPoints = new ArrayList<>();
     private Polyline movementTrail;
     private List<Circle> safeZoneCircles = new ArrayList<>();
+    private List<Polygon> safeZonePolygons = new ArrayList<>();
     
     private TextView tvLocName, tvBatteryPer;
     private android.widget.ViewFlipper headerFlipper;
@@ -472,35 +475,35 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             switch (which) {
                 case 0:
                     googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-                    Toast.makeText(this, "Layer: Vector Normal Map", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Layer Changed", "Vector Normal Map", false, 2500, null, null);
                     break;
                 case 1:
                     googleMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
-                    Toast.makeText(this, "Layer: Satellite Imagery", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Layer Changed", "Satellite Imagery", false, 2500, null, null);
                     break;
                 case 2:
                     googleMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
-                    Toast.makeText(this, "Layer: Hybrid Satellite", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Layer Changed", "Hybrid Satellite Map", false, 2500, null, null);
                     break;
                 case 3:
                     googleMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
-                    Toast.makeText(this, "Layer: Topographic Terrain", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Layer Changed", "Topographic Terrain", false, 2500, null, null);
                     break;
                 case 4:
                     boolean traffic = !googleMap.isTrafficEnabled();
                     googleMap.setTrafficEnabled(traffic);
-                    Toast.makeText(this, traffic ? "🚦 Live Traffic Layer Enabled" : "🚦 Live Traffic Disabled", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Traffic Layer", traffic ? "Live Traffic Enabled" : "Traffic Disabled", false, 2500, null, null);
                     break;
                 case 5:
                     boolean buildings = !googleMap.isBuildingsEnabled();
                     googleMap.setBuildingsEnabled(buildings);
-                    Toast.makeText(this, buildings ? "🏛️ 3D Buildings Enabled" : "🏛️ 3D Buildings Hidden", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "3D Buildings", buildings ? "3D Architectural Meshes Enabled" : "Buildings Hidden", false, 2500, null, null);
                     break;
                 case 6:
                     boolean nowZones = !safeZonesVisible;
                     prefs.edit().putBoolean("show_safe_zones_overlay", nowZones).commit();
                     renderSafeZonesOnMap(viewModel != null ? viewModel.getSafeZones().getValue() : null);
-                    Toast.makeText(this, nowZones ? "🛡️ Safe Zones Displayed" : "🛡️ Safe Zones Hidden", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Safe Zones", nowZones ? "Perimeter Overlays Displayed" : "Perimeter Overlays Hidden", false, 2500, null, null);
                     break;
                 case 7:
                     boolean nowSpider = !spiderLinesVisible;
@@ -510,7 +513,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                             this, googleMap, viewModel.getUserLocations().getValue()
                         );
                     }
-                    Toast.makeText(this, nowSpider ? "🕸️ Cluster Shape Lines Enabled" : "🕸️ Cluster Shape Lines Hidden (Clean)", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Spiderweb Clusters", nowSpider ? "Cluster Links Visible" : "Cluster Links Hidden", false, 2500, null, null);
                     break;
                 case 8:
                     pathPoints.clear();
@@ -518,7 +521,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                         movementTrail.remove();
                         movementTrail = null;
                     }
-                    Toast.makeText(this, "🔄 Traveled Path Cleared", Toast.LENGTH_SHORT).show();
+                    UiArchitect.showSlideNotificationBanner(this, "Path Reset", "Local traveled trail cleared.", false, 2500, null, null);
                     break;
             }
         });
@@ -779,9 +782,13 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 motionBadge = "🚶 Walking";
             }
 
+            com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
+                com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(u.getLongTimestamp(), u.getBatteryLevel(), u.isSosActive());
+            card.setAlpha(rag.getCardAlpha());
+
             TextView subTv = new TextView(this);
-            subTv.setText(distStr + " • " + motionBadge);
-            subTv.setTextColor(Color.parseColor("#94A3B8"));
+            subTv.setText(distStr + " • " + motionBadge + " • " + rag.getStatusText());
+            subTv.setTextColor(rag.getStatusColor());
             subTv.setTextSize(11);
             infoCol.addView(subTv);
 
@@ -1195,14 +1202,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             
             // ≡ƒÜÇ QA Fix: Proximity Flipper Removed (Situational Awareness consolidated to Markers)
 
+            String selfUid = FirebaseAuth.getInstance().getUid();
             for (UserLocation ul : locations) {
-                if (ul.isSosActive() && !ul.getUserId().equals(FirebaseAuth.getInstance().getUid())) {
+                if (ul == null) continue;
+                String targetUid = ul.getResolvedUserId();
+                if (ul.isSosActive() && targetUid != null && (selfUid == null || !targetUid.equals(selfUid))) {
                     AlertManager.showSosNotification(this, ul.getUserName());
                     SystemLogger.w(TAG, "INCOMING_SOS: " + ul.getUserName());
                 }
                 
-                if (ul.getUserId().equals(FirebaseAuth.getInstance().getUid()) && ul.isPoked()) {
-                    Toast.makeText(this, "POKED! " + ul.getPokedBy() + " is looking for you", Toast.LENGTH_LONG).show();
+                if (selfUid != null && selfUid.equals(targetUid) && ul.isPoked()) {
+                    UiArchitect.showSlideNotificationBanner(this, "POKED ALERT", (ul.getPokedBy() != null ? ul.getPokedBy() : "Guardian") + " is looking for you!", true, 5000, null, null);
                     AlertManager.triggerLocalSOSFeedback(this);
                     viewModel.clearPoke();
                 }
@@ -1327,6 +1337,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (alertMsg != null && !alertMsg.isEmpty()) {
                 com.jdroidx.jfindme.engine.alert.AlertManager.vibrate(this, 300L);
                 showGeofenceBreachBanner(alertMsg);
+                UiArchitect.showSlideNotificationBanner(this, "🚨 PERIMETER ALERT", alertMsg, true, 4000, "INSPECT", () -> {
+                    startActivity(new Intent(this, com.jdroidx.jfindme.ui.management.NotifActivity.class));
+                });
             }
         });
 
@@ -1346,6 +1359,34 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     }, null);
             }
         });
+
+        googleMap.setOnPolygonClickListener(polygon -> {
+            Object tag = polygon.getTag();
+            if (tag instanceof com.jdroidx.jfindme.data.model.SafeZoneModel) {
+                com.jdroidx.jfindme.data.model.SafeZoneModel z = (com.jdroidx.jfindme.data.model.SafeZoneModel) tag;
+                UiArchitect.showConfirmationDialog(this,
+                    "🛡️ POLYGON ZONE: " + z.getName().toUpperCase(),
+                    "Custom Multi-Point Perimeter Boundary\nTarget: " + z.getAssignedName(),
+                    "MANAGE ZONE", "CLOSE",
+                    () -> {
+                        Intent intent = new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
+                        intent.putExtra("TARGET_ZONE_ID", z.getZoneId());
+                        intent.putExtra("TARGET_ZONE_NAME", z.getName());
+                        startActivity(intent);
+                    }, null);
+            }
+        });
+
+        // 🛰️ Real-Time Offline Queue Observer
+        com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(this)
+            .getPendingQueueCountLiveData().observe(this, count -> {
+                if (count != null && count > 0) {
+                    if (tvAddressMarquee != null) {
+                        tvAddressMarquee.setText("⚡ " + count + " TELEMETRY POINTS CACHED OFFLINE • AWAITING NETWORK SYNC • • •");
+                        tvAddressMarquee.setSelected(true);
+                    }
+                }
+            });
         
         checkLocationPermission();
         
@@ -1380,6 +1421,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             try { c.remove(); } catch (Exception ignored) {}
         }
         safeZoneCircles.clear();
+        for (Polygon p : safeZonePolygons) {
+            try { p.remove(); } catch (Exception ignored) {}
+        }
+        safeZonePolygons.clear();
 
         if (zones == null || zones.isEmpty()) return;
         if (prefs != null && !prefs.getBoolean("show_safe_zones_overlay", true)) return;
@@ -1388,6 +1433,23 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         int fillCol = Color.argb(45, Color.red(strokeCol), Color.green(strokeCol), Color.blue(strokeCol));
         for (com.jdroidx.jfindme.data.model.SafeZoneModel z : zones) {
             if (!z.isZoneActive()) continue;
+
+            // Check if polygon zone
+            if (z.isPolygon()) {
+                List<LatLng> polyPoints = com.jdroidx.jfindme.engine.location.GisSpatialEngine.parsePolygonJson(z.getPolygonPointsJson());
+                if (polyPoints.size() >= 3) {
+                    Polygon polygon = googleMap.addPolygon(new PolygonOptions()
+                        .addAll(polyPoints)
+                        .strokeColor(strokeCol)
+                        .strokeWidth(4f)
+                        .fillColor(fillCol)
+                        .clickable(true));
+                    polygon.setTag(z);
+                    safeZonePolygons.add(polygon);
+                    continue;
+                }
+            }
+
             if (z.getLatitude() == 0.0 && z.getLongitude() == 0.0) continue;
             LatLng center = new LatLng(z.getLatitude(), z.getLongitude());
             double rad = z.getRadiusMeters() > 0 ? z.getRadiusMeters() : 100.0;
@@ -1475,7 +1537,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 String agentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
                 if (!agentId.isEmpty()) {
                     com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(this, agentId);
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(this, agentId, "INSTALLED", 106615515L, "101.67 MB");
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(this, agentId, "INSTALLED");
                 }
             } else {
                  SystemLogger.e(TAG, "Failed [enableLocationFeatures]: Map instance null or Permission secretly revoked!");

@@ -13,8 +13,10 @@ import { DeviceCardView } from './views/DeviceCardView.js';
 import { MapSettingsView } from './views/MapSettingsView.js';
 import { DeviceUserView } from './views/DeviceUserView.js';
 import { GeofencingView } from './views/GeofencingView.js';
+import { EagleAnalyticsTreeView } from './views/EagleAnalyticsTreeView.js';
 import { ThemeManager } from './core/ThemeManager.js';
 import { FeedbackDialog } from './components/FeedbackDialog.js';
+import { UIControls } from './components/UIControls.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -22,6 +24,7 @@ import { FeedbackDialog } from './components/FeedbackDialog.js';
  */
 class App {
     constructor() {
+        this.currentView = 'live-map';
         this.initComponents();
         this.initAuth();
         this.bindGlobalHandlers();
@@ -86,11 +89,23 @@ class App {
                 }, 400);
             }
         });
+
+        this.eagleAnalyticsView = new EagleAnalyticsTreeView('workspace-root', {
+            onNavigateMap: (agentId) => {
+                window.showLiveMap();
+                setTimeout(() => {
+                    const dev = this.mapController?.deviceController.getDeviceById(agentId);
+                    if (dev) this.mapController?.handleDeviceSelected(dev);
+                }, 400);
+            }
+        });
         
         // Theme & Modal Dialog Systems
         ThemeManager.init();
         window.toggleTheme = () => ThemeManager.toggleTheme();
         window.FeedbackDialog = FeedbackDialog;
+        window.UIControls = UIControls;
+        window.notify = (msg, type = 'info', opt = {}) => UIControls.notify(msg, type, opt);
 
         // Global Logging Engine (Descending Order: Latest First)
         window.log = (msg, type = 'system') => {
@@ -243,6 +258,9 @@ class App {
         this.heartbeatTimer = setInterval(async () => {
             if (this._syncing) return;
             
+            // Guard: Only poll raw collection node if currently viewing the DataGrid tab
+            if (this.currentView !== 'datagrid') return;
+
             const state = Store.getState();
             const activeNode = state.navigation.activeNode;
             
@@ -522,6 +540,8 @@ class App {
         window.appInstance = this;
 
         window.showLiveMap = () => {
+            this.currentView = 'live-map';
+            Store.dispatch('SET_NAV', { activeTab: 'live-map', activeView: 'live-map', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-live-map')?.classList.add('active');
             
@@ -546,30 +566,30 @@ class App {
                     <div id="map-canvas" class="w-full h-full absolute inset-0 z-0"></div>
 
                     <!-- TOP EMERGENCY ALERT BANNER CONTAINER -->
-                    <div id="map-alert-banner-container" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-[920] w-[90%] max-w-xl hidden"></div>
+                    <div id="map-alert-banner-container" class="absolute top-16 left-1/2 transform -translate-x-1/2 z-[920] w-[90%] max-w-xl hidden"></div>
 
-                    <!-- Floating Google Find Hub Left Sidebar Card Container -->
-                    <div id="device-sidebar" class="absolute top-4 left-4 z-20 pointer-events-none flex items-start gap-3"></div>
-
-                    <!-- Floating Top-Right Clean Google Action Toolbar -->
-                    <div class="absolute top-4 right-4 z-20 flex items-center gap-2 select-none">
-                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.openCreateSafeZone()">
+                    <!-- Floating Top Center Action Toolbar (Theme-Adaptive) -->
+                    <div class="absolute top-2.5 left-1/2 transform -translate-x-1/2 z-20 flex items-center gap-1 select-none bg-white/95 dark:bg-slate-950/90 backdrop-blur-md p-0.5 rounded-xl border border-slate-200 dark:border-white/10 shadow-xl pointer-events-auto">
+                        <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[10px] transition-all flex items-center gap-1 border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.openCreateSafeZone()">
                             <span>🛡️</span>
                             <span>+ Safe Zone</span>
                         </button>
-                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.openSettings()">
+                        <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[10px] transition-all flex items-center gap-1 border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.openSettings()">
                             <span>⚙️</span>
                             <span>Settings</span>
                         </button>
-                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.fitAll()">
+                        <button class="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-all flex items-center gap-1 shadow-sm" onclick="window.MatrixApp.fitAll()">
                             <span>🎯</span>
                             <span>Center Fleet</span>
                         </button>
-                        <button class="px-3.5 py-2 rounded-2xl bg-white/95 text-slate-700 hover:text-slate-950 font-bold text-xs shadow-lg border border-slate-200/80 hover:bg-white transition-all flex items-center gap-1.5" onclick="window.MatrixApp.refreshNow()">
+                        <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[10px] transition-all flex items-center gap-1 border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.refreshNow()">
                             <span>🔄</span>
                             <span>Refresh</span>
                         </button>
                     </div>
+
+                    <!-- Floating Left Selection Matrix & Right Leaflet Device Card Container -->
+                    <div id="device-sidebar" class="absolute inset-0 pointer-events-none z-20 pt-3 pb-3"></div>
 
                     <!-- Bottom-Left Realtime Coordinate Tracker -->
                     <div class="absolute bottom-4 left-4 z-20 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 shadow-md text-[10px] font-mono text-slate-600 flex items-center gap-2 select-none">
@@ -648,6 +668,7 @@ class App {
         };
         
         window.loadCollection = (name, el, type = 'rtdb') => {
+            this.currentView = 'datagrid';
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             if (el) {
                 el.classList.add('active');
@@ -659,6 +680,8 @@ class App {
         };
         
         window.showDashboard = async () => {
+            this.currentView = 'dashboard';
+            Store.dispatch('SET_NAV', { activeTab: 'dashboard', activeView: 'dashboard', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-dashboard')?.classList.add('active');
             
@@ -689,6 +712,8 @@ class App {
         };
 
         window.showDeviceUser = window.showUsers = async (agentId = null) => {
+            this.currentView = 'device-user';
+            Store.dispatch('SET_NAV', { activeTab: 'device-user', activeView: 'device-user', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-users')?.classList.add('active');
             
@@ -720,6 +745,8 @@ class App {
         };
 
         window.showGeofencing = async () => {
+            this.currentView = 'geofencing';
+            Store.dispatch('SET_NAV', { activeTab: 'geofencing', activeView: 'geofencing', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-geofencing')?.classList.add('active');
             
@@ -745,12 +772,52 @@ class App {
                 const safeZones = zoneRes.safeZones || [];
                 this.geofencingView.render(this.cachedDevices, safeZones);
             } catch (err) {
-                console.error("[GEOFENCING] Failed to load data:", err);
+                console.error("[GEOFENCING] Failed to load zones:", err);
                 this.geofencingView.render([], []);
             }
         };
 
+        window.showEagleAnalytics = async () => {
+            this.currentView = 'eagle-analytics';
+            Store.dispatch('SET_NAV', { activeTab: 'eagle-analytics', activeView: 'eagle-analytics', activeNode: null });
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-eagle-analytics')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Eagle-Eye Analytics Radar (Macro to Micro Explorer)";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB + GIS ENGINE | PATH: /analytics-tree";
+                pathLink.href = "#";
+            }
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            try {
+                const [devRes, zoneRes] = await Promise.all([
+                    fetch('/api/devices-live').then(r => r.json()),
+                    fetch('/api/safe-zones').then(r => r.json())
+                ]);
+                const devicesPayload = devRes.devices || devRes;
+                this.cachedDevices = (Array.isArray(devicesPayload) ? devicesPayload : []).map(d => new DeviceModel(d));
+                const safeZones = zoneRes.safeZones || [];
+                
+                this.eagleAnalyticsView.setDevices(this.cachedDevices);
+                this.eagleAnalyticsView.setSafeZones(safeZones);
+                this.eagleAnalyticsView.render();
+            } catch (err) {
+                console.error("[EAGLE_ANALYTICS] Failed to load data:", err);
+                this.eagleAnalyticsView.setDevices([]);
+                this.eagleAnalyticsView.setSafeZones([]);
+                this.eagleAnalyticsView.render();
+            }
+        };
+
         window.showAudit = () => {
+            this.currentView = 'audit';
+            Store.dispatch('SET_NAV', { activeTab: 'audit', activeView: 'audit', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-audit').classList.add('active');
             document.querySelector('header h1').textContent = "Forensic Audit Ledger";
@@ -766,6 +833,7 @@ class App {
         };
 
         window.showSchema = () => {
+            this.currentView = 'schema';
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('btn-schema').classList.add('active');
             document.querySelector('header h1').textContent = "Database Schema Architect";
@@ -774,6 +842,8 @@ class App {
         };
 
         window.showArchitectV2 = () => {
+            this.currentView = 'architect';
+            Store.dispatch('SET_NAV', { activeTab: 'architect', activeView: 'architect', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-architect')?.classList.add('active');
             document.querySelector('header h1').textContent = "Database Architect V2 (Hierarchical)";

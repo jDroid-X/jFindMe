@@ -1,10 +1,19 @@
 # Enterprise Proguard Matrix for jFindMe
-# 🚀 High-Fidelity Protection against R8/Proguard Class Stripping
+# 🚀 High-Fidelity Protection against R8/Proguard Class Stripping & Obfuscation
+-dontobfuscate
 
-# Preserve Core Package Logic
+# Preserve Core Package Logic & Android Components
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
 -keep class com.jdroidx.jfindme.** { *; }
 -keep interface com.jdroidx.jfindme.** { *; }
 -keep enum com.jdroidx.jfindme.** { *; }
+-keep class com.jdroidx.jfindme.ui.** { *; }
+-keep class com.jdroidx.jfindme.ui.base.** { *; }
+-keep class com.jdroidx.jfindme.ui.auth.** { *; }
 
 # Firebase Integrity Handshake
 -keep class com.google.firebase.** { *; }

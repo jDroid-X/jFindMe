@@ -23,9 +23,12 @@ export class DataGrid {
             'users_metadata': ['logs', 'preferences', 'last_seen']
         };
 
-        Store.subscribe(() => {
+        Store.subscribe((state) => {
+            // Guard: Do not re-render or overwrite workspace if another view (Live Map, Dashboard, Device User, Geofencing) is active!
+            if (window.appInstance && window.appInstance.currentView && window.appInstance.currentView !== 'datagrid') {
+                return;
+            }
             // Reset page if node changes
-            const state = Store.getState();
             if (this.lastNode !== state.navigation.activeNode) {
                 this.currentPage = 1;
                 this.lastNode = state.navigation.activeNode;
@@ -35,6 +38,10 @@ export class DataGrid {
     }
 
     render() {
+        // Guard: Prevent rendering DataGrid if active view is not 'datagrid'
+        if (window.appInstance && window.appInstance.currentView && window.appInstance.currentView !== 'datagrid') {
+            return;
+        }
         const state = Store.getState();
         let records = state.data.records || [];
         

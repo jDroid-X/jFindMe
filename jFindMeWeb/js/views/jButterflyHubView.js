@@ -1,180 +1,226 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 
 /**
- * jFindMe / jButterfly Hub View (Material 3 Single-Layer Floating Card)
- * Enterprise closed-loop component providing 3-column wrapping multi-device combo selector
- * and rich vertical telemetry matrix.
+ * jButterflyHubView - Tactical Map Radar Multi-Device Workspace (OOPS Architecture)
+ * 1. Left Side: Map Selection Matrix (Searchable Multi-Device Checkbox Roster with Avatars & RAG Status)
+ * 2. Right Side: Leaflet Selected Device Telemetry Card (with Avatar, Live Unified Status, ACL stream switch, and Actions)
+ * Vertically Ultra-Compressed Smart Fit.
  */
 export class jButterflyHubView {
     /**
-     * Renders the jButterfly Hub floating left sidebar card
-     * @param {import('../models/DeviceModel.js').DeviceModel} device 
+     * Renders Left Panel: Map Selection Matrix (20% Slimmer & Ultra Compact)
      * @param {Array<import('../models/DeviceModel.js').DeviceModel>} allDevices 
+     * @param {Array<string>} selectedIds 
+     * @param {string} focusedAgentId 
      * @returns {string} HTML string
      */
-    static renderHubCardHtml(device, allDevices = [], selectedIds = null) {
-        if (!device) return '';
-
-        const battery = device.battery >= 0 ? `${device.battery}%` : '58%';
-        const wifiName = device.networkType !== 'UNKNOWN' ? device.networkType : 'jNokia5G';
-        const lastSeen = device.getFormattedLastSeen();
+    static renderSelectionMatrixHtml(allDevices = [], selectedIds = null, focusedAgentId = null) {
+        if (!allDevices || allDevices.length === 0) return '';
 
         const allSelected = !selectedIds || selectedIds.length === allDevices.length;
         const isDeviceSelected = (d) => !selectedIds || selectedIds.includes(d.agentId);
 
         return `
-            <div class="jbutterfly-card-wrapper w-[310px] min-h-[500px] max-h-[calc(100vh-80px)] overflow-y-auto custom-scrollbar select-none pointer-events-auto font-sans animate-fade-in flex flex-col">
-                <!-- Multi-Device Selection Control Panel (Single / Multiple / All) -->
-                ${allDevices.length > 0 ? `
-                <div class="p-2 bg-slate-950/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-lg mb-2 space-y-1.5 font-mono text-xs">
-                    <div class="flex items-center justify-between border-b border-white/10 pb-1 font-sans">
-                        <span class="text-[10px] text-sky-400 font-medium uppercase tracking-wider">📡 Map Selection Matrix</span>
-                        <button class="px-2 py-0.5 rounded bg-sky-600/30 text-sky-300 text-[9px] hover:bg-sky-600/50 font-normal transition-all"
-                                onclick="window.MatrixApp.selectAllDevices()">
-                            ${allSelected ? '✓ All Selected' : 'Select All'}
-                        </button>
+            <div class="matrix-selection-panel w-[210px] sm:w-[225px] max-h-[calc(100vh-100px)] select-none pointer-events-auto font-sans animate-fade-in flex flex-col bg-white/96 dark:bg-slate-950/92 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden text-slate-800 dark:text-slate-100">
+                <!-- Header -->
+                <div class="px-2.5 py-1.5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-slate-900/80">
+                    <div class="flex items-center gap-1 min-w-0">
+                        <span class="text-[11px]">📡</span>
+                        <span class="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider truncate">Selection Matrix</span>
                     </div>
+                    <button class="px-1.5 py-0.2 rounded bg-sky-500/10 dark:bg-sky-600/30 text-sky-700 dark:text-sky-300 text-[8px] font-mono hover:bg-sky-500 hover:text-white transition-all font-semibold border border-sky-300 dark:border-sky-500/40"
+                            onclick="window.MatrixApp.selectAllDevices()">
+                        ${allSelected ? '✓ All' : 'Select All'}
+                    </button>
+                </div>
 
-                    <!-- RAG Checkbox Roster -->
-                    <div class="grid grid-cols-1 gap-1 max-h-[140px] overflow-y-auto custom-scrollbar">
-                        ${allDevices.map(d => {
-                            const selected = isDeviceSelected(d);
-                            const ragColor = d.getRagColor();
-                            const ragLabel = d.getRagLabel();
-                            const isFocused = d.agentId === device.agentId;
+                <!-- Roster List (Theme Adaptive & Vertically Ultra-Compressed) -->
+                <div class="p-1 space-y-0.5 overflow-y-auto custom-scrollbar max-h-[calc(100vh-160px)] font-mono text-[11px]">
+                    ${allDevices.map(d => {
+                        const selected = isDeviceSelected(d);
+                        const isFocused = d.agentId === focusedAgentId;
+                        const unified = typeof d.getUnifiedStatus === 'function' ? d.getUnifiedStatus() : { status: d.isOnline ? 'LIVE' : 'OFFLINE', dotClass: d.isOnline ? 'bg-emerald-400' : 'bg-slate-500' };
+                        const avatarUrl = typeof d.getAvatarUrl === 'function' ? d.getAvatarUrl() : '/Avatar/1.png';
+                        const themeColor = typeof d.getThemeColor === 'function' ? d.getThemeColor() : '#00E5FF';
 
-                            return `
-                                <div class="flex items-center justify-between p-1.5 rounded-xl border transition-all cursor-pointer ${isFocused ? 'ring-1 ring-sky-400 bg-sky-950/60' : (selected ? 'bg-slate-900/80 border-white/10' : 'bg-black/40 border-white/5 opacity-50')}"
-                                     onclick="window.MatrixApp.toggleDeviceSelection('${d.agentId}')">
-                                    <div class="flex items-center gap-1.5 min-w-0">
-                                        <input type="checkbox" ${selected ? 'checked' : ''} class="rounded text-sky-500 bg-slate-900 border-white/20 pointer-events-none">
-                                        <span class="w-2.5 h-2.5 rounded-full shrink-0 border" style="background-color: ${ragColor}; border-color: ${ragColor}"></span>
-                                        <span class="truncate text-xs font-normal text-white">${d.name}</span>
+                        return `
+                            <div class="flex items-center justify-between p-1 rounded-xl border transition-all cursor-pointer ${isFocused ? 'ring-1 ring-sky-500 bg-sky-50 dark:bg-sky-950/70 border-sky-400 dark:border-sky-500/50 shadow-sm' : (selected ? 'bg-slate-50/80 dark:bg-slate-900/70 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800/80' : 'bg-slate-100/40 dark:bg-black/40 border-slate-200/40 dark:border-white/5 opacity-60 hover:opacity-90')}"
+                                 onclick="window.MatrixApp.focusDevice('${d.agentId}')">
+                                <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                                    <input type="checkbox" ${selected ? 'checked' : ''} class="rounded text-sky-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-white/20 w-3 h-3 cursor-pointer shrink-0"
+                                           onclick="event.stopPropagation(); window.MatrixApp.toggleDeviceSelection('${d.agentId}')">
+                                    
+                                    <!-- Device Avatar Thumbnail -->
+                                    <div class="relative shrink-0 w-5 h-5 rounded-full overflow-hidden border shadow-sm" style="border-color: ${themeColor}">
+                                        <img src="${avatarUrl}" class="w-full h-full object-cover" alt="${d.name}"
+                                             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
+                                        <span class="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full ${unified.dotClass}"></span>
                                     </div>
-                                    <button class="text-[8px] font-mono font-normal px-1 py-0.2 rounded border truncate max-w-[85px]"
-                                            style="color: ${ragColor}; border-color: ${ragColor}44; background-color: ${ragColor}11"
+
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-1">
+                                            <span class="text-[10px] font-bold text-slate-900 dark:text-slate-100 truncate leading-tight font-sans">${d.name}</span>
+                                            <span class="w-1.5 h-1.5 rounded-full ${unified.dotClass} shrink-0" title="${unified.label}"></span>
+                                        </div>
+                                        <div class="text-[8px] text-slate-500 dark:text-slate-400 truncate">${d.agentId} • ${d.battery >= 0 ? `${d.battery}%` : '--'}</div>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-0.5 shrink-0 ml-1">
+                                    <span class="${unified.badgeClass} text-[7px] font-bold font-mono px-1 py-0.2 uppercase">
+                                        ${unified.status === 'LIVE' ? 'LIVE' : (unified.status === 'EMERGENCY' ? 'SOS' : (unified.status === 'INACTIVE_RECENT' ? 'IDLE' : 'OFFLINE'))}
+                                    </span>
+                                    <button class="text-[7.5px] font-mono px-1 py-0.2 rounded border bg-slate-100 dark:bg-slate-800/80 hover:bg-sky-500 hover:text-white text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/10 transition-all"
                                             onclick="event.stopPropagation(); window.MatrixApp.focusDevice('${d.agentId}')"
-                                            title="Focus ${d.name} on Map">
-                                        ${ragLabel}
+                                            title="Focus ${d.name} on Radar">
+                                        Focus
                                     </button>
                                 </div>
-                            `;
-                        }).join('')}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Renders Right Panel: Leaflet Selected Device Telemetry Card (Readable Fonts & Top Address Layout)
+     * @param {import('../models/DeviceModel.js').DeviceModel} device 
+     * @returns {string} HTML string
+     */
+    static renderDeviceDetailCardHtml(device) {
+        if (!device) return '';
+
+        const battery = device.battery >= 0 ? `${device.battery}%` : 'N/A';
+        const wifiName = (device.networkType && device.networkType !== 'UNKNOWN') ? device.networkType : (device.isOnline ? 'Cellular / WiFi' : 'Disconnected');
+        const lastSeen = device.getFormattedLastSeen();
+        const avatarUrl = typeof device.getAvatarUrl === 'function' ? device.getAvatarUrl() : '/Avatar/1.png';
+        const themeColor = typeof device.getThemeColor === 'function' ? device.getThemeColor() : '#00E5FF';
+        const unified = typeof device.getUnifiedStatus === 'function' ? device.getUnifiedStatus() : { status: device.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: device.isOnline ? 'badge-success' : 'badge-danger', dotClass: device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400', label: device.isOnline ? 'LIVE' : 'OFFLINE' };
+
+        return `
+            <div class="leaflet-device-card w-[240px] sm:w-[260px] max-h-[calc(100vh-100px)] select-none pointer-events-auto font-sans animate-fade-in flex flex-col bg-white/96 dark:bg-slate-950/92 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-y-auto custom-scrollbar p-2.5 space-y-2 text-slate-800 dark:text-slate-100">
+                
+                <!-- 1. Top Row: Avatar + Identity + Status + Quick Controls -->
+                <div class="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <!-- Avatar -->
+                        <div class="relative shrink-0 w-9 h-9 rounded-full p-0.5 border-2 shadow-md" style="border-color: ${themeColor}">
+                            <img src="${avatarUrl}" class="w-full h-full rounded-full object-cover bg-slate-900" alt="${device.name}"
+                                 onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
+                            <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-950 ${unified.dotClass}"></span>
+                        </div>
+
+                        <!-- Name & Subtitle -->
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1">
+                                <h3 class="text-xs font-black text-slate-900 dark:text-white tracking-tight truncate leading-tight">${device.name}</h3>
+                            </div>
+                            <div class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
+                                <span class="text-sky-600 dark:text-sky-400 font-bold">${device.agentId}</span> • ${device.deviceName || device.model || 'Android'}
+                            </div>
+                            <div class="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
+                                ⏱️ ${lastSeen}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top Action Badges -->
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                        <span class="${unified.badgeClass} text-[8.5px] font-bold font-mono px-1.5 py-0.5">
+                            ${unified.label}
+                        </span>
+                        <div class="flex items-center gap-1 text-slate-400">
+                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Device Dossier" onclick="window.MatrixApp.showDossier('${device.agentId}')">📄</button>
+                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Refresh Location" onclick="window.MatrixApp.refreshNow()">🔄</button>
+                        </div>
                     </div>
                 </div>
-                ` : ''}
 
-                <!-- Main Clean Expanded Material 3 Card (3x Height Window) -->
-                <div class="bg-white/98 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-100 p-4 space-y-3.5 text-slate-800 flex-1 flex flex-col justify-between">
-                    <!-- Header: Device Silhouette + Info + Controls -->
-                    <div class="flex items-start justify-between">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <!-- Phone Silhouette Icon -->
-                            <div class="w-12 h-18 rounded-2xl bg-slate-900 border-2 border-slate-700 p-1.5 shadow-md flex flex-col items-center justify-between shrink-0 relative overflow-hidden">
-                                <div class="w-4 h-1 bg-slate-700 rounded-full"></div>
-                                <div class="w-full h-9 bg-slate-800 rounded flex items-center justify-center text-white/40 text-sm">
-                                    📱
-                                </div>
-                                <div class="w-2 h-2 rounded-full border border-slate-600"></div>
-                            </div>
+                <!-- 2. Geocoded Street Address (Moved ABOVE Proximity Grid) -->
+                ${device.address ? `
+                <div class="bg-slate-100 dark:bg-slate-900/80 rounded-xl p-2 text-[10px] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 flex items-start gap-1.5 font-sans shadow-sm">
+                    <span class="text-xs text-sky-500 shrink-0">📍</span>
+                    <div class="line-clamp-2 leading-snug font-medium">${device.address}</div>
+                </div>
+                ` : `
+                <div class="bg-slate-100 dark:bg-slate-900/80 rounded-xl p-1.5 text-[9px] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 flex items-center gap-1 font-sans">
+                    <span class="text-xs text-slate-400 shrink-0">📍</span>
+                    <span class="truncate font-mono">${device.latitude ? `${device.latitude.toFixed(4)}°, ${device.longitude.toFixed(4)}°` : 'Live Satellite Position'}</span>
+                </div>
+                `}
 
-                            <!-- Name & Telemetry -->
-                            <div class="min-w-0 flex-1">
-                                <h2 class="text-base font-extrabold text-slate-900 tracking-tight truncate leading-tight">${device.name}</h2>
-                                <p class="text-xs text-slate-500 font-medium truncate">${device.deviceName || device.model || 'Android'} • <span class="font-mono text-sky-600 font-bold">${device.agentId}</span></p>
-                                <p class="text-[10px] text-slate-400 font-medium mt-0.5">${lastSeen}</p>
-                                
-                                <div class="flex items-center gap-2 text-xs text-slate-600 mt-1 font-medium">
-                                    <span class="flex items-center gap-1 truncate">
-                                        <svg class="w-3.5 h-3.5 text-slate-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                                            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/>
-                                        </svg>
-                                        <span class="truncate max-w-[85px]">${wifiName}</span>
-                                    </span>
-                                    <span>•</span>
-                                    <span class="flex items-center gap-1 shrink-0 font-bold text-slate-800">
-                                        <span>🔋</span>
-                                        <span>${battery}</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Top Right Settings & Refresh Icons -->
-                        <div class="flex items-center gap-1 text-slate-400 shrink-0">
-                            <button class="p-1.5 rounded-full hover:bg-slate-100 hover:text-slate-700 transition-all text-sm" title="Device Settings" onclick="window.MatrixApp.openEditProfile('${device.agentId}')">
-                                ⚙️
-                            </button>
-                            <button class="p-1.5 rounded-full hover:bg-slate-100 hover:text-slate-700 transition-all text-sm" title="Refresh Location" onclick="window.MatrixApp.refreshNow()">
-                                🔄
-                            </button>
-                        </div>
+                <!-- 3. Telemetry Grid (Readable Proximity, Velocity, Battery, Precision) -->
+                <div class="grid grid-cols-2 gap-1.5 font-mono text-[10px] bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div>
+                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Proximity</span>
+                        <span class="font-bold text-sky-600 dark:text-sky-400 truncate block text-[11px]">${device.getFormattedDistance ? device.getFormattedDistance() : '--'}</span>
                     </div>
-
-                    <!-- Telemetry Distance & Coordinates Matrix Card -->
-                    <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 space-y-1.5 font-mono text-xs">
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-500 font-sans">Proximity:</span>
-                            <span class="font-bold ${device.isWithinSearchRadius ? 'text-sky-600' : 'text-amber-600'}">
-                                ${device.isWithinSearchRadius ? '🎯' : '📡'} ${device.getFormattedDistance()}
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between text-slate-500">
-                            <span class="font-sans">Velocity:</span>
-                            <span class="font-bold text-slate-700">${device.getFormattedSpeed()}</span>
-                        </div>
-                        <div class="flex items-center justify-between text-slate-500">
-                            <span class="font-sans">GPS Fix:</span>
-                            <span class="text-slate-700 truncate max-w-[165px]">${device.latitude ? `${device.latitude.toFixed(4)}°, ${device.longitude.toFixed(4)}°` : 'No Signal'}</span>
-                        </div>
+                    <div>
+                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Velocity</span>
+                        <span class="font-bold text-amber-600 dark:text-amber-400 truncate block text-[11px]">${device.getFormattedSpeed ? device.getFormattedSpeed() : '0.0 km/h'}</span>
                     </div>
-
-                    <!-- Action List (Expanded Style) -->
-                    <div class="space-y-1.5 pt-1 border-t border-slate-100 flex-1">
-                        <!-- Play Sound Button -->
-                        <button class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-all text-left text-slate-700 hover:text-slate-900 group"
-                                onclick="window.MatrixApp.pokeDevice('${device.agentId}')">
-                            <div class="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-sm group-hover:bg-sky-100 group-hover:text-sky-700 transition-colors shrink-0">
-                                🔊
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-xs font-bold leading-tight">Play sound</div>
-                                <div class="text-[10px] text-slate-400 truncate">Ring at max volume for 5m</div>
-                            </div>
-                        </button>
-
-                        <!-- Mark as Lost / Dossier Button -->
-                        <button class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-all text-left text-slate-700 hover:text-slate-900 group"
-                                onclick="window.MatrixApp.showDossier('${device.agentId}')">
-                            <div class="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-sm group-hover:bg-amber-100 group-hover:text-amber-700 transition-colors shrink-0">
-                                🔒
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-xs font-bold leading-tight">Device Dossier</div>
-                                <div class="text-[10px] text-slate-400 truncate">Lock & forensic profile</div>
-                            </div>
-                        </button>
-
-                        <!-- Location History Button -->
-                        <button class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-all text-left text-slate-700 hover:text-slate-900 group"
-                                onclick="window.MatrixApp.showHistory('${device.agentId}')">
-                            <div class="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-sm group-hover:bg-emerald-100 group-hover:text-emerald-700 transition-colors shrink-0">
-                                📍
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="text-xs font-bold leading-tight">Location history</div>
-                                <div class="text-[10px] text-slate-400 truncate">Route playback trail</div>
-                            </div>
-                        </button>
+                    <div>
+                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Battery</span>
+                        <span class="font-bold ${device.battery <= 20 ? 'text-rose-500' : 'text-emerald-500'} truncate block text-[11px]">🔋 ${battery} ${device.isCharging ? '⚡' : ''}</span>
                     </div>
-
-                    <!-- Geocoded Street Address -->
-                    ${device.address ? `
-                    <div class="bg-slate-50 rounded-2xl p-2.5 text-xs text-slate-600 border border-slate-100 flex items-start gap-2">
-                        <span class="text-slate-400 text-sm shrink-0">📍</span>
-                        <div class="line-clamp-2 leading-tight">${device.address}</div>
+                    <div>
+                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">GPS Precision</span>
+                        <span class="font-bold text-slate-700 dark:text-slate-300 truncate block text-[11px]">±${device.accuracy ? device.accuracy.toFixed(1) : '5.0'}m</span>
                     </div>
-                    ` : ''}
+                </div>
+
+                <!-- 4. Live GPS Stream Toggle -->
+                <div class="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 text-xs">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs">🛰️</span>
+                        <span class="text-[10.5px] font-bold text-slate-700 dark:text-slate-300">Live GPS Stream</span>
+                    </div>
+                    <label class="switch-toggle switch-sm" style="transform: scale(0.9); transform-origin: right center;" title="Toggle Live GPS Stream">
+                        <input type="checkbox" class="hub-switch-stream" data-agent-id="${device.agentId}" ${device.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+
+                <!-- 5. Quick Action Buttons Strip -->
+                <div class="grid grid-cols-3 gap-1.5 pt-0.5 font-sans">
+                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
+                            onclick="window.MatrixApp.pokeDevice('${device.agentId}')" title="Play Ring Sound">
+                        <span class="text-sm">🔊</span>
+                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Ring</span>
+                    </button>
+
+                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
+                            onclick="window.MatrixApp.showHistory('${device.agentId}')" title="View History Route Trail">
+                        <span class="text-sm">🗺️</span>
+                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Trail</span>
+                    </button>
+
+                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
+                            onclick="window.MatrixApp.showDossier('${device.agentId}')" title="Lock & Device Dossier">
+                        <span class="text-sm">📄</span>
+                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Dossier</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Backward-compatible unified layout
+     */
+    static renderHubCardHtml(device, allDevices = [], selectedIds = null) {
+        return `
+            <div class="flex items-start justify-between w-full select-none pointer-events-none px-4">
+                <!-- LEFT: Map Selection Matrix -->
+                <div class="pointer-events-auto">
+                    ${allDevices.length > 0 ? this.renderSelectionMatrixHtml(allDevices, selectedIds, device?.agentId) : ''}
+                </div>
+                
+                <!-- RIGHT: Leaflet Device Telemetry Card with Avatar -->
+                <div class="pointer-events-auto">
+                    ${device ? this.renderDeviceDetailCardHtml(device) : ''}
                 </div>
             </div>
         `;

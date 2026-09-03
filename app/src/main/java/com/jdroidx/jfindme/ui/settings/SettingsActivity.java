@@ -15,6 +15,7 @@ import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.ListItemTable;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
+import com.jdroidx.jfindme.utils.RegistryManager;
 
 /**
  * Main -> UI Engine -> SettingsScreen -> SettingsActivity
@@ -104,21 +105,144 @@ public class SettingsActivity extends BaseActivityJava {
         LinearLayout engineCard = new LinearLayout(this);
         engineCard.setOrientation(LinearLayout.VERTICAL);
 
-        engineCard.addView(createIconButton("SMART AVATAR CLUSTERING", com.jdroidx.jfindme.R.drawable.ic_people, v -> {
-            boolean currentCluster = prefs.getBoolean("pref_smart_avatar_clustering", true);
-            UiArchitect.showConfirmationDialog(this,
-                "Configure Smart Clustering",
-                "PROS:\n- Stacks users within 10-meters into a clean badge.\n\nCONS:\n- Overlapping avatars hidden until zoomed in.\n\nCurrent State: " + (currentCluster ? "ENABLED" : "DISABLED"),
-                "ENABLE", "DISABLE",
-                () -> prefs.edit().putBoolean("pref_smart_avatar_clustering", true).apply(),
-                () -> prefs.edit().putBoolean("pref_smart_avatar_clustering", false).apply());
-        }), btnLp);
-        
+        boolean currentCluster = prefs.getBoolean("pref_smart_avatar_clustering", true);
+        View clusterSwitch = UiArchitect.createSwitch(this, "Smart Avatar Clustering (10m grouping)", currentCluster, (v, isChecked) -> {
+            prefs.edit().putBoolean("pref_smart_avatar_clustering", isChecked).apply();
+            UiArchitect.showSlideNotificationBanner(this, "Clustering Updated", isChecked ? "Avatars within 10m will be grouped." : "Individual avatar pins active.", false, 2500, null, null);
+        });
+        engineCard.addView(clusterSwitch, btnLp);
+
+        boolean isMetric = prefs.getBoolean("pref_unit_metric", true);
+        View unitToggle = UiArchitect.createSegmentedToggle(this, "METRIC (KM)", "IMPERIAL (MI)", isMetric, isLeft -> {
+            prefs.edit().putBoolean("pref_unit_metric", isLeft).apply();
+            UiArchitect.showSlideNotificationBanner(this, "Units Preference", isLeft ? "Distance Units: Metric (km/h)" : "Distance Units: Imperial (mph)", false, 2500, null, null);
+        });
+        engineCard.addView(unitToggle, btnLp);
+
         engineCard.addView(createIconButton("VECTOR MAP RENDERER", com.jdroidx.jfindme.R.drawable.ic_nav_map, v -> {
-            android.widget.Toast.makeText(this, "Hardware Accelerated Vector Engine Active", android.widget.Toast.LENGTH_SHORT).show();
+            UiArchitect.showSlideNotificationBanner(this, "Vector Renderer", "Hardware Accelerated Vector Engine Active", false, 2500, null, null);
         }), btnLp);
         
         content.addView(engineCard, getCardParams());
+
+        // --- LAYER 2.5: 🌐 GEOFENCING SENTINEL & PERIMETER SETTINGS ---
+        content.addView(createSectionHeader("GEOFENCING SENTINEL & PERIMETER SETTINGS"));
+        LinearLayout geoCard = new LinearLayout(this);
+        geoCard.setOrientation(LinearLayout.VERTICAL);
+
+        long currentJitterMs = RegistryManager.getGeofenceJitterDebounceMs(this);
+        String jitterLabel = "⏱️ PERIMETER JITTER FILTER (" + (currentJitterMs / 1000) + "S DEBOUNCE)";
+        geoCard.addView(createIconButton(jitterLabel, android.R.drawable.ic_menu_recent_history, v -> showGeofenceJitterDialog()), btnLp);
+
+        boolean latchEnabled = RegistryManager.isGeofenceLatchEnabled(this);
+        View latchSwitch = UiArchitect.createSwitch(this, "Dormancy State Latch (Anti-Duplicate)", latchEnabled, (v, isChecked) -> {
+            RegistryManager.setGeofenceLatchEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Perimeter Latch", isChecked ? "Dormant until opposite transition occurs." : "All perimeter events will trigger.", false, 2500, null, null);
+        });
+        geoCard.addView(latchSwitch, btnLp);
+
+        boolean snapEnabled = RegistryManager.isGeofenceSnapCenterEnabled(this);
+        View snapSwitch = UiArchitect.createSwitch(this, "Snap GPS to Safe Zone Centroid on Entry", snapEnabled, (v, isChecked) -> {
+            RegistryManager.setGeofenceSnapCenterEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Centroid Snapping", isChecked ? "GPS snaps to centroid inside perimeter." : "Raw GNSS coordinates preserved.", false, 2500, null, null);
+        });
+        geoCard.addView(snapSwitch, btnLp);
+
+        boolean localNotifEnabled = RegistryManager.isGeofenceLocalNotifEnabled(this);
+        View localNotifSwitch = UiArchitect.createSwitch(this, "Local Device Geofence Sound & Banner", localNotifEnabled, (v, isChecked) -> {
+            RegistryManager.setGeofenceLocalNotifEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Local Notifications", isChecked ? "OS alert pops when entering/exiting zones." : "Local alerts muted on this hardware.", false, 2500, null, null);
+        });
+        geoCard.addView(localNotifSwitch, btnLp);
+
+        boolean fcmEnabled = RegistryManager.isGeofenceFcmRelayEnabled(this);
+        View fcmSwitch = UiArchitect.createSwitch(this, "Cloud FCM Guardian Push Broadcast", fcmEnabled, (v, isChecked) -> {
+            RegistryManager.setGeofenceFcmRelayEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Cloud Push Relay", isChecked ? "Events broadcasted to remote guardian devices." : "Cloud push relay suspended.", false, 2500, null, null);
+        });
+        geoCard.addView(fcmSwitch, btnLp);
+
+        content.addView(geoCard, getCardParams());
+
+        // --- LAYER 2.6: 📍 ADAPTIVE GPS & LOCATION DISPLACEMENT ---
+        content.addView(createSectionHeader("ADAPTIVE GPS & LOCATION DISPLACEMENT"));
+        LinearLayout gpsCard = new LinearLayout(this);
+        gpsCard.setOrientation(LinearLayout.VERTICAL);
+
+        float currentDisp = RegistryManager.getMinDisplacementMeters(this);
+        String dispLabel = "📍 MINIMUM DISPLACEMENT FILTER: " + (int) currentDisp + "M";
+        gpsCard.addView(createIconButton(dispLabel, android.R.drawable.ic_menu_compass, v -> showDisplacementDialog()), btnLp);
+
+        boolean strictWait = RegistryManager.isStrictAccuracyWait(this);
+        View strictWaitSwitch = UiArchitect.createSwitch(this, "Wait for High-Accuracy GNSS Fix (< 10m)", strictWait, (v, isChecked) -> {
+            RegistryManager.setStrictAccuracyWait(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "GNSS Accuracy", isChecked ? "Waits for high-accuracy fix before publish." : "Fast fix mode enabled (lower latency).", false, 2500, null, null);
+        });
+        gpsCard.addView(strictWaitSwitch, btnLp);
+
+        content.addView(gpsCard, getCardParams());
+
+        // --- LAYER 2.7: 🚦 DEVICE RAG TELEMETRY & ALERT THRESHOLDS ---
+        content.addView(createSectionHeader("DEVICE RAG TELEMETRY & ALERT THRESHOLDS"));
+        LinearLayout ragCard = new LinearLayout(this);
+        ragCard.setOrientation(LinearLayout.VERTICAL);
+
+        int lowBat = RegistryManager.getLowBatteryThreshold(this);
+        String batLabel = "🟡 LOW BATTERY ALERT THRESHOLD: " + lowBat + "%";
+        ragCard.addView(createIconButton(batLabel, com.jdroidx.jfindme.R.drawable.ic_device_health, v -> showLowBatteryDialog()), btnLp);
+
+        int staleMins = RegistryManager.getStaleInactiveMinutes(this);
+        String staleLabel = "🟡 INACTIVE STALE THRESHOLD: " + staleMins + " MINUTES";
+        ragCard.addView(createIconButton(staleLabel, android.R.drawable.ic_menu_recent_history, v -> showStaleInactiveDialog()), btnLp);
+
+        int critHours = RegistryManager.getCriticalOfflineHours(this);
+        String critLabel = "🔴 CRITICAL OFFLINE THRESHOLD: " + critHours + " HOURS";
+        ragCard.addView(createIconButton(critLabel, android.R.drawable.ic_dialog_alert, v -> showCriticalOfflineDialog()), btnLp);
+
+        content.addView(ragCard, getCardParams());
+
+        // --- LAYER 2.8: 🔊 EMERGENCY ACOUSTIC BEACON & SIREN ---
+        content.addView(createSectionHeader("EMERGENCY ACOUSTIC BEACON & SIREN"));
+        LinearLayout sirenCard = new LinearLayout(this);
+        sirenCard.setOrientation(LinearLayout.VERTICAL);
+
+        int sirenSec = RegistryManager.getSirenDurationSec(this);
+        String sirenLabel = "🔊 SIREN AUTO-SILENCE DURATION: " + sirenSec + "S";
+        sirenCard.addView(createIconButton(sirenLabel, android.R.drawable.ic_lock_idle_alarm, v -> showSirenDurationDialog()), btnLp);
+
+        boolean vibeEnabled = RegistryManager.isSirenVibrationEnabled(this);
+        View vibeSwitch = UiArchitect.createSwitch(this, "Continuous Haptic Vibration with Siren", vibeEnabled, (v, isChecked) -> {
+            RegistryManager.setSirenVibrationEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Emergency Vibration", isChecked ? "Haptic motor pulses during acoustic siren." : "Vibration muted during siren.", false, 2500, null, null);
+        });
+        sirenCard.addView(vibeSwitch, btnLp);
+
+        boolean dndEnabled = RegistryManager.isSirenDndBypassEnabled(this);
+        View dndSwitch = UiArchitect.createSwitch(this, "Do-Not-Disturb (DND) Volume Override", dndEnabled, (v, isChecked) -> {
+            RegistryManager.setSirenDndBypassEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "DND Override", isChecked ? "Siren plays at 100% volume even in Silent mode." : "Respects device volume and silent profile.", false, 2500, null, null);
+        });
+        sirenCard.addView(dndSwitch, btnLp);
+
+        content.addView(sirenCard, getCardParams());
+
+        // --- LAYER 2.9: 📦 OFFLINE VAULT & RESILIENCE QUEUE ---
+        content.addView(createSectionHeader("OFFLINE VAULT & RESILIENCE QUEUE"));
+        LinearLayout vaultCard = new LinearLayout(this);
+        vaultCard.setOrientation(LinearLayout.VERTICAL);
+
+        int maxQueue = RegistryManager.getOfflineQueueMaxPoints(this);
+        String queueLabel = "📦 OFFLINE GPS QUEUE CAPACITY: " + maxQueue + " POINTS";
+        vaultCard.addView(createIconButton(queueLabel, com.jdroidx.jfindme.R.drawable.ic_location_history, v -> showOfflineQueueCapacityDialog()), btnLp);
+
+        boolean wifiOnly = RegistryManager.isSyncWifiOnly(this);
+        View wifiSwitch = UiArchitect.createSwitch(this, "Deferred Offline Sync on Wi-Fi Only", wifiOnly, (v, isChecked) -> {
+            RegistryManager.setSyncWifiOnly(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Network Sync Policy", isChecked ? "Queued telemetry flushes only over unmetered Wi-Fi." : "Flushes over Cellular & Wi-Fi automatically.", false, 2500, null, null);
+        });
+        vaultCard.addView(wifiSwitch, btnLp);
+
+        content.addView(vaultCard, getCardParams());
 
         // --- LAYER 3: SECURITY & ACCESS CONTROLS ---
         content.addView(createSectionHeader("SECURITY & ACCESS CONTROLS"));
@@ -342,6 +466,200 @@ public class SettingsActivity extends BaseActivityJava {
                 prefs.edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
                 android.widget.Toast.makeText(this, "Pairing PIN Expiry TTL set to " + chosen + " minutes.", android.widget.Toast.LENGTH_SHORT).show();
                 dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void delayedSafeRecreate() {
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::safeRecreate, 2600);
+    }
+
+    private void showGeofenceJitterDialog() {
+        String[] options = {
+            "0s (Disabled - Instant Trigger)",
+            "5s (High Sensitivity - Min Range)",
+            "15s (Balanced Standard - Mid Range / Recommended)",
+            "30s (Extended Boundary Filter)",
+            "60s (Highway & Rapid Travel - Max Range)"
+        };
+        long[] values = {0L, 5000L, 15000L, 30000L, 60000L};
+        long currentMs = RegistryManager.getGeofenceJitterDebounceMs(this);
+        int selectedIdx = 2; // Default: 15s
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == currentMs) { selectedIdx = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏱️ Perimeter Jitter Filter (Anti-Flutter)")
+            .setSingleChoiceItems(options, selectedIdx, (dialog, which) -> {
+                long chosenMs = values[which];
+                RegistryManager.setGeofenceJitterDebounceMs(this, chosenMs);
+                UiArchitect.showSlideNotificationBanner(this, "Jitter Filter Updated", "Debounce threshold set to " + (chosenMs / 1000) + "s", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showDisplacementDialog() {
+        String[] options = {
+            "0m (Continuous Telemetry - Max Sensitivity / Default)",
+            "5m (Fine Pedestrian Tracking)",
+            "10m (City Balanced Mode)",
+            "25m (Vehicle / Battery Saver - Max Range)"
+        };
+        float[] values = {0f, 5f, 10f, 25f};
+        float current = RegistryManager.getMinDisplacementMeters(this);
+        int selected = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📍 Minimum Displacement Threshold")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                float chosen = values[which];
+                RegistryManager.setMinDisplacementMeters(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Displacement Updated", "Displacement threshold set to " + (int) chosen + "m", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showLowBatteryDialog() {
+        String[] options = {
+            "10% (Critical Level Only)",
+            "15% (Medium Warning)",
+            "20% (Standard Level - Recommended / Default)",
+            "25% (Early Warning Level)"
+        };
+        int[] values = {10, 15, 20, 25};
+        int current = RegistryManager.getLowBatteryThreshold(this);
+        int selected = 2;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🟡 Low Battery Warning Level")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setLowBatteryThreshold(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Low Battery Threshold", "Warning trigger set to " + chosen + "%", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showStaleInactiveDialog() {
+        String[] options = {
+            "5 Minutes (Strict / High Alert)",
+            "15 Minutes (Balanced Standard - Default)",
+            "30 Minutes (Relaxed Mode)",
+            "60 Minutes (Casual Mode)"
+        };
+        int[] values = {5, 15, 30, 60};
+        int current = RegistryManager.getStaleInactiveMinutes(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🟡 Inactive Stale Threshold (Amber)")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setStaleInactiveMinutes(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Stale Threshold Updated", "Amber warning set to " + chosen + " minutes", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCriticalOfflineDialog() {
+        String[] options = {
+            "2 Hours (Strict Fleet)",
+            "6 Hours (Balanced - Recommended / Default)",
+            "12 Hours (Half-Day Extended)",
+            "24 Hours (Full Day Extended)"
+        };
+        int[] values = {2, 6, 12, 24};
+        int current = RegistryManager.getCriticalOfflineHours(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🔴 Critical Offline Threshold (Red)")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setCriticalOfflineHours(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Offline Threshold Updated", "Red alert trigger set to " + chosen + " hours", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showSirenDurationDialog() {
+        String[] options = {
+            "15 Seconds (Brief Alert)",
+            "30 Seconds (Standard - Recommended / Default)",
+            "60 Seconds (Extended Siren)",
+            "120 Seconds (Maximum Distress)"
+        };
+        int[] values = {15, 30, 60, 120};
+        int current = RegistryManager.getSirenDurationSec(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🔊 Siren Auto-Silence Duration")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setSirenDurationSec(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Siren Duration Updated", "Acoustic alarm set to " + chosen + " seconds", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showOfflineQueueCapacityDialog() {
+        String[] options = {
+            "100 Points (~1 Hour @ 30s interval)",
+            "250 Points (~2-3 Hours @ 30s interval)",
+            "500 Points (Standard - Recommended / Default)",
+            "1000 Points (Forensic Extended Queue)"
+        };
+        int[] values = {100, 250, 500, 1000};
+        int current = RegistryManager.getOfflineQueueMaxPoints(this);
+        int selected = 2;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📦 Offline GPS Vault Capacity")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setOfflineQueueMaxPoints(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Vault Capacity Updated", "Max offline buffer set to " + chosen + " points", false, 2500, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
             })
             .setNegativeButton("CANCEL", null)
             .show();
