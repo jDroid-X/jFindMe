@@ -136,36 +136,64 @@ object MultiMarkerEngine {
             allowedUUIDs.add(deviceId)
             if (candidates.size >= 100) break // Stress limit: 100 concurrent nodes
 
-            val rawLatLng = LatLng(ul.latitude, ul.longitude)
-            
+            // 🛣️ Filter GPS coordinates through 2D Kalman Filter & calculate road-aligned heading azimuth
+            val smoothed = RoadSmoothingEngine.processLocation(
+                deviceId = deviceId,
+                rawLat = ul.latitude,
+                rawLng = ul.longitude,
+                accuracyMeters = 10f,
+                rawSpeedMps = ul.speed,
+                rawBearing = ul.bearing,
+                timestamp = ul.getLongTimestamp()
+            )
+
+            val rawLatLng = smoothed.smoothedLatLng
+
             // 🚀 Human-Readable Name Resolution: Never show raw ID numbers!
+            val isGenericCloudName = ul.userName.isBlank() || 
+                                     ul.userName.equals("null", ignoreCase = true) || 
+                                     ul.userName.startsWith("Agent_", ignoreCase = true) ||
+                                     ul.userName.equals("Active Tracker", ignoreCase = true) ||
+                                     ul.userName.equals("Target Node", ignoreCase = true) ||
+                                     ul.userName.equals("Target", ignoreCase = true) ||
+                                     ul.userName.equals("User Identity", ignoreCase = true)
+
+            val ssotName = db.getDeviceCentricName(deviceId)
+            val hasValidSsotName = ssotName.isNotBlank() && 
+                                   !ssotName.startsWith("Agent_", true) && 
+                                   !ssotName.equals("Target Node", true) &&
+                                   !ssotName.equals("Active Tracker", true)
+
             val cleanName = if (isMe) {
                 "You"
-            } else if (ul.userName.trim().isNotEmpty() && !ul.userName.startsWith("Agent_", ignoreCase = true) && !ul.userName.equals("null", ignoreCase = true)) {
+            } else if (hasValidSsotName) {
+                ssotName
+            } else if (!isGenericCloudName) {
                 ul.userName.trim()
             } else {
-                val db = DatabaseHelper.getInstance(context)
-                val ssotName = db.getDeviceCentricName(deviceId)
-                if (ssotName.isNotBlank() && !ssotName.startsWith("Agent_", true)) {
-                    ssotName
+                val dossier = db.getLocalDossier(deviceId)
+                val dossierName = dossier["fullName"] ?: dossier["name"] ?: dossier["id_full_name"] ?: dossier["full_name"] ?: dossier["owner_name"]
+                if (!dossierName.isNullOrBlank() && !dossierName.startsWith("Agent_", ignoreCase = true) && !dossierName.equals("Target Node", true)) {
+                    dossierName.trim()
                 } else {
-                    val dossier = db.getLocalDossier(deviceId)
-                    val dossierName = dossier["fullName"] ?: dossier["name"] ?: dossier["id_full_name"] ?: dossier["full_name"] ?: dossier["owner_name"]
-                    if (!dossierName.isNullOrBlank() && !dossierName.startsWith("Agent_", ignoreCase = true)) {
-                        dossierName.trim()
+                    val rosterMatch = db.getOfflineRoster().find { 
+                        (it["uid_1"]?.toString() == deviceId) || (it["uid"]?.toString() == deviceId) || 
+                        (it["uid_2"]?.toString() == deviceId) || (it["connected_id"]?.toString() == deviceId)
+                    }
+                    val rName = rosterMatch?.get("fullName")?.toString() ?: rosterMatch?.get("display_name")?.toString()
+                    if (!rName.isNullOrBlank() && !rName.startsWith("Agent_", true) && !rName.equals("Target Node", true)) {
+                        rName.trim()
                     } else {
-                        val rosterMatch = db.getOfflineRoster().find { (it["uid_1"]?.toString() == deviceId) || (it["uid"]?.toString() == deviceId) }
                         val role = rosterMatch?.get("role_type")?.toString()
-                        if (!role.isNullOrBlank() && !role.equals("None", ignoreCase = true)) {
+                        if (!role.isNullOrBlank() && !role.equals("None", ignoreCase = true) && !role.equals("Member", ignoreCase = true)) {
                             role.trim()
                         } else {
-                            "Family Member"
+                            "Target Node"
                         }
                     }
                 }
             }
 
-            val db = DatabaseHelper.getInstance(context)
             val modelIcon = if (!ul.avatar_id.isNullOrBlank()) {
                 ul.avatar_id
             } else {
@@ -178,8 +206,8 @@ object MultiMarkerEngine {
                     rawLatLng = rawLatLng,
                     name = cleanName,
                     avatarId = modelIcon,
-                    speedMps = ul.speed,
-                    bearing = ul.bearing,
+                    speedMps = smoothed.smoothedSpeedMps,
+                    bearing = smoothed.filteredHeading,
                     batteryLevel = ul.batteryLevel,
                     isSos = ul.isSosActive,
                     timestamp = ul.getLongTimestamp()
@@ -457,13 +485,37 @@ object MultiMarkerEngine {
         var calculatedRole = userRoleCache[deviceId]
         if (calculatedRole == null) {
             val localDb = DatabaseHelper.getInstance(context)
-            val offlineMatrix = localDb.getOfflineRoster()
             var matchedTitle: String? = null
 
-            for (node in offlineMatrix) {
-                if (node["uid_1"]?.toString() == deviceId || node["uid"]?.toString() == deviceId) {
-                    matchedTitle = node["role_type"]?.toString()
-                    break
+            // 1. Direct role query from SSOT helper
+            val directRole = localDb.getRoleForDevice(deviceId)
+            if (!directRole.isNullOrBlank() && !directRole.equals("None", true) && !directRole.equals("Member", true)) {
+                matchedTitle = directRole
+            }
+
+            // 2. Offline roster check across all UID permutations
+            if (matchedTitle == null) {
+                val offlineMatrix = localDb.getOfflineRoster()
+                for (node in offlineMatrix) {
+                    if (node["uid_1"]?.toString() == deviceId || 
+                        node["uid"]?.toString() == deviceId || 
+                        node["uid_2"]?.toString() == deviceId || 
+                        node["connected_id"]?.toString() == deviceId) {
+                        val rType = node["role_type"]?.toString()
+                        if (!rType.isNullOrBlank() && !rType.equals("None", true)) {
+                            matchedTitle = rType
+                            break
+                        }
+                    }
+                }
+            }
+
+            // 3. Check local dossier if still unmatched
+            if (matchedTitle == null) {
+                val dossier = localDb.getLocalDossier(deviceId)
+                val dosRole = dossier["role_type"] ?: dossier["designation"]
+                if (!dosRole.isNullOrBlank() && !dosRole.equals("None", true) && !dosRole.equals("Member", true)) {
+                    matchedTitle = dosRole
                 }
             }
 
@@ -471,22 +523,28 @@ object MultiMarkerEngine {
                 val upTitle = matchedTitle.uppercase()
                 calculatedRole = when {
                     upTitle.contains("SPOUSE") || upTitle.contains("PARTNER") || upTitle.contains("WIFE") || upTitle.contains("HUSBAND") -> "SPOUSE"
-                    upTitle.contains("MOTHER") || upTitle.contains("FATHER") || upTitle.contains("GUARDIAN") || upTitle.contains("PARENT") -> "GUARDIAN"
-                    upTitle.contains("FRIEND") || upTitle.contains("PEER") -> "FRIEND"
-                    else -> "CHILD"
+                    upTitle.contains("MOTHER") || upTitle.contains("FATHER") || upTitle.contains("GUARDIAN") || upTitle.contains("PARENT") || upTitle.contains("ADMIN") || upTitle.contains("COMMANDER") -> "GUARDIAN"
+                    upTitle.contains("FRIEND") || upTitle.contains("PEER") || upTitle.contains("COLLEAGUE") -> "FRIEND"
+                    upTitle.contains("CHILD") || upTitle.contains("SON") || upTitle.contains("DAUGHTER") || upTitle.contains("DEPENDENT") || upTitle.contains("KID") -> "CHILD"
+                    upTitle.contains("FAMILY") || upTitle.contains("BROTHER") || upTitle.contains("SISTER") || upTitle.contains("RELATIVE") || upTitle.contains("SIBLING") -> "FAMILY"
+                    else -> "MEMBER"
                 }
                 userRoleCache[deviceId] = calculatedRole
             } else {
-                calculatedRole = "CHILD"
+                calculatedRole = "MEMBER"
                 FirebaseComm.getProfileRef(deviceId).get().addOnSuccessListener { snapshot ->
                     val famRole = snapshot.child("role_family").value?.toString() ?: "None"
                     val friendRole = snapshot.child("role_friend").value?.toString() ?: "None"
+                    val roleTitle = snapshot.child("role_title").value?.toString() ?: "None"
+                    val combined = "$famRole $friendRole $roleTitle".uppercase()
 
                     val asyncRole = when {
-                        famRole.contains("SPOUSE", true) || famRole.contains("PARTNER", true) || famRole.contains("WIFE", true) || famRole.contains("HUSBAND", true) -> "SPOUSE"
-                        famRole.contains("MOTHER", true) || famRole.contains("FATHER", true) || famRole.contains("GUARDIAN", true) || famRole.contains("PARENT", true) -> "GUARDIAN"
-                        friendRole.contains("FRIEND", true) || friendRole.contains("PEER", true) -> "FRIEND"
-                        else -> "CHILD"
+                        combined.contains("SPOUSE") || combined.contains("PARTNER") || combined.contains("WIFE") || combined.contains("HUSBAND") -> "SPOUSE"
+                        combined.contains("MOTHER") || combined.contains("FATHER") || combined.contains("GUARDIAN") || combined.contains("PARENT") || combined.contains("ADMIN") -> "GUARDIAN"
+                        combined.contains("FRIEND") || combined.contains("PEER") || combined.contains("COLLEAGUE") -> "FRIEND"
+                        combined.contains("CHILD") || combined.contains("SON") || combined.contains("DAUGHTER") || combined.contains("DEPENDENT") || combined.contains("KID") -> "CHILD"
+                        combined.contains("FAMILY") || combined.contains("BROTHER") || combined.contains("SISTER") || combined.contains("RELATIVE") -> "FAMILY"
+                        else -> "MEMBER"
                     }
                     userRoleCache[deviceId] = asyncRole
                     activeGridMap?.let { updateOrRenderMarker(context, candidate) }
@@ -521,6 +579,8 @@ object MultiMarkerEngine {
 
         if (activeDeviceMarkerMap.containsKey(deviceId)) {
             val targetMarker = activeDeviceMarkerMap[deviceId]!!
+            targetMarker.tag = deviceId
+            targetMarker.title = candidate.name
             if (iconChanged) {
                 targetMarker.setIcon(customIconConfig)
             }
@@ -536,8 +596,8 @@ object MultiMarkerEngine {
             )
 
             if (newMarker != null) {
+                newMarker.tag = deviceId
                 activeDeviceMarkerMap[deviceId] = newMarker
-                newMarker.showInfoWindow()
             }
         }
     }
@@ -580,6 +640,7 @@ object MultiMarkerEngine {
                     iterator.remove()
                     iconCache.remove(deviceId)
                     lastRenderedMeta.remove(deviceId)
+                    RoadSmoothingEngine.resetDevice(deviceId)
                 } else {
                     marker.alpha = 0.5f
                     val currentTitle = marker.title ?: "Friend"
@@ -608,6 +669,13 @@ object MultiMarkerEngine {
         iconCache.clear()
         lastRenderedMeta.clear()
         userRoleCache.clear()
+        RoadSmoothingEngine.clearAll()
         AvatarLoader.clearCache()
+    }
+
+    fun invalidateRoleAndNameCaches() {
+        userRoleCache.clear()
+        iconCache.clear()
+        lastRenderedMeta.clear()
     }
 }

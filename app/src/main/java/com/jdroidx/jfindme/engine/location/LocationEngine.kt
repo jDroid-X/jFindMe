@@ -69,12 +69,16 @@ class LocationEngine(private val context: Context, private val onLocationChanged
 
 
     private fun buildLocationRequest(): LocationRequest {
-        val minDisplacement = RegistryManager.getMinDisplacementMeters(context)
-        val waitAccurate = RegistryManager.isStrictAccuracyWait(context)
+        val configuredDisplacement = RegistryManager.getMinDisplacementMeters(context)
+        val isHeartbeat = trackingPriority == Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        // 🔋 In heartbeat/background mode, enforce at least 25m displacement to avoid waking CPU while device is stationary
+        val minDisplacement = if (isHeartbeat) maxOf(25.0f, configuredDisplacement) else configuredDisplacement
+        val waitAccurate = if (isHeartbeat) false else RegistryManager.isStrictAccuracyWait(context)
+
         return LocationRequest.Builder(trackingPriority, updateInterval).apply {
-            setMinUpdateIntervalMillis(maxOf(1000L, updateInterval / 2))
+            setMinUpdateIntervalMillis(maxOf(5000L, updateInterval / 2))
             setMinUpdateDistanceMeters(minDisplacement)
-            setMaxUpdateDelayMillis(updateInterval)
+            setMaxUpdateDelayMillis(if (isHeartbeat) updateInterval * 2 else updateInterval)
             setWaitForAccurateLocation(waitAccurate)
         }.build()
     }
@@ -88,6 +92,42 @@ class LocationEngine(private val context: Context, private val onLocationChanged
         }
     }
 
+
+    private val motionListener: (ActivityRecognitionSentinel.MotionState) -> Unit = { motionState ->
+        SystemLogger.i(TAG, "Hardware Activity Recognition update in LocationEngine: $motionState")
+        when (motionState) {
+            ActivityRecognitionSentinel.MotionState.STILL -> {
+                // 🔋 ZERO GPS SATELLITE DRAIN: Device is stationary, enter balanced power heartbeat (5 min / 25m)
+                trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
+                updateInterval = HEARTBEAT_INTERVAL_MS
+                updateTrackingParams()
+                SystemLogger.i(TAG, "🔋 STILL detected: GPS Chip sleeping, heartbeat mode enabled (300s / 25m).")
+            }
+            ActivityRecognitionSentinel.MotionState.IN_VEHICLE -> {
+                // 🚗 HIGH VELOCITY: Fast road tracking (10s / 10m)
+                trackingPriority = PRIORITY_HIGH_ACCURACY
+                updateInterval = 10000L
+                updateTrackingParams()
+                SystemLogger.i(TAG, "🚗 IN_VEHICLE detected: High-accuracy road tracking enabled (10s / 10m).")
+            }
+            ActivityRecognitionSentinel.MotionState.WALKING,
+            ActivityRecognitionSentinel.MotionState.RUNNING,
+            ActivityRecognitionSentinel.MotionState.ON_BICYCLE -> {
+                // 🚶 PEDESTRIAN MOTION: Moderate tracking (20s / 15m)
+                trackingPriority = PRIORITY_HIGH_ACCURACY
+                updateInterval = 20000L
+                updateTrackingParams()
+                SystemLogger.i(TAG, "🚶 MOTION detected ($motionState): High-accuracy pedestrian tracking enabled (20s / 15m).")
+            }
+            ActivityRecognitionSentinel.MotionState.UNKNOWN -> {
+                // Default fallback to configured user preference
+                val userChoice = RegistryManager.getTrackingInterval(context)
+                trackingPriority = PRIORITY_HIGH_ACCURACY
+                updateInterval = userChoice
+                updateTrackingParams()
+            }
+        }
+    }
 
     private var trackingThread: android.os.HandlerThread? = null
 
@@ -111,8 +151,19 @@ class LocationEngine(private val context: Context, private val onLocationChanged
             SystemLogger.w(TAG, "PendingIntent GPS registration fallback: " + e.message)
         }
 
-        EngineRegistry.activate(EngineRegistry.ENGINE_LOCATION)
-        SystemLogger.i(TAG, "Tracking started (interval: " + updateInterval + "ms)")
+        // 🏃 Initialize Hardware Motion Sentinel
+        try {
+            ActivityRecognitionSentinel.addListener(motionListener)
+            ActivityRecognitionSentinel.startMonitoring(context)
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Could not start ActivityRecognition: ${e.message}")
+        }
+
+        val currentMode = EngineRegistry.getMode(EngineRegistry.ENGINE_LOCATION)
+        if (currentMode == EngineRegistry.EngineMode.DORMANT) {
+            EngineRegistry.heartbeat(EngineRegistry.ENGINE_LOCATION)
+        }
+        SystemLogger.i(TAG, "Tracking started (interval: " + updateInterval + "ms, priority: " + trackingPriority + ")")
     }
 
     fun enterHeartbeatMode() {
@@ -153,6 +204,8 @@ class LocationEngine(private val context: Context, private val onLocationChanged
     }
 
     fun stopTracking() {
+        ActivityRecognitionSentinel.removeListener(motionListener)
+        ActivityRecognitionSentinel.stopMonitoring(context)
         fusedLocationProviderClient.removeLocationUpdates(locationCallback)
         try {
             fusedLocationProviderClient.removeLocationUpdates(pendingIntent)

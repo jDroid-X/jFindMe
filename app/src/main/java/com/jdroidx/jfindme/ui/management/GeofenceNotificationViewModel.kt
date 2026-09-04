@@ -38,12 +38,14 @@ class GeofenceNotificationViewModel(application: Application) : AndroidViewModel
     private var geofencingTreeListener: ValueEventListener? = null
 
     init {
+        fetchNotifications()
         setupCloudSync()
     }
 
     private val processedNodeKeys = mutableSetOf<String>()
 
     private fun setupCloudSync() {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         // 🛰️ MISSION ARCHITECTURE: Listen to Group Cloud Matrix for Node Transitions
         val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val groupId = prefs.getString("active_group", null) ?: return

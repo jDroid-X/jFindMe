@@ -144,7 +144,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             collapsedBranches.put("💍 SPOUSE ENTITIES", true);
             collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", true);
         } else if ("FRIEND".equalsIgnoreCase(requestedFocusCategory) || activeTab == TAB_FRIENDS) {
-            tvHeaderTitle.setText("FRIENDS & PEER CIRCLES");
+            tvHeaderTitle.setText("MEETMYFRIEND GROUPS");
             tvHeaderSubtitle.setText("Social Circles & Peer Network");
             activeTab = TAB_FRIENDS;
         }
@@ -825,6 +825,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         UiArchitect.OptionItem[] actions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("📍 Track on Live Map", "Open real-time GPS tracking stream", android.R.drawable.ic_dialog_map),
             new UiArchitect.OptionItem("🔊 Ring Device (30s Acoustic Alarm)", "Override DND and trigger high-volume siren", android.R.drawable.ic_lock_idle_alarm),
+            new UiArchitect.OptionItem("✏️ Rename Device (Custom Callsign)", "Assign an identifiable custom name or nickname to this node", android.R.drawable.ic_menu_edit),
             new UiArchitect.OptionItem("📝 View / Edit Dossier & Role", "Inspect full profile, permissions, and contacts", com.jdroidx.jfindme.R.drawable.ic_user_profile),
             new UiArchitect.OptionItem("🛡️ Assign Safe Zone", "Configure geofence boundary perimeter", com.jdroidx.jfindme.R.drawable.ic_safe_zone),
             new UiArchitect.OptionItem("👑 Change Relationship Category", "Reclassify as Guardian, Spouse, Child, or Friend", com.jdroidx.jfindme.R.drawable.ic_family_friends),
@@ -834,35 +835,76 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         UiArchitect.showRichOptionsDialog(this, node.getDisplayName() + " (" + node.getRoleTitle() + ")", actions, (which, label) -> {
             switch (which) {
                 case 0: // Map
+                    FirebaseComm.triggerRemoteLocateDevice(node.getUid());
                     Intent mapIntent = new Intent(this, MapActivity.class);
                     mapIntent.putExtra("TARGET_UID", node.getUid());
                     mapIntent.putExtra("target_uid", node.getUid());
                     startActivity(mapIntent);
                     break;
                 case 1: // Ring
-                    FirebaseComm.triggerRemoteRingDevice(node.getUid(), 30);
-                    Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (30s)", Toast.LENGTH_LONG).show();
+                    int sirenDur = RegistryManager.getSirenDurationSec(this);
+                    FirebaseComm.triggerRemoteRingDevice(node.getUid(), sirenDur);
+                    Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (" + sirenDur + "s)", Toast.LENGTH_LONG).show();
                     break;
-                case 2: // Dossier
+                case 2: // Rename
+                    showRenameNodeDialog(node);
+                    break;
+                case 3: // Dossier
                     Intent intent = new Intent(this, PersonDetailsActivity.class);
                     intent.putExtra("TARGET_UID", node.getUid());
                     intent.putExtra("TARGET_ROLE", node.getRoleTitle());
                     startActivity(intent);
                     break;
-                case 3: // Safe Zone
+                case 4: // Safe Zone
                     Intent safeZoneIntent = new Intent(this, GeofenceActivity.class);
                     safeZoneIntent.putExtra("TARGET_UID", node.getUid());
                     safeZoneIntent.putExtra("TARGET_NAME", node.getDisplayName());
                     startActivity(safeZoneIntent);
                     break;
-                case 4: // Role Change
+                case 5: // Role Change
                     showRoleChangeDialog(node);
                     break;
-                case 5: // Unlink
+                case 6: // Unlink
                     confirmUnlinkDevice(node);
                     break;
             }
         });
+    }
+
+    private void showRenameNodeDialog(RosterNode node) {
+        String currentName = node.getDisplayName();
+        if (currentName.startsWith("HW_") || currentName.startsWith("Agent_") || currentName.length() > 20) {
+            currentName = "";
+        }
+        UiArchitect.showInputPromptDialog(this,
+            "Rename Device",
+            "Enter a friendly custom callsign / name for " + node.getDisplayName() + " (" + node.getUid() + "):",
+            currentName,
+            enteredName -> {
+                if (enteredName != null && !enteredName.trim().isEmpty()) {
+                    String cleanName = enteredName.trim();
+                    DatabaseHelper.getInstance(this).updateDeviceIdentityAndAvatar(node.getUid(), cleanName, null);
+                    
+                    // Cloud update
+                    Map<String, Object> nameMap = new HashMap<>();
+                    nameMap.put("full_name", cleanName);
+                    nameMap.put("display_name", cleanName);
+                    nameMap.put("nickname", cleanName);
+                    nameMap.put("ts_modified", System.currentTimeMillis());
+                    FirebaseComm.getProfileRef(node.getUid()).updateChildren(nameMap);
+                    
+                    String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+                    if (myGrp != null) {
+                        FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(node.getUid()).child("name").setValue(cleanName);
+                        FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+                    }
+                    
+                    UiArchitect.showSlideNotificationBanner(this, "DEVICE RENAMED", "Callsign updated to '" + cleanName + "'", false, 3000, null, null);
+                    if (viewModel != null) viewModel.initializeCloudSync(this);
+                } else {
+                    UiArchitect.showValidationDialog(this, "Invalid Name", "Device name cannot be empty.", null);
+                }
+            });
     }
 
     private void showRoleChangeDialog(RosterNode node) {
@@ -964,7 +1006,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     private void confirmUnlinkDevice(RosterNode node) {
         UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("❌ Standard Unlink Device", "Safely uncouple device from active circle and local storage", android.R.drawable.ic_menu_delete),
-            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with password 'jbutterfly@123' to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
+            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with master security password to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
         };
 
         UiArchitect.showRichOptionsDialog(this, "Remove " + node.getDisplayName() + "?", unlinkOptions, (idx, label) -> {
@@ -976,12 +1018,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 });
             } else {
                 // Master Password Purge
+                String requiredPass = RegistryManager.getPurgeSafetyPhrase(this);
                 UiArchitect.showInputPromptDialog(this,
                     "Master Admin Authorization",
                     "Enter master security password to force purge '" + node.getDisplayName() + "' (" + node.getUid() + "):",
                     "",
                     inputPass -> {
-                        if ("jbutterfly@123".equals(inputPass != null ? inputPass.trim() : "")) {
+                        if (requiredPass.equals(inputPass != null ? inputPass.trim() : "")) {
                             viewModel.unlinkDevice(this, node.getUid(), success -> {
                                 Toast.makeText(this, "🛡️ Force Administrative Purge Completed for " + node.getDisplayName(), Toast.LENGTH_LONG).show();
                                 return null;

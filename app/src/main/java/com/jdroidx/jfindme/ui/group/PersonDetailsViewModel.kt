@@ -203,10 +203,20 @@ class PersonDetailsViewModel : ViewModel() {
             
             // 2. Cloud Commit
             if (!groupId.isNullOrEmpty()) {
+                val effectiveRole = if (isFriend) "Friends" else if (famRole != "None" && famRole.isNotBlank()) famRole else "Member"
+                val membershipMap = mapOf(
+                    "role" to effectiveRole,
+                    "role_family" to famRole,
+                    "role_friend" to frRole
+                )
+                // 1. Unified `devices/` Structure
+                FirebaseComm.relationshipsRef.child(groupId)
+                    .child("devices").child(targetUid).child("membership").updateChildren(membershipMap)
+                
+                // 2. Legacy Redundancy for backwards compatibility
                 val cp = mapOf("role_family" to famRole, "role_friend" to frRole)
                 FirebaseComm.relationshipsRef.child(groupId)
                     .child("citizen_dossiers").child(targetUid).updateChildren(cp)
-                val effectiveRole = if (isFriend) "Friends" else if (famRole != "None" && famRole.isNotBlank()) famRole else "Member"
                 FirebaseComm.relationshipsRef.child(groupId)
                     .child("members").child(targetUid).child("role").setValue(effectiveRole)
                 FirebaseComm.relationshipsRef.child(groupId)

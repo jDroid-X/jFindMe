@@ -30,12 +30,14 @@ object AvatarCalloutGenerator {
     
     // Role-Based Color Registry (SSOT)
     fun getRoleColor(roleStr: String, isSelf: Boolean): Int {
-        if (isSelf) return Color.parseColor("#00E5FF") // Cyberpunk Blue: Self / Host Device
+        if (isSelf) return Color.parseColor("#00E5FF") // Cyberpunk Cyan: Self / Host Device
         return when (roleStr.uppercase()) {
-            "CHILD", "DEPENDENT", "SON", "DAUGHTER" -> Color.parseColor("#FF6D00") // Deep Neon Orange: Child / Dependent
+            "CHILD", "DEPENDENT", "SON", "DAUGHTER", "KID", "STUDENT" -> Color.parseColor("#FF6D00") // Deep Neon Orange: Child / Dependent
             "SPOUSE", "PARTNER", "WIFE", "HUSBAND" -> Color.parseColor("#FF1744")  // Neon Red: Spouse / Partner
-            "GUARDIAN", "PARENT", "MOTHER", "FATHER" -> Color.parseColor("#FFD700") // Core Guardian Gold: Guardian / Parent
-            "FRIEND", "PEER", "GROUP" -> Color.parseColor("#AA00FF")               // Vivid Purple Neon: Friends / Group Nodes
+            "GUARDIAN", "PARENT", "MOTHER", "FATHER", "ADMIN", "COMMANDER" -> Color.parseColor("#FFD700") // Core Guardian Gold: Guardian / Parent
+            "FRIEND", "PEER", "COLLEAGUE", "ACQUAINTANCE", "NEIGHBOR", "GROUP" -> Color.parseColor("#AA00FF") // Vivid Purple Neon: Friends / Group Nodes
+            "FAMILY", "FAMILY MEMBER", "RELATIVE", "BROTHER", "SISTER", "SIBLING" -> Color.parseColor("#38BDF8") // Sky Blue: Family Member
+            "MEMBER" -> Color.parseColor("#22C55E") // Emerald Green: Standard Circle Member
             else -> Color.parseColor("#AA00FF")                                    // Default: Vivid Purple Neon
         }
     }

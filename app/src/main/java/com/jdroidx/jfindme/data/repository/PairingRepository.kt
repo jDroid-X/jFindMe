@@ -157,21 +157,26 @@ class PairingRepository {
                         "linked_at" to FirebaseComm.getForensicTimestamp()
                     ),
 
-                    // V61.0: Canonical Relational Bridge (Legacy Peer-to-Peer)
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/members/$targetAgentId" to mapOf(
-                        "role" to roleFam,
-                        "ts_linked" to FirebaseComm.getForensicTimestamp()
-                    ),
-                    
-                    // 🚀 V61.0: MASTER GROUPS NODE (Hierarchical Hub)
-                    "${FirebaseComm.NODE_GROUPS}/$hostAgentId/Family/$targetAgentId/identity" to mapOf(
-                        "name" to "Target Agent ($targetAgentId)",
-                        "ts_authorized" to FirebaseComm.getForensicTimestamp()
-                    ),
-                    "${FirebaseComm.NODE_GROUPS}/$hostAgentId/Family/$targetAgentId/pairing" to mapOf(
-                        "relationship_type" to roleFam,
-                        "group_id" to hostGroupId
-                    )
+                    // Uniform devices/ + group_info standard
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/host_device_id" to hostAgentId,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/group_name" to "Primary Circle",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/created_at" to FirebaseComm.getForensicTimestamp(),
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/identity/name" to (JFindMeApplication.getContext()?.let { RegistryManager.getUserNickname(it) } ?: hostAgentId),
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/identity/full_name" to (JFindMeApplication.getContext()?.let { RegistryManager.getUserNickname(it) } ?: hostAgentId),
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role" to "ADMIN",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role_family" to "Parent",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role_friend" to "None",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/status" to "Active",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/ts_joined" to FirebaseComm.getForensicTimestamp(),
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/paired_with/$targetAgentId" to true,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/identity/name" to targetAgentId,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/identity/full_name" to targetAgentId,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role" to roleFam,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role_family" to roleFam,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role_friend" to "None",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/status" to "Active",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/ts_joined" to FirebaseComm.getForensicTimestamp(),
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/paired_with/$hostAgentId" to true
                 )
                 
                 db.updateChildren(updates).addOnSuccessListener {

@@ -22,6 +22,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+import com.jdroidx.jfindme.utils.RegistryManager;
 import com.jdroidx.jfindme.utils.ValidationEngine;
 
 /**
@@ -351,22 +352,24 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 });
                 formBox.addView(adminSaveBtn, btnLp);
             }
-            View syncBtn = createIconButton("REQUEST DEVICE SYNC", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
+            View syncBtn = createIconButton("🛰️ PING & REFRESH LIVE GPS", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> {
                 if (targetAgentId != null && !targetAgentId.trim().isEmpty()) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteLocateDevice(targetAgentId);
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
                         .child("force_cloud_sync_trigger")
                         .setValue(System.currentTimeMillis());
-                    UiArchitect.showSlideNotificationBanner(this, "Sync Dispatched", "Sync pull request dispatched to target device edge.", false, 3000, null, null);
+                    UiArchitect.showSlideNotificationBanner(this, "🛰️ GPS Locate Ping Sent", "Sent immediate high-accuracy GPS wakeup request to device.", false, 3500, null, null);
                 } else {
                     UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
                 }
             });
             formBox.addView(syncBtn, btnLp);
 
-            View ringBtn = createIconButton("🔊 RING DEVICE (ACOUSTIC SIREN - 30S)", android.R.drawable.ic_lock_idle_alarm, v -> {
+            int sirenDur = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
+            View ringBtn = createIconButton("🔊 RING DEVICE (ACOUSTIC SIREN - " + sirenDur + "S)", android.R.drawable.ic_lock_idle_alarm, v -> {
                 if (targetAgentId != null && !targetAgentId.trim().isEmpty()) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
-                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", "30-second emergency siren sent to target node.", false, 4000, null, null);
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, sirenDur);
+                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", sirenDur + "-second emergency siren sent to target node.", false, 4000, null, null);
                 } else {
                     UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
                 }
@@ -559,12 +562,14 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         
                         String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                         if (myGrp != null) {
-                            java.util.Map<String, Object> cp = new java.util.HashMap<>();
-                            cp.put("role_family", famRole);
-                            cp.put("role_friend", frRole);
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(nodeUid).updateChildren(cp);
                             String effectiveRole = isFriendRole ? "Friends" : (famRole.equals("None") ? "Member" : famRole);
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(nodeUid).child("role").setValue(effectiveRole);
+                            java.util.Map<String, Object> memberUpdates = new java.util.HashMap<>();
+                            memberUpdates.put("role", effectiveRole);
+                            memberUpdates.put("role_family", famRole);
+                            memberUpdates.put("role_friend", frRole);
+                            
+                            // 1. Unified `devices/` Structure
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(nodeUid).child("membership").updateChildren(memberUpdates);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                         }
 
@@ -879,8 +884,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
         etCountry.setOnItemClickListener((parent, view, position, id) -> {
             String country = parent.getItemAtPosition(position).toString();
             if (!country.equals("Select Country")) {
-                etState.setText("");
-                etCity.setText("");
+                etCountry.setText(country, false);
+                etState.setText("", false);
+                etCity.setText("", false);
                 viewModel.fetchStatesList(country);
             }
         });
@@ -888,8 +894,16 @@ public class PersonDetailsActivity extends BaseActivityJava {
         etState.setOnItemClickListener((parent, view, position, id) -> {
             String state = parent.getItemAtPosition(position).toString();
             if (!state.equals("Select State")) {
-                etCity.setText("");
+                etState.setText(state, false);
+                etCity.setText("", false);
                 viewModel.fetchCitiesList(etCountry.getText().toString(), state);
+            }
+        });
+
+        etCity.setOnItemClickListener((parent, view, position, id) -> {
+            String city = parent.getItemAtPosition(position).toString();
+            if (!city.equals("Select City")) {
+                etCity.setText(city, false);
             }
         });
 
@@ -1215,7 +1229,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         String peerName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : targetAgentId;
         UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("❌ Standard Unlink Device", "Safely uncouple this device from your active tracking circle", android.R.drawable.ic_menu_delete),
-            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with password 'jbutterfly@123' to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
+            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with master security password to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
         };
 
         UiArchitect.showRichOptionsDialog(this, "Remove " + peerName + "?", unlinkOptions, (idx, label) -> {
@@ -1234,18 +1248,21 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 finish();
             } else {
                 // Master Password Purge
+                String requiredPass = RegistryManager.getPurgeSafetyPhrase(this);
                 UiArchitect.showInputPromptDialog(this,
                     "Master Admin Authorization",
                     "Enter master security password to force purge '" + peerName + "' (" + targetAgentId + "):",
                     "",
                     inputPass -> {
-                        if ("jbutterfly@123".equals(inputPass != null ? inputPass.trim() : "")) {
+                        if (requiredPass.equals(inputPass != null ? inputPass.trim() : "")) {
                             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
                             db.deleteRosterNode(targetAgentId);
                             String myGrp = prefs.getString("active_group", null);
                             if (myGrp != null) {
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetAgentId).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetAgentId).removeValue();
                             }
                             String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
@@ -1302,8 +1319,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 startActivity(mapIntent);
             })
             .setNeutralButton("🔊 RING SIREN", (d, w) -> {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, 30);
-                Toast.makeText(this, "🔊 Acoustic Siren dispatched (30s)", Toast.LENGTH_SHORT).show();
+                int sirenDur = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
+                com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, sirenDur);
+                Toast.makeText(this, "🔊 Acoustic Siren dispatched (" + sirenDur + "s)", Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("CLOSE", null)
             .show();

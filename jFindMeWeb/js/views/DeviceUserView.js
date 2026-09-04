@@ -37,14 +37,17 @@ export class DeviceUserView {
         this.editModal = new DeviceEditModalView({
             onSave: async (agentId, payload) => {
                 try {
-                    const res = await fetch('/api/update-profile', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/update-profile', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, profileData: payload })
+                    }) : fetch('/api/update-profile', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, profileData: payload })
-                    });
-                    if (!res.ok) {
-                        const data = await res.json();
-                        throw new Error(data.error || 'Update failed');
+                    }).then(r => r.json()));
+
+                    if (res && res.error) {
+                        throw new Error(res.error || 'Update failed');
                     }
                     UIControls.notify(`Profile & Circle updated for ${payload.name || agentId}`, 'success', { duration: 3500 });
                     if (window.showDeviceUser) window.showDeviceUser(agentId);
@@ -54,6 +57,35 @@ export class DeviceUserView {
                 }
             }
         });
+
+        if (typeof window !== 'undefined' && !window.copyToClipboard) {
+            window.copyToClipboard = (text, label = 'Value') => {
+                if (!text) return;
+                const str = String(text).trim();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(str).then(() => {
+                        FeedbackDialog.showToast ? FeedbackDialog.showToast(`Copied ${label}: ${str}`, 'info') : UIControls.notify(`Copied ${label}`, 'info', { duration: 1500 });
+                    }).catch(() => {
+                        prompt(`Copy ${label}:`, str);
+                    });
+                } else {
+                    prompt(`Copy ${label}:`, str);
+                }
+            };
+        }
+    }
+
+    /**
+     * Smoothly updates live telemetry from background stream
+     */
+    updateData(devices = [], safeZones = []) {
+        const activeEl = document.activeElement;
+        const isEditing = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+        if (isEditing) {
+            this.devices = DeviceController.sortByLatestFirst(devices);
+            return;
+        }
+        this.render(devices, this.selectedAgentId, safeZones || this.safeZones);
     }
 
     /**
@@ -119,28 +151,28 @@ export class DeviceUserView {
         const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, this.safeZones);
 
         container.innerHTML = `
-            <div class="w-full h-full select-none overflow-y-auto custom-scrollbar p-4 font-sans space-y-3">
+            <div class="w-full h-full select-text overflow-y-auto custom-scrollbar p-2 font-sans space-y-1.5">
                 
                 <!-- COMPACT HEADER BAR -->
-                <div class="card-theme px-4 py-2.5 flex items-center justify-between shadow-sm">
-                    <div class="flex items-center gap-3 min-w-0">
-                        <div class="w-8 h-8 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-base shrink-0">
+                <div class="card-theme px-2.5 py-1.5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-sm shrink-0">
                             📱
                         </div>
                         <div class="min-w-0">
                             <h2 class="text-xs font-bold tracking-wide text-primary-theme uppercase flex items-center gap-2">
                                 <span>Device User Oversight Matrix</span>
-                                <span class="badge-status badge-accent text-[9px]">DYNAMIC SSOT</span>
+                                <span class="badge-status badge-accent text-[8.5px]">DYNAMIC SSOT</span>
                             </h2>
-                            <p class="text-[11px] text-secondary-theme font-mono truncate">
+                            <p class="text-[10px] text-secondary-theme font-mono truncate select-text">
                                 Master Identity: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
                             </p>
                         </div>
                     </div>
 
                     ${selectedDev ? `
-                    <div class="flex items-center gap-2 shrink-0">
-                        <button id="btn-du-view-map" class="btn-action-primary text-xs">
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button id="btn-du-view-map" class="btn-action-primary text-xs py-1 px-2.5">
                             <span>🗺️ Locate on Map</span>
                         </button>
                     </div>
@@ -148,61 +180,65 @@ export class DeviceUserView {
                 </div>
 
                 <!-- 5-PANE MULTI-COLUMN SMART-FIT WORKSPACE -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 items-start">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-1.5 items-start">
                     
                     <!-- PANE 1: MASTER DEVICE ROSTER & SEARCH BAR -->
-                    <div class="card-theme p-3 flex flex-col space-y-2.5 shadow-sm">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2">
+                    <div class="card-theme p-1.5 flex flex-col space-y-1.5 shadow-sm">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
                             <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">1. Device Roster</span>
-                            <span class="badge-status badge-accent">${filteredDevices.length}/${this.devices.length}</span>
+                            <span class="badge-status badge-accent text-[9px]">${filteredDevices.length}/${this.devices.length}</span>
                         </div>
 
                         <!-- Search Input -->
                         <div class="relative flex items-center">
                             <input type="text" id="du-search-input" 
-                                   placeholder="🔍 Filter name, ID, role..." 
+                                   placeholder="🔍 Filter name, ID, device..." 
                                    value="${this.searchQuery}"
-                                   class="input-theme w-full pl-7 pr-6 py-1.5 text-xs font-mono">
-                            <svg class="w-3.5 h-3.5 absolute left-2 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   class="input-theme w-full pl-6 pr-5 py-1 text-[11px] font-mono">
+                            <svg class="w-3 h-3 absolute left-2 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
                             ${this.searchQuery ? `
-                                <button id="btn-du-clear-search" class="absolute right-1.5 text-muted-theme hover:text-primary-theme text-xs font-bold p-0.5">✕</button>
+                                <button id="btn-du-clear-search" class="absolute right-1 text-muted-theme hover:text-primary-theme text-xs font-bold p-0.5">✕</button>
                             ` : ''}
                         </div>
 
                         <!-- TEMPORAL TIME WINDOW FILTER TOOLBAR (PANE 1) -->
-                        <div class="grid grid-cols-4 gap-1 pt-0.5">
-                            <button class="btn-du-time-filter text-[9px] font-bold py-1 px-1 rounded text-center transition-all ${this.timeWindowFilter === 'all' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="all">All (${this.devices.length})</button>
-                            <button class="btn-du-time-filter text-[9px] font-bold py-1 px-1 rounded text-center transition-all ${this.timeWindowFilter === 'live' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="live">⚡Live</button>
-                            <button class="btn-du-time-filter text-[9px] font-bold py-1 px-1 rounded text-center transition-all ${this.timeWindowFilter === 'today' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="today">Today</button>
-                            <button class="btn-du-time-filter text-[9px] font-bold py-1 px-1 rounded text-center transition-all ${this.timeWindowFilter === '24h' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="24h">24h</button>
+                        <div class="grid grid-cols-4 gap-0.5 pt-0.5">
+                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'all' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="all">All (${this.devices.length})</button>
+                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'live' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="live">⚡Live</button>
+                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'today' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="today">Today</button>
+                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === '24h' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="24h">24h</button>
                         </div>
 
                         <!-- Roster List (Sorted: Latest On Top) -->
-                        <div class="space-y-1.5 overflow-y-auto custom-scrollbar max-h-[500px] pr-0.5">
+                        <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[520px] pr-0.5">
                             ${filteredDevices.map(dev => {
                                 const ragColor = dev.getRagColor();
                                 const isSel = dev.agentId === this.selectedAgentId;
                                 const recency = typeof dev.getRecencyTier === 'function' ? dev.getRecencyTier() : { badgeClass: 'badge-status badge-accent', label: 'TELEMETRY' };
+                                const deviceNameText = dev.deviceName || dev.model || 'Android';
 
                                 return `
-                                    <div class="du-device-item cursor-pointer p-2 rounded-xl border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-2.5"
+                                    <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-2 select-text"
                                          data-agent-id="${dev.agentId}">
                                         <div class="relative shrink-0">
                                             <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                                 class="w-8 h-8 rounded-full object-cover border-2 shadow-sm" 
+                                                 class="w-7 h-7 rounded-full object-cover border-2 shadow-sm" 
                                                  style="border-color: ${ragColor};">
-                                            <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-surface" style="background-color: ${ragColor}"></span>
+                                            <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-surface" style="background-color: ${ragColor}"></span>
                                         </div>
                                         <div class="min-w-0 flex-1">
                                             <div class="flex items-center justify-between gap-1">
-                                                <h4 class="text-xs font-bold truncate text-primary-theme min-w-0">${dev.name}</h4>
-                                                <span class="${recency.badgeClass} text-[8px] font-bold shrink-0">${recency.label}</span>
+                                                <h4 class="text-xs font-bold truncate text-primary-theme min-w-0 flex items-center gap-1">
+                                                    <span class="truncate">${dev.name}</span>
+                                                    <span class="badge-status badge-accent text-[8px] shrink-0 font-normal truncate max-w-[85px]" title="${deviceNameText}">${deviceNameText}</span>
+                                                </h4>
+                                                <span class="${recency.badgeClass} text-[7.5px] font-bold shrink-0">${recency.label}</span>
                                             </div>
-                                            <div class="text-[10px] text-secondary-theme truncate font-mono flex items-center justify-between mt-0.5">
-                                                <span>${dev.deviceName || dev.model} • ${dev.agentId}</span>
-                                                <span class="text-sky-400 font-sans">${dev.getFormattedTimeDelta()}</span>
+                                            <div class="text-[9.5px] text-secondary-theme truncate font-mono flex items-center justify-between mt-0.5 select-text">
+                                                <span class="cursor-pointer hover:text-sky-400 truncate min-w-0" data-copy-text="${dev.agentId}" data-copy-label="Hardware ID" title="Click to copy Hardware ID">ID: ${dev.agentId} 📋</span>
+                                                <span class="text-sky-400 font-sans shrink-0">${dev.getFormattedTimeDelta()}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -213,81 +249,99 @@ export class DeviceUserView {
 
                     ${selectedDev ? `
                     <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
-                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
                             <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">2. Master Profile</span>
-                            <div class="flex items-center gap-1.5">
-                                <button id="btn-edit-profile-dossier" class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-1 cursor-pointer">
+                            <div class="flex items-center gap-1">
+                                <button id="btn-edit-profile-dossier" class="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-0.5 cursor-pointer">
                                     <span>✏️ Edit</span>
                                 </button>
-                                <button id="btn-toggle-org" class="text-[10px] text-sky-400 hover:underline font-mono font-bold">
-                                    ${this.isOrgExpanded ? '[-] Collapse' : '[+] Org ACL'}
+                                <button id="btn-toggle-org" class="text-[9.5px] text-sky-400 hover:underline font-mono font-bold">
+                                    ${this.isOrgExpanded ? '[-] Hide' : '[+] Org'}
                                 </button>
                             </div>
                         </div>
 
-                        <div class="overflow-y-auto custom-scrollbar space-y-2.5 max-h-[500px] pr-0.5">
+                        <div class="overflow-y-auto custom-scrollbar space-y-1.5 max-h-[520px] pr-0.5">
                             <!-- Master Profile Identity Card -->
-                            <div class="surface-theme p-3 rounded-xl space-y-2 text-xs font-mono border">
-                                <div class="text-[10px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
+                            <div class="surface-theme p-1.5 rounded-lg space-y-1 text-xs font-mono border select-text">
+                                <div class="text-[9.5px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
                                     <span>👤 Master Identity</span>
-                                    <span class="badge-status badge-accent text-[8px]">${selectedDev.agentId}</span>
+                                    <span class="badge-status badge-accent text-[8px] cursor-pointer hover:underline" data-copy-text="${selectedDev.agentId}" data-copy-label="Agent ID" title="Click to copy">${selectedDev.agentId} 📋</span>
                                 </div>
 
-                                <div class="flex items-center gap-2.5 pb-2 border-b border-subtle-theme">
-                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-10 h-10 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
+                                <div class="flex items-center gap-2 pb-1.5 border-b border-subtle-theme">
+                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-8 h-8 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
                                     <div class="min-w-0 flex-1">
-                                        <h3 class="font-bold text-xs text-primary-theme truncate">${selectedDev.name}</h3>
-                                        <div class="text-[10px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
-                                        <div class="text-[9px] text-secondary-theme truncate">${selectedDev.deviceName || selectedDev.model}</div>
+                                        <h3 class="font-bold text-xs text-primary-theme truncate cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.name}" data-copy-label="Persona Name" title="Click to copy">${selectedDev.name}</h3>
+                                        <div class="text-[9.5px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
+                                        <div class="text-[8.5px] text-secondary-theme truncate">${selectedDev.deviceName || selectedDev.model}</div>
                                     </div>
                                 </div>
 
-                                <div class="space-y-1.5 text-[11px]">
-                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Auth UID:</span> <span class="text-primary-theme font-bold truncate max-w-[120px] font-mono">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Hardware ID:</span> <span class="text-primary-theme font-bold truncate max-w-[120px] font-mono">${selectedDev.deviceId}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Model:</span> <span class="text-primary-theme font-medium truncate max-w-[120px]">${selectedDev.model || 'Android Device'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Phone:</span> <span class="text-primary-theme font-mono">${selectedDev.phone || 'Not Registered'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Email:</span> <span class="text-primary-theme truncate max-w-[120px]">${selectedDev.email || 'Not Registered'}</span></div>
-                                    <div class="flex justify-between items-center py-0.5"><span class="text-secondary-theme">Emergency Note:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-500 font-bold' : 'text-muted-theme'} truncate max-w-[120px]">${selectedDev.emergencyNote || 'None'}</span></div>
+                                <div class="space-y-1 text-[10.5px]">
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Auth UID:</span> 
+                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text cursor-pointer hover:text-sky-400" data-copy-text="${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}" data-copy-label="Auth UID" title="Click to copy">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'} 📋</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Hardware ID:</span> 
+                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.deviceId}" data-copy-label="Hardware ID" title="Click to copy">${selectedDev.deviceId} 📋</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Device Name:</span> 
+                                        <span class="text-primary-theme font-medium truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.deviceName || selectedDev.model || 'Android Device'}" data-copy-label="Device Name" title="Click to copy">${selectedDev.deviceName || selectedDev.model || 'Android Device'}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Phone:</span> 
+                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.phone || 'Not Registered'}" data-copy-label="Phone Number" title="Click to copy">${selectedDev.phone || 'Not Registered'} 📋</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Email:</span> 
+                                        <span class="text-primary-theme truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.email || 'Not Registered'}" data-copy-label="Email" title="Click to copy">${selectedDev.email || 'Not Registered'}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1.5 py-0.5">
+                                        <span class="text-secondary-theme shrink-0 text-[10px]">Emergency:</span> 
+                                        <span class="${selectedDev.emergencyNote ? 'text-amber-500 font-bold' : 'text-muted-theme'} truncate text-right flex-1 min-w-0 select-text">${selectedDev.emergencyNote || 'None'}</span>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- Sub-Master Expandable Org Data Panel -->
-                            <div id="org-data-panel" class="surface-theme p-3 rounded-xl space-y-2 text-xs font-mono border ${this.isOrgExpanded ? 'block' : 'hidden'}">
-                                <div class="text-[10px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
+                            <div id="org-data-panel" class="surface-theme p-1.5 rounded-lg space-y-1 text-xs font-mono border select-text ${this.isOrgExpanded ? 'block' : 'hidden'}">
+                                <div class="text-[9.5px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
                                     <span>🏢 Org Metadata & ACL</span>
-                                    <span class="text-[9px] text-muted-theme font-mono">SUB-MASTER</span>
+                                    <span class="text-[8.5px] text-muted-theme font-mono">SUB-MASTER</span>
                                 </div>
                                 <div class="space-y-1 text-[10px]">
                                     <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Org:</span> <span class="text-primary-theme font-bold">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
                                     <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Dept:</span> <span class="text-primary-theme">${selectedDev.department || 'General'}</span></div>
                                     <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Role:</span> <span class="text-primary-theme font-bold">${selectedDev.role}</span></div>
-                                    <div class="pt-2 text-[9px] text-secondary-theme uppercase font-sans font-bold border-t border-subtle-theme">Interactive ACL Grants:</div>
-                                    <div class="space-y-1.5 font-sans pt-1">
-                                        <div class="flex items-center justify-between p-1.5 rounded-lg bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[10px] font-bold text-primary-theme">Live Tracking</span>
+                                    <div class="pt-1 text-[8.5px] text-secondary-theme uppercase font-sans font-bold border-t border-subtle-theme">Interactive ACL Grants:</div>
+                                    <div class="space-y-1 font-sans pt-0.5">
+                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
+                                            <span class="text-[9.5px] font-bold text-primary-theme">Live Tracking</span>
                                             <label class="switch-toggle switch-sm">
                                                 <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_live_tracking" ${selectedDev.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
                                                 <span class="switch-slider"></span>
                                             </label>
                                         </div>
-                                        <div class="flex items-center justify-between p-1.5 rounded-lg bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[10px] font-bold text-primary-theme">Geofence Alerts</span>
+                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
+                                            <span class="text-[9.5px] font-bold text-primary-theme">Geofence Alerts</span>
                                             <label class="switch-toggle switch-sm">
                                                 <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_geofence" ${selectedDev.raw?.acl?.acl_geofence === 'DENIED' ? '' : 'checked'}>
                                                 <span class="switch-slider"></span>
                                             </label>
                                         </div>
-                                        <div class="flex items-center justify-between p-1.5 rounded-lg bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[10px] font-bold text-primary-theme">Route History</span>
+                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
+                                            <span class="text-[9.5px] font-bold text-primary-theme">Route History</span>
                                             <label class="switch-toggle switch-sm">
                                                 <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_history_audit" ${selectedDev.raw?.acl?.acl_history_audit === 'DENIED' ? '' : 'checked'}>
                                                 <span class="switch-slider"></span>
                                             </label>
                                         </div>
-                                        <div class="flex items-center justify-between p-1.5 rounded-lg bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[10px] font-bold text-primary-theme">Ghost Mode Override</span>
+                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
+                                            <span class="text-[9.5px] font-bold text-primary-theme">Ghost Override</span>
                                             <label class="switch-toggle switch-sm">
                                                 <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_ghost_override" ${selectedDev.raw?.acl?.acl_ghost_override === 'GRANTED' ? 'checked' : ''}>
                                                 <span class="switch-slider"></span>
@@ -300,45 +354,45 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 3: CONNECTIONS TREE (FAMILY & FRIENDS) -->
-                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
                             <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">3. Connections</span>
-                            <div class="flex items-center gap-1.5">
-                                <span class="badge-status badge-accent text-[9px] font-mono">📊 TOPOLOGY (${relCount} Linked)</span>
+                            <div class="flex items-center gap-1">
+                                <span class="badge-status badge-accent text-[8.5px] font-mono">📊 ${relCount} Linked</span>
                             </div>
                         </div>
 
                         <!-- Tree Container with Scrollbar -->
-                        <div class="surface-theme p-2.5 rounded-xl border space-y-2 overflow-y-auto custom-scrollbar max-h-[500px] font-mono">
+                        <div class="surface-theme p-1.5 rounded-lg border space-y-1.5 overflow-y-auto custom-scrollbar max-h-[520px] font-mono select-text">
                             <!-- Root Selected Device Node -->
-                            <div class="flex items-center gap-2 p-2 rounded-lg bg-sky-500/10 border border-sky-500/30 text-primary-theme">
-                                <span class="text-sm">👑</span>
+                            <div class="flex items-center gap-1.5 p-1.5 rounded-md bg-sky-500/10 border border-sky-500/30 text-primary-theme select-text">
+                                <span class="text-xs">👑</span>
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-xs font-bold truncate">${selectedDev.name}</div>
-                                    <div class="text-[9px] text-sky-400">Root Node (${selectedDev.agentId})</div>
+                                    <div class="text-xs font-bold truncate cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.name}" data-copy-label="Name">${selectedDev.name}</div>
+                                    <div class="text-[8.5px] text-sky-400 cursor-pointer" data-copy-text="${selectedDev.agentId}" data-copy-label="Hardware ID">Root Node (${selectedDev.agentId}) 📋</div>
                                 </div>
                             </div>
 
                             <!-- Tree Branches -->
-                            <div class="pl-2 border-l-2 border-sky-500/30 space-y-2">
+                            <div class="pl-1.5 border-l-2 border-sky-500/30 space-y-1.5">
                                 <!-- Family Branch -->
                                 <details class="group/family space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[10px] font-bold text-amber-500 font-sans uppercase flex items-center gap-1.5 list-none hover:text-amber-400">
-                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[10px] font-black">&gt;</span>
+                                    <summary class="cursor-pointer select-none text-[9.5px] font-bold text-amber-500 font-sans uppercase flex items-center gap-1 list-none hover:text-amber-400">
+                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[9px] font-black">&gt;</span>
                                         <span>👨‍👩‍👧‍👦 Family Connections</span>
                                     </summary>
-                                    <div class="space-y-1 pl-3 border-l border-amber-500/20 mt-1">
+                                    <div class="space-y-1 pl-2 border-l border-amber-500/20 mt-0.5">
                                         ${this.renderTreeMembers(selectedDev, 'family')}
                                     </div>
                                 </details>
 
                                 <!-- Friends Branch -->
                                 <details class="group/friends space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[10px] font-bold text-emerald-500 font-sans uppercase flex items-center gap-1.5 list-none hover:text-emerald-400">
-                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[10px] font-black">&gt;</span>
+                                    <summary class="cursor-pointer select-none text-[9.5px] font-bold text-emerald-500 font-sans uppercase flex items-center gap-1 list-none hover:text-emerald-400">
+                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[9px] font-black">&gt;</span>
                                         <span>🤝 Friends Connections</span>
                                     </summary>
-                                    <div class="space-y-1 pl-3 border-l border-emerald-500/20 mt-1">
+                                    <div class="space-y-1 pl-2 border-l border-emerald-500/20 mt-0.5">
                                         ${this.renderTreeMembers(selectedDev, 'friends')}
                                     </div>
                                 </details>
@@ -347,20 +401,20 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 4: SAFEZONES (SECTION 1: CREATED | SECTION 2: ASSIGNED) & NOTIFICATIONS -->
-                    <div class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
+                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
                             <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <span class="badge-status badge-accent text-[9px] font-mono">📊 GEOFENCES (${createdZonesList.length} C | ${assignedZonesList.length} A)</span>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <span class="badge-status badge-accent text-[8.5px] font-mono">📊 ${createdZonesList.length} C | ${assignedZonesList.length} A</span>
                             </div>
                         </div>
 
-                        <div class="space-y-2 overflow-y-auto custom-scrollbar max-h-[500px] pr-0.5">
+                        <div class="space-y-1.5 overflow-y-auto custom-scrollbar max-h-[520px] pr-0.5">
                             <!-- Section 1: Created Safe Zones -->
-                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
-                                <div class="text-[10px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
+                                <div class="text-[9.5px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
                                     <span>Section 1: Created Zones</span>
-                                    <span class="text-[9px] font-mono text-muted-theme">(${createdZonesList.length})</span>
+                                    <span class="text-[8.5px] font-mono text-muted-theme">(${createdZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderCreatedSafeZonesHTML(selectedDev, createdZonesList)}
@@ -368,10 +422,10 @@ export class DeviceUserView {
                             </div>
 
                             <!-- Section 2: Assigned Safe Zones -->
-                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
-                                <div class="text-[10px] font-bold text-amber-500 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
+                                <div class="text-[9.5px] font-bold text-amber-500 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
                                     <span>Section 2: Assigned Zones</span>
-                                    <span class="text-[9px] font-mono text-muted-theme">(${assignedZonesList.length})</span>
+                                    <span class="text-[8.5px] font-mono text-muted-theme">(${assignedZonesList.length})</span>
                                 </div>
                                 <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
                                     ${this.renderAssignedSafeZonesHTML(selectedDev, assignedZonesList)}
@@ -379,9 +433,9 @@ export class DeviceUserView {
                             </div>
 
                             <!-- Transactional Geofence Notification Log -->
-                            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5">
-                                <div class="text-[10px] font-bold text-secondary-theme uppercase font-sans border-b border-subtle-theme pb-1">Geofence Event Log</div>
-                                <div class="space-y-1 text-[9px] font-mono max-h-[140px] overflow-y-auto custom-scrollbar">
+                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
+                                <div class="text-[9.5px] font-bold text-secondary-theme uppercase font-sans border-b border-subtle-theme pb-0.5">Geofence Event Log</div>
+                                <div class="space-y-1 text-[8.5px] font-mono max-h-[130px] overflow-y-auto custom-scrollbar">
                                     ${this.renderNotificationItems(selectedDev, rawNode)}
                                 </div>
                             </div>
@@ -389,7 +443,7 @@ export class DeviceUserView {
                     </div>
 
                     <!-- PANE 5: TRANSACTIONAL LOCATION FIX & TELEMETRY MATRIX -->
-                    <div id="pane-5-container" class="card-theme p-3 space-y-2.5 shadow-sm flex flex-col">
+                    <div id="pane-5-container" class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
                         ${this.renderPane5HTML(selectedDev, rawNode)}
                     </div>
 
@@ -490,7 +544,8 @@ export class DeviceUserView {
 
         const matchedNodes = relEntries.filter(([k, v]) => {
             const roleStr = (v.role || "").toLowerCase();
-            return type === 'family' ? (roleStr.includes('spouse') || roleStr.includes('child') || roleStr.includes('parent') || roleStr.includes('family') || roleStr.includes('father') || roleStr.includes('mother')) : roleStr.includes('friend');
+            const isFriend = roleStr.includes('friend') || roleStr.includes('colleague') || roleStr.includes('peer') || roleStr.includes('buddy');
+            return type === 'family' ? !isFriend : isFriend;
         });
 
         if (matchedNodes.length === 0) {
@@ -498,20 +553,44 @@ export class DeviceUserView {
         }
 
         return matchedNodes.map(([agentId, data]) => {
-            const peerDev = this.devices.find(d => d.agentId === agentId || d.deviceId === agentId || d.name === data.name);
-            const peerName = data.name || (peerDev ? peerDev.name : agentId);
+            const cleanKey = String(agentId).replace(/^HW_/, '').toUpperCase();
+            const peerDev = this.devices.find(d => {
+                const dClean = String(d.agentId).replace(/^HW_/, '').toUpperCase();
+                return d.agentId === agentId || 
+                       d.deviceId === agentId || 
+                       dClean === cleanKey ||
+                       (data.name && d.name && d.name.toLowerCase() === String(data.name).toLowerCase());
+            });
+
+            // Prioritize true human/friendly persona name over raw hardware IDs (e.g. "REDMI N7" instead of "2T929153")
+            let peerName = "";
+            if (peerDev && peerDev.name && peerDev.name !== peerDev.agentId && !peerDev.name.startsWith("HW_")) {
+                peerName = peerDev.name;
+            } else if (data.name && data.name !== agentId && !data.name.startsWith("HW_") && !this.devices.some(d => d.agentId === data.name)) {
+                peerName = data.name;
+            } else if (peerDev && (peerDev.deviceName || peerDev.model)) {
+                peerName = peerDev.deviceName || peerDev.model;
+            } else {
+                peerName = data.name || (peerDev ? peerDev.name : agentId);
+            }
+
             const peerAvatar = peerDev ? peerDev.getAvatarUrl() : `data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>`;
             const peerTargetId = peerDev ? peerDev.agentId : agentId;
+            const peerRag = peerDev ? peerDev.getRagColor() : '#38bdf8';
+            const peerSubtext = peerDev ? `${peerDev.deviceName || peerDev.model || 'Android'} • ${peerTargetId}` : `ID: ${peerTargetId}`;
 
             return `
-                <div class="du-tree-node flex items-center justify-between p-1.5 rounded-lg bg-card-subtle hover:bg-card-hover text-xs border border-subtle-theme cursor-pointer transition-all group"
+                <div class="du-tree-node flex items-center justify-between p-1.5 rounded-md bg-card-subtle hover:bg-card-hover text-xs border border-subtle-theme cursor-pointer transition-all group select-text"
                      data-target-agent-id="${peerTargetId}">
                     <div class="flex items-center gap-1.5 min-w-0">
-                        <img src="${peerAvatar}" class="w-4 h-4 rounded-full object-cover shrink-0">
-                        <span class="truncate text-primary-theme font-bold">${peerName}</span>
+                        <img src="${peerAvatar}" class="w-4 h-4 rounded-full object-cover shrink-0 border" style="border-color: ${peerRag}">
+                        <div class="min-w-0 flex-1">
+                            <div class="truncate text-primary-theme font-bold text-xs">${peerName}</div>
+                            <div class="text-[8.5px] text-secondary-theme font-mono truncate select-text cursor-pointer hover:text-sky-400" data-copy-text="${peerTargetId}" data-copy-label="Hardware ID" title="Click to copy ID">${peerSubtext} 📋</div>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <span class="badge-status badge-accent text-[8px]">${data.role || 'Member'}</span>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <span class="badge-status ${type === 'family' ? 'badge-accent' : 'badge-success'} text-[7.5px] font-bold uppercase">${data.role || (type === 'family' ? 'Family' : 'Friend')}</span>
                         <button class="btn-delete-link text-muted-theme hover:text-rose-500 p-0.5 text-xs font-bold"
                                 data-source-agent-id="${device.agentId}"
                                 data-target-agent-id="${peerTargetId}"
@@ -539,16 +618,16 @@ export class DeviceUserView {
             const zLng = z.lng || z.longitude || 0;
 
             return `
-                <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme text-xs space-y-0.5">
+                <div class="p-1.5 rounded-md bg-card-subtle border border-subtle-theme text-xs space-y-0.5 select-text">
                     <div class="flex items-center justify-between font-bold text-primary-theme">
-                        <span class="truncate text-sky-400 font-bold">${zName}</span>
+                        <span class="truncate text-sky-400 font-bold cursor-pointer hover:underline" data-copy-text="${zName}" data-copy-label="SafeZone Name" title="Click to copy name">${zName}</span>
                         <div class="flex items-center gap-1 shrink-0">
-                            <span class="badge-status badge-accent text-[8px]">CREATED</span>
-                            <button class="btn-locate-zone px-1.5 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
+                            <span class="badge-status badge-accent text-[7.5px]">CREATED</span>
+                            <button class="btn-locate-zone px-1 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
                                     data-lat="${zLat}" data-lng="${zLng}" data-name="${zName}" title="Locate on map radar">🎯</button>
                         </div>
                     </div>
-                    <div class="text-[10px] text-secondary-theme font-mono">Assigned: <span class="text-amber-500 font-bold">${targets}</span> • ${zRadius}m</div>
+                    <div class="text-[9.5px] text-secondary-theme font-mono select-text truncate">Assigned: <span class="text-amber-500 font-bold">${targets}</span> • ${zRadius}m</div>
                 </div>
             `;
         }).join('');
@@ -570,16 +649,16 @@ export class DeviceUserView {
             const zLng = z.lng || z.longitude || 0;
 
             return `
-                <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme text-xs space-y-0.5">
+                <div class="p-1.5 rounded-md bg-card-subtle border border-subtle-theme text-xs space-y-0.5 select-text">
                     <div class="flex items-center justify-between font-bold text-primary-theme">
-                        <span class="truncate text-amber-500 font-bold">${zName}</span>
+                        <span class="truncate text-amber-500 font-bold cursor-pointer hover:underline" data-copy-text="${zName}" data-copy-label="SafeZone Name" title="Click to copy name">${zName}</span>
                         <div class="flex items-center gap-1 shrink-0">
-                            <span class="badge-status ${stateTag === 'OUT' ? 'badge-warning' : 'badge-success'} text-[8px]">${stateTag}</span>
-                            <button class="btn-locate-zone px-1.5 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
+                            <span class="badge-status ${stateTag === 'OUT' ? 'badge-warning' : 'badge-success'} text-[7.5px]">${stateTag}</span>
+                            <button class="btn-locate-zone px-1 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
                                     data-lat="${zLat}" data-lng="${zLng}" data-name="${zName}" title="Locate on map radar">🎯</button>
                         </div>
                     </div>
-                    <div class="text-[10px] text-secondary-theme font-mono">Radius: ${zRadius}m • Perimeter: <span class="text-emerald-500 font-bold">${stateTag}</span></div>
+                    <div class="text-[9.5px] text-secondary-theme font-mono select-text truncate">Radius: ${zRadius}m • <span class="text-emerald-500 font-bold">${stateTag}</span></div>
                 </div>
             `;
         }).join('');
@@ -599,12 +678,12 @@ export class DeviceUserView {
         }
 
         return `
-            <div class="p-2 rounded-lg bg-card-subtle border border-subtle-theme space-y-0.5">
-                <div class="flex items-center justify-between font-bold ${lastTransState === 'IN' ? 'text-emerald-500' : 'text-amber-500'}">
-                    <span>${lastTransState === 'IN' ? '🟢 ENTERED' : '🔴 EXITED'} ${lastTransZone}</span>
-                    <span class="text-[9px] text-muted-theme">${lastTransTime || 'Recent'}</span>
+            <div class="p-1.5 rounded-md bg-card-subtle border border-subtle-theme space-y-0.5 select-text">
+                <div class="flex items-center justify-between font-bold ${lastTransState === 'IN' ? 'text-emerald-500' : 'text-amber-500'} text-[10px]">
+                    <span class="truncate">${lastTransState === 'IN' ? '🟢 IN' : '🔴 OUT'} ${lastTransZone}</span>
+                    <span class="text-[8px] text-muted-theme shrink-0">${lastTransTime || 'Recent'}</span>
                 </div>
-                <div class="text-secondary-theme text-[10px]">Transition: ${lastTransState} perimeter registered.</div>
+                <div class="text-secondary-theme text-[9px] truncate">State: ${lastTransState} perimeter</div>
             </div>
         `;
     }
@@ -619,37 +698,37 @@ export class DeviceUserView {
         const activeCount = points.length;
 
         return `
-            <div class="flex items-center justify-between border-b border-subtle-theme pb-2 shrink-0">
-                <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">5. Telemetry Matrix</span>
-                    <span class="badge-status badge-accent text-[9px]">${activeCount} Pts</span>
+            <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
+                <div class="flex items-center gap-1 min-w-0">
+                    <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">5. Telemetry</span>
+                    <span class="badge-status badge-accent text-[8.5px]">${activeCount} Pts</span>
                 </div>
                 
                 <!-- Controls Right: Toggle (Left/Right) & Multi-Option Dialog Button -->
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1 shrink-0">
                     <!-- Toggle (Left/Right): Live vs History Stream -->
-                    <div class="inline-flex p-0.5 rounded-lg bg-surface border border-subtle-theme text-[9px] font-mono">
-                        <button id="btn-toggle-stream-live" class="px-2 py-0.5 rounded font-bold transition-all ${this.streamMode === 'live' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
+                    <div class="inline-flex p-0.5 rounded-md bg-surface border border-subtle-theme text-[8.5px] font-mono">
+                        <button id="btn-toggle-stream-live" class="px-1.5 py-0.5 rounded font-bold transition-all ${this.streamMode === 'live' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
                             📡 Live
                         </button>
-                        <button id="btn-toggle-stream-history" class="px-2 py-0.5 rounded font-bold transition-all ${this.streamMode === 'history' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
+                        <button id="btn-toggle-stream-history" class="px-1.5 py-0.5 rounded font-bold transition-all ${this.streamMode === 'history' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
                             📜 Trail
                         </button>
                     </div>
 
                     <!-- Multi-Option Dialog Trigger Button -->
-                    <button id="btn-telemetry-options" class="btn-action-secondary text-[10px] py-0.5 px-2 flex items-center gap-1" title="Telemetry options modal">
-                        <span>⚡ Options</span>
+                    <button id="btn-telemetry-options" class="btn-action-secondary text-[9px] py-0.5 px-1.5 flex items-center gap-0.5" title="Telemetry options modal">
+                        <span>⚡ Opts</span>
                     </button>
                 </div>
             </div>
 
             <!-- Primary Filters: Date Preset Dropdown, Date Picker, Time Window, & Switch (On/Off) -->
-            <div class="surface-theme p-2 rounded-xl border space-y-1.5 font-mono text-[10px]">
-                <!-- Date Filter Row with Quick Presets -->
-                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+            <div class="surface-theme p-1.5 rounded-lg border space-y-1 font-mono text-[9.5px]">
+                <!-- Smart Fit Date / Time Filter Rows -->
+                <div class="space-y-1">
                     ${this.availableHistoryDates.length > 0 ? `
-                        <select id="du-telemetry-date-preset" class="input-theme px-1.5 py-1 text-[10px] font-mono flex-1">
+                        <select id="du-telemetry-date-preset" class="input-theme w-full px-1.5 py-0.5 text-[9.5px] font-mono">
                             <option value="">Detected Days (${this.availableHistoryDates.length})</option>
                             ${this.availableHistoryDates.map(d => `
                                 <option value="${d.date}" ${this.selectedDate === d.date ? 'selected' : ''}>
@@ -659,42 +738,37 @@ export class DeviceUserView {
                         </select>
                     ` : ''}
 
-                    <!-- <Date> Selector -->
-                    <div class="flex items-center gap-1 flex-1 min-w-0">
-                        <span class="text-muted-theme">📅</span>
+                    <div class="flex items-center gap-1">
                         <input type="date" id="du-telemetry-date" 
                                value="${this.selectedDate}" 
-                               class="input-theme w-full px-1.5 py-1 text-[10px] font-mono">
-                    </div>
+                               class="input-theme flex-1 min-w-0 px-1.5 py-0.5 text-[9.5px] font-mono">
 
-                    <!-- <Time> Window Selector -->
-                    <div class="shrink-0">
-                        <select id="du-telemetry-time" class="input-theme px-1.5 py-1 text-[10px] font-mono">
-                            <option value="all" ${this.selectedTimeWindow === 'all' ? 'selected' : ''}>All Day</option>
-                            <option value="1h" ${this.selectedTimeWindow === '1h' ? 'selected' : ''}>Past 1h</option>
-                            <option value="6h" ${this.selectedTimeWindow === '6h' ? 'selected' : ''}>Past 6h</option>
+                        <select id="du-telemetry-time" class="input-theme px-1 py-0.5 text-[9.5px] font-mono shrink-0">
+                            <option value="all" ${this.selectedTimeWindow === 'all' ? 'selected' : ''}>All</option>
+                            <option value="1h" ${this.selectedTimeWindow === '1h' ? 'selected' : ''}>1h</option>
+                            <option value="6h" ${this.selectedTimeWindow === '6h' ? 'selected' : ''}>6h</option>
                             <option value="morning" ${this.selectedTimeWindow === 'morning' ? 'selected' : ''}>06-12h</option>
                             <option value="evening" ${this.selectedTimeWindow === 'evening' ? 'selected' : ''}>18-24h</option>
                         </select>
-                    </div>
 
-                    <button id="btn-apply-date-filter" class="btn-action-primary text-[9px] py-1 px-2 shrink-0">
-                        Go
-                    </button>
+                        <button id="btn-apply-date-filter" class="btn-action-primary text-[9px] py-0.5 px-2 shrink-0">
+                            Go
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Switch (On/Off): Stationary Deadbanding Filter (<15m) -->
-                <div class="flex items-center justify-between pt-1 border-t border-subtle-theme">
-                    <div class="flex items-center gap-2">
+                <div class="flex items-center justify-between pt-0.5 border-t border-subtle-theme">
+                    <div class="flex items-center gap-1.5">
                         <label class="switch-toggle switch-sm" title="Suppress <15m GPS Jitter">
                             <input type="checkbox" id="switch-deadband-filter" ${this.deadbandEnabled ? 'checked' : ''}>
                             <span class="switch-slider"></span>
                         </label>
-                        <span class="text-sky-400 font-bold text-[9px]">Deadband Filter</span>
-                        <span class="text-[8px] text-muted-theme">(&lt;15m)</span>
+                        <span class="text-sky-400 font-bold text-[8.5px]">Deadband</span>
+                        <span class="text-[7.5px] text-muted-theme">&lt;15m</span>
                     </div>
-                    <span class="badge-status ${this.deadbandEnabled ? 'badge-success' : 'badge-warning'} text-[8px]">
-                        ${this.deadbandEnabled ? 'FILTER ON' : 'RAW STREAM'}
+                    <span class="badge-status ${this.deadbandEnabled ? 'badge-success' : 'badge-warning'} text-[7.5px]">
+                        ${this.deadbandEnabled ? 'ON' : 'RAW'}
                     </span>
                 </div>
             </div>
@@ -703,12 +777,12 @@ export class DeviceUserView {
             ${this.renderFlipperCard(device, points)}
 
             <!-- List Box with List Details (Dropdown Expandable Accordion) -->
-            <div class="surface-theme p-2 rounded-xl border flex-1 flex flex-col min-h-0 overflow-hidden space-y-1">
-                <div class="flex items-center justify-between text-[10px] font-bold text-sky-400 uppercase font-sans border-b border-subtle-theme pb-1 shrink-0">
-                    <span>Telemetry Fix Records</span>
-                    <span class="text-[9px] font-mono text-muted-theme">Latest on top</span>
+            <div class="surface-theme p-1.5 rounded-lg border flex-1 flex flex-col min-h-0 overflow-hidden space-y-1">
+                <div class="flex items-center justify-between text-[9.5px] font-bold text-sky-400 uppercase font-sans border-b border-subtle-theme pb-0.5 shrink-0">
+                    <span>Fix Records</span>
+                    <span class="text-[8px] font-mono text-muted-theme">Latest on top</span>
                 </div>
-                <div id="du-telemetry-list-box" class="space-y-1.5 overflow-y-auto custom-scrollbar flex-1 pr-0.5 text-xs font-mono">
+                <div id="du-telemetry-list-box" class="space-y-1 overflow-y-auto custom-scrollbar flex-1 pr-0.5 text-xs font-mono">
                     ${this.renderTelemetryListBox(points, device)}
                 </div>
             </div>
@@ -822,7 +896,7 @@ export class DeviceUserView {
     renderFlipperCard(device, points) {
         if (points.length === 0) {
             return `
-                <div class="surface-theme p-2 rounded-xl border text-center text-[10px] text-muted-theme italic font-mono">
+                <div class="surface-theme p-1.5 rounded-lg border text-center text-[9.5px] text-muted-theme italic font-mono select-text">
                     No active telemetry fixes recorded for this criteria.
                 </div>
             `;
@@ -832,38 +906,41 @@ export class DeviceUserView {
         const distDeltaStr = curr.distDeltaMeters ? ` • Δd: ${curr.distDeltaMeters.toFixed(0)}m` : '';
 
         return `
-            <div class="surface-theme p-2.5 rounded-xl border space-y-1.5 font-mono text-[10px]">
-                <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
-                    <div class="flex items-center gap-1.5 font-sans font-bold text-sky-400">
+            <div class="surface-theme p-1.5 rounded-lg border space-y-1 font-mono text-[9.5px] select-text">
+                <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5">
+                    <div class="flex items-center gap-1 font-sans font-bold text-sky-400">
                         <span>🎯 FLIPPER</span>
-                        <span class="badge-status badge-accent text-[8px]">Pt ${this.flipperIndex + 1}/${points.length}</span>
+                        <span class="badge-status badge-accent text-[7.5px]">Pt ${this.flipperIndex + 1}/${points.length}</span>
                     </div>
 
                     <!-- Flipper Controls (Prev / Next Buttons & Locate) -->
-                    <div class="flex items-center gap-1">
-                        <button id="btn-flipper-prev" class="btn-action-secondary px-1.5 py-0.5 text-[9px] font-bold" ${this.flipperIndex <= 0 ? 'disabled style="opacity:0.4"' : ''}>
-                            ◀ Prev
+                    <div class="flex items-center gap-0.5">
+                        <button id="btn-flipper-prev" class="btn-action-secondary px-1.5 py-0.5 text-[8.5px] font-bold" ${this.flipperIndex <= 0 ? 'disabled style="opacity:0.4"' : ''}>
+                            ◀
                         </button>
-                        <button id="btn-flipper-next" class="btn-action-secondary px-1.5 py-0.5 text-[9px] font-bold" ${this.flipperIndex >= points.length - 1 ? 'disabled style="opacity:0.4"' : ''}>
-                            Next ▶
+                        <button id="btn-flipper-next" class="btn-action-secondary px-1.5 py-0.5 text-[8.5px] font-bold" ${this.flipperIndex >= points.length - 1 ? 'disabled style="opacity:0.4"' : ''}>
+                            ▶
                         </button>
-                        <button id="btn-flipper-locate" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-0.5 cursor-pointer" title="Center on map radar">
+                        <button id="btn-flipper-locate" class="px-1 py-0.5 rounded text-[8.5px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center cursor-pointer" title="Center on map radar">
                             <span>🎯</span>
                         </button>
                     </div>
                 </div>
 
                 <!-- Active Flipper Readout -->
-                <div class="space-y-0.5">
-                    <div class="flex items-center justify-between text-primary-theme font-bold text-[11px]">
+                <div class="space-y-0.5 select-text">
+                    <div class="flex items-center justify-between text-primary-theme font-bold text-[10px]">
                         <span>🕒 ${curr.formattedTime}</span>
-                        <span class="${curr.isLive ? 'badge-status badge-success' : 'badge-status badge-accent'} text-[8px]">${curr.isLive ? 'LIVE' : curr.timeDelta}</span>
+                        <span class="${curr.isLive ? 'badge-status badge-success' : 'badge-status badge-accent'} text-[7.5px]">${curr.isLive ? 'LIVE' : curr.timeDelta}</span>
                     </div>
-                    <div class="text-sky-400 font-bold">${curr.coords}</div>
-                    <div class="text-secondary-theme text-[9px] truncate">📍 ${curr.address}</div>
-                    <div class="flex items-center justify-between text-[9px] text-muted-theme pt-0.5 border-t border-subtle-theme">
-                        <span>Speed: ${curr.speed.toFixed(1)} km/h • ${curr.bearing}°</span>
-                        <span>Acc: ±${curr.accuracy.toFixed(0)}m${distDeltaStr}</span>
+                    <div class="text-sky-400 font-bold select-text cursor-pointer hover:underline flex items-center justify-between" data-copy-text="${curr.coords}" data-copy-label="Coordinates" title="Click to copy coordinates">
+                        <span>${curr.coords}</span>
+                        <span class="text-[8.5px] text-muted-theme hover:text-sky-400 font-normal">📋</span>
+                    </div>
+                    <div class="text-secondary-theme text-[8.5px] truncate select-text cursor-pointer hover:text-primary-theme" data-copy-text="${curr.address}" data-copy-label="Address" title="Click to copy address">📍 ${curr.address}</div>
+                    <div class="flex items-center justify-between text-[8.5px] text-muted-theme pt-0.5 border-t border-subtle-theme">
+                        <span>${curr.speed.toFixed(1)} km/h • ${curr.bearing}°</span>
+                        <span>±${curr.accuracy.toFixed(0)}m${distDeltaStr}</span>
                     </div>
                 </div>
             </div>
@@ -875,7 +952,7 @@ export class DeviceUserView {
      */
     renderTelemetryListBox(points, device) {
         if (points.length === 0) {
-            return `<div class="text-[10px] text-muted-theme italic py-4 text-center">No location history matches the date/time filter.</div>`;
+            return `<div class="text-[9.5px] text-muted-theme italic py-2 text-center">No location history matches the date/time filter.</div>`;
         }
 
         return points.map((item, index) => {
@@ -883,32 +960,33 @@ export class DeviceUserView {
             const isSelectedFlipper = (index === this.flipperIndex);
 
             return `
-                <div class="p-2 rounded-xl border ${isSelectedFlipper ? 'border-sky-500 bg-sky-500/10' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all space-y-1 select-none">
+                <div class="p-1.5 rounded-lg border ${isSelectedFlipper ? 'border-sky-500 bg-sky-500/10' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all space-y-0.5 select-text">
                     <!-- Clickable Header Row -->
                     <div class="du-list-item-header flex items-center justify-between cursor-pointer" data-item-id="${item.id}" data-index="${index}">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <span class="text-[10px] text-sky-400 font-bold">${isExpanded ? '▼' : '▶'}</span>
-                            <span class="text-[10px] font-bold text-primary-theme truncate">🕒 ${item.formattedTime}</span>
+                        <div class="flex items-center gap-1 min-w-0">
+                            <span class="text-[9px] text-sky-400 font-bold">${isExpanded ? '▼' : '▶'}</span>
+                            <span class="text-[9.5px] font-bold text-primary-theme truncate">🕒 ${item.formattedTime}</span>
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
-                            <span class="text-[9px] font-bold text-emerald-500">${item.speed.toFixed(1)} km/h</span>
-                            <span class="badge-status ${item.isLive ? 'badge-success' : 'badge-accent'} text-[8px]">${item.isLive ? 'LIVE' : item.timeDelta}</span>
+                            <span class="text-[8.5px] font-bold text-emerald-500">${item.speed.toFixed(1)} km/h</span>
+                            <span class="badge-status ${item.isLive ? 'badge-success' : 'badge-accent'} text-[7.5px]">${item.isLive ? 'LIVE' : item.timeDelta}</span>
                         </div>
                     </div>
 
                     <!-- Primary Location Summary Line -->
-                    <div class="text-[10px] text-secondary-theme truncate pl-3 font-mono">
-                        ${item.coords} • <span class="text-primary-theme">${item.address}</span>
+                    <div class="text-[9px] text-secondary-theme truncate pl-2.5 font-mono select-text cursor-pointer hover:text-primary-theme flex items-center justify-between" data-copy-text="${item.coords}" data-copy-label="Coordinates" title="Click to copy coordinates">
+                        <span class="truncate">${item.coords} • ${item.address}</span>
+                        <span class="text-[8px] text-muted-theme shrink-0 ml-1">📋</span>
                     </div>
 
                     <!-- Expandable Dropdown Details Box -->
                     ${isExpanded ? `
-                        <div class="pl-3 pt-1 border-t border-subtle-theme text-[9px] space-y-1 font-mono text-secondary-theme bg-surface/40 p-1.5 rounded-lg mt-1">
-                            <div class="flex justify-between"><span>Latitude:</span> <span class="text-primary-theme font-bold">${item.latitude.toFixed(6)}°</span></div>
-                            <div class="flex justify-between"><span>Longitude:</span> <span class="text-primary-theme font-bold">${item.longitude.toFixed(6)}°</span></div>
+                        <div class="pl-2.5 pt-1 border-t border-subtle-theme text-[8.5px] space-y-0.5 font-mono text-secondary-theme bg-surface/40 p-1 rounded mt-0.5 select-text">
+                            <div class="flex justify-between"><span>Latitude:</span> <span class="text-primary-theme font-bold cursor-pointer hover:text-sky-400" data-copy-text="${item.latitude.toFixed(6)}" data-copy-label="Latitude">${item.latitude.toFixed(6)}° 📋</span></div>
+                            <div class="flex justify-between"><span>Longitude:</span> <span class="text-primary-theme font-bold cursor-pointer hover:text-sky-400" data-copy-text="${item.longitude.toFixed(6)}" data-copy-label="Longitude">${item.longitude.toFixed(6)}° 📋</span></div>
                             <div class="flex justify-between"><span>Speed & Heading:</span> <span class="text-primary-theme font-bold">${item.speed.toFixed(1)} km/h @ ${item.bearing}°</span></div>
                             <div class="flex justify-between"><span>Altitude & Accuracy:</span> <span class="text-primary-theme font-bold">${item.altitude.toFixed(1)}m (±${item.accuracy.toFixed(0)}m)</span></div>
-                            <div class="flex justify-between"><span>Epoch Timestamp:</span> <span class="text-sky-400 font-bold">${item.timestamp}</span></div>
+                            <div class="flex justify-between"><span>Epoch Timestamp:</span> <span class="text-sky-400 font-bold cursor-pointer hover:underline" data-copy-text="${item.timestamp}" data-copy-label="Timestamp">${item.timestamp} 📋</span></div>
                             <div class="flex justify-between"><span>SafeZone State:</span> <span class="text-emerald-400 font-bold">${device.safeZonesCount > 0 ? 'MONITORED' : 'NO_PERIMETER'}</span></div>
                         </div>
                     ` : ''}
@@ -1063,12 +1141,15 @@ export class DeviceUserView {
                         confirmClass: "btn-action-danger",
                         onConfirm: async () => {
                             try {
-                                const res = await fetch('/api/history-purge', {
+                                const res = await (window.fetchApi ? window.fetchApi('/api/history-purge', {
+                                    method: 'POST',
+                                    body: JSON.stringify({ agentId: device.agentId, daysOlderThan: 30 })
+                                }) : fetch('/api/history-purge', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ agentId: device.agentId, daysOlderThan: 30 })
-                                });
-                                const data = await res.json();
+                                }).then(r => r.json()));
+                                const data = res || {};
                                 FeedbackDialog.showSlideNotification({
                                     title: "Purge Completed",
                                     message: `Removed ${data.purgedCount || 0} expired telemetry records.`,
@@ -1244,12 +1325,15 @@ export class DeviceUserView {
                 const flag = sw.getAttribute('data-flag');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/device/toggle-acl', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/device/toggle-acl', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, flag, value: val })
+                    }) : fetch('/api/device/toggle-acl', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, flag, value: val })
-                    });
-                    if (!res.ok) throw new Error('ACL update rejected');
+                    }).then(r => r.json()));
+                    if (res && res.error) throw new Error(res.error || 'ACL update rejected');
                     FeedbackDialog.showSlideNotification({
                         title: 'Access Permission Updated',
                         message: `Flag [${flag}] set to ${val ? 'GRANTED' : 'DENIED'} for [${agentId}]`,
@@ -1268,9 +1352,26 @@ export class DeviceUserView {
             });
         });
 
+        // Copy-to-clipboard delegated event listener for cards, tiles, and telemetry rows
+        const duContainer = document.getElementById(this.containerId);
+        if (duContainer) {
+            duContainer.addEventListener('click', (e) => {
+                const copyEl = e.target.closest('[data-copy-text]');
+                if (copyEl) {
+                    e.stopPropagation();
+                    const text = copyEl.getAttribute('data-copy-text');
+                    const label = copyEl.getAttribute('data-copy-label') || 'Value';
+                    if (window.copyToClipboard) {
+                        window.copyToClipboard(text, label);
+                    }
+                }
+            });
+        }
+
         // 1. Roster Click Handler (With Complete State Isolation)
         document.querySelectorAll('.du-device-item').forEach(el => {
-            el.addEventListener('click', () => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('[data-copy-text]')) return;
                 const agentId = el.getAttribute('data-agent-id');
                 if (agentId && agentId !== this.selectedAgentId) {
                     this.selectedAgentId = agentId;
@@ -1288,7 +1389,8 @@ export class DeviceUserView {
 
         // 2. Tree Node Click Handler (With Complete State Isolation)
         document.querySelectorAll('.du-tree-node').forEach(el => {
-            el.addEventListener('click', () => {
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('[data-copy-text]')) return;
                 const targetAgentId = el.getAttribute('data-target-agent-id');
                 if (targetAgentId && targetAgentId !== this.selectedAgentId) {
                     this.selectedAgentId = targetAgentId;
@@ -1372,13 +1474,15 @@ export class DeviceUserView {
                     confirmClass: "btn-action-danger",
                     onConfirm: async () => {
                         try {
-                            const res = await fetch('/api/relationship/delete', {
+                            const resData = await (window.fetchApi ? window.fetchApi('/api/relationship/delete', {
+                                method: 'POST',
+                                body: JSON.stringify({ agentId: sourceId, targetAgentId: targetId })
+                            }) : fetch('/api/relationship/delete', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ agentId: sourceId, targetAgentId: targetId })
-                            });
-                            const resData = await res.json();
-                            if (resData.status === 'SUCCESS' || resData.status === 'DELETED') {
+                            }).then(r => r.json()));
+                            if (resData && (resData.status === 'SUCCESS' || resData.status === 'DELETED')) {
                                 FeedbackDialog.showToast(`Severed connection with [${peerName}].`, "warning");
                                 if (window.showDeviceUser) window.showDeviceUser(sourceId);
                             }
@@ -1483,7 +1587,16 @@ export class DeviceUserView {
                         const branchType = isFriend ? 'friend' : 'family';
 
                         try {
-                            const res = await fetch('/api/relationship/add', {
+                            const resData = await (window.fetchApi ? window.fetchApi('/api/relationship/add', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    agentId: selectedDev.agentId,
+                                    targetAgentId: targetDev.agentId,
+                                    targetName: targetDev.name,
+                                    role: chosenRole,
+                                    type: branchType
+                                })
+                            }) : fetch('/api/relationship/add', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -1493,13 +1606,13 @@ export class DeviceUserView {
                                     role: chosenRole,
                                     type: branchType
                                 })
-                            });
-                            const resData = await res.json();
-                            if (resData.status === 'SUCCESS' || resData.status === 'LINKED') {
+                            }).then(r => r.json()));
+
+                            if (resData && (resData.status === 'SUCCESS' || resData.status === 'LINKED')) {
                                 FeedbackDialog.showToast(`Connected [${selectedDev.name}] <-> [${targetDev.name}] as ${chosenRole}!`, "success");
                                 if (window.showDeviceUser) window.showDeviceUser(selectedDev.agentId);
                             } else {
-                                FeedbackDialog.showToast(`Binding notice: ${resData.message || 'Operation processed.'}`, "info");
+                                FeedbackDialog.showToast(`Binding notice: ${resData?.message || 'Operation processed.'}`, "info");
                             }
                         } catch (err) {
                             FeedbackDialog.showToast(`Connection failed: ${err.message}`, "error");

@@ -141,7 +141,7 @@ object RegistryManager {
     const val MAX_GEOFENCE_JITTER_DEBOUNCE_MS     = 60000L // 60 seconds (Max)
 
     // Extended Telemetry Defaults
-    const val DEFAULT_MIN_DISPLACEMENT_METERS = 0f
+    const val DEFAULT_MIN_DISPLACEMENT_METERS = 25.0f // 🔋 Stationary battery defense: 25m threshold
     const val DEFAULT_LOW_BATTERY_THRESHOLD   = 20
     const val DEFAULT_STALE_INACTIVE_MINUTES  = 15
     const val DEFAULT_CRITICAL_OFFLINE_HOURS  = 6
@@ -149,7 +149,7 @@ object RegistryManager {
     const val DEFAULT_OFFLINE_QUEUE_MAX_POINTS= 500
     const val DEFAULT_SYSTEM_UPDATE_LINK = "https://drive.google.com/drive/folders/1qs1JRgku7SjfU59EMhZHCc7Kq2yFBGdC"
     const val DEFAULT_GITHUB_UPDATE_LINK = "https://github.com/jDroid-X/jButterfly/tree/main/jbutterfly"
-    const val DEFAULT_PURGE_SAFETY_PHRASE = "RESET"
+    const val DEFAULT_PURGE_SAFETY_PHRASE = "jbutterfly@123"
 
     // ─── ACCESS METHODS ───────────────────────────────────────────────────────
 
@@ -194,12 +194,16 @@ object RegistryManager {
     @JvmStatic fun putBoolean(context: Context, key: String, value: Boolean) =
         get(context).edit().putBoolean(key, value).apply()
 
-    // ─── TYPED CONVENIENCE GETTERS ────────────────────────────────────────────
-
-    @JvmStatic fun getAgentId(context: Context): String = DeviceIdentityHelper.getOrGenerateAgentId(context)
+    @JvmStatic fun getAgentId(context: Context): String {
+        val cached = getString(context, KEY_AGENT_ID, "")
+        if (DeviceIdentityHelper.isValidAgentId(cached)) {
+            return cached
+        }
+        return DeviceIdentityHelper.getOrGenerateAgentId(context)
+    }
     @JvmStatic fun getUserNickname(context: Context): String = getString(context, KEY_USER_NICKNAME, "Active Tracker")
     @JvmStatic fun getThemeId(context: Context): Int = getInt(context, KEY_THEME_ID, 0)
-    @JvmStatic fun getTrackingInterval(context: Context): Long = getLong(context, KEY_TRACKING_INTERVAL, 60000L)
+    @JvmStatic fun getTrackingInterval(context: Context): Long = getLong(context, KEY_TRACKING_INTERVAL, 300000L)
     @JvmStatic fun isServiceHalted(context: Context): Boolean = getBoolean(context, KEY_SERVICE_HALTED, false)
     @JvmStatic fun isAutoLoginEnabled(context: Context): Boolean = getBoolean(context, KEY_AUTO_LOGIN, false)
     @JvmStatic fun getEquippedAvatarId(context: Context): Int = getInt(context, KEY_EQUIPPED_AVATAR_ID, 1)
@@ -303,14 +307,7 @@ object RegistryManager {
         putString(context, KEY_GUARDIAN_PIN, pin)
     }
 
-    @JvmStatic fun getPurgeSafetyPhrase(context: Context): String =
-        getString(context, KEY_PURGE_SAFETY_PHRASE, DEFAULT_PURGE_SAFETY_PHRASE)
-
-    @JvmStatic fun getOwnerAgentId(context: Context): String {
-        val agentId = getAgentId(context)
-        if (agentId.isNotEmpty()) return agentId
-        return DeviceIdentityHelper.getOrGenerateAgentId(context)
-    }
+    @JvmStatic fun getOwnerAgentId(context: Context): String = getAgentId(context)
 
     // 🌐 Geofence Sentinel Telemetry Accessors
     @JvmStatic fun getGeofenceJitterDebounceMs(context: Context): Long =
@@ -420,6 +417,14 @@ object RegistryManager {
 
     @JvmStatic fun setSyncWifiOnly(context: Context, wifiOnly: Boolean) {
         putBoolean(context, KEY_SYNC_WIFI_ONLY, wifiOnly)
+    }
+
+    // 🛡️ Master Purge Safety Phrase
+    @JvmStatic fun getPurgeSafetyPhrase(context: Context): String =
+        getString(context, KEY_PURGE_SAFETY_PHRASE, DEFAULT_PURGE_SAFETY_PHRASE)
+
+    @JvmStatic fun setPurgeSafetyPhrase(context: Context, phrase: String) {
+        putString(context, KEY_PURGE_SAFETY_PHRASE, phrase)
     }
 
     @JvmStatic

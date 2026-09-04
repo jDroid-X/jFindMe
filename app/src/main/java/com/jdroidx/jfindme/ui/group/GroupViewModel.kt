@@ -217,7 +217,8 @@ class GroupViewModel : ViewModel() {
                 val myAgentId = if (myAuthUid != null) db?.resolveAgentIdLocally(myAuthUid) ?: "" else ""
 
                 if (!activeGroup.isNullOrEmpty()) {
-                    // 1. Remove from group hub
+                    // 1. Remove from group hub (Unified + Legacy)
+                    FirebaseComm.relationshipsRef.child(activeGroup).child("devices").child(uid).removeValue()
                     FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).removeValue()
                     FirebaseComm.relationshipsRef.child(activeGroup).child("citizen_dossiers").child(uid).removeValue()
                     FirebaseComm.relationshipsRef.child(activeGroup).child("direct_pairs").child(uid).removeValue()

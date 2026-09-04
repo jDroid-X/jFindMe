@@ -44,6 +44,7 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
     private var activeAgentId: String? = null
 
     private fun listenToPendingRequests() {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
         activeAgentId = finalId
         val ref = FirebaseComm.devicesRef.child(finalId).child("Identity").child("geofence_sync_requests")
@@ -74,6 +75,7 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
      * 🛰️ Real-Time Mesh Notification Stream: Listens to incoming cloud notifications
      */
     private fun listenToCloudNotifications() {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val groupId = prefs.getString("active_group", null) ?: prefs.getString("current_group_id", null) ?: return
         val cleanGroupId = FirebaseComm.sanitizePathKey(groupId)

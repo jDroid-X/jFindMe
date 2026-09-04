@@ -86,7 +86,7 @@ object AcousticBeaconEngine {
 
             // Start vibration pulse if enabled
             if (RegistryManager.isSirenVibrationEnabled(context)) {
-                triggerContinuousVibration(context)
+                triggerContinuousVibration(context, effectiveDuration)
             }
 
             // Launch full-screen interactive overlay
@@ -120,7 +120,10 @@ object AcousticBeaconEngine {
     @Synchronized
     @JvmStatic
     fun stopSiren(context: Context) {
-        if (!isSirenActive) return
+        // 🛑 Unconditionally stop vibration on all vibrator subsystems
+        stopVibration(context)
+
+        if (!isSirenActive && mediaPlayer == null && autoStopRunnable == null) return
 
         try {
             autoStopRunnable?.let {
@@ -137,14 +140,11 @@ object AcousticBeaconEngine {
             mediaPlayer = null
 
             // Restore original volume if available
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (originalVolume >= 0) {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (originalVolume >= 0 && audioManager != null) {
                 audioManager.setStreamVolume(AudioManager.STREAM_ALARM, originalVolume, 0)
                 originalVolume = -1
             }
-
-            // Stop vibration
-            stopVibration(context)
 
             isSirenActive = false
             SystemLogger.i(TAG, "🔇 Acoustic Siren STOPPED.")
@@ -154,37 +154,52 @@ object AcousticBeaconEngine {
         }
     }
 
-    private fun triggerContinuousVibration(context: Context) {
+    private fun triggerContinuousVibration(context: Context, durationSec: Int) {
         try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            // Stop any existing vibration first
+            stopVibration(context)
+
+            val safeDuration = if (durationSec > 0) durationSec else 30
+            // Construct a finite waveform pattern matching safeDuration (repeat index -1: NO INFINITE LOOP)
+            // Each cycle = 800ms buzz + 200ms pause = 1000ms (1 sec)
+            val cycles = safeDuration.coerceIn(5, 120)
+            val pattern = LongArray(cycles * 2)
+            for (i in 0 until cycles) {
+                pattern[i * 2] = 200L     // pause
+                pattern[i * 2 + 1] = 800L // buzz
             }
 
-            val pattern = longArrayOf(0, 800, 400, 800, 400)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 means repeat
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(pattern, 0)
+                val v = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v?.vibrate(VibrationEffect.createWaveform(pattern, -1))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v?.vibrate(pattern, -1)
+                }
             }
+            SystemLogger.i(TAG, "📳 Finite vibration pattern configured for ${safeDuration}s (repeat: -1)")
         } catch (e: Exception) {
             SystemLogger.w(TAG, "Could not trigger vibration: ${e.message}")
         }
     }
 
-    private fun stopVibration(context: Context) {
+    @JvmStatic
+    fun stopVibration(context: Context) {
         try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // 🛡️ Cancel on VibratorManager (Android 12+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                vm?.cancel()
+                vm?.defaultVibrator?.cancel()
             }
+            // 🛡️ Cancel on legacy Vibrator Service
+            @Suppress("DEPRECATION")
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             vibrator?.cancel()
         } catch (e: Exception) { }
     }

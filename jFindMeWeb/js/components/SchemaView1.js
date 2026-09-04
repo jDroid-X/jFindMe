@@ -12,11 +12,11 @@ export class SchemaView1 extends SchemaView {
         
         // Configuration: Define relational anchors with explicit Forensic Link Fields (FK)
         const nodeConfigs = [
-            { id: 'users', label: 'Identity Hub [HUB]', linkField: 'id', fields: ['id', 'name', 'email', 'avatar_id', 'role', 'status'], data: filtered.users || [], x: 650, y: 50 },
-            { id: 'pairing_requests', label: 'Pairing [LEFT]', linkField: 'fromUID', fields: ['id', 'fromUID', 'toEmail', 'status', 'timestamp'], data: filtered.pairing_requests || [], x: 250, y: 20 },
-            { id: 'groups', label: 'Group Join [LEFT]', linkField: 'host', fields: ['id', 'name', 'host', 'members', 'description'], data: filtered.groups || [], x: 250, y: 220 },
-            { id: 'locations', label: 'Telemetry [RIGHT]', linkField: 'id', fields: ['id', 'lat', 'lng', 'timestamp', 'accuracy'], data: filtered.locations || [], x: 1050, y: 20 },
-            { id: 'history', label: 'Forensic [RIGHT]', linkField: 'id', fields: ['id', 'timestamp', 'event_type', 'node_id'], data: filtered.history || [], x: 1050, y: 220 }
+            { id: 'users', label: 'Fleet Hub [devices]', linkField: 'id', fields: ['id', 'name', 'email', 'avatar_id', 'role', 'status'], data: filtered.users || [], x: 650, y: 50 },
+            { id: 'pairing_requests', label: 'Hardware Index [lookup]', linkField: 'fromUID', fields: ['id', 'fromUID', 'toEmail', 'status', 'timestamp'], data: filtered.pairing_requests || [], x: 250, y: 20 },
+            { id: 'groups', label: 'Social Matrix [relationships]', linkField: 'host', fields: ['id', 'name', 'host', 'members', 'description'], data: filtered.groups || [], x: 250, y: 220 },
+            { id: 'locations', label: 'Safe Perimeter [Geofencing]', linkField: 'id', fields: ['id', 'lat', 'lng', 'timestamp', 'accuracy'], data: filtered.locations || [], x: 1050, y: 20 },
+            { id: 'history', label: 'Forensic Logs [History]', linkField: 'id', fields: ['id', 'timestamp', 'event_type', 'node_id'], data: filtered.history || [], x: 1050, y: 220 }
         ];
 
         // Dynamic Relational Waterfall: Sort by join density for the Matrix Probe

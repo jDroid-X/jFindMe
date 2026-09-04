@@ -719,6 +719,31 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
 
     protected android.widget.ArrayAdapter<String> createEnterpriseDropdownAdapter(java.util.ArrayList<String> data) {
         return new android.widget.ArrayAdapter<String>(this, 0, data) {
+            private final android.widget.Filter noFilter = new android.widget.Filter() {
+                @Override
+                protected FilterResults performFiltering(CharSequence constraint) {
+                    FilterResults results = new FilterResults();
+                    results.values = data;
+                    results.count = data != null ? data.size() : 0;
+                    return results;
+                }
+
+                @Override
+                protected void publishResults(CharSequence constraint, FilterResults results) {
+                    notifyDataSetChanged();
+                }
+
+                @Override
+                public CharSequence convertResultToString(Object resultValue) {
+                    return resultValue != null ? resultValue.toString() : "";
+                }
+            };
+
+            @Override
+            public android.widget.Filter getFilter() {
+                return noFilter;
+            }
+
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
                 return createEnterpriseNode(position);
@@ -736,7 +761,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
                 
                 TextView tv = new TextView(BaseActivityJava.this);
                 tv.setText(getItem(position));
-                tv.setTextColor(getGradientStart()); // 🌈 High-Contrast Primary Node (Gradient Start)
+                tv.setTextColor(getGradientOverlayText()); // 🌈 High-Contrast Node contrasting with Popup Background
                 UiArchitect.applyText(BaseActivityJava.this, tv, "TEXT_BODY");
                 int p = UiScalingMatrixTable.scalePadding(UiArchitect.getStage(BaseActivityJava.this), 40);
                 tv.setPadding(p, p/2, p, p/2);
@@ -1012,6 +1037,55 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
      */
     public void showSlideNotification(String title, String message, int iconRes, int accentColor, String actionText, Runnable onAction) {
         UiArchitect.showSlideNotification(this, title, message, iconRes, accentColor, actionText, onAction);
+    }
+
+    /**
+     * 👑 Universal Animated View Flipper
+     */
+    public android.widget.ViewFlipper createAnimatedFlipper(View... views) {
+        return UiArchitect.createAnimatedFlipper(this, views);
+    }
+
+    /**
+     * 👑 Universal Validated Text Input Box with Real-time Feedback
+     */
+    public UiArchitect.ValidatedInputComponent createValidatedInputBox(String label, String hint, int iconRes, UiArchitect.TextValidator validator) {
+        return UiArchitect.createValidatedInputBox(this, label, hint, iconRes, validator);
+    }
+
+    /**
+     * 👑 Universal Interactive Detail List Box
+     */
+    public View createInteractiveDetailListBox(String headerTitle, java.util.List<UiArchitect.DetailListItem> items) {
+        return UiArchitect.createInteractiveDetailListBox(this, headerTitle, items);
+    }
+
+    /**
+     * 👑 Universal Multi-Choice Options Condition Dialog
+     */
+    public void showMultiChoiceOptionsDialog(String title, String[] items, boolean[] checkedItems, UiArchitect.MultiChoiceCallback callback) {
+        UiArchitect.showMultiChoiceOptionsDialog(this, title, items, checkedItems, callback);
+    }
+
+    /**
+     * 👑 Universal Actionable Validation Dialog with Condition Notification
+     */
+    public void showActionableValidationDialog(String title, String message, String actionBtn, String dismissBtn, Runnable onAction, Runnable onDismiss) {
+        UiArchitect.showActionableValidationDialog(this, title, message, actionBtn, dismissBtn, onAction, onDismiss);
+    }
+
+    /**
+     * 👑 Universal Left/Right Binary Toggle
+     */
+    public View createSegmentedToggle(String leftOption, String rightOption, boolean isLeftSelected, UiArchitect.OnToggleChangeListener listener) {
+        return UiArchitect.createSegmentedToggle(this, leftOption, rightOption, isLeftSelected, listener);
+    }
+
+    /**
+     * 👑 Universal Rich Options Dialog
+     */
+    public void showRichOptionsDialog(String title, UiArchitect.OptionItem[] items, UiArchitect.OptionSelectedCallback callback) {
+        UiArchitect.showRichOptionsDialog(this, title, items, callback);
     }
 }
 

@@ -57,6 +57,7 @@ public class IconTable {
         registry.put("ACTION_EXPAND",   new IconRecord("ACTION_EXPAND",   R.drawable.ic_map_expand,   "Enlarge Live Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_BOUNDS"));
         registry.put("ACTION_MINIMIZE", new IconRecord("ACTION_MINIMIZE", R.drawable.ic_map_minimize, "Minimize Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_MINIMIZE"));
         registry.put("ACTION_LOCATE",   new IconRecord("ACTION_LOCATE",   R.drawable.ic_map_locate,   "Recenter GPS Target", 35f, 20, 0.6f, "HEAVY", true, Color.WHITE, "MAP_RECENTER"));
+        registry.put("ACTION_REFRESH",  new IconRecord("ACTION_REFRESH",  android.R.drawable.ic_popup_sync, "Refresh Fleet Radar Matrix", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_REFRESH_MATRIX"));
         registry.put("ACTION_ADD",      new IconRecord("ACTION_ADD",      R.drawable.ic_map_zoom_in,  "Zoom In Map", 35f, 20, 0.5f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_IN"));
         registry.put("ACTION_MINUS",    new IconRecord("ACTION_MINUS",    R.drawable.ic_map_zoom_out, "Zoom Out Map", 25f, 20, 0.4f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_OUT"));
         registry.put("ACTION_LAYERS",   new IconRecord("ACTION_LAYERS",   R.drawable.ic_map_layers,   "Switch Map Satellite Layers", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_TOGGLE_SATELLITE"));

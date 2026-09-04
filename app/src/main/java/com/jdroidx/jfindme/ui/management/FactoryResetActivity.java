@@ -1,6 +1,8 @@
 package com.jdroidx.jfindme.ui.management;
 
 import android.app.AlertDialog;
+import android.content.Intent;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.Editable;
@@ -169,6 +171,20 @@ public class FactoryResetActivity extends BaseActivityJava {
         
         viewModel.rebootTrigger.observe(this, reboot -> {
             if (reboot) performSystemReboot();
+        });
+
+        viewModel.uninstallTrigger.observe(this, trigger -> {
+            if (trigger != null && trigger) {
+                try {
+                    Intent uninstallIntent = new Intent(Intent.ACTION_DELETE);
+                    uninstallIntent.setData(Uri.parse("package:" + getPackageName()));
+                    uninstallIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(uninstallIntent);
+                } catch (Exception e) {
+                    UiArchitect.showValidationDialog(this, "Teardown Complete", "All background sentinels and SQLite data cleared. You may now uninstall the app.");
+                }
+                finishAffinity();
+            }
         });
     }
 

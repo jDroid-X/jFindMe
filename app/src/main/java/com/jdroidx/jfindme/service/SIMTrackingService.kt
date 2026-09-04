@@ -33,7 +33,15 @@ class SIMTrackingService : Service() {
         SystemLogger.i(TAG, "Forensic SIM Engine Initialized.")
         
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, getNotification("Forensic Hardware Logging Active"))
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, getNotification("Forensic Hardware Logging Active"), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, getNotification("Forensic Hardware Logging Active"))
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "SIMTrackingService startForeground error: ${e.message}")
+        }
         
         startForensicHeartbeat()
     }

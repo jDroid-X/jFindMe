@@ -2331,15 +2331,27 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     String targetGroup = finalGrp.isEmpty() ? ("GRP_" + safeAgentId) : finalGrp;
                     DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
 
-                    // 1. Ensure Self is registered as OWNER in Cloud Group
-                    Map<String, Object> selfMember = new HashMap<>();
-                    selfMember.put("name", RegistryManager.getUserNickname(this));
-                    selfMember.put("role", "OWNER");
-                    selfMember.put("status", "Active");
-                    selfMember.put("avatar_id", String.valueOf(getSharedPreferences("system_registry", MODE_PRIVATE).getInt("equipped_avatar_id", 0)));
-                    selfMember.put("joined_at", System.currentTimeMillis());
+                    // 1. Ensure Self is registered as ADMIN in Cloud Group with uniform structure
+                    Map<String, Object> groupInfo = new HashMap<>();
+                    groupInfo.put("group_name", "Primary Circle");
+                    groupInfo.put("host_device_id", safeAgentId);
+                    groupInfo.put("created_at", System.currentTimeMillis());
+                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("group_info").setValue(groupInfo);
 
-                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(safeAgentId).setValue(selfMember);
+                    Map<String, Object> selfIdentity = new HashMap<>();
+                    selfIdentity.put("name", RegistryManager.getUserNickname(this));
+                    selfIdentity.put("full_name", RegistryManager.getUserNickname(this));
+                    selfIdentity.put("avatar_id", String.valueOf(getSharedPreferences("system_registry", MODE_PRIVATE).getInt("equipped_avatar_id", 0)));
+                    
+                    Map<String, Object> selfMembership = new HashMap<>();
+                    selfMembership.put("role", "ADMIN");
+                    selfMembership.put("role_family", "Parent");
+                    selfMembership.put("role_friend", "None");
+                    selfMembership.put("status", "Active");
+                    selfMembership.put("ts_joined", System.currentTimeMillis());
+
+                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("identity").setValue(selfIdentity);
+                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("membership").setValue(selfMembership);
                     FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
                     getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
 
@@ -2356,17 +2368,23 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                             boolean isAdmin = assetIsAdmin.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsAdmin.get(nodeUid));
                             boolean isFriend = assetIsFriend.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsFriend.get(nodeUid));
 
-                            // Cloud Member Payload
-                            Map<String, Object> nodeMember = new HashMap<>();
-                            nodeMember.put("name", cleanName);
-                            nodeMember.put("role", nodeRole);
-                            nodeMember.put("status", "Active");
-                            nodeMember.put("avatar_id", avatarId);
-                            nodeMember.put("is_admin", isAdmin);
-                            nodeMember.put("is_friend", isFriend);
-                            nodeMember.put("joined_at", System.currentTimeMillis());
+                            // Cloud Member Payload (Uniform devices/ schema)
+                            Map<String, Object> nodeIdentity = new HashMap<>();
+                            nodeIdentity.put("name", cleanName);
+                            nodeIdentity.put("full_name", cleanName);
+                            nodeIdentity.put("avatar_id", avatarId);
 
-                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("members").child(nodeUid).setValue(nodeMember);
+                            Map<String, Object> nodeMembership = new HashMap<>();
+                            nodeMembership.put("role", nodeRole);
+                            nodeMembership.put("role_family", nodeRole);
+                            nodeMembership.put("role_friend", isFriend ? "Friend" : "None");
+                            nodeMembership.put("status", "Active");
+                            nodeMembership.put("ts_joined", System.currentTimeMillis());
+
+                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("identity").setValue(nodeIdentity);
+                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("membership").setValue(nodeMembership);
+                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("paired_with").child(nodeUid).setValue(true);
+                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("paired_with").child(safeAgentId).setValue(true);
                             FirebaseComm.INSTANCE.getIdentityRef(nodeUid).child("active_group").setValue(targetGroup);
 
                             // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation

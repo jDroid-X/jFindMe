@@ -311,12 +311,16 @@ export class DeviceListView {
                 const agentId = sw.getAttribute('data-agent-id');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/device/toggle-acl', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/device/toggle-acl', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
+                    }) : fetch('/api/device/toggle-acl', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
-                    });
-                    if (!res.ok) throw new Error('Failed to update live stream ACL');
+                    }).then(r => r.json()));
+
+                    if (res && res.error) throw new Error(res.error || 'Failed to update live stream ACL');
                     FeedbackDialog.showSlideNotification({
                         title: 'Telemetry Stream Toggled',
                         message: `Device [${agentId}] live stream set to ${val ? 'ACTIVE' : 'MUTED'}`,

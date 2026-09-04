@@ -180,6 +180,13 @@ object AvatarSyncEngine {
                     val groupId = grpSnap.getValue(String::class.java)
                     if (!groupId.isNullOrEmpty()) {
                         val relRef = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.child(groupId)
+                        // 1. Unified `devices/` Structure
+                        relRef.child("devices").child(agentId).child("identity").updateChildren(mapOf(
+                            "avatar_id" to newAvatarId,
+                            "name" to newName,
+                            "full_name" to newName
+                        ))
+                        // 2. Legacy Redundancy for backwards compatibility
                         relRef.child("members").child(agentId).updateChildren(mapOf(
                             "avatar_id" to newAvatarId,
                             "name" to newName,

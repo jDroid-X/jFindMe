@@ -334,13 +334,16 @@ export class DeviceCardView {
 
         pokeBtn.addEventListener('click', async () => {
             try {
-                const res = await fetch('/api/poke-device', {
+                const resData = await (window.fetchApi ? window.fetchApi('/api/poke-device', {
+                    method: 'POST',
+                    body: JSON.stringify({ agentId: device.agentId, pokedBy: 'Web_Dossier_Operator' })
+                }) : fetch('/api/poke-device', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ agentId: device.agentId, pokedBy: 'Web_Dossier_Operator' })
-                });
-                const resData = await res.json();
-                if (resData.status === 'SUCCESS' || resData.status === 'POKED') {
+                }).then(r => r.json()));
+
+                if (resData && (resData.status === 'SUCCESS' || resData.status === 'POKED')) {
                     FeedbackDialog.showSlideNotification({
                         title: 'Telemetry Poke Dispatched',
                         message: `Pulse signal transmitted to ${device.name} (${device.agentId})`,
@@ -350,7 +353,7 @@ export class DeviceCardView {
                 } else {
                     FeedbackDialog.showSlideNotification({
                         title: 'Poke Notice',
-                        message: resData.message || 'Signal transmitted',
+                        message: resData?.message || 'Signal transmitted',
                         type: 'info',
                         timeout: 3500
                     });
@@ -372,12 +375,16 @@ export class DeviceCardView {
                 const flag = sw.getAttribute('data-flag');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/device/toggle-acl', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/device/toggle-acl', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, flag, value: val })
+                    }) : fetch('/api/device/toggle-acl', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, flag, value: val })
-                    });
-                    if (!res.ok) throw new Error('Failed to update ACL flag');
+                    }).then(r => r.json()));
+
+                    if (res && res.error) throw new Error(res.error || 'Failed to update ACL flag');
                     FeedbackDialog.showSlideNotification({
                         title: 'ACL Grant Updated',
                         message: `Flag [${flag}] set to ${val ? 'GRANTED' : 'DENIED'} for [${agentId}]`,

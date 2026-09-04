@@ -1646,16 +1646,75 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return null
     }
 
+    /**
+     * 🛰️ Offline-First Raw Location History Extractor:
+     * Pulls chronological GPS fixes from local SQLite within the specified time window.
+     */
+    fun getRawHistoryPoints(uid1: String, startTs: Long, endTs: Long): List<com.jdroidx.jfindme.data.model.UserLocation> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.UserLocation>()
+        try {
+            val db = readableDatabase
+            val startTsStr = if (startTs > 0) com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(startTs) else "0"
+            val endTsStr = if (endTs > 0) com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(endTs) else "99999999999999"
+            val sql = """
+                SELECT e.*, i.${UserIdentityTable.COL_UID_1} as uid_1, i.${UserIdentityTable.COL_FULL_NAME} as fullName, i.${UserIdentityTable.COL_CONNECTED_ID} as connectedId
+                FROM ${LocationEventTable.TABLE_NAME} e
+                JOIN ${UserIdentityTable.TABLE_NAME} i ON e.${LocationEventTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
+                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?)
+                  AND e.${LocationEventTable.COL_TIMESTAMP} >= ?
+                  AND e.${LocationEventTable.COL_TIMESTAMP} <= ?
+                  AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
+                ORDER BY e.${LocationEventTable.COL_TIMESTAMP} ASC
+            """.trimIndent()
+            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, startTsStr, endTsStr))
+            cursor.use {
+                while (it.moveToNext()) {
+                    val lat = it.getDouble(it.getColumnIndexOrThrow(LocationEventTable.COL_LAT))
+                    val lng = it.getDouble(it.getColumnIndexOrThrow(LocationEventTable.COL_LNG))
+                    val tsStr = it.getString(it.getColumnIndexOrThrow(LocationEventTable.COL_TIMESTAMP))
+                    val speed = if (!it.isNull(it.getColumnIndexOrThrow(LocationEventTable.COL_SPEED))) it.getFloat(it.getColumnIndexOrThrow(LocationEventTable.COL_SPEED)) else 0f
+                    val battery = if (!it.isNull(it.getColumnIndexOrThrow(LocationEventTable.COL_BATTERY))) it.getInt(it.getColumnIndexOrThrow(LocationEventTable.COL_BATTERY)) else -1
+                    val sos = if (!it.isNull(it.getColumnIndexOrThrow(LocationEventTable.COL_SOS_FLAG))) it.getInt(it.getColumnIndexOrThrow(LocationEventTable.COL_SOS_FLAG)) == 1 else false
+                    val addr = it.getString(it.getColumnIndexOrThrow(LocationEventTable.COL_ADDRESS))
+                    val name = it.getString(it.getColumnIndexOrThrow("fullName")) ?: ""
+                    val devId = it.getString(it.getColumnIndexOrThrow("connectedId")) ?: uid1
+
+                    val point = com.jdroidx.jfindme.data.model.UserLocation(
+                        userId = uid1,
+                        deviceId = devId,
+                        latitude = lat,
+                        longitude = lng,
+                        timestamp = tsStr,
+                        speed = speed,
+                        batteryLevel = battery,
+                        isSosActive = sos,
+                        address = addr,
+                        userName = name
+                    )
+                    list.add(point)
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "getRawHistoryPoints failed for $uid1", e)
+        }
+        return list
+    }
+
 
 
     fun logDevicePairing(uid1: String, nameA: String, devA: String?, uid2: String, name2: String, dev2: String?, role2: String, groupId: String? = null) {
         val db = writableDatabase
         val pairId = "PR_${uid1.hashCode()}_${uid2.hashCode()}"
-        DevicePairingTable.logPairing(db, pairId, devA ?: "HOST", dev2 ?: "TARGET", "PAIRED")
+        val resolvedDevA = if (!devA.isNullOrBlank() && devA != "HOST") devA else uid1
+        val resolvedDevB = if (!dev2.isNullOrBlank() && dev2 != "TARGET") dev2 else uid2
+        DevicePairingTable.logPairing(db, pairId, resolvedDevA, resolvedDevB, "PAIRED")
         
         // Tier 3: Map the relationship to the group if provided
         if (groupId != null) {
-            val iId = resolveInternalId(uid2)
+            var iId = resolveInternalId(uid2)
+            if (iId == -1L && resolvedDevB != uid2) {
+                iId = resolveInternalId(resolvedDevB)
+            }
             if (iId != -1L) {
                 GroupMemberTable.addMember(db, groupId, iId, role2)
             }
@@ -1956,7 +2015,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             if (name != null) return name.trim()
 
             val rosterMatch = getOfflineRoster().find {
-                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || it["uid_2"]?.toString() == deviceId
+                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || 
+                it["uid_2"]?.toString() == deviceId || it["connected_id"]?.toString() == deviceId
             }
             val rName = rosterMatch?.get("fullName")?.toString()?.takeIf { it.isNotBlank() && !it.startsWith("Agent_", true) && !it.equals("null", true) }
                 ?: rosterMatch?.get("display_name")?.toString()?.takeIf { it.isNotBlank() && !it.startsWith("Agent_", true) && !it.equals("null", true) }
@@ -1981,12 +2041,68 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             if (av != null) return av.trim()
 
             val rosterMatch = getOfflineRoster().find {
-                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || it["uid_2"]?.toString() == deviceId
+                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || 
+                it["uid_2"]?.toString() == deviceId || it["connected_id"]?.toString() == deviceId
             }
             val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() }
             if (rAv != null) return rAv.trim()
         } catch (e: Exception) { }
         return "butterfly"
+    }
+
+    /**
+     * 🛡️ SSOT: Retrieve all unique paired device IDs across DevicePairingTable and UserIdentityTable.
+     */
+    fun getAllPairedDeviceIds(): Set<String> {
+        val result = mutableSetOf<String>()
+        try {
+            val db = readableDatabase
+            // 1. DevicePairingTable
+            db.rawQuery("SELECT ${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID} FROM ${DevicePairingTable.TABLE_NAME}", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val a = cursor.getString(0)
+                    val b = cursor.getString(1)
+                    if (!a.isNullOrBlank() && a != "HOST") result.add(a.trim())
+                    if (!b.isNullOrBlank() && b != "TARGET") result.add(b.trim())
+                }
+            }
+            // 2. UserIdentityTable
+            val idSql = "SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR ${UserIdentityTable.COL_STATUS} != 'DELETED')"
+            db.rawQuery(idSql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val u1 = cursor.getString(0)
+                    val u2 = cursor.getString(1)
+                    val conn = cursor.getString(2)
+                    if (!u1.isNullOrBlank()) result.add(u1.trim())
+                    if (!u2.isNullOrBlank()) result.add(u2.trim())
+                    if (!conn.isNullOrBlank()) result.add(conn.trim())
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "getAllPairedDeviceIds failed: ${e.message}")
+        }
+        return result
+    }
+
+    /**
+     * 👑 SSOT: Directly resolves the role for a device across GroupMember, UserProfile, and UserIdentity.
+     */
+    fun getRoleForDevice(deviceId: String): String? {
+        if (deviceId.isBlank()) return null
+        try {
+            val dossier = getLocalDossier(deviceId)
+            val dosRole = dossier["role_type"]?.takeIf { it.isNotBlank() && !it.equals("None", true) }
+                ?: dossier["designation"]?.takeIf { it.isNotBlank() && !it.equals("None", true) }
+            if (dosRole != null) return dosRole.trim()
+
+            val rosterMatch = getOfflineRoster().find {
+                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || 
+                it["uid_2"]?.toString() == deviceId || it["connected_id"]?.toString() == deviceId
+            }
+            val rRole = rosterMatch?.get("role_type")?.toString()?.takeIf { it.isNotBlank() && !it.equals("None", true) }
+            if (rRole != null) return rRole.trim()
+        } catch (e: Exception) {}
+        return null
     }
 
     /**
@@ -2139,6 +2255,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     i.${UserIdentityTable.COL_UID_1} as uid_1,
                     i.${UserIdentityTable.COL_UID_1} as uid,
                     i.${UserIdentityTable.COL_UID_2} as uid_2,
+                    i.${UserIdentityTable.COL_CONNECTED_ID} as connected_id,
                     COALESCE(NULLIF(u.${UserProfileTable.COL_NAME}, ''), NULLIF(i.${UserIdentityTable.COL_FULL_NAME}, ''), NULLIF(i.${UserIdentityTable.COL_OWNER_NAME}, ''), 'Target Node') as fullName,
                     COALESCE(NULLIF(u.${UserProfileTable.COL_NAME}, ''), NULLIF(i.${UserIdentityTable.COL_FULL_NAME}, ''), NULLIF(i.${UserIdentityTable.COL_OWNER_NAME}, ''), 'Target Node') as display_name,
                     COALESCE(NULLIF(u.${UserProfileTable.COL_AVATAR_ID}, ''), NULLIF(i.${UserIdentityTable.COL_QR_REF}, ''), '1') as avatar_id,

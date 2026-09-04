@@ -8,36 +8,44 @@ export class FirebaseService {
         const host = (hasWindow && window.location && window.location.hostname) || '127.0.0.1';
         const port = (hasWindow && window.location && window.location.port) || '8080';
         const origin = (hasWindow && window.location && window.location.origin) || `http://${host}:${port}`;
-        this.baseUrl = (hasWindow && window.API_BASE_URL) || (port === '3000' ? origin : `http://${host}:3000`);
+        // If window.API_BASE_URL is explicitly set, use it. Otherwise use current origin (both 3000 and 8080 support /api/*)
+        this.baseUrl = (hasWindow && window.API_BASE_URL) || origin;
+        this.inFlightRequests = new Map(); // Request coalescing map for GET requests
     }
 
     async fetchRaw(endpoint, options = {}) {
-        if (!this.controllers) {
-            this.controllers = {};
-        }
-        if (this.controllers[endpoint]) {
-            this.controllers[endpoint].abort();
-        }
-        const controller = new AbortController();
-        this.controllers[endpoint] = controller;
+        const method = (options.method || 'GET').toUpperCase();
         
-        try {
-            const response = await fetch(`${this.baseUrl}${endpoint}`, { 
-                ...options,
-                signal: controller.signal,
-                headers: { 'Content-Type': 'application/json', ...options.headers }
-            });
-            if (!response.ok) throw new Error(`HTTP_${response.status}`);
-            return await response.json();
-        } catch (err) {
-            if (err.name === 'AbortError') return null;
-            console.error(`[BRIDGE_ERROR] ${endpoint}`, err);
-            throw err;
-        } finally {
-            if (this.controllers && this.controllers[endpoint] === controller) {
-                delete this.controllers[endpoint];
+        // For GET requests, coalesce identical in-flight requests to eliminate race collisions
+        if (method === 'GET') {
+            if (this.inFlightRequests.has(endpoint)) {
+                return this.inFlightRequests.get(endpoint);
             }
         }
+
+        const fetchPromise = (async () => {
+            try {
+                const response = await fetch(`${this.baseUrl}${endpoint}`, { 
+                    ...options,
+                    headers: { 'Content-Type': 'application/json', ...options.headers }
+                });
+                if (!response.ok) throw new Error(`HTTP_${response.status}`);
+                return await response.json();
+            } catch (err) {
+                console.error(`[BRIDGE_ERROR] ${endpoint}`, err);
+                throw err;
+            } finally {
+                if (method === 'GET') {
+                    this.inFlightRequests.delete(endpoint);
+                }
+            }
+        })();
+
+        if (method === 'GET') {
+            this.inFlightRequests.set(endpoint, fetchPromise);
+        }
+
+        return fetchPromise;
     }
 
     async getDiscovery() {
@@ -98,6 +106,38 @@ export class FirebaseService {
             throw err;
         }
     }
+    async getDevicesLive() {
+        return this.fetchRaw('/api/devices-live');
+    }
+
+    async getSafeZones() {
+        return this.fetchRaw('/api/safe-zones');
+    }
+
+    async updateProfile(agentId, profileData) {
+        return this.fetchRaw('/api/update-profile', {
+            method: 'POST',
+            body: JSON.stringify({ agentId, profileData })
+        });
+    }
+
+    async pokeDevice(agentId, action = 'RING_ALARM') {
+        return this.fetchRaw('/api/poke-device', {
+            method: 'POST',
+            body: JSON.stringify({ agentId, action })
+        });
+    }
+
+    async toggleAcl(agentId, permission, state) {
+        return this.fetchRaw('/api/device/toggle-acl', {
+            method: 'POST',
+            body: JSON.stringify({ agentId, permission, state })
+        });
+    }
 }
 
 export const FBBridge = new FirebaseService();
+if (typeof window !== 'undefined') {
+    window.FBBridge = FBBridge;
+    window.fetchApi = (endpoint, options = {}) => FBBridge.fetchRaw(endpoint, options);
+}

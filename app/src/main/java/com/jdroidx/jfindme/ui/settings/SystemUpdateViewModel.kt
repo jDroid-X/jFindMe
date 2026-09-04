@@ -134,9 +134,10 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             "None (No Recorded Failures)"
         }
 
-        // Synchronize Access and Version Update metadata to Cloud Firebase RTDB
+        // Synchronize Access and Version Update metadata to Cloud Firebase RTDB (Only if authenticated)
         val agentId = RegistryManager.getAgentId(context)
-        if (agentId.isNotEmpty()) {
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (agentId.isNotEmpty() && currentUser != null) {
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, agentId)
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(context, agentId, "INSTALLED")
             com.jdroidx.jfindme.data.remote.FirebaseComm.checkForVersionDifference(context, agentId) { hasNew, remoteVersion, remoteCode, downloadUrl, size ->
@@ -287,6 +288,12 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             _lastCheckInfo.postValue(now)
 
             val effectiveAgentId = if (agentId.isNotEmpty()) agentId else "NODE_DEFAULT"
+            val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (currentUser == null) {
+                _isLoading.postValue(false)
+                _loadingStatus.postValue("Standby: App in offline mode awaiting user authentication.")
+                return@launch
+            }
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, effectiveAgentId)
             com.jdroidx.jfindme.data.remote.FirebaseComm.checkForVersionDifference(context, effectiveAgentId) { hasNew, remoteVersion, remoteCode, downloadUrl, size ->
                 _isLoading.postValue(false)

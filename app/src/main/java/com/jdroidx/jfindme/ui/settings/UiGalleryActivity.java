@@ -21,6 +21,8 @@ import com.jdroidx.jfindme.ui.base.FormInputTable;
 import com.jdroidx.jfindme.ui.base.BottomNavTable;
 import com.jdroidx.jfindme.ui.base.MarqueeTable;
 import com.jdroidx.jfindme.ui.base.SystemGeometryTable;
+import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.model.SafeZoneModel;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
 /**
@@ -362,6 +364,10 @@ public class UiGalleryActivity extends BaseActivityJava {
         LinearLayout suitePanel = new LinearLayout(this);
         suitePanel.setOrientation(LinearLayout.VERTICAL);
 
+        DatabaseHelper db = DatabaseHelper.getInstance(this);
+        String dynamicSelfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String hostDeviceName = db.getDeviceCentricName(dynamicSelfId);
+
         // 1. Tactile On/Off Switch
         View switchView = createInteractiveSwitch("Realtime GNSS Mesh", "Stream location to all paired nodes", true, (buttonView, isChecked) -> {
             showSlideNotification("Tracking Mode Changed", "Live GNSS streaming is now " + (isChecked ? "ENABLED" : "PAUSED"),
@@ -371,7 +377,7 @@ public class UiGalleryActivity extends BaseActivityJava {
         slp.bottomMargin = scale(12);
         suitePanel.addView(switchView, slp);
 
-        // 2. Segmented Multi-Toggle
+        // 2. Segmented Multi-Toggle (Left / Right / Multi-Tab)
         String[] mapTiers = {"STANDARD", "SATELLITE", "TERRAIN"};
         View toggleView = createSegmentedToggle(mapTiers, 0, (idx, opt) -> {
             showSlideNotification("Map Canvas Switched", "Active base layer: " + opt,
@@ -381,9 +387,18 @@ public class UiGalleryActivity extends BaseActivityJava {
         tlp.bottomMargin = scale(12);
         suitePanel.addView(toggleView, tlp);
 
-        // 3. Dropdown List Box with Selection Anchor
-        String dynamicSelfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-        String[] sampleNodes = {dynamicSelfId + " (Host Anchor)", "NODE_ALPHA (Linked)", "NODE_BETA (Linked)"};
+        // 3. Dropdown List Box with Dynamic Relational Nodes (Device Group-By)
+        java.util.List<java.util.Map<String, Object>> offlineRoster = db.getOfflineRoster();
+        java.util.List<String> nodeOptions = new java.util.ArrayList<>();
+        nodeOptions.add(dynamicSelfId + " (" + hostDeviceName + " • Host Anchor)");
+        for (java.util.Map<String, Object> node : offlineRoster) {
+            String u1 = (String) node.get("uid_1");
+            String name = (String) node.get("fullName");
+            if (u1 != null && !u1.equals(dynamicSelfId) && !u1.isEmpty()) {
+                nodeOptions.add(name + " (" + u1 + ")");
+            }
+        }
+        String[] sampleNodes = nodeOptions.toArray(new String[0]);
         View dropdownView = createDropdownListBox("PRIMARY FLEET NODE", sampleNodes, 0, (idx, opt) -> {
             showSlideNotification("Node Focus Updated", "Active monitoring target: " + opt,
                 android.R.drawable.ic_menu_myplaces, getGradientStart(), null, null);
@@ -392,7 +407,171 @@ public class UiGalleryActivity extends BaseActivityJava {
         dlp.bottomMargin = scale(12);
         suitePanel.addView(dropdownView, dlp);
 
-        // 4. Action Row for Dialogs and Slide Notifications
+        // 4. Interactive Animated ViewFlipper (Smooth Switch between Dynamic Telemetry & Radar)
+        LinearLayout flipperCard = new LinearLayout(this);
+        flipperCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, flipperCard, "CARD_STANDARD");
+        flipperCard.setPadding(scale(14), scale(14), scale(14), scale(14));
+
+        TextView tvFlipperTitle = new TextView(this);
+        tvFlipperTitle.setText("ANIMATED VIEW FLIPPER");
+        tvFlipperTitle.setTextColor(getGradientStart());
+        tvFlipperTitle.setTypeface(null, Typeface.BOLD);
+        tvFlipperTitle.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_LABEL"));
+        flipperCard.addView(tvFlipperTitle);
+
+        // Fetch Dynamic Telemetry & Safe Zones from SQLite
+        java.util.Map<String, Object> hostLoc = db.getLatestHistoricalLocation(dynamicSelfId);
+        String hostSpeed = hostLoc != null && hostLoc.get("speed") != null ? hostLoc.get("speed") + " km/h" : "0 km/h";
+        java.util.List<SafeZoneModel> activeZones = db.getActiveSafeZones();
+        java.util.Map<String, Object> vitals = db.getDeviceVitals(dynamicSelfId);
+        int batteryLevel = vitals != null && vitals.get("battery_level") != null ? ((Number) vitals.get("battery_level")).intValue() : 100;
+
+        // View A: Dynamic Telemetry Snapshot
+        LinearLayout viewA = new LinearLayout(this);
+        viewA.setOrientation(LinearLayout.VERTICAL);
+        viewA.setPadding(0, scale(8), 0, scale(8));
+        TextView tvA1 = new TextView(this);
+        tvA1.setText("VIEW 1: Host Telemetry Snapshot");
+        tvA1.setTextColor(getTextColor());
+        tvA1.setTypeface(null, Typeface.BOLD);
+        tvA1.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TITLE"));
+        TextView tvA2 = new TextView(this);
+        tvA2.setText("Node: " + dynamicSelfId + " (" + hostDeviceName + ") • Speed: " + hostSpeed + " • Battery: " + batteryLevel + "%");
+        tvA2.setTextColor(getSecondaryTextColor());
+        tvA2.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
+        viewA.addView(tvA1);
+        viewA.addView(tvA2);
+
+        // View B: Dynamic Security Perimeter Radar
+        LinearLayout viewB = new LinearLayout(this);
+        viewB.setOrientation(LinearLayout.VERTICAL);
+        viewB.setPadding(0, scale(8), 0, scale(8));
+        TextView tvB1 = new TextView(this);
+        tvB1.setText("VIEW 2: Security Perimeter Radar");
+        tvB1.setTextColor(getTextColor());
+        tvB1.setTypeface(null, Typeface.BOLD);
+        tvB1.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TITLE"));
+        TextView tvB2 = new TextView(this);
+        String primaryZoneName = !activeZones.isEmpty() ? activeZones.get(0).getName() : "None Assigned";
+        tvB2.setText("Safe Zones: " + activeZones.size() + " Active • Primary: " + primaryZoneName + " • Status: SECURE 🛡️");
+        tvB2.setTextColor(getSecondaryTextColor());
+        tvB2.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
+        viewB.addView(tvB1);
+        viewB.addView(tvB2);
+
+        android.widget.ViewFlipper flipper = createAnimatedFlipper(viewA, viewB);
+        flipperCard.addView(flipper);
+
+        View btnFlip = createIconButton("FLIP VIEW (SMOOTH TRANSITION)", android.R.drawable.ic_menu_rotate, v -> {
+            flipper.showNext();
+            int currentChild = flipper.getDisplayedChild();
+            showSlideNotification("Flipper Transitioned", "Switched to " + (currentChild == 0 ? "Telemetry Snapshot" : "Security Perimeter"),
+                android.R.drawable.ic_menu_slideshow, getGradientStart(), null, null);
+        });
+        LinearLayout.LayoutParams flipLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        flipLp.topMargin = scale(10);
+        flipperCard.addView(btnFlip, flipLp);
+
+        LinearLayout.LayoutParams fclp = getCardParams();
+        fclp.bottomMargin = scale(12);
+        suitePanel.addView(flipperCard, fclp);
+
+        // 5. Interactive Detail List Box with Dynamic Relational Data
+        java.util.List<UiArchitect.DetailListItem> detailItems = new java.util.ArrayList<>();
+        String hostAddr = hostLoc != null && hostLoc.get("address") != null ? (String) hostLoc.get("address") : "Anchor Fix Established";
+        detailItems.add(new UiArchitect.DetailListItem(
+            "Host Agent Node (" + dynamicSelfId + ")",
+            hostDeviceName + " • Master Anchor",
+            "Speed: " + hostSpeed + " • " + hostAddr,
+            "LIVE 🟢",
+            android.R.drawable.ic_menu_compass,
+            () -> showSlideNotification("Node Selected", "Host Agent " + dynamicSelfId + " inspected.", android.R.drawable.ic_menu_info_details, getGradientStart(), null, null)
+        ));
+
+        if (!activeZones.isEmpty()) {
+            SafeZoneModel firstZone = activeZones.get(0);
+            detailItems.add(new UiArchitect.DetailListItem(
+                "Safe Zone: " + firstZone.getName(),
+                "Radius: " + (int) firstZone.getRadius() + "m • Lat: " + String.format(java.util.Locale.US, "%.4f", firstZone.getLatitude()),
+                "Perimeter Sentinel: Armed (" + activeZones.size() + " total zones)",
+                "SECURE 🛡️",
+                android.R.drawable.ic_dialog_map,
+                () -> showSlideNotification("Safe Zone Selected", firstZone.getName() + " perimeter active.", android.R.drawable.ic_dialog_map, Color.parseColor("#00E676"), null, null)
+            ));
+        } else {
+            detailItems.add(new UiArchitect.DetailListItem(
+                "Safe Zones Engine",
+                "0 Zones configured in local SQLite",
+                "Tap to configure perimeters in Safe Zone Manager",
+                "STANDBY ⏸️",
+                android.R.drawable.ic_dialog_map,
+                () -> showSlideNotification("Safe Zones", "Configure perimeters in Safe Zone screen.", android.R.drawable.ic_dialog_map, getGradientStart(), null, null)
+            ));
+        }
+
+        detailItems.add(new UiArchitect.DetailListItem(
+            "Hardware Telemetry Vitals",
+            android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + " • Android " + android.os.Build.VERSION.RELEASE,
+            "Battery: " + batteryLevel + "% • Storage: SQLite 14-Table Sync Active",
+            "HEALTHY 📶",
+            android.R.drawable.ic_menu_info_details,
+            () -> showSlideNotification("Hardware Vitals", "Device hardware operating within nominal parameters.", android.R.drawable.ic_menu_info_details, getGradientStart(), null, null)
+        ));
+
+        View detailListBox = createInteractiveDetailListBox("INTERACTIVE DETAIL LIST BOX", detailItems);
+        LinearLayout.LayoutParams dlbLp = getCardParams();
+        dlbLp.bottomMargin = scale(12);
+        suitePanel.addView(detailListBox, dlbLp);
+
+        // 6. Validated Textbox with Inline Validation
+        LinearLayout validatedBoxCard = new LinearLayout(this);
+        validatedBoxCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, validatedBoxCard, "CARD_STANDARD");
+        validatedBoxCard.setPadding(scale(14), scale(14), scale(14), scale(14));
+
+        UiArchitect.ValidatedInputComponent validatedInput = createValidatedInputBox(
+            "INLINE VALIDATED INPUT BOX",
+            "Enter 8-character Agent ID (e.g. " + dynamicSelfId + ")",
+            android.R.drawable.ic_menu_edit,
+            new UiArchitect.TextValidator() {
+                @Override
+                public boolean validate(String text) {
+                    return text != null && text.trim().matches("^[A-Z0-9]{8}$");
+                }
+                @Override
+                public String getErrorMessage() {
+                    return "Must be exactly 8 uppercase alphanumeric characters.";
+                }
+            }
+        );
+        validatedBoxCard.addView(validatedInput.container);
+
+        View btnCheckInput = createIconButton("VALIDATE & SUBMIT INPUT", android.R.drawable.ic_input_add, v -> {
+            String entered = validatedInput.editText.getText() != null ? validatedInput.editText.getText().toString().trim() : "";
+            if (entered.matches("^[A-Z0-9]{8}$")) {
+                showSlideNotification("Validation Success", "Agent ID '" + entered + "' verified and valid!",
+                    android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
+            } else {
+                showActionableValidationDialog("Validation Alert",
+                    "Entered value '" + entered + "' does not match standard 8-character hardware format.",
+                    "AUTO-CORRECT", "DISMISS",
+                    () -> {
+                        validatedInput.editText.setText(dynamicSelfId);
+                        showSlideNotification("Auto-Corrected", "Reset to host ID: " + dynamicSelfId,
+                            android.R.drawable.ic_menu_rotate, getGradientStart(), null, null);
+                    }, null);
+            }
+        });
+        LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cbLp.topMargin = scale(8);
+        validatedBoxCard.addView(btnCheckInput, cbLp);
+
+        LinearLayout.LayoutParams vbLp = getCardParams();
+        vbLp.bottomMargin = scale(12);
+        suitePanel.addView(validatedBoxCard, vbLp);
+
+        // 7. Action Row for Dialogs and Slide Notifications
         LinearLayout actionRow = new LinearLayout(this);
         actionRow.setOrientation(LinearLayout.VERTICAL);
 
@@ -406,7 +585,26 @@ public class UiGalleryActivity extends BaseActivityJava {
         blp1.bottomMargin = scale(8);
         actionRow.addView(btnSlide, blp1);
 
-        View btnMultiOption = createIconButton("TEST MULTI-OPTION DIALOG", android.R.drawable.ic_menu_agenda, v -> {
+        View btnMultiChoice = createIconButton("TEST MULTI-CHOICE CONDITION DIALOG", android.R.drawable.ic_menu_agenda, v -> {
+            String[] conditionOptions = {
+                "Realtime GNSS Telemetry Stream",
+                "Geofence Boundary Transition Sentinel",
+                "Acoustic Siren & Emergency Audio Bridge",
+                "Encrypted SQLite Vault Offline Buffer"
+            };
+            boolean[] initialStates = {true, true, false, true};
+            showMultiChoiceOptionsDialog("Select Active Sentinels", conditionOptions, initialStates, (selectedStates, selectedItems) -> {
+                int activeCount = 0;
+                for (boolean b : selectedStates) if (b) activeCount++;
+                showSlideNotification("Conditions Updated", activeCount + " of " + selectedStates.length + " sentinels active.",
+                    android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
+            });
+        });
+        LinearLayout.LayoutParams blpMulti = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blpMulti.bottomMargin = scale(8);
+        actionRow.addView(btnMultiChoice, blpMulti);
+
+        View btnMultiOption = createIconButton("TEST COMMAND DISPATCH OPTIONS", android.R.drawable.ic_menu_manage, v -> {
             String[] options = {"Send Immediate Acoustic Siren", "Request Live GNSS Burst", "Audit Device Vitals", "Export SQLite Trace"};
             showNotificationOptionsDialog("Forensic Node Actions", "Select command to dispatch to node " + dynamicSelfId + ":", options, (idx, opt) -> {
                 showSlideNotification("Command Dispatched", opt + " initiated successfully.",
@@ -417,20 +615,16 @@ public class UiGalleryActivity extends BaseActivityJava {
         blp2.bottomMargin = scale(8);
         actionRow.addView(btnMultiOption, blp2);
 
-        View btnValidation = createIconButton("TEST INPUT & VALIDATION ENGINE", android.R.drawable.ic_menu_edit, v -> {
-            UiArchitect.showInputPromptDialog(this, "Geofence Threshold", "Enter radius in meters (50 - 5000):", "250", input -> {
-                try {
-                    int r = Integer.parseInt(input);
-                    if (r >= 50 && r <= 5000) {
-                        showSlideNotification("Validation Success", "Geofence radius set to " + r + "m",
-                            android.R.drawable.ic_input_add, Color.parseColor("#00E676"), null, null);
-                    } else {
-                        showValidationDialog("Invalid Range", "Radius must be between 50m and 5000m.");
-                    }
-                } catch (Exception e) {
-                    showValidationDialog("Input Error", "Please enter a valid numeric value.");
-                }
-            });
+        View btnValidation = createIconButton("TEST ACTIONABLE VALIDATION DIALOG", android.R.drawable.ic_menu_edit, v -> {
+            showActionableValidationDialog(
+                "Cache Synchronization Notice",
+                "Local SQLite database contains 14 tables synchronized with cloud telemetry. Would you like to optimize indexes?",
+                "OPTIMIZE NOW", "DISMISS",
+                () -> {
+                    showSlideNotification("Optimization Complete", "Database indexes and SQLite vacuum verified.",
+                        android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
+                }, null
+            );
         });
         actionRow.addView(btnValidation, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 

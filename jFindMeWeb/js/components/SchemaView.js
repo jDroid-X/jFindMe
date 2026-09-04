@@ -17,24 +17,57 @@ export class SchemaView {
         
         try {
             const state = Store.getState();
-            const collections = state.data.collections; // [{name, type}, ...]
+            const collections = state.data.collections || []; // [{name, type}, ...]
             
-            // Define intended relational nodes for the map
-            const targetNodes = ['users', 'groups', 'locations', 'history', 'pairing_requests', 'avatars', 'sessions'];
+            // Define intended relational nodes for the map (supporting both active and legacy schemas)
+            const targetNodes = ['devices', 'History', 'relationships', 'Geofencing', 'lookup_indices', 'users', 'groups', 'locations', 'history', 'pairing_requests', 'avatars', 'sessions'];
             
             for(const nodeName of targetNodes) {
-                const meta = collections.find(c => c.name === nodeName);
+                const meta = collections.find(c => c.name.toLowerCase() === nodeName.toLowerCase());
                 if (meta) {
                     try {
                         const data = await FBBridge.getNodeData(meta.name, 100, null, meta.type);
-                        this.fullData[nodeName] = Object.entries(data || {}).map(([id, val]) => ({ 
+                        const entries = Object.entries(data || {}).map(([id, val]) => ({ 
                             id, 
                             _source: meta.type,
                             ...(typeof val === 'object' ? val : {val}) 
                         }));
+                        this.fullData[nodeName] = entries;
+                        // Map active schema nodes to relational anchors
+                        if (meta.name === 'devices') {
+                            this.fullData.users = entries.map(e => ({
+                                id: e.id,
+                                name: e.profile?.name || e.name || e.id,
+                                email: e.profile?.email || e.email || '',
+                                avatar_id: e.profile?.avatar_id || e.avatar_id || '1',
+                                role: e.profile?.role_title || e.role || 'MEMBER',
+                                status: (e.device?.live || e.telemetry?.status === 'ONLINE') ? 'ONLINE' : 'OFFLINE',
+                                ...e
+                            }));
+                        } else if (meta.name === 'History') {
+                            this.fullData.history = entries;
+                        } else if (meta.name === 'relationships') {
+                            this.fullData.groups = entries.map(e => {
+                                const hostId = e.group_info?.host_device_id || e.host_device_id || e.host || (e.id.startsWith('GRP_') ? e.id.substring(4) : e.id);
+                                const memberList = e.devices ? Object.keys(e.devices) : (Array.isArray(e.members) ? e.members : (typeof e.members === 'object' ? Object.keys(e.members) : []));
+                                return {
+                                    id: e.id,
+                                    name: e.group_info?.group_name || e.name || e.id,
+                                    host: hostId,
+                                    members: memberList.join(', '),
+                                    description: e.group_info?.created_at ? `Created: ${new Date(e.group_info.created_at).toLocaleDateString()}` : (e.description || ''),
+                                    devices: e.devices || {},
+                                    group_info: e.group_info || {},
+                                    ...e
+                                };
+                            });
+                        } else if (meta.name === 'Geofencing') {
+                            this.fullData.locations = entries;
+                        } else if (meta.name === 'lookup_indices') {
+                            this.fullData.pairing_requests = entries;
+                        }
                     } catch (nodeErr) {
                         console.warn(`[SCHEMA] Node [${nodeName}] fetch skipped:`, nodeErr.message);
-                        this.fullData[nodeName] = [];
                     }
                 }
             }
@@ -190,7 +223,7 @@ export class SchemaView {
             baseData = {
                 users: this.fullData.users.filter(u => u.id === uid),
                 pairing_requests: this.fullData.pairing_requests.filter(p => p.fromUID === uid || p.id === uid),
-                groups: this.fullData.groups.filter(g => g.host === uid || g.members?.includes?.(uid) || g.id === uid),
+                groups: this.fullData.groups.filter(g => g.host === uid || g.members?.includes?.(uid) || (g.devices && g.devices[uid]) || g.id === uid || g.id === `GRP_${uid}`),
                 locations: this.fullData.locations.filter(l => l.id === uid),
                 history: this.fullData.history.filter(h => h.id === uid || h.node_id === uid)
             };

@@ -81,6 +81,11 @@ object FirebaseComm {
     @JvmStatic val traceArchivesRef: DatabaseReference get() = historyArchiveRef
     @JvmStatic val geofencingRef: DatabaseReference get() = database.reference.child(NODE_GEOFENCING)
 
+    // 🛡️ Zero-Trust Security Gate: Check if user is authenticated before any cloud write
+    @JvmStatic fun isAuthenticated(): Boolean {
+        return com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null
+    }
+
     // 🛡️ Safe Path Sanitizer for Firebase Realtime Database Keys (prohibits '.', '#', '$', '[', ']', '/')
     @JvmStatic fun sanitizePathKey(key: String?): String {
         if (key.isNullOrBlank()) return "node_${System.currentTimeMillis()}"
@@ -148,8 +153,10 @@ object FirebaseComm {
             "metadata" to details
         )
         
-        // 1. Write to Cloud Firebase RTDB
-        getChangeLogRef(agentId).child(category).child(logId).setValue(logPayload)
+        // 1. Write to Cloud Firebase RTDB ONLY if authenticated
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) {
+            getChangeLogRef(agentId).child(category).child(logId).setValue(logPayload)
+        }
 
         // 2. Mirror into Local SQLite DB
         val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
@@ -182,6 +189,11 @@ object FirebaseComm {
     @JvmStatic
     fun syncDeviceAccessPermissions(context: android.content.Context, agentId: String) {
         if (agentId.isBlank()) return
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            SystemLogger.w("FirebaseComm", "OFFLINE_STANDBY: Device access sync suppressed for unauthenticated node: $agentId")
+            return
+        }
         try {
             val pm = context.packageManager
             val pkg = context.packageName
@@ -267,6 +279,11 @@ object FirebaseComm {
         packageSizeFormatted: String = formatByteSize(if (packageSizeBytes > 0) packageSizeBytes else getInstalledPackageSizeBytes(context))
     ) {
         if (agentId.isBlank()) return
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            SystemLogger.w("FirebaseComm", "OFFLINE_STANDBY: Version metadata sync suppressed for unauthenticated node: $agentId")
+            return
+        }
         try {
             val versionName = com.jdroidx.jfindme.BuildConfig.VERSION_NAME
             val versionCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
@@ -315,6 +332,12 @@ object FirebaseComm {
         agentId: String,
         callback: (hasNewVersion: Boolean, remoteVersion: String, remoteCode: Int, downloadUrl: String, size: String) -> Unit
     ) {
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            SystemLogger.w("FirebaseComm", "OFFLINE_STANDBY: Version difference check suppressed for unauthenticated node: $agentId")
+            callback(false, "", 0, "", "0 MB")
+            return
+        }
         val masterRef = versionUpdatesRef.child("master_release")
         masterRef.get().addOnCompleteListener { masterTask ->
             val snap = if (masterTask.isSuccessful && masterTask.result.exists()) {
@@ -376,6 +399,11 @@ object FirebaseComm {
      * TACTICAL SPEED AUDIT: Simulates the diag.py handshake to measure cloud latency.
      */
     fun performLatencyAudit(callback: (latencyMs: Long) -> Unit) {
+        if (!isAuthenticated()) {
+            com.jdroidx.jfindme.utils.SystemLogger.d("FirebaseAudit", "Audit skipped: Device is offline / unauthenticated.")
+            callback(-1)
+            return
+        }
         val startTime = System.currentTimeMillis()
         val diagRef = devicesRef.child("system_audit").child("latency")
         
@@ -770,7 +798,7 @@ object FirebaseComm {
 
     @JvmStatic
     fun syncAnalyticalEvent(agentId: String, eventData: UserLocation) {
-        if (!isAgentIdValid(agentId) || !eventData.isValidLocation()) return
+        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) return
         val now = getForensicTimestamp()
         val updates = mutableMapOf<String, Any>()
         
@@ -803,7 +831,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun syncPartitionedLocationTrace(authUid: String, agentId: String, epochId: String, eventData: UserLocation) {
-        if (!isAgentIdValid(agentId) || !eventData.isValidLocation()) return
+        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) return
         val now = getForensicTimestamp()
         val updates = mutableMapOf<String, Any>()
 
@@ -1055,7 +1083,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun publishAlert(agentId: String, alertId: String, alertData: Map<String, Any>) {
-        if (!isAgentIdValid(agentId)) return
+        if (!isAuthenticated() || !isAgentIdValid(agentId)) return
         val now = getForensicTimestamp()
         val payload = alertData.toMutableMap()
         payload["timestamp"] = now
@@ -1069,7 +1097,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun publishSosEmergency(agentId: String, latitude: Double, longitude: Double, note: String = "EMERGENCY SOS TRIGGERED") {
-        if (!isAgentIdValid(agentId)) return
+        if (!isAuthenticated() || !isAgentIdValid(agentId)) return
         val nowMs = System.currentTimeMillis()
         val nowStr = getForensicTimestamp(nowMs)
         val alertPayload = mapOf(
@@ -1092,14 +1120,80 @@ object FirebaseComm {
      */
     @JvmStatic
     fun triggerRemoteRingDevice(targetDeviceId: String, durationSec: Int = 30) {
-        if (!isAgentIdValid(targetDeviceId)) return
+        if (!isAuthenticated()) return
+        val cleanId = targetDeviceId.replace("HW_", "").trim().uppercase()
+        if (cleanId.isEmpty()) return
+
         val cmd = mapOf(
             "action" to "RING_DEVICE",
             "duration_sec" to durationSec,
             "epoch_ms" to System.currentTimeMillis()
         )
-        devicesRef.child(targetDeviceId).child("device").child("remote_command").setValue(cmd)
-        SystemLogger.w("FirebaseComm", "🔊 Remote ring acoustic beacon dispatched to $targetDeviceId (${durationSec}s)")
+        devicesRef.child(cleanId).child("device").child("remote_command").setValue(cmd)
+        SystemLogger.w("FirebaseComm", "🔊 Remote ring acoustic beacon dispatched to $cleanId (${durationSec}s)")
+    }
+
+    /**
+     * 🛰️ Remote Locate / Immediate High-Accuracy GPS Wakeup ("Find My Phone")
+     */
+    @JvmStatic
+    fun triggerRemoteLocateDevice(targetDeviceId: String) {
+        if (!isAuthenticated()) return
+        val cleanId = targetDeviceId.replace("HW_", "").trim().uppercase()
+        if (cleanId.isEmpty()) return
+
+        val now = System.currentTimeMillis()
+        val cmd = mapOf(
+            "action" to "LOCATE_DEVICE",
+            "epoch_ms" to now,
+            "requested_at" to getForensicTimestamp()
+        )
+        devicesRef.child(cleanId).child("device").child("remote_command").setValue(cmd)
+        devicesRef.child(cleanId).child("commands").child("poke").setValue(mapOf(
+            "command" to "POKE_LOCATION_UPDATE",
+            "timestamp" to now
+        ))
+        SystemLogger.w("FirebaseComm", "🛰️ Remote locate GPS wakeup command dispatched to $cleanId")
+    }
+
+    /**
+     * 🚨 Complete Circle SOS Fan-Out Broadcast (Notifies all group members and signal nodes)
+     */
+    @JvmStatic
+    fun broadcastEmergencySos(context: android.content.Context, durationSec: Int = 30) {
+        if (!isAuthenticated()) return
+        val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val selfName = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(context)
+        val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+        val activeGroup = prefs.getString("active_group", "GRP_$selfId") ?: "GRP_$selfId"
+
+        // 1. Mark self telemetry as active SOS
+        devicesRef.child(selfId).child("device").child("live").child("isSosActive").setValue(true)
+        devicesRef.child(selfId).child("telemetry").child("is_sos").setValue(true)
+
+        // 2. Broadcast to Group Signal Node for instant map alert
+        val now = System.currentTimeMillis()
+        val signalPayload = mapOf(
+            "initiator_id" to selfId,
+            "initiator_name" to selfName,
+            "epoch_ms" to now,
+            "duration_sec" to durationSec,
+            "active" to true
+        )
+        relationshipsRef.child(activeGroup).child("signals").child("sos").setValue(signalPayload)
+
+        // 3. Direct Fan-Out Siren to all roster members
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val roster = db.getPagedData("MASTER_ROSTER", 100, 0, null)
+        roster.forEach { item ->
+            val rawUid = (item["uid_1"] ?: item["uid_2"] ?: item["device_id"]) ?: ""
+            val cleanUid = rawUid.replace("HW_", "").trim().uppercase()
+            if (cleanUid.isNotEmpty() && cleanUid != selfId) {
+                triggerRemoteRingDevice(cleanUid, durationSec)
+                triggerRemoteLocateDevice(cleanUid)
+            }
+        }
+        SystemLogger.w("FirebaseComm", "🚨 SOS_BROADCAST_COMPLETED: Dispatched to group $activeGroup and all connected nodes.")
     }
 
     /**
@@ -1107,7 +1201,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun syncRelationship(agentId: String, targetDeviceId: String, relationData: Map<String, Any>) {
-        if (!isAgentIdValid(agentId) || !isAgentIdValid(targetDeviceId)) return
+        if (!isAuthenticated() || !isAgentIdValid(agentId) || !isAgentIdValid(targetDeviceId)) return
         val now = getForensicTimestamp()
         val payload = relationData.toMutableMap()
         payload["updated_at"] = now
@@ -1121,7 +1215,7 @@ object FirebaseComm {
      */
     @JvmStatic
     fun registerLookupIndex(authUid: String, agentId: String) {
-        if (authUid.isEmpty() || !isAgentIdValid(agentId)) return
+        if (!isAuthenticated() || authUid.isEmpty() || !isAgentIdValid(agentId)) return
         lookupIndicesRef.child("auth_to_device").child(authUid).setValue(agentId)
     }
 

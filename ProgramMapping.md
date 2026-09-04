@@ -19,7 +19,8 @@
 | | | | `WatchDogAuditActivity`| `WatchDogViewModel` | 14-Table SQLite Forensic Verifier |
 | | | | `FactoryResetActivity` | `FactoryResetViewModel`| Selective Purge & Cloud Recovery |
 | | | | `AboutActivity` | `HelpSupportActivity`| System Documentation & Diagnostics |
-| | **Location Engine (Ktx)**| `TrackingService` | `LocationEngine` | `FusedLocationClient` | Background GPS Telemetry Engine |
+| | **Location Engine (Ktx)**| `TrackingService` | `LocationEngine` | `ActivityRecognitionSentinel` | Hardware Motion Co-Processor & Battery Sentinel |
+| | | `MultiMarkerEngine` | `RoadSmoothingEngine` | `SphericalUtil / Kalman` | 2D Kalman Road Snapping & Heading Azimuth |
 | | | `SIMTrackingService` | `SimForensicWorker` | `WorkManager` | Silent Hardware & SIM Audit Engine |
 | | **Data Engine (Local/Remote)**| `DatabaseHelper` | `14 Normalized Tables`| `SQLiteOpenHelper` | Single Source of Truth Local DB |
 | | | `FirebaseComm` | `LocationRepository` | `OfflineSyncManager` | Closed-loop Cloud Realtime Sync |
@@ -45,4 +46,6 @@
 1. **User Profile / Avatar Sync**: `ProfileActivity` / `AvatarEditorActivity` -> `AvatarSyncEngine` -> Local DB (`user_profile`) -> Firebase RTDB (`devices/{agentId}/profile`) -> `NetworkGatewayActivity` & `MapActivity` -> Instant Closed-Loop Propagation.
 2. **Device Pairing Flow**: `NetworkGatewayActivity` (QR Scan / 6-Digit PIN / 8-Digit Token) -> `GroupViewModel` -> `DatabaseHelper` (`device_pairings`, `MASTER_ROSTER`) -> `LocationRepository` (dynamic listener) -> `MapActivity` live track.
 3. **Safe Zone Flow**: `GeofenceActivity` -> `GeofenceViewModel` -> `DatabaseHelper` (`safe_zones`, `safe_zone_user_map`) -> `GeofenceBroadcastReceiver` -> Notification & Siren.
-4. **Navigation Flow**: Zero Dead-Ends; all drawer items map directly to functional activities with instant back-stack resolution.
+4. **Historical Trajectory Replay (Offline-First)**: `HistoryActivity` -> `HistoryViewModel` -> `LocationRepository` -> `DatabaseHelper.getRawHistoryPoints()` -> Instant zero-latency local playback, with closed-loop background merge when authenticated.
+5. **Pre-Uninstall Teardown Protocol**: `FactoryResetActivity` -> `FactoryResetViewModel.executeFullSystemTeardown()` -> Halts foreground services, unregisters OS geofences, cancels scheduled workers, revokes FCM cloud tokens, and purges local SQLite tables cleanly.
+6. **Navigation Flow**: Zero Dead-Ends; all drawer items map directly to functional activities with instant back-stack resolution.

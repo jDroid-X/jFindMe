@@ -229,6 +229,19 @@ export class MapController {
     }
 
     /**
+     * Closes the active device card on the right side
+     */
+    closeDeviceCard() {
+        this.activeSelectedDevice = null;
+        const sidebarEl = document.getElementById(this.sidebarContainerId);
+        if (sidebarEl) {
+            const devices = this.allDevicesCache || this.deviceController.devices;
+            sidebarEl.innerHTML = jButterflyHubView.renderHubCardHtml(null, devices, this.selectedDeviceIds);
+            this.bindHubSwitchEvents(sidebarEl);
+        }
+    }
+
+    /**
      * Toggles device selection for multi-marker map display
      * @param {string} agentId 
      */
@@ -299,12 +312,16 @@ export class MapController {
                 const agentId = sw.getAttribute('data-agent-id');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/device/toggle-acl', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/device/toggle-acl', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
+                    }) : fetch('/api/device/toggle-acl', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, flag: 'acl_live_tracking', value: val })
-                    });
-                    if (!res.ok) throw new Error('Failed to update live stream state');
+                    }).then(r => r.json()));
+
+                    if (res && res.error) throw new Error(res.error || 'Failed to update live stream state');
                     FeedbackDialog.showSlideNotification({
                         title: 'Live GPS Stream Toggled',
                         message: `Telemetry stream for [${agentId}] is now ${val ? 'TRANSMITTING' : 'PAUSED'}`,

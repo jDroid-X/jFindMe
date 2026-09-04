@@ -19,6 +19,13 @@ public class SilentUpdateWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+
+        // 🛡️ ZERO-TRUST OFFLINE GATE: Suppress cloud update scans for unauthenticated devices
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() == null) {
+            SystemLogger.i("SilentUpdateWorker", "Node unauthenticated. Silent cloud update check deferred until authorized user login.");
+            return Result.success();
+        }
+
         SystemLogger.i("SilentUpdateWorker", "Checking update criteria & hardware access matrix at 03:03 AM.");
         
         String agentId = RegistryManager.getAgentId(context);

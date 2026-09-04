@@ -73,25 +73,13 @@ object ApkInstallerHelper {
             return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
         }
 
-        val folderId = extractDriveFolderId(trimmed)
-        if (folderId != null) {
-            // Direct GitHub raw endpoint for compact release APK
-            return "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
+        // Direct GitHub Git LFS media endpoint for full binary APK
+        if (trimmed.contains("github.com/jDroid-X/jButterfly") || 
+            trimmed.contains("raw.githubusercontent.com/jDroid-X/jButterfly") ||
+            trimmed.contains("media.githubusercontent.com/media/jDroid-X/jButterfly")) {
+            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
         }
 
-        // Handle GitHub tree/blob folder links or base repo links
-        if (trimmed.contains("github.com/jDroid-X/jButterfly/tree/main/jbutterfly") || 
-            trimmed.contains("github.com/jDroid-X/jButterfly/blob/main/jbutterfly") ||
-            trimmed.equals("https://github.com/jDroid-X/jButterfly", ignoreCase = true) ||
-            trimmed.equals("https://github.com/jDroid-X/jButterfly/", ignoreCase = true)) {
-            return "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
-        }
-        if (trimmed.contains("github.com") && trimmed.contains("/blob/")) {
-            return trimmed.replace("/blob/", "/raw/")
-        }
-        if (trimmed.contains("media.githubusercontent.com/media/")) {
-            return trimmed.replace("media.githubusercontent.com/media/", "raw.githubusercontent.com/")
-        }
         return trimmed
     }
 
@@ -564,7 +552,7 @@ object ApkInstallerHelper {
         // Step 1: Backup current session parameters
         try {
             val agentId = RegistryManager.getAgentId(activity)
-            if (agentId.isNotEmpty()) {
+            if (agentId.isNotEmpty() && com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) {
                 com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(activity, agentId)
                 com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(activity, agentId, "OVERRIDE_INITIATED")
             }

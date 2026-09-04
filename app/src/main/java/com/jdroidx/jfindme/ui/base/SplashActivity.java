@@ -96,8 +96,7 @@ public class SplashActivity extends Activity {
             if (currentUser != null) {
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Identity Detected. Verifying Forensic Integrity.");
                 
-                String agentId = db.resolveAgentIdLocally(currentUser.getUid());
-                if (agentId == null) agentId = ""; // Fallback for fresh installation
+                String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                 
                 boolean bypassNudge = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_bypass_nudge", false);
                 
@@ -128,25 +127,9 @@ public class SplashActivity extends Activity {
         com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Starting background profile recovery for UID: " + authUid);
         com.jdroidx.jfindme.data.remote.FirebaseComm.purgeLegacyAuthUidNodes();
         
-        com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
-            .orderByChild("Identity/auth_uid")
-            .equalTo(authUid)
-            .limitToFirst(1)
-            .get()
-            .addOnCompleteListener(task -> {
-                if (task.isSuccessful() && task.getResult() != null && task.getResult().exists()) {
-                    for (com.google.firebase.database.DataSnapshot child : task.getResult().getChildren()) {
-                        String agentId = child.getKey();
-                        if (agentId != null && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(agentId)) {
-                            com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Resolved agent ID from cloud: " + agentId);
-                            fetchCloudProfile(authUid, agentId);
-                            return;
-                        }
-                    }
-                }
-                com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Could not resolve agent ID from cloud on startup.");
-                isSyncInProgress = false;
-            });
+        String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Using canonical hardware agent ID for profile recovery: " + canonicalAgentId);
+        fetchCloudProfile(authUid, canonicalAgentId);
     }
 
     private void fetchCloudProfile(String authUid, String agentId) {
@@ -225,14 +208,14 @@ public class SplashActivity extends Activity {
                         profileData, orgData, null, groupData, null, null, null,
                         0.0, 0.0, null, "ADMIN"
                     );
-                    db.pruneZombieNodes(agentId, android.os.Build.MODEL);
+                    db.pruneZombieNodes(canonicalAgentId, android.os.Build.MODEL);
                     db.applyTtlDecay(7);
                     
                     // Save locally to SharedPreferences `"system_registry"`
                     android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
                     prefs.edit()
-                         .putString("agent_id", agentId)
-                         .putString("user_nickname", name != null ? name : agentId)
+                         .putString("agent_id", canonicalAgentId)
+                         .putString("user_nickname", name != null ? name : canonicalAgentId)
                          .putString("user_phone", phone != null ? phone : "")
                          .putString("user_dob", dob != null ? dob : "")
                          .putString("user_gender", gender != null ? gender : "")

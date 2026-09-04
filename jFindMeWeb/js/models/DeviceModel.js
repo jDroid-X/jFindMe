@@ -33,6 +33,7 @@ export class DeviceModel {
         this.networkType = data.networkType || "UNKNOWN";
         this.lastSeen = data.lastSeen || data.lastUpdated || data.timestamp || 0;
         const epochInit = GeoUtils.parseTimestampToEpoch(this.lastSeen);
+        this.timestamp = epochInit > 0 ? epochInit : (typeof data.timestamp === 'number' ? data.timestamp : 0);
         const elapsedInit = epochInit > 0 ? (Date.now() - epochInit) : Infinity;
         this.isOnline = Boolean(data.isOnline || (data.st_session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
         this.sessionState = data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
@@ -220,8 +221,11 @@ export class DeviceModel {
      * @returns {number}
      */
     getEpochTimestamp() {
-        const t = this.timestamp || this.lastSeen;
-        return GeoUtils.parseTimestampToEpoch(t);
+        if (typeof this.timestamp === 'number' && this.timestamp > 0) return this.timestamp;
+        const t = this.lastSeen || this.raw?.updated_at;
+        const epoch = GeoUtils.parseTimestampToEpoch(t);
+        if (epoch > 0) this.timestamp = epoch;
+        return epoch || 0;
     }
 
     /**

@@ -261,6 +261,9 @@ public class SettingsActivity extends BaseActivityJava {
         secCard.addView(createIconButton("PAIRING PIN EXPIRY TTL", com.jdroidx.jfindme.R.drawable.ic_location_history, v -> {
             showPinTtlSelectionDialog();
         }), btnLp);
+        secCard.addView(createIconButton("MASTER PURGE SAFETY PHRASE", com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> {
+            showPurgeSafetyPhraseDialog();
+        }), btnLp);
         secCard.addView(createIconButton("SUPPORT DOCUMENTS", com.jdroidx.jfindme.R.drawable.ic_help_support, v -> {
             startActivity(new Intent(this, HelpSupportActivity.class));
         }), btnLp);
@@ -663,5 +666,22 @@ public class SettingsActivity extends BaseActivityJava {
             })
             .setNegativeButton("CANCEL", null)
             .show();
+    }
+
+    private void showPurgeSafetyPhraseDialog() {
+        String currentPhrase = RegistryManager.getPurgeSafetyPhrase(this);
+        UiArchitect.showInputPromptDialog(this,
+            "Master Purge Safety Phrase",
+            "Configure administrative override password for force purging unlinked nodes (Current: " + currentPhrase + "):",
+            currentPhrase,
+            newPhrase -> {
+                if (newPhrase != null && newPhrase.trim().length() >= 4) {
+                    RegistryManager.setPurgeSafetyPhrase(this, newPhrase.trim());
+                    UiArchitect.showSlideNotificationBanner(this, "Safety Phrase Updated", "Master purge override password saved successfully.", false, 3000, null, null);
+                } else {
+                    UiArchitect.showSlideNotificationBanner(this, "Invalid Phrase", "Safety phrase must contain at least 4 characters.", true, 3000, null, null);
+                }
+            }
+        );
     }
 }

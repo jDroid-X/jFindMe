@@ -58,6 +58,7 @@ import com.jdroidx.jfindme.ui.management.NotifActivity;
 import com.jdroidx.jfindme.ui.management.PrivacyActivity;
 import com.jdroidx.jfindme.ui.settings.ProfileActivity;
 import com.jdroidx.jfindme.ui.settings.SettingsActivity;
+import com.jdroidx.jfindme.utils.RegistryManager;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.ui.base.BottomNavTable;
 
@@ -144,8 +145,23 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        // 🔋 Screen Inactive / Hidden: Immediately transition to ultra-low-power HEARTBEAT mode
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_MAP_RENDER);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
         if (closedLoopAvatarCallback != null) {
             com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.unregisterClosedLoopCallback(closedLoopAvatarCallback);
         }
@@ -260,6 +276,18 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         UiArchitect.applyCard(this, binding.mapCardContainer, "CARD_STANDARD");
         
         binding.sideActionPanel.addView(createSmallIcon("ACTION_LOCATE", view -> recenterCamera()));
+        binding.sideActionPanel.addView(createSmallIcon("ACTION_REFRESH", view -> {
+            if (viewModel != null) {
+                viewModel.refreshLocations();
+                com.google.firebase.database.FirebaseDatabase.getInstance().goOnline();
+                UiArchitect.showSlideNotificationBanner(this, "MATRIX REFRESHED", "Scanning cloud & local tracking nodes...", false, 2500, null, null);
+                if (googleMap != null && viewModel.getUserLocations().getValue() != null) {
+                    com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(
+                        this, googleMap, viewModel.getUserLocations().getValue()
+                    );
+                }
+            }
+        }));
         binding.sideActionPanel.addView(createSmallIcon("ACTION_ADD", view -> { if(googleMap!=null) googleMap.animateCamera(com.google.android.gms.maps.CameraUpdateFactory.zoomIn()); }));
         binding.sideActionPanel.addView(createSmallIcon("ACTION_MINUS", view -> { if(googleMap!=null) googleMap.animateCamera(com.google.android.gms.maps.CameraUpdateFactory.zoomOut()); }));
         binding.sideActionPanel.addView(createSmallIcon("ACTION_LAYERS", view -> showMapLayersDialog()));
@@ -550,10 +578,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     handler.postDelayed(this, 1000);
                 } else {
                     dialog.dismiss();
-                    com.jdroidx.jfindme.engine.alert.AlertManager.vibrate(MapActivity.this, 600L);
                     if (viewModel != null) {
                         viewModel.toggleSOS(MapActivity.this, true);
                     }
+                    com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.startSiren(MapActivity.this, 30, "Local SOS Broadcast");
                     Toast.makeText(MapActivity.this, "🚨 EMERGENCY SOS BROADCASTED TO ALL GUARDIANS!", Toast.LENGTH_LONG).show();
                 }
             }
@@ -831,6 +859,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             return;
         }
 
+        String resolvedName = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(targetUid);
+        if (resolvedName == null || resolvedName.startsWith("Agent_") || resolvedName.isEmpty()) {
+            resolvedName = target.getUserName();
+        }
+        final String finalTargetName = resolvedName;
+
         String role = !target.getRole_family().equals("None") ? target.getRole_family() : target.getRole_friend();
         String roleTag = (!role.equals("None") && !role.isEmpty()) ? " [" + role + "]" : "";
 
@@ -845,14 +879,16 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             new UiArchitect.OptionItem("❌ Unlink / Remove Device", "Uncouple this device from your active tracking network", android.R.drawable.ic_menu_delete)
         };
 
-        UiArchitect.showRichOptionsDialog(this, "🎯 TARGET: " + target.getUserName().toUpperCase() + roleTag, targetActions, (actIdx, actLabel) -> {
+        UiArchitect.showRichOptionsDialog(this, "🎯 TARGET: " + finalTargetName.toUpperCase() + roleTag, targetActions, (actIdx, actLabel) -> {
             switch (actIdx) {
-                case 0: // Find Current Location (Center & Track Live)
+                case 0: // Find Current Location (Center & Track Live + Remote GPS Wakeup)
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteLocateDevice(targetUid);
                     LatLng finalPos = new LatLng(target.getLatitude(), target.getLongitude());
                     if (googleMap != null) {
                         googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(finalPos, 17f));
                     }
                     updateAddressMarquee(target);
+                    UiArchitect.showSlideNotificationBanner(this, "🛰️ GPS Locate Ping Sent", "Sent high-accuracy location request to " + finalTargetName + ". Awaiting fresh fix...", false, 3500, null, null);
                     break;
                 case 1: // Navigate
                     navigateToTarget(target.getLatitude(), target.getLongitude(), target.getUserName());
@@ -871,7 +907,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     startActivity(zIntent);
                     break;
                 case 4: // Acoustic Ring Siren
-                    sendAcousticPing(targetUid, target.getUserName());
+                    sendAcousticPing(targetUid, finalTargetName);
+                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", "30-second emergency siren sent to " + finalTargetName + ".", false, 4000, null, null);
                     break;
                 case 5: // Person Details
                     Intent pIntent = new Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
@@ -885,16 +922,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     Toast.makeText(this, "📋 Coordinates Copied: " + coordStr, Toast.LENGTH_SHORT).show();
                     break;
                 case 7: // Unlink / Delete
-                    showUnlinkDeviceDialog(targetUid, target.getUserName());
+                    showUnlinkDeviceDialog(targetUid, finalTargetName);
                     break;
             }
         });
     }
 
     private void showUnlinkDeviceDialog(String targetUid, String targetName) {
+        String safetyPhrase = RegistryManager.getPurgeSafetyPhrase(this);
         UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("❌ Standard Unlink Device", "Safely remove device from active tracking and local database", android.R.drawable.ic_menu_delete),
-            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with password 'jbutterfly@123' to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
+            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with safety phrase to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
         };
 
         UiArchitect.showRichOptionsDialog(this, "Remove " + targetName + "?", unlinkOptions, (idx, label) -> {
@@ -904,7 +942,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 db.deleteRosterNode(targetUid);
                 String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                 if (myGrp != null) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetUid).removeValue();
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetUid).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetUid).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetUid).removeValue();
                 }
                 String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetUid).removeValue();
@@ -917,13 +958,16 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     "Enter master security password to force purge '" + targetName + "' (" + targetUid + "):",
                     "",
                     inputPass -> {
-                        if ("jbutterfly@123".equals(inputPass != null ? inputPass.trim() : "")) {
+                        String currentPhrase = RegistryManager.getPurgeSafetyPhrase(this);
+                        if (currentPhrase.equals(inputPass != null ? inputPass.trim() : "")) {
                             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
                             db.deleteRosterNode(targetUid);
                             String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
                             if (myGrp != null) {
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetUid).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetUid).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetUid).removeValue();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetUid).removeValue();
                             }
                             String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetUid).removeValue();
@@ -956,9 +1000,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private void sendAcousticPing(String targetUid, String targetName) {
         if (targetUid == null || targetUid.isEmpty() || viewModel == null) return;
         String myName = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
+        int sirenDuration = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
         viewModel.pokeUser(targetUid, myName);
-        com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetUid, 30);
-        Toast.makeText(this, "🔊 Acoustic Siren Dispatched to " + targetName + " (30s)", Toast.LENGTH_LONG).show();
+        com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetUid, sirenDuration);
+        Toast.makeText(this, "🔊 Acoustic Siren Dispatched to " + targetName + " (" + sirenDuration + "s)", Toast.LENGTH_LONG).show();
     }
 
     private void showSelfActionSheet() {
@@ -1283,19 +1328,32 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
         
         googleMap.setOnMarkerClickListener(marker -> {
-            if (marker.getTitle() == null) return false;
+            if (marker.getTitle() == null && marker.getTag() == null) return true;
             
-            String rawTitle = marker.getTitle();
-            if (rawTitle.equalsIgnoreCase("You")) {
+            String selfUid = FirebaseAuth.getInstance().getUid();
+            String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+            String rawTitle = marker.getTitle() != null ? marker.getTitle() : "";
+            String markerTag = marker.getTag() != null ? marker.getTag().toString() : "";
+            
+            if (rawTitle.equalsIgnoreCase("You") || (!markerTag.isEmpty() && (markerTag.equals(selfUid) || markerTag.equals(selfAgent)))) {
                 showSelfActionSheet();
                 return true;
             }
             
+            String markerSnippet = marker.getSnippet() != null ? marker.getSnippet() : "";
+            
             List<UserLocation> locs = viewModel.getUserLocations().getValue();
             if (locs != null) {
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
                 for (UserLocation l : locs) {
-                    if (rawTitle.equals(l.getUserName()) || (marker.getSnippet() != null && marker.getSnippet().contains(l.getResolvedUserId()))) {
-                        selectedUserId = l.getResolvedUserId();
+                    String uid = l.getResolvedUserId();
+                    String devCentricName = db.getDeviceCentricName(uid);
+                    String devId = l.getResolvedDeviceId();
+                    if ((!markerTag.isEmpty() && (markerTag.equals(uid) || (!devId.isEmpty() && markerTag.equals(devId))))
+                        || (!markerSnippet.isEmpty() && (markerSnippet.contains(uid) || (!devId.isEmpty() && markerSnippet.contains(devId))))
+                        || rawTitle.equals(l.getUserName())
+                        || rawTitle.equals(devCentricName)) {
+                        selectedUserId = uid;
                         updateAddressMarquee(l);
                         showTacticalTargetActionSheet(l);
                         return true;
@@ -1303,8 +1361,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 }
             }
             
-            marker.showInfoWindow();
-            return false;
+            return true;
         });
 
         googleMap.setOnInfoWindowClickListener(marker -> {
@@ -1533,9 +1590,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 googleMap.setMyLocationEnabled(false);
                 getCurrentLocation();
 
-                // Synchronize Access Permissions Matrix and Version Update Metadata to Cloud Firebase RTDB
+                // Synchronize Access Permissions Matrix and Version Update Metadata to Cloud Firebase RTDB (Only if authenticated)
                 String agentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
-                if (!agentId.isEmpty()) {
+                if (!agentId.isEmpty() && com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() != null) {
                     com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(this, agentId);
                     com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(this, agentId, "INSTALLED");
                 }
@@ -1726,6 +1783,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     @Override
     protected void onResume() {
         super.onResume();
+        // 🔋 Screen Active: Activate high accuracy for active user interaction
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.activate(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
+        com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.activate(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_MAP_RENDER);
         checkPendingSilentUpdateNotification();
         
         String currentSsot = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
@@ -2065,8 +2125,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             drawerLayout.closeDrawers(); 
         }));
 
-        // 8. Friends & Peer Circles (Social & Peers)
-        items.addView(createDrawerItem("Friends & Peer Circles", "Social Circles & Peers", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
+        // 8. MeetMyFriend Groups (Social Circles & Peer Network)
+        items.addView(createDrawerItem("MeetMyFriend Groups", "Social Circles & Peer Network", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> { 
             Intent i = new Intent(this, com.jdroidx.jfindme.ui.group.FamilyFriendsActivity.class); 
             i.putExtra("REQUESTED_TAB", 1); 
             i.putExtra("FOCUS_CATEGORY", "FRIEND");

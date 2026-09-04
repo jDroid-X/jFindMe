@@ -39,7 +39,7 @@ export class LeafletMapView {
             attributionControl: false
         });
 
-        L.control.zoom({ position: 'topright' }).addTo(this.map);
+        L.control.zoom({ position: 'topleft' }).addTo(this.map);
         L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(this.map);
 
         for (const [key, provider] of Object.entries(MapConfig.TILE_PROVIDERS)) {
@@ -313,5 +313,13 @@ export class LeafletMapView {
             if (enabled) container.classList.add('cursor-crosshair');
             else container.classList.remove('cursor-crosshair');
         }
+    }
+
+    zoomIn() {
+        if (this.map) this.map.zoomIn();
+    }
+
+    zoomOut() {
+        if (this.map) this.map.zoomOut();
     }
 }

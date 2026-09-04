@@ -27,7 +27,8 @@ import kotlinx.coroutines.*
  */
 class TrackingService : Service() {
 
-    private lateinit var locationEngine: LocationEngine
+    private var locationEngine: LocationEngine? = null
+    private var isLowPowerMode = false
     private lateinit var repository: LocationRepository
     private var batteryReceiver: BroadcastReceiver? = null
     private var cpuWakeLock: android.os.PowerManager.WakeLock? = null
@@ -76,18 +77,13 @@ class TrackingService : Service() {
             SystemLogger.w(TAG, "Location permission not yet granted. TrackingService running in Standby Mode.")
             return
         }
-        if (::locationEngine.isInitialized) {
-            locationEngine.startTracking()
+        if (locationEngine != null) {
+            locationEngine?.startTracking()
             return
         }
 
-        // 🚀 Force Doze Mode Bypass via Hardware CPU Wakelock
-        if (cpuWakeLock == null) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            cpuWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::TelemetryWakeLock")
-            cpuWakeLock?.acquire(10 * 60 * 1000L) // 10-minute maximum hold; refreshed by battery ping job
-        }
-
+        // 🔋 Battery-Optimized Sentinel: Android Foreground Service with FOREGROUND_SERVICE_LOCATION
+        // receives location callbacks natively without requiring a permanent CPU WakeLock.
         val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
 
         locationEngine = LocationEngine(this) { location ->
@@ -105,13 +101,6 @@ class TrackingService : Service() {
             }
 
             SystemLogger.d(TAG, "Location updated: ${location.latitude}, ${location.longitude}")
-            
-            // 🚀 Force Hardware CPU Wakelock Renewal on pulse
-            try {
-                if (cpuWakeLock?.isHeld != true) {
-                    cpuWakeLock?.acquire(15 * 60 * 1000L)
-                }
-            } catch (e: Exception) {}
 
             // 🛡️ SOFTWARE GEOFENCING: Ray-Casting Polygon Perimeter Evaluation
             evaluateSoftwareGeofences(location.latitude, location.longitude)
@@ -202,16 +191,13 @@ class TrackingService : Service() {
                 }
             }
 
-            if (authUid != null) {
-                FirebaseComm.resolveHardwareIdentity(authUid) { agentId ->
-                    val finalAgentId = if (!agentId.isNullOrEmpty() && FirebaseComm.isAgentIdValid(agentId)) agentId else localAgentId
-                    publishLocation(finalAgentId)
-                }
-            } else {
-                publishLocation(localAgentId)
-            }
+            // 🧬 Hardware Root Anchor: Publish strictly to local hardware silicon agent ID
+            publishLocation(localAgentId)
         }
-        locationEngine.startTracking()
+        if (isLowPowerMode) {
+            locationEngine?.setLowPowerMode(true)
+        }
+        locationEngine?.startTracking()
     }
 
     private fun evaluateSoftwareGeofences(lat: Double, lng: Double) {
@@ -259,8 +245,10 @@ class TrackingService : Service() {
     }
 
     private var remoteCommandListener: ValueEventListener? = null
+    private var pokeCommandListener: ValueEventListener? = null
 
     private fun setupRemoteCommandListener() {
+        if (!FirebaseComm.isAuthenticated()) return
         val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
         if (!FirebaseComm.isAgentIdValid(localAgentId)) return
 
@@ -271,8 +259,8 @@ class TrackingService : Service() {
                     val action = snapshot.child("action").getValue(String::class.java)
                     val durationSec = snapshot.child("duration_sec").getValue(Int::class.java) ?: 30
                     val epochMs = snapshot.child("epoch_ms").getValue(Long::class.java) ?: 0L
-                    
                     val now = System.currentTimeMillis()
+
                     if (action == "RING_DEVICE" && (now - epochMs) < 90000L) {
                         SystemLogger.w(TAG, "🔊 INCOMING REMOTE RING COMMAND RECEIVED for $localAgentId (${durationSec}s)")
                         com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.startSiren(
@@ -280,6 +268,10 @@ class TrackingService : Service() {
                             durationSec,
                             "Remote Guardian"
                         )
+                        snapshot.ref.removeValue()
+                    } else if ((action == "LOCATE_DEVICE" || action == "POKE_DEVICE" || action == "REQUEST_LOCATION" || action == "PING_LOCATION") && (now - epochMs) < 90000L) {
+                        SystemLogger.w(TAG, "🛰️ INCOMING REMOTE LOCATE COMMAND RECEIVED for $localAgentId -> triggering immediate GPS fix")
+                        requestImmediateLocationAndPublish()
                         snapshot.ref.removeValue()
                     }
                 }
@@ -290,6 +282,80 @@ class TrackingService : Service() {
             }
         }
         cmdRef.addValueEventListener(remoteCommandListener!!)
+
+        val pokeRef = FirebaseComm.getDeviceRef(localAgentId).child("commands").child("poke")
+        pokeCommandListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val cmd = snapshot.child("command").getValue(String::class.java)
+                    val ts = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
+                    val now = System.currentTimeMillis()
+                    if (cmd == "POKE_LOCATION_UPDATE" && (now - ts) < 90000L) {
+                        SystemLogger.w(TAG, "🛰️ INCOMING POKE LOCATION UPDATE RECEIVED for $localAgentId")
+                        requestImmediateLocationAndPublish()
+                        snapshot.ref.removeValue()
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        pokeRef.addValueEventListener(pokeCommandListener!!)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun requestImmediateLocationAndPublish() {
+        if (!hasLocationPermission()) return
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::LocateImmediateWakeLock")
+            wakeLock.acquire(15000L)
+
+            val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+            val cts = com.google.android.gms.tasks.CancellationTokenSource()
+
+            fusedClient.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                .addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        SystemLogger.i(TAG, "IMMEDIATE_GPS_FIX_PUBLISHED: Lat=${loc.latitude}, Lng=${loc.longitude}")
+                        val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+                        val p = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                        val userName = p.getString("user_nickname", "Agent") ?: "Agent"
+                        val avatarId = p.getString("user_avatar_id", "butterfly") ?: "butterfly"
+
+                        val liveMap = mapOf(
+                            "latitude" to loc.latitude,
+                            "longitude" to loc.longitude,
+                            "speed" to loc.speed,
+                            "bearing" to loc.bearing,
+                            "accuracy" to loc.accuracy,
+                            "altitude" to loc.altitude,
+                            "updated_at" to FirebaseComm.getForensicTimestamp(),
+                            "userName" to userName,
+                            "avatar_id" to avatarId
+                        )
+
+                        FirebaseComm.devicesRef.child(myAgentId).child("device").child("live").updateChildren(liveMap)
+                        FirebaseComm.historyArchiveRef.child(myAgentId).child("history").push().setValue(
+                            mapOf(
+                                "latitude" to loc.latitude,
+                                "longitude" to loc.longitude,
+                                "timestamp" to FirebaseComm.getForensicTimestamp(),
+                                "userId" to myAgentId,
+                                "speed" to loc.speed,
+                                "battery" to p.getInt("last_known_battery", -1),
+                                "sos" to false
+                            )
+                        )
+                    }
+                    if (wakeLock.isHeld) wakeLock.release()
+                }
+                .addOnFailureListener {
+                    if (wakeLock.isHeld) wakeLock.release()
+                }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Immediate location fetch exception: ${e.message}")
+        }
     }
 
     private fun startSilentBatteryValidation() {
@@ -297,7 +363,8 @@ class TrackingService : Service() {
         batteryPingJob = CoroutineScope(Dispatchers.IO).launch {
             val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             while (isActive) {
-                val cycleMs = prefs.getLong("pref_tracking_interval", 60000L)
+                // 🔋 Power-Efficient Background Heartbeat: Default 5-minute cycle (300,000ms)
+                val cycleMs = maxOf(300000L, prefs.getLong("pref_tracking_interval", 300000L))
                 
                 // Forensic Battery Sweep
                 val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -306,26 +373,22 @@ class TrackingService : Service() {
                 
                 SystemLogger.i(TAG, "BATTERY_PING_ACTIVE: Level $level% | Cycle: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
                 
-                // 📡 V68.0: Push Vitals to Cloud Telemetry Sub-Group
-                val authUid = FirebaseAuth.getInstance().uid
-                if (authUid != null && level != -1) {
-                    FirebaseComm.resolveHardwareIdentity(authUid) { agentId ->
-                        if (agentId != null) {
-                            val now = System.currentTimeMillis()
-                            val durationSec = (now - serviceStartEpoch).coerceAtLeast(0L) / 1000L
-                            val telemetry = mapOf(
-                                "battery_pct" to level,
-                                "is_charging" to (plugged > 0),
-                                "status" to FirebaseComm.STATUS_ONLINE,
-                                "session_start_epoch" to serviceStartEpoch,
-                                "duration_sec" to durationSec,
-                                "duration_formatted" to FirebaseComm.formatDuration(durationSec),
-                                "last_seen" to now,
-                                "last_heartbeat" to now
-                            )
-                            FirebaseComm.updateTelemetry(agentId, telemetry)
-                        }
-                    }
+                // 📡 Push Vitals to Cloud Telemetry Sub-Group
+                val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+                if (FirebaseComm.isAuthenticated() && FirebaseComm.isAgentIdValid(myAgentId) && level != -1) {
+                    val now = System.currentTimeMillis()
+                    val durationSec = (now - serviceStartEpoch).coerceAtLeast(0L) / 1000L
+                    val telemetry = mapOf(
+                        "battery_pct" to level,
+                        "is_charging" to (plugged > 0),
+                        "status" to FirebaseComm.STATUS_ONLINE,
+                        "session_start_epoch" to serviceStartEpoch,
+                        "duration_sec" to durationSec,
+                        "duration_formatted" to FirebaseComm.formatDuration(durationSec),
+                        "last_seen" to now,
+                        "last_heartbeat" to now
+                    )
+                    FirebaseComm.updateTelemetry(myAgentId, telemetry)
                 }
 
                 // ⚠️ Low Battery Warning Threshold (< 15%)
@@ -335,26 +398,19 @@ class TrackingService : Service() {
                         prefs.edit().putLong("last_low_battery_alert_epoch", System.currentTimeMillis()).apply()
                         val uName = prefs.getString("user_nickname", "My Device") ?: "My Device"
                         AlertManager.showLowBatteryNotification(applicationContext, uName, level)
-                        if (authUid != null) {
-                            FirebaseComm.resolveHardwareIdentity(authUid) { agentId ->
-                                if (agentId != null) {
-                                    val alertData = mapOf(
-                                        "type" to "BATTERY_LOW",
-                                        "battery_pct" to level,
-                                        "avatar_name" to uName,
-                                        "title" to "Low Battery Alert",
-                                        "message" to "Battery dropped to $level%"
-                                    )
-                                    FirebaseComm.publishAlert(agentId, "battery_low", alertData)
-                                }
-                            }
+                        if (FirebaseComm.isAuthenticated() && FirebaseComm.isAgentIdValid(myAgentId)) {
+                            val alertData = mapOf(
+                                "type" to "BATTERY_LOW",
+                                "battery_pct" to level,
+                                "avatar_name" to uName,
+                                "title" to "Low Battery Alert",
+                                "message" to "Battery dropped to $level%"
+                            )
+                            FirebaseComm.publishAlert(myAgentId, "battery_low", alertData)
                         }
                     }
                 }
 
-                // AUDIT FIX [AUD-005]: Re-acquire with fresh 10-min timeout instead of indefinite hold
-                cpuWakeLock?.let { if (!it.isHeld) it.acquire(10 * 60 * 1000L) }
-                
                 delay(cycleMs)
             }
         }
@@ -384,34 +440,33 @@ class TrackingService : Service() {
     }
 
     private fun setupBackgroundSyncListener() {
-        val myUid = FirebaseAuth.getInstance().uid ?: return
-        FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
-            val finalId = agentId ?: return@resolveHardwareIdentity
-            val ref = FirebaseComm.devicesRef
-                .child(finalId).child("Identity").child("geofence_sync_requests")
-            
-            syncListener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    snapshot.children.forEach { snap ->
-                        val status = snap.child("status").getValue(String::class.java)
-                        if (status == "PENDING_ACCEPTANCE") {
-                            val zoneId = snap.child("zone_id").getValue(String::class.java)
-                            val zoneName = snap.child("zone_name").getValue(String::class.java) ?: "Safe Zone"
-                            val groupId = snap.child("group_id").getValue(String::class.java) ?: return@forEach
-                            val requestId = snap.key ?: return@forEach
-                            val lat = snap.child("lat").getValue(Double::class.java)
-                            val lng = snap.child("lng").getValue(Double::class.java)
-                            val radius = snap.child("radius").getValue(Double::class.java)
-                            
-                            // 🛰️ AUTO-SYNC: Fetch mission data from the group registry
-                            processBackgroundSync(requestId, zoneId ?: zoneName, zoneName, groupId, lat, lng, radius)
-                        }
+        if (!FirebaseComm.isAuthenticated()) return
+        val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+        if (!FirebaseComm.isAgentIdValid(myAgentId)) return
+        val ref = FirebaseComm.devicesRef
+            .child(myAgentId).child("Identity").child("geofence_sync_requests")
+        
+        syncListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                snapshot.children.forEach { snap ->
+                    val status = snap.child("status").getValue(String::class.java)
+                    if (status == "PENDING_ACCEPTANCE") {
+                        val zoneId = snap.child("zone_id").getValue(String::class.java)
+                        val zoneName = snap.child("zone_name").getValue(String::class.java) ?: "Safe Zone"
+                        val groupId = snap.child("group_id").getValue(String::class.java) ?: return@forEach
+                        val requestId = snap.key ?: return@forEach
+                        val lat = snap.child("lat").getValue(Double::class.java)
+                        val lng = snap.child("lng").getValue(Double::class.java)
+                        val radius = snap.child("radius").getValue(Double::class.java)
+                        
+                        // 🛰️ AUTO-SYNC: Fetch mission data from the group registry
+                        processBackgroundSync(requestId, zoneId ?: zoneName, zoneName, groupId, lat, lng, radius)
                     }
                 }
-                override fun onCancelled(error: DatabaseError) {}
             }
-            ref.addValueEventListener(syncListener!!)
+            override fun onCancelled(error: DatabaseError) {}
         }
+        ref.addValueEventListener(syncListener!!)
     }
 
     private fun processBackgroundSync(reqId: String, zoneId: String, name: String, group: String, directLat: Double?, directLng: Double?, directRadius: Double?) {
@@ -428,13 +483,11 @@ class TrackingService : Service() {
             val effectiveUid = myUid ?: "LOCAL_DEVICE"
             helper.addGeofence(zoneId + "___" + effectiveUid, lat, lng, rad.toFloat())
             
-            if (myUid != null) {
-                FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
-                    val finalId = agentId ?: return@resolveHardwareIdentity
-                    FirebaseComm.devicesRef
-                        .child(finalId).child("Identity").child("geofence_sync_requests")
-                        .child(reqId).child("status").setValue("SYNC_CONFIRMED")
-                }
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            if (FirebaseComm.isAgentIdValid(myAgentId)) {
+                FirebaseComm.devicesRef
+                    .child(myAgentId).child("Identity").child("geofence_sync_requests")
+                    .child(reqId).child("status").setValue("SYNC_CONFIRMED")
             }
             AlertManager.showGeofenceNotification(this@TrackingService, "Safe Zone Assigned: $name. You are now protected.")
             SystemLogger.w(TAG, "GEOFENCE_AUTO_SYNC: Mission Node [$name] ($zoneId) hardware-registered for device.")
@@ -468,9 +521,11 @@ class TrackingService : Service() {
                 val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
                 if (level != -1 && level < 15) {
                     SystemLogger.w(TAG, "LOW_BATTERY_DETECTED: Level $level%. Enabling Low Power Tracking.")
-                    locationEngine.setLowPowerMode(true)
+                    isLowPowerMode = true
+                    locationEngine?.setLowPowerMode(true)
                 } else if (level > 20) {
-                    locationEngine.setLowPowerMode(false)
+                    isLowPowerMode = false
+                    locationEngine?.setLowPowerMode(false)
                 }
             }
         }
@@ -553,9 +608,8 @@ class TrackingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         SystemLogger.w(TAG, "Service Destroyed")
-        if (::locationEngine.isInitialized) {
-            locationEngine.stopTracking()
-        }
+        locationEngine?.stopTracking()
+        locationEngine = null
         batteryPingJob?.cancel()
         
         // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
@@ -571,23 +625,22 @@ class TrackingService : Service() {
         
         // 🛰️ MISSION CLEANUP: Stop background sync listener
         syncListener?.let { listener ->
-            val myUid = FirebaseAuth.getInstance().uid
-            if (myUid != null) {
-                FirebaseComm.resolveHardwareIdentity(myUid) { agentId ->
-                    val finalId = agentId ?: return@resolveHardwareIdentity
-                    FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
-                        .child(finalId).child("Identity").child("geofence_sync_requests")
-                        .removeEventListener(listener)
-                }
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            if (FirebaseComm.isAgentIdValid(myAgentId)) {
+                FirebaseDatabase.getInstance().getReference(FirebaseComm.NODE_DEVICES)
+                    .child(myAgentId).child("Identity").child("geofence_sync_requests")
+                    .removeEventListener(listener)
             }
         }
 
-        // 🔊 ACOUSTIC BEACON CLEANUP: Remove remote command listener
-        remoteCommandListener?.let { listener ->
-            val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
-            if (FirebaseComm.isAgentIdValid(localAgentId)) {
-                FirebaseComm.getDeviceRef(localAgentId).child("device").child("remote_command")
-                    .removeEventListener(listener)
+        // 🔊 ACOUSTIC BEACON & LOCATE CLEANUP: Remove remote command listener
+        val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+        if (FirebaseComm.isAgentIdValid(localAgentId)) {
+            remoteCommandListener?.let { listener ->
+                FirebaseComm.getDeviceRef(localAgentId).child("device").child("remote_command").removeEventListener(listener)
+            }
+            pokeCommandListener?.let { listener ->
+                FirebaseComm.getDeviceRef(localAgentId).child("commands").child("poke").removeEventListener(listener)
             }
         }
     }

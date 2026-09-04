@@ -92,6 +92,20 @@ export class DeviceController {
     }
 
     /**
+     * Calculates the geometric center (centroid) of all devices with valid GPS coordinates
+     * @param {Array<DeviceModel>} devicesList 
+     * @returns {{ lat: number, lng: number }|null}
+     */
+    static calculateFleetCentroid(devicesList) {
+        if (!Array.isArray(devicesList)) return null;
+        const valid = devicesList.filter(d => d.hasValidLocation && d.latitude && d.longitude);
+        if (valid.length === 0) return null;
+        const avgLat = valid.reduce((acc, d) => acc + d.latitude, 0) / valid.length;
+        const avgLng = valid.reduce((acc, d) => acc + d.longitude, 0) / valid.length;
+        return { lat: avgLat, lng: avgLng };
+    }
+
+    /**
      * Fetches all registered devices and their live locations from Firebase Bridge
      * @returns {Promise<Array<DeviceModel>>}
      */

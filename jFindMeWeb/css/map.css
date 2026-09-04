@@ -369,3 +369,74 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #38bdf8;
 }
+
+/* ==========================================================================
+   Leaflet Right Device Card Spacing - Prevent hiding zoom controls
+   ========================================================================== */
+.leaflet-device-card-container {
+    margin-right: 16px !important;
+    transition: margin-right 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Enhanced Leaflet Zoom Controls (Top Horizontal Glassmorphism) */
+.leaflet-top.leaflet-left,
+.leaflet-top.leaflet-right {
+    z-index: 999 !important;
+}
+
+.leaflet-control-zoom {
+    display: flex !important;
+    flex-direction: row !important;
+    margin-top: 14px !important;
+    margin-left: 14px !important;
+    margin-right: 14px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+    background: rgba(15, 23, 42, 0.88) !important;
+    backdrop-filter: blur(14px) !important;
+}
+
+.leaflet-control-zoom a {
+    background: transparent !important;
+    color: #f1f5f9 !important;
+    border-bottom: none !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+    width: 36px !important;
+    height: 36px !important;
+    line-height: 36px !important;
+    font-size: 18px !important;
+    font-weight: 800 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.2s ease !important;
+}
+
+.leaflet-control-zoom a:hover {
+    background: rgba(14, 165, 233, 0.35) !important;
+    color: #38bdf8 !important;
+}
+
+.leaflet-control-zoom a:last-child {
+    border-right: none !important;
+}
+
+/* Light Theme Support for Zoom Controls */
+html.light .leaflet-control-zoom {
+    background: rgba(255, 255, 255, 0.94) !important;
+    border-color: rgba(0, 0, 0, 0.14) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14) !important;
+}
+
+html.light .leaflet-control-zoom a {
+    color: #0f172a !important;
+    border-right-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+html.light .leaflet-control-zoom a:hover {
+    background: rgba(14, 165, 233, 0.18) !important;
+    color: #0284c7 !important;
+}
+

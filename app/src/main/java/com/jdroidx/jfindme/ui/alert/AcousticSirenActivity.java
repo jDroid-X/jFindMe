@@ -185,6 +185,7 @@ public class AcousticSirenActivity extends AppCompatActivity {
             countDownTimer = null;
         }
         AcousticBeaconEngine.stopSiren(this);
+        AcousticBeaconEngine.stopVibration(this);
         finish();
     }
 
@@ -194,6 +195,8 @@ public class AcousticSirenActivity extends AppCompatActivity {
             countDownTimer.cancel();
             countDownTimer = null;
         }
+        AcousticBeaconEngine.stopSiren(this);
+        AcousticBeaconEngine.stopVibration(this);
         super.onDestroy();
     }
 }

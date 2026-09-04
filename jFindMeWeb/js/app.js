@@ -212,6 +212,8 @@ class App {
     }
 
     async bootstrap() {
+        if (this._bootstrapping) return;
+        this._bootstrapping = true;
         window.log("MATRIX_BOOT: Establishing Cloud Matrix Bridge...", "system");
         
         try {
@@ -244,13 +246,120 @@ class App {
             window.showLiveMap();
             
             this.startHeartbeat();
+            this.startTelemetryStream();
+
+            // Clear any pending retry timers
+            if (this._retryTimer) {
+                clearTimeout(this._retryTimer);
+                this._retryTimer = null;
+            }
 
             // After successful retrieval, hide terminal unless we are in Audit mode
             document.getElementById('terminal').style.display = 'none';
         } catch (err) {
             window.log(`BRIDGE_FAILURE: ${err.message}`, "error");
             window.log("ACTION: Verify 'service-account.json' and 'jFireBase.bat' state.", "warning");
+            window.log("HINT: Ensure backend proxy is running at http://127.0.0.1:3000 (via jFireBase.bat or 'node js/server.js').", "warning");
+
+            // Automatic Reconnect Watchdog (Retries every 5 seconds)
+            if (!this._retryTimer) {
+                window.log("WATCHDOG: Scheduling automatic bridge reconnect in 5s...", "system");
+                this._retryTimer = setTimeout(() => {
+                    this._retryTimer = null;
+                    this.bootstrap();
+                }, 5000);
+            }
+        } finally {
+            this._bootstrapping = false;
         }
+    }
+
+    startTelemetryStream() {
+        if (this.telemetryPollTimer) clearInterval(this.telemetryPollTimer);
+        const intervalSec = Math.max(3, (this.settingsModel?.refreshIntervalSec || 5));
+
+        const executeSync = async () => {
+            if (this._telemetrySyncing) return;
+            this._telemetrySyncing = true;
+
+            try {
+                const [liveData, zoneData] = await Promise.all([
+                    FBBridge.getDevicesLive().catch(e => {
+                        console.warn("[TELEMETRY] devices-live poll skipped:", e.message);
+                        return null;
+                    }),
+                    FBBridge.getSafeZones().catch(e => {
+                        console.warn("[TELEMETRY] safe-zones poll skipped:", e.message);
+                        return null;
+                    })
+                ]);
+
+                if (liveData && (liveData.devices || Array.isArray(liveData))) {
+                    const rawDevices = Array.isArray(liveData) ? liveData : (liveData.devices || []);
+                    if (rawDevices.length > 0) {
+                        const mapped = rawDevices.map(d => new DeviceModel(d));
+                        this.cachedDevices = DeviceController.sortByLatestFirst(mapped);
+                    }
+                    if (zoneData && (zoneData.safeZones || Array.isArray(zoneData))) {
+                        this.cachedSafeZones = Array.isArray(zoneData) ? zoneData : (zoneData.safeZones || []);
+                    }
+
+                    // Auto-Recenter Reference Station if out-of-range or default Delhi
+                    if (this.cachedDevices && this.cachedDevices.length > 0) {
+                        const centroid = DeviceController.calculateFleetCentroid(this.cachedDevices);
+                        if (centroid) {
+                            const currentRefLat = this.settingsModel.referenceLat;
+                            const currentRefLng = this.settingsModel.referenceLng;
+                            const distToFleet = GeoUtils.calculateDistanceKm(currentRefLat, currentRefLng, centroid.lat, centroid.lng);
+                            // If reference is Delhi (> 200 km away) or uncalibrated
+                            if (distToFleet > 200 || !currentRefLat || currentRefLat === 28.6139) {
+                                this.settingsModel.referenceLat = centroid.lat;
+                                this.settingsModel.referenceLng = centroid.lng;
+                                this.settingsModel.referenceAddress = "Fleet Tactical Center (Auto-Calibrated)";
+                                this.settingsModel.save();
+                                if (window.log) {
+                                    window.log(`STATION_CALIBRATION: Auto-centered operator station to Fleet Centroid (${centroid.lat.toFixed(4)}, ${centroid.lng.toFixed(4)})`, "success");
+                                }
+                            }
+                        }
+                    }
+
+                    // Update sync UI in header with live node count
+                    const nodeCount = (this.cachedDevices && this.cachedDevices.length) || 0;
+                    this.updateSyncUI('SYNCED', nodeCount);
+
+                    // Push updates directly to active view
+                    if (this.currentView === 'live-map' && this.mapController) {
+                        this.mapController.deviceController.devices = this.cachedDevices;
+                        this.mapController.deviceController.recalculateProximities();
+                        this.mapController.deviceController.notify();
+                        if (this.cachedSafeZones && this.cachedSafeZones.length > 0) {
+                            this.mapController.safeZoneController.safeZones = this.cachedSafeZones;
+                            this.mapController.safeZoneController.notify();
+                        }
+                    } else if (this.currentView === 'dashboard') {
+                        this.dashboardView.updateData(this.cachedDevices, this.settingsModel);
+                    } else if (this.currentView === 'device-user') {
+                        this.deviceUserView.updateData(this.cachedDevices, this.cachedSafeZones);
+                    } else if (this.currentView === 'geofencing') {
+                        this.geofencingView.updateData(this.cachedDevices, this.cachedSafeZones);
+                    }
+                } else if (this.cachedDevices && this.cachedDevices.length > 0) {
+                    this.updateSyncUI('SYNCED', this.cachedDevices.length);
+                }
+            } catch (err) {
+                console.warn("[TELEMETRY_STREAM] Polling skip:", err.message);
+                if (!this.cachedDevices || this.cachedDevices.length === 0) {
+                    this.updateSyncUI('ERROR');
+                }
+            } finally {
+                this._telemetrySyncing = false;
+            }
+        };
+
+        // Initial immediate sync
+        executeSync();
+        this.telemetryPollTimer = setInterval(executeSync, intervalSec * 1000);
     }
 
     startHeartbeat() {
@@ -475,31 +584,26 @@ class App {
         });
     }
 
-    updateSyncUI(status) {
-        const dot = document.getElementById('sync-pulsar-dot');
-        const label = document.getElementById('sync-pulsar-label');
-        if (!dot || !label) return;
-
-        switch(status) {
-            case 'PENDING':
-                dot.className = "w-1.5 h-1.5 rounded-full bg-warning animate-pulse shadow-[0_0_8px_#f59e0b]";
-                label.textContent = "SYNC_PENDING";
-                label.className = "text-[8px] font-black tracking-[0.2em] text-warning uppercase";
-                break;
-            case 'SYNCED':
-                dot.className = "w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_8px_#22c55e]";
-                label.textContent = "SYNC_ACTIVE";
-                label.className = "text-[8px] font-black tracking-[0.2em] text-success uppercase";
-                break;
-            case 'ERROR':
-                dot.className = "w-1.5 h-1.5 rounded-full bg-danger";
-                label.textContent = "SYNC_FAILURE";
-                label.className = "text-[8px] font-black tracking-[0.2em] text-danger uppercase";
-                break;
-            default:
-                dot.className = "w-1.5 h-1.5 rounded-full bg-white/10";
-                label.textContent = "SYNC_IDLE";
-                label.className = "text-[8px] font-black tracking-[0.2em] text-white/30 uppercase";
+    updateSyncUI(status, nodeCount = 0) {
+        const syncEl = document.getElementById('sync-indicator');
+        if (syncEl) {
+            switch(status) {
+                case 'PENDING':
+                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-amber-400 tracking-wider";
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-amber-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_PENDING</span>`;
+                    break;
+                case 'SYNCED':
+                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-emerald-400 tracking-wider";
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">LIVE (${nodeCount} DEVICES)</span>`;
+                    break;
+                case 'ERROR':
+                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-rose-400 tracking-wider";
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-rose-400 rounded-full"></div><span class="hidden md:inline">SIGNAL_LOST</span>`;
+                    break;
+                default:
+                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-slate-400 tracking-wider";
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-slate-400 rounded-full"></div><span class="hidden md:inline">SYNC_IDLE</span>`;
+            }
         }
     }
 
@@ -578,10 +682,18 @@ class App {
                             <span>⚙️</span>
                             <span>Settings</span>
                         </button>
-                        <button class="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-all flex items-center gap-1 shadow-sm" onclick="window.MatrixApp.fitAll()">
+                        <button class="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-all flex items-center gap-1 shadow-sm" onclick="window.MatrixApp.fitAll()" title="Center and frame all fleet devices">
                             <span>🎯</span>
                             <span>Center Fleet</span>
                         </button>
+                        <div class="h-4 w-px bg-slate-300 dark:bg-white/10 mx-0.5"></div>
+                        <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all flex items-center justify-center border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.zoomIn()" title="Zoom In (+)">
+                            <span>➕</span>
+                        </button>
+                        <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all flex items-center justify-center border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.zoomOut()" title="Zoom Out (-)">
+                            <span>➖</span>
+                        </button>
+                        <div class="h-4 w-px bg-slate-300 dark:bg-white/10 mx-0.5"></div>
                         <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[10px] transition-all flex items-center gap-1 border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.refreshNow()">
                             <span>🔄</span>
                             <span>Refresh</span>
@@ -621,6 +733,9 @@ class App {
                 toggleDeviceSelection: (agentId) => {
                     if (this.mapController) this.mapController.toggleDeviceSelection(agentId);
                 },
+                closeDeviceCard: () => {
+                    if (this.mapController) this.mapController.closeDeviceCard();
+                },
                 selectAllDevices: () => {
                     if (this.mapController) this.mapController.selectAllDevices();
                 },
@@ -650,6 +765,20 @@ class App {
                 },
                 fitAll: () => {
                     if (this.mapController) this.mapController.fitAll();
+                },
+                zoomIn: () => {
+                    if (this.mapController?.mapView?.zoomIn) {
+                        this.mapController.mapView.zoomIn();
+                    } else if (this.mapController?.mapView?.map) {
+                        this.mapController.mapView.map.zoomIn();
+                    }
+                },
+                zoomOut: () => {
+                    if (this.mapController?.mapView?.zoomOut) {
+                        this.mapController.mapView.zoomOut();
+                    } else if (this.mapController?.mapView?.map) {
+                        this.mapController.mapView.map.zoomOut();
+                    }
                 },
                 toggleFullscreen: () => {
                     if (this.mapController) this.mapController.toggleFullscreen();
@@ -697,17 +826,26 @@ class App {
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
 
-            // Fetch latest live devices and active settings
+            // Immediate render from cache or map controller if available
+            this.settingsModel.load();
+            if (!this.cachedDevices && this.mapController?.deviceController?.devices) {
+                this.cachedDevices = this.mapController.deviceController.devices;
+            }
+            if (this.cachedDevices && this.cachedDevices.length > 0) {
+                this.dashboardView.render(this.cachedDevices, this.settingsModel);
+            }
+
+            // Fresh data pull through FBBridge
             try {
-                this.settingsModel.load();
-                const res = await fetch('/api/devices-live');
-                const rawData = await res.json();
-                const rawDevices = Array.isArray(rawData) ? rawData : (rawData.devices || []);
-                this.cachedDevices = rawDevices.map(d => new DeviceModel(d));
+                const rawData = await FBBridge.getDevicesLive();
+                const rawDevices = Array.isArray(rawData) ? rawData : (rawData?.devices || []);
+                if (rawDevices.length > 0 || !this.cachedDevices || this.cachedDevices.length === 0) {
+                    this.cachedDevices = DeviceController.sortByLatestFirst(rawDevices.map(d => new DeviceModel(d)));
+                }
                 this.dashboardView.render(this.cachedDevices, this.settingsModel);
             } catch (err) {
                 console.error("[DASHBOARD] Failed to load devices:", err);
-                this.dashboardView.render([], this.settingsModel);
+                this.dashboardView.render(this.cachedDevices || [], this.settingsModel);
             }
         };
 
@@ -729,18 +867,30 @@ class App {
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
 
+            // Immediate render from cache or map controller if available
+            if (!this.cachedDevices && this.mapController?.deviceController?.devices) {
+                this.cachedDevices = this.mapController.deviceController.devices;
+            }
+            if (this.cachedDevices && this.cachedDevices.length > 0) {
+                this.deviceUserView.render(this.cachedDevices, agentId, this.cachedSafeZones || []);
+            }
+
             try {
                 const [devRes, zoneRes] = await Promise.all([
-                    fetch('/api/devices-live').then(r => r.json()),
-                    fetch('/api/safe-zones').then(r => r.json())
+                    FBBridge.getDevicesLive(),
+                    FBBridge.getSafeZones()
                 ]);
-                const devicesPayload = devRes.devices || devRes;
-                this.cachedDevices = (Array.isArray(devicesPayload) ? devicesPayload : []).map(d => new DeviceModel(d));
-                const safeZones = zoneRes.safeZones || [];
-                this.deviceUserView.render(this.cachedDevices, agentId, safeZones);
+                const devicesPayload = devRes?.devices || devRes || [];
+                if (Array.isArray(devicesPayload) && devicesPayload.length > 0) {
+                    this.cachedDevices = DeviceController.sortByLatestFirst(devicesPayload.map(d => new DeviceModel(d)));
+                }
+                if (zoneRes && (zoneRes.safeZones || Array.isArray(zoneRes))) {
+                    this.cachedSafeZones = Array.isArray(zoneRes) ? zoneRes : (zoneRes.safeZones || []);
+                }
+                this.deviceUserView.render(this.cachedDevices || [], agentId, this.cachedSafeZones || []);
             } catch (err) {
                 console.error("[DEVICE_USER] Failed to load devices:", err);
-                this.deviceUserView.render([], agentId, []);
+                this.deviceUserView.render(this.cachedDevices || [], agentId, this.cachedSafeZones || []);
             }
         };
 
@@ -762,57 +912,36 @@ class App {
             const terminal = document.getElementById('terminal');
             if (terminal) terminal.style.display = 'none';
 
+            // Immediate render from cache or map controller if available
+            if (!this.cachedDevices && this.mapController?.deviceController?.devices) {
+                this.cachedDevices = this.mapController.deviceController.devices;
+            }
+            if (this.cachedDevices && this.cachedDevices.length > 0) {
+                this.geofencingView.render(this.cachedDevices, this.cachedSafeZones || []);
+            }
+
             try {
                 const [devRes, zoneRes] = await Promise.all([
-                    fetch('/api/devices-live').then(r => r.json()),
-                    fetch('/api/safe-zones').then(r => r.json())
+                    FBBridge.getDevicesLive(),
+                    FBBridge.getSafeZones()
                 ]);
-                const rawDevices = devRes.devices || devRes;
-                this.cachedDevices = (Array.isArray(rawDevices) ? rawDevices : []).map(d => new DeviceModel(d));
-                const safeZones = zoneRes.safeZones || [];
-                this.geofencingView.render(this.cachedDevices, safeZones);
+                const rawDevices = devRes?.devices || devRes || [];
+                if (Array.isArray(rawDevices) && rawDevices.length > 0) {
+                    this.cachedDevices = DeviceController.sortByLatestFirst(rawDevices.map(d => new DeviceModel(d)));
+                }
+                if (zoneRes && (zoneRes.safeZones || Array.isArray(zoneRes))) {
+                    this.cachedSafeZones = Array.isArray(zoneRes) ? zoneRes : (zoneRes.safeZones || []);
+                }
+                this.geofencingView.render(this.cachedDevices || [], this.cachedSafeZones || []);
             } catch (err) {
                 console.error("[GEOFENCING] Failed to load zones:", err);
-                this.geofencingView.render([], []);
+                this.geofencingView.render(this.cachedDevices || [], this.cachedSafeZones || []);
             }
         };
 
-        window.showEagleAnalytics = async () => {
-            this.currentView = 'eagle-analytics';
-            Store.dispatch('SET_NAV', { activeTab: 'eagle-analytics', activeView: 'eagle-analytics', activeNode: null });
-            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('nav-eagle-analytics')?.classList.add('active');
-            
-            const header = document.querySelector('header h1');
-            if (header) header.textContent = "Eagle-Eye Analytics Radar (Macro to Micro Explorer)";
-
-            const pathLink = document.getElementById('cloud-path-link');
-            if (pathLink) {
-                pathLink.textContent = "SOURCE: RTDB + GIS ENGINE | PATH: /analytics-tree";
-                pathLink.href = "#";
-            }
-            
-            const terminal = document.getElementById('terminal');
-            if (terminal) terminal.style.display = 'none';
-
-            try {
-                const [devRes, zoneRes] = await Promise.all([
-                    fetch('/api/devices-live').then(r => r.json()),
-                    fetch('/api/safe-zones').then(r => r.json())
-                ]);
-                const devicesPayload = devRes.devices || devRes;
-                this.cachedDevices = (Array.isArray(devicesPayload) ? devicesPayload : []).map(d => new DeviceModel(d));
-                const safeZones = zoneRes.safeZones || [];
-                
-                this.eagleAnalyticsView.setDevices(this.cachedDevices);
-                this.eagleAnalyticsView.setSafeZones(safeZones);
-                this.eagleAnalyticsView.render();
-            } catch (err) {
-                console.error("[EAGLE_ANALYTICS] Failed to load data:", err);
-                this.eagleAnalyticsView.setDevices([]);
-                this.eagleAnalyticsView.setSafeZones([]);
-                this.eagleAnalyticsView.render();
-            }
+        // Deprecated: Eagle Analytics Tree features merged into Flagship Live Map Radar
+        window.showEagleAnalytics = () => {
+            window.showLiveMap();
         };
 
         window.showAudit = () => {
@@ -1116,3 +1245,11 @@ if (!window.appInstance) {
 } else {
     console.warn("[SYSTEM] Prevented redundant App instantiation.");
 }
+
+// Global Manual Retry Hook
+window.retryMatrixBridge = () => {
+    if (window.appInstance) {
+        window.log("BRIDGE_RETRY: Initiating manual bridge handshake...", "system");
+        window.appInstance.bootstrap();
+    }
+};

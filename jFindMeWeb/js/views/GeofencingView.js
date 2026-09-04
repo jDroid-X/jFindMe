@@ -22,6 +22,19 @@ export class GeofencingView {
     }
 
     /**
+     * Smoothly updates live telemetry for GeofencingView
+     */
+    updateData(devices = [], safeZones = []) {
+        const activeEl = document.activeElement;
+        const isEditing = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT');
+        if (isEditing) {
+            this.devices = devices;
+            return;
+        }
+        this.render(devices, safeZones || this.safeZones);
+    }
+
+    /**
      * Renders the 4-Pane Geofencing Workspace (Polymorphic inputs)
      * @param {Array<any>} arg1 Devices or SafeZones
      * @param {Array<any>} arg2 SafeZones or Devices
@@ -538,12 +551,15 @@ export class GeofencingView {
                 const zoneId = sw.getAttribute('data-zone-id');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/safezone/toggle-state', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/safezone/toggle-state', {
+                        method: 'POST',
+                        body: JSON.stringify({ zoneId, isActive: val })
+                    }) : fetch('/api/safezone/toggle-state', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ zoneId, isActive: val })
-                    });
-                    if (!res.ok) throw new Error('Failed to update safe zone state');
+                    }).then(r => r.json()));
+                    if (res && res.error) throw new Error(res.error || 'Failed to update safe zone state');
                     FeedbackDialog.showSlideNotification({
                         title: 'Safe Zone State Updated',
                         message: `Perimeter monitoring for [${zoneId}] is now ${val ? 'ACTIVE' : 'DISABLED'}`,
@@ -617,7 +633,15 @@ export class GeofencingView {
             const targetNames = this.devices.filter(d => checked.includes(d.agentId)).map(d => d.name).join(', ');
 
             try {
-                const res = await fetch('/api/safezone/update-targets', {
+                const resData = await (window.fetchApi ? window.fetchApi('/api/safezone/update-targets', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        zoneId: selectedZone.zoneId,
+                        creatorUid: selectedZone.creatorId || (this.devices[0] ? this.devices[0].agentId : 'SYSTEM_HOST'),
+                        assignedTargets: targetNames || 'All Devices',
+                        connectedDevices: checked
+                    })
+                }) : fetch('/api/safezone/update-targets', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -626,14 +650,14 @@ export class GeofencingView {
                         assignedTargets: targetNames || 'All Devices',
                         connectedDevices: checked
                     })
-                });
-                const resData = await res.json();
-                if (resData.status === 'UPDATED' || resData.status === 'SUCCESS') {
+                }).then(r => r.json()));
+
+                if (resData && (resData.status === 'UPDATED' || resData.status === 'SUCCESS')) {
                     FeedbackDialog.showToast(`Updated targets for [${selectedZone.zoneName}]!`, "success");
                     closeModal();
                     if (window.showGeofencing) window.showGeofencing();
                 } else {
-                    FeedbackDialog.showToast(`Target update notice: ${resData.message || 'Saved'}`, "info");
+                    FeedbackDialog.showToast(`Target update notice: ${resData?.message || 'Saved'}`, "info");
                     closeModal();
                 }
             } catch (err) {
@@ -655,16 +679,22 @@ export class GeofencingView {
             confirmClass: "btn-action-danger",
             onConfirm: async () => {
                 try {
-                    const r = await fetch('/api/safezone/delete', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/safezone/delete', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            zoneId: selectedZone.zoneId,
+                            creatorUid: selectedZone.creatorId || (this.devices[0] ? this.devices[0].agentId : 'SYSTEM_HOST')
+                        })
+                    }) : fetch('/api/safezone/delete', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             zoneId: selectedZone.zoneId,
                             creatorUid: selectedZone.creatorId || (this.devices[0] ? this.devices[0].agentId : 'SYSTEM_HOST')
                         })
-                    });
-                    const res = await r.json();
-                    if (res.status === 'DELETED' || res.status === 'SUCCESS') {
+                    }).then(r => r.json()));
+
+                    if (res && (res.status === 'DELETED' || res.status === 'SUCCESS')) {
                         FeedbackDialog.showToast(`Perimeter [${selectedZone.zoneName}] removed.`, "warning");
                         if (window.showGeofencing) window.showGeofencing();
                     } else {

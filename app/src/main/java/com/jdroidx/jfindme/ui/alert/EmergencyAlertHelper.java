@@ -21,7 +21,9 @@ import android.widget.Toast;
 import com.google.firebase.auth.FirebaseAuth;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
+import com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine;
 import com.jdroidx.jfindme.utils.AvatarLoader;
+import com.jdroidx.jfindme.utils.RegistryManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -55,7 +57,8 @@ public class EmergencyAlertHelper {
             for (Map<String, Object> item : roster) {
                 String u1 = item.get("uid_1") != null ? item.get("uid_1").toString().trim() : "";
                 String u2 = item.get("uid_2") != null ? item.get("uid_2").toString().trim() : "";
-                String uid = !u1.isEmpty() ? u1 : u2;
+                String rawUid = !u1.isEmpty() ? u1 : u2;
+                String uid = rawUid.replace("HW_", "").trim().toUpperCase();
 
                 if (uid.isEmpty() || seenUids.contains(uid)) continue;
                 if (uid.equalsIgnoreCase(selfAuthUid) || uid.equalsIgnoreCase(selfAgentId) || uid.equalsIgnoreCase(selfDevUid)) continue;
@@ -202,29 +205,31 @@ public class EmergencyAlertHelper {
                 int dispatchedCount = 0;
                 List<String> dispatchedNames = new ArrayList<>();
 
+                int sirenDuration = RegistryManager.getSirenDurationSec(activity);
                 for (CheckBox cb : targetCheckboxes) {
                     if (cb.isChecked() && cb.getTag() instanceof ConnectedDeviceTarget) {
                         ConnectedDeviceTarget dt = (ConnectedDeviceTarget) cb.getTag();
-                        FirebaseComm.triggerRemoteRingDevice(dt.uid, 30);
+                        FirebaseComm.triggerRemoteRingDevice(dt.uid, sirenDuration);
+                        FirebaseComm.triggerRemoteLocateDevice(dt.uid);
                         dispatchedCount++;
                         dispatchedNames.add(dt.name);
                     }
                 }
 
+                // Global circle fan-out
+                FirebaseComm.broadcastEmergencySos(activity, sirenDuration);
+
                 boolean ringLocal = cbLocalDevice.isChecked();
                 if (ringLocal) {
-                    activity.startActivity(new Intent(activity, AcousticSirenActivity.class)
-                        .putExtra("MODE", "SOS")
-                        .putExtra("INITIATOR_NAME", "Local Panic Trigger")
-                        .putExtra("DURATION_SEC", 30));
+                    AcousticBeaconEngine.startSiren(activity, sirenDuration, "Local Panic Trigger");
                 }
 
                 if (dispatchedCount > 0) {
                     Toast.makeText(activity, "🚨 Emergency siren dispatched to " + dispatchedCount + " connected device(s)!", Toast.LENGTH_LONG).show();
                 } else if (ringLocal) {
-                    Toast.makeText(activity, "🚨 Local acoustic siren activated (30s)!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, "🚨 Local acoustic siren activated (" + sirenDuration + "s)!", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(activity, "No devices selected for emergency siren.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, "Emergency SOS beacon broadcasted to network.", Toast.LENGTH_SHORT).show();
                 }
 
                 dialog.dismiss();

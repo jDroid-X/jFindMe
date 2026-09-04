@@ -12,6 +12,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.service.TrackingService;
+import com.jdroidx.jfindme.service.SIMTrackingService;
 import com.jdroidx.jfindme.utils.RegistryManager;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import java.util.*;
@@ -27,6 +28,7 @@ public class FactoryResetViewModel extends AndroidViewModel {
     public final MutableLiveData<List<TableNode>> tableMatrix = new MutableLiveData<>();
     public final MutableLiveData<String> syncStatus = new MutableLiveData<>();
     public final MutableLiveData<Boolean> rebootTrigger = new MutableLiveData<>(false);
+    public final MutableLiveData<Boolean> uninstallTrigger = new MutableLiveData<>(false);
     public final MutableLiveData<Boolean> isLoading = new MutableLiveData<>(false);
 
     public FactoryResetViewModel(Application app) {
@@ -59,6 +61,12 @@ public class FactoryResetViewModel extends AndroidViewModel {
     public void startCloudRecovery() {
         isLoading.postValue(true);
         syncStatus.postValue("INITIALIZING GLOBAL FORENSIC RECOVERY...");
+
+        if (!FirebaseComm.isAuthenticated()) {
+            syncStatus.postValue("RECOVERY_OFFLINE: NOT_AUTHENTICATED");
+            isLoading.postValue(false);
+            return;
+        }
         
         String authUid = FirebaseAuth.getInstance().getUid();
         if (authUid == null) {
@@ -142,13 +150,15 @@ public class FactoryResetViewModel extends AndroidViewModel {
                 String agentId = RegistryManager.getAgentId(context);
 
                 // 1. Wipe Tenant-Scoped Cloud Node
-                if (agentId != null && !agentId.isEmpty()) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(agentId).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getHistoryArchiveRef().child(agentId).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.cleanupAbandonedPairingSessions(agentId);
-                }
-                if (authUid != null && !authUid.isEmpty()) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getLookupIndicesRef().child("auth_to_device").child(authUid).removeValue();
+                if (FirebaseComm.isAuthenticated()) {
+                    if (agentId != null && !agentId.isEmpty()) {
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(agentId).removeValue();
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getHistoryArchiveRef().child(agentId).removeValue();
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.cleanupAbandonedPairingSessions(agentId);
+                    }
+                    if (authUid != null && !authUid.isEmpty()) {
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getLookupIndicesRef().child("auth_to_device").child(authUid).removeValue();
+                    }
                 }
 
                 // 2. Wipe Local Database Tables
@@ -186,12 +196,14 @@ public class FactoryResetViewModel extends AndroidViewModel {
                     db.truncateTable(t);
 
                     // Scoped cloud removal for specific entity tables
-                    if (t.equalsIgnoreCase("location_event") && agentId != null) {
-                        com.jdroidx.jfindme.data.remote.FirebaseComm.getHistoryArchiveRef().child(agentId).removeValue();
-                    } else if (t.equalsIgnoreCase("user_profile") && agentId != null) {
-                        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(agentId).removeValue();
-                    } else if (t.equalsIgnoreCase("safe_zones") && agentId != null) {
-                        com.jdroidx.jfindme.data.remote.FirebaseComm.getSafeZonesRef(agentId).removeValue();
+                    if (FirebaseComm.isAuthenticated() && agentId != null) {
+                        if (t.equalsIgnoreCase("location_event")) {
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getHistoryArchiveRef().child(agentId).removeValue();
+                        } else if (t.equalsIgnoreCase("user_profile")) {
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(agentId).removeValue();
+                        } else if (t.equalsIgnoreCase("safe_zones")) {
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getSafeZonesRef(agentId).removeValue();
+                        }
                     }
                 }
                 syncStatus.postValue("SELECTIVE_PURGE_SUCCESS");
@@ -219,17 +231,26 @@ public class FactoryResetViewModel extends AndroidViewModel {
                 String agentId = RegistryManager.getAgentId(context);
                 String authUid = FirebaseAuth.getInstance().getUid();
 
-                // 1. Stop Foreground Tracking Service
-                syncStatus.postValue("1/5: Halting Background Tracking Service...");
+                // 1. Stop Foreground Tracking & SIM Services
+                syncStatus.postValue("1/5: Halting Background Tracking Services...");
                 try {
-                    Intent serviceIntent = new Intent(context, TrackingService.class);
-                    context.stopService(serviceIntent);
+                    context.stopService(new Intent(context, TrackingService.class));
+                    context.stopService(new Intent(context, SIMTrackingService.class));
                 } catch (Exception ignored) {}
 
-                // 2. Cancel All WorkManager Tasks
-                syncStatus.postValue("2/5: Cancelling Scheduled Workers...");
+                // 2. Cancel All WorkManager Tasks & System Alarms
+                syncStatus.postValue("2/5: Cancelling Scheduled Workers & Alarms...");
                 try {
                     WorkManager.getInstance(context).cancelAllWork();
+                    android.app.AlarmManager am = (android.app.AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                    if (am != null) {
+                        Intent restartIntent = new Intent(context, TrackingService.class);
+                        int pFlags = (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M)
+                            ? (android.app.PendingIntent.FLAG_NO_CREATE | android.app.PendingIntent.FLAG_IMMUTABLE)
+                            : android.app.PendingIntent.FLAG_NO_CREATE;
+                        android.app.PendingIntent pi = android.app.PendingIntent.getService(context, 1001, restartIntent, pFlags);
+                        if (pi != null) am.cancel(pi);
+                    }
                 } catch (Exception ignored) {}
 
                 // 3. Remove Active OS Geofences
@@ -244,19 +265,20 @@ public class FactoryResetViewModel extends AndroidViewModel {
 
                 // 4. Revoke Cloud Session & FCM Token
                 syncStatus.postValue("4/5: Revoking Cloud Push Tokens...");
-                if (agentId != null && !agentId.isEmpty()) {
+                if (FirebaseComm.isAuthenticated() && agentId != null && !agentId.isEmpty()) {
                     FirebaseDatabase.getInstance().getReference("devices").child(agentId).child("fcm_token").removeValue();
                     FirebaseDatabase.getInstance().getReference("devices").child(agentId).child("status").setValue("UNINSTALLED");
                     FirebaseComm.cleanupAbandonedPairingSessions(agentId);
                 }
 
-                // 5. Factory Reset Local Database & Preferences
+                // 5. Factory Reset Local Database & Preferences (Clean SQLite Handles)
                 syncStatus.postValue("5/5: Clearing Local Ledger & Registry...");
                 db.factoryReset();
+                db.close();
                 context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).edit().clear().apply();
 
                 syncStatus.postValue("TEARDOWN_COMPLETE");
-                rebootTrigger.postValue(true);
+                uninstallTrigger.postValue(true);
             } catch (Exception e) {
                 SystemLogger.e("FactoryResetViewModel", "Teardown failed", e);
                 syncStatus.postValue("TEARDOWN_FAILED: " + e.getMessage());

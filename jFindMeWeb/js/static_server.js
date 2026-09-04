@@ -53,6 +53,9 @@ const server = http.createServer((req, res) => {
     }
 });
 
-server.listen(8080, "127.0.0.1", () => {
-    console.log("Static & API Reverse Proxy Server live at http://127.0.0.1:8080/");
+const WEB_PORT = parseInt(process.env.WEB_PORT || "8080", 10);
+const PROXY_PORT = parseInt(process.env.PROXY_PORT || "3000", 10);
+
+server.listen(WEB_PORT, "127.0.0.1", () => {
+    console.log(`Static & API Reverse Proxy Server live at http://127.0.0.1:${WEB_PORT}/ -> Proxying to :${PROXY_PORT}`);
 });

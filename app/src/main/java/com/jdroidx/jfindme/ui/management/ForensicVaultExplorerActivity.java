@@ -40,7 +40,13 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     @Override
     protected View createLayout() {
         tableName = getIntent().getStringExtra("TABLE_NAME");
+        if (tableName == null || tableName.trim().isEmpty()) {
+            tableName = DatabaseHelper.PROFILE_TABLE;
+        }
         tableLabel = getIntent().getStringExtra("TABLE_LABEL");
+        if (tableLabel == null || tableLabel.trim().isEmpty()) {
+            tableLabel = tableName.replace("_", " ").toUpperCase();
+        }
         db = DatabaseHelper.getInstance(this);
         cloudRef = FirebaseDatabase.getInstance().getReference().child(tableName);
 
@@ -121,6 +127,13 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     }
 
     private void syncExplorer() {
+        if (!com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
+            AngelLoader.hide(this);
+            lastSnapshot = null;
+            renderSnapshot(null);
+            Toast.makeText(this, "Offline Vault: Showing Local SQLite Data", Toast.LENGTH_SHORT).show();
+            return;
+        }
         AngelLoader.show(this);
         AngelLoader.setStatus(this, "SYNCHRONIZING FORENSIC MATRIX...");
         

@@ -45,13 +45,9 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
 
     @JvmOverloads
     fun fetchProfile(context: Context = getApplication()) {
-        val authUid = FirebaseAuth.getInstance().uid ?: return
-        
-        // 🧬 V69.8: Master Identity Resolution (Now Universal Local-First)
-        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
-            val safeUid = agentId ?: return@resolveHardwareIdentity
-            processProfileWithAgentId(context, safeUid)
-        }
+        // 🧬 Hardware Root Anchor: Master Identity Resolution anchored to silicon identity
+        val safeUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        processProfileWithAgentId(context, safeUid)
     }
 
     private fun processProfileWithAgentId(context: Context, safeUid: String) {
@@ -106,11 +102,10 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     private fun auditHardwareSignature(context: Context) {
         val authUid = FirebaseAuth.getInstance().uid ?: return
         
-        // 🧬 V69.8: Unified Forensic Audit (Now Universal Local-First)
-        FirebaseComm.resolveHardwareIdentity(authUid) { agentId ->
-            val finalAgentId = agentId ?: return@resolveHardwareIdentity
-            
-            viewModelScope.launch(Dispatchers.IO) {
+        // 🧬 Hardware Root Anchor: Unified Forensic Audit anchored to local device
+        val finalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        
+        viewModelScope.launch(Dispatchers.IO) {
                 val db = DatabaseHelper.getInstance(context)
                 
                 // 🧬 V69.8: Hydrated Heartbeat (The Waterfall Fix)
@@ -135,7 +130,6 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
                 db.syncDeviceAnalytical(finalAgentId, hardwareId, hardwareMetadata["model"]?.toString(), "REDACTED", false, hardwareMetadata["fingerprint"]?.toString())
             }
-        }
     }
 
     @JvmOverloads
@@ -162,16 +156,13 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         val authUid = FirebaseAuth.getInstance().uid ?: return
         _isLoading.value = true
         
-        val localAgentId = prefs.getString("agent_id", "")
+        val safeUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        if (safeUid.isEmpty()) {
+             _isLoading.postValue(false)
+             return
+        }
         
-        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
-            val safeUid = agentId ?: localAgentId ?: return@resolveHardwareIdentity
-            if (safeUid.isNullOrEmpty()) {
-                 _isLoading.postValue(false)
-                 return@resolveHardwareIdentity
-            }
-            
-            viewModelScope.launch(Dispatchers.Main) {
+        viewModelScope.launch(Dispatchers.Main) {
                 val db = DatabaseHelper.getInstance(context)
                 val existingTruth = withContext(Dispatchers.IO) { db.getForensicDossierComplete(safeUid) }
                 val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
@@ -236,7 +227,6 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 }
             }
         }
-    }
 
     init {
         _countriesList.value = listOf(
@@ -318,9 +308,8 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         val resolvedAvatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
         
         val authUid = FirebaseAuth.getInstance().uid ?: return
-        FirebaseComm.resolveHardwareIdentity(authUid) { agentId: String? ->
-            val finalId = agentId ?: return@resolveHardwareIdentity
-            val updates = mutableMapOf<String, Any>(
+        val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+        val updates = mutableMapOf<String, Any>(
                 "equipped_avatar_id" to id,
                 "avatar_id" to resolvedAvatarId,
                 "updated_at" to FirebaseComm.getForensicTimestamp()
@@ -344,7 +333,6 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
             )
             FirebaseComm.logChange(finalId, FirebaseComm.LOG_ITEM_PROFILE, "AVATAR_EQUIP", finalId, updates)
-        }
     }
 
     fun equipAvatar(prefs: SharedPreferences, id: Int) {

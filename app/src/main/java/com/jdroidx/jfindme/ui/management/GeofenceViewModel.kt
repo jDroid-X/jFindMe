@@ -732,14 +732,17 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         val uniqueZoneId = FirebaseComm.sanitizePathKey(rawZoneId)
         
         // 📚 GLOBAL LEDGER: Write to the Group's master geofence registry using a unique ID
-        try {
-            FirebaseComm.relationshipsRef.child(FirebaseComm.sanitizePathKey(activeId)).child("geofences").child(uniqueZoneId).setValue(data)
-        } catch (e: Exception) {
-            SystemLogger.e("GeofenceViewModel", "RELATIONSHIPS_GEOFENCE_WRITE_ERR", e)
+        if (FirebaseComm.isAuthenticated()) {
+            try {
+                FirebaseComm.relationshipsRef.child(FirebaseComm.sanitizePathKey(activeId)).child("geofences").child(uniqueZoneId).setValue(data)
+            } catch (e: Exception) {
+                SystemLogger.e("GeofenceViewModel", "RELATIONSHIPS_GEOFENCE_WRITE_ERR", e)
+            }
         }
 
         // 🌳 GEOFENCING TOP-LEVEL MATRIX SYNC: /Geofencing/{creatorDeviceCode}/safe_zones/{zoneId}/connected_devices
-        try {
+        if (FirebaseComm.isAuthenticated()) {
+            try {
             val geofencingZoneData = mapOf(
                 "zone_id" to uniqueZoneId,
                 "zone_name" to name,
@@ -812,8 +815,9 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                     SystemLogger.e("GeofenceViewModel", "TARGET_NODE_PUSH_ERR: $code", tErr)
                 }
             }
-        } catch (e: Exception) {
-            SystemLogger.e("GeofenceViewModel", "GEOFENCING_MATRIX_WRITE_ERR", e)
+            } catch (e: Exception) {
+                SystemLogger.e("GeofenceViewModel", "GEOFENCING_MATRIX_WRITE_ERR", e)
+            }
         }
 
         // 💾 LOCAL FORENSIC VAULT: Immediate SQLite update to ensure off-grid parity
@@ -837,7 +841,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         }
         
         // 🚀 TARGETED HANDSHAKE: Multi-Node Cluster Assignment (V50.0 - Full Payload)
-        if (assignedName != "ALL CONNECTED DEVICES") {
+        if (FirebaseComm.isAuthenticated() && assignedName != "ALL CONNECTED DEVICES") {
             val targets = assignedName.split(", ").map { it.trim() }
             targets.forEach { target ->
                 val targetUid = deviceUidMap[target]
@@ -881,7 +885,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     
     fun archiveSafeZone(id: String) {
         val grp = currentGroupId
-        if (grp != null) {
+        if (FirebaseComm.isAuthenticated() && grp != null) {
             val srcRef = FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id)
             val destRef = FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").child(id)
             srcRef.get().addOnSuccessListener { snap ->
@@ -912,7 +916,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
 
     fun restoreSafeZone(id: String) {
         val grp = currentGroupId
-        if (grp != null) {
+        if (FirebaseComm.isAuthenticated() && grp != null) {
             val srcRef = FirebaseComm.relationshipsRef.child(grp).child("archived_geofences").child(id)
             val destRef = FirebaseComm.relationshipsRef.child(grp).child("geofences").child(id)
             srcRef.get().addOnSuccessListener { snap ->

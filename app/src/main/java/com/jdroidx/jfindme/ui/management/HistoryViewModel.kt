@@ -203,7 +203,7 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
             }
         }
         
-        if (targets.isNotEmpty()) {
+        if (targets.isNotEmpty() || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
             _trackingTargets.postValue(targets)
             _isLoading.postValue(false)
         } else {
@@ -242,7 +242,12 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
      * 🔄 Cloud Archive Recovery: Re-hydrates historical traces from Firebase Partitioned Archives
      */
     fun rehydrateHistoryFromCloud(context: Context, targetUid: String, onComplete: ((Int) -> Unit)? = null) {
-        val myAuthUid = FirebaseAuth.getInstance().uid ?: return
+        val myAuthUid = FirebaseAuth.getInstance().uid
+        if (myAuthUid.isNullOrEmpty() || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
+            _isLoading.postValue(false)
+            onComplete?.invoke(0)
+            return
+        }
         val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         _isLoading.value = true
 

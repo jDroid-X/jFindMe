@@ -61,6 +61,13 @@ const db = admin.database();
 const fs_db = admin.firestore();
 const app = express();
 
+// Internal Event Bus for Forensic Matrix Monitoring
+function broadcastMatrixEvent(eventName, data) {
+    if (process.env.DEBUG_EVENTS) {
+        console.log(`[MATRIX_EVENT] [${eventName}]`, data);
+    }
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -594,8 +601,16 @@ app.post("/api/relationship/delete", async (req, res) => {
         console.log(`[RELATIONSHIP] Severing connection: [${cleanAgentId}] <-> [${cleanTargetId}]`);
 
         await Promise.all([
-            db.ref(`devices/${cleanAgentId}/relationships/${cleanTargetId}`).remove(),
-            db.ref(`devices/${cleanTargetId}/relationships/${cleanAgentId}`).remove().catch(() => null)
+            db.ref(`devices/${cleanAgentId}/relationships/${cleanTargetId}`).remove().catch(() => null),
+            db.ref(`devices/${cleanTargetId}/relationships/${cleanAgentId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanAgentId}/devices/${cleanTargetId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanTargetId}/devices/${cleanAgentId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanAgentId}/members/${cleanTargetId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanTargetId}/members/${cleanAgentId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanAgentId}/direct_pairs/${cleanTargetId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanTargetId}/direct_pairs/${cleanAgentId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanAgentId}/citizen_dossiers/${cleanTargetId}`).remove().catch(() => null),
+            db.ref(`relationships/GRP_${cleanTargetId}/citizen_dossiers/${cleanAgentId}`).remove().catch(() => null)
         ]);
 
         LIVE_DEVICES_CACHE = { data: null, timestamp: 0 };
@@ -1613,7 +1628,7 @@ function initBackgroundMaintenanceAgent() {
     console.log("[BACKGROUND_AGENT] Initialized 10-minute automated background maintenance daemon with History-Device parity guard.");
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PROXY_PORT || (process.env.PORT && process.env.PORT !== "8080" ? process.env.PORT : 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 app.listen(PORT, HOST, () => {
     console.log(`==========================================`);

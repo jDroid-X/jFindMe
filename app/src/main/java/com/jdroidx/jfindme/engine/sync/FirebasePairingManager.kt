@@ -147,7 +147,28 @@ object FirebasePairingManager {
 
                 val updates = mutableMapOf<String, Any?>()
 
-                // 1. TIER 3: Relationship Bridge
+                // 1. TIER 3: Relationship Bridge - Unified `devices/` Structure + Host Pointer
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/group_info/host_device_id"] = cleanHostId
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/group_info/group_name"] = "Primary Circle"
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/group_info/created_at"] = now
+
+                // Host Unified Device Node
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/identity/name"] = hostName
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/identity/full_name"] = hostName
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/membership/role"] = hostRole
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/membership/status"] = "Active"
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/membership/ts_updated"] = now
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanHostId/paired_with/$cleanChildId"] = true
+
+                // Child Unified Device Node
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/identity/name"] = childName
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/identity/full_name"] = childName
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/membership/role"] = childRole
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/membership/status"] = "Active"
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/membership/ts_joined"] = now
+                updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/devices/$cleanChildId/paired_with/$cleanHostId"] = true
+
+                // Legacy Redundancy for backwards compatibility
                 updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/members/$cleanHostId/role"] = hostRole
                 updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/members/$cleanHostId/ts_updated"] = now
                 updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/members/$cleanChildId/role"] = childRole
@@ -188,6 +209,7 @@ object FirebasePairingManager {
                 updates["${FirebaseComm.NODE_PAIRING}/$cleanInviteCode/host_id"] = cleanHostId
                 updates["${FirebaseComm.NODE_PAIRING}/$cleanInviteCode/final_host_role"] = hostRole
                 updates["${FirebaseComm.NODE_PAIRING}/$cleanInviteCode/final_child_role"] = childRole
+                updates["${FirebaseComm.NODE_PAIRING}/$cleanInviteCode/active_group"] = cleanHostGroup
                 // 5. Trigger Real-time Roster Signal
                 updates["${FirebaseComm.NODE_RELATIONSHIPS}/$cleanHostGroup/signals/refresh_roster"] = now
 

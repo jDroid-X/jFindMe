@@ -20,6 +20,31 @@ export class jButterflyHubView {
         const allSelected = !selectedIds || selectedIds.length === allDevices.length;
         const isDeviceSelected = (d) => !selectedIds || selectedIds.includes(d.agentId);
 
+        // Eagle's Eye Macro Metrics Aggregate
+        let movingCount = 0;
+        let idleCount = 0;
+        let offlineCount = 0;
+        let totalBat = 0;
+        let validBatCount = 0;
+        let mockGpsCount = 0;
+
+        allDevices.forEach(d => {
+            const speed = Number(d.speed || d.spd || 0);
+            if (d.isOnline) {
+                if (speed > 1.5) movingCount++;
+                else idleCount++;
+            } else {
+                offlineCount++;
+            }
+            if (d.battery >= 0) {
+                totalBat += d.battery;
+                validBatCount++;
+            }
+            if (d.isMockGps || d.isMock) mockGpsCount++;
+        });
+
+        const avgBattery = validBatCount > 0 ? Math.round(totalBat / validBatCount) : '--';
+
         return `
             <div class="matrix-selection-panel w-[210px] sm:w-[225px] max-h-[calc(100vh-100px)] select-none pointer-events-auto font-sans animate-fade-in flex flex-col bg-white/96 dark:bg-slate-950/92 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden text-slate-800 dark:text-slate-100">
                 <!-- Header -->
@@ -34,8 +59,30 @@ export class jButterflyHubView {
                     </button>
                 </div>
 
+                <!-- Eagle's Eye Macro KPI Bar (Fleet Telemetry Summary) -->
+                <div class="grid grid-cols-3 gap-0.5 px-2 py-1 bg-slate-100/70 dark:bg-slate-900/90 border-b border-slate-200 dark:border-white/10 text-[9px] font-mono select-none">
+                    <div class="text-center">
+                        <span class="text-emerald-500 font-bold">${movingCount}</span>
+                        <span class="text-slate-400 block text-[7px] uppercase tracking-tighter">Moving</span>
+                    </div>
+                    <div class="text-center">
+                        <span class="text-amber-500 font-bold">${idleCount}</span>
+                        <span class="text-slate-400 block text-[7px] uppercase tracking-tighter">Idle</span>
+                    </div>
+                    <div class="text-center">
+                        <span class="${avgBattery !== '--' && avgBattery < 20 ? 'text-rose-400' : 'text-sky-400'} font-bold">${avgBattery}%</span>
+                        <span class="text-slate-400 block text-[7px] uppercase tracking-tighter">Avg Bat</span>
+                    </div>
+                </div>
+                ${mockGpsCount > 0 ? `
+                <div class="px-2 py-0.5 bg-rose-500/20 border-b border-rose-500/40 text-rose-400 text-[8px] font-mono font-bold flex items-center justify-between">
+                    <span>🚨 INTEGRITY ALERT</span>
+                    <span>${mockGpsCount} MOCK GPS</span>
+                </div>
+                ` : ''}
+
                 <!-- Roster List (Theme Adaptive & Vertically Ultra-Compressed) -->
-                <div class="p-1 space-y-0.5 overflow-y-auto custom-scrollbar max-h-[calc(100vh-160px)] font-mono text-[11px]">
+                <div class="p-1 space-y-0.5 overflow-y-auto custom-scrollbar max-h-[calc(100vh-190px)] font-mono text-[11px]">
                     ${allDevices.map(d => {
                         const selected = isDeviceSelected(d);
                         const isFocused = d.agentId === focusedAgentId;
@@ -134,6 +181,7 @@ export class jButterflyHubView {
                         <div class="flex items-center gap-1 text-slate-400">
                             <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Device Dossier" onclick="window.MatrixApp.showDossier('${device.agentId}')">📄</button>
                             <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Refresh Location" onclick="window.MatrixApp.refreshNow()">🔄</button>
+                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs text-slate-400 hover:text-rose-500 font-bold transition-all" title="Close Card" onclick="window.MatrixApp.closeDeviceCard()">✕</button>
                         </div>
                     </div>
                 </div>
@@ -171,7 +219,29 @@ export class jButterflyHubView {
                     </div>
                 </div>
 
-                <!-- 4. Live GPS Stream Toggle -->
+                <!-- 4. "The Ant" Micro Sensor Ground Truth (Eagle Analytics Merged) -->
+                <div class="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800 font-mono text-[9px] space-y-1">
+                    <div class="flex items-center justify-between text-slate-400 border-b border-slate-200 dark:border-slate-800/80 pb-1 mb-1">
+                        <span class="font-bold uppercase tracking-wider text-[8px] text-sky-500">🐜 Micro Sensor Truth</span>
+                        <span class="${device.isMockGps || device.isMock ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'} text-[8px]">
+                            ${device.isMockGps || device.isMock ? '🚨 SPOOFED GPS' : '🛡️ HARDWARE GPS'}
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Sub-Meter Raw:</span>
+                        <span class="text-slate-700 dark:text-slate-200 font-bold select-all">${device.latitude ? `${Number(device.latitude).toFixed(6)}°, ${Number(device.longitude).toFixed(6)}°` : '--'}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Altitude AMSL:</span>
+                        <span class="text-slate-700 dark:text-slate-200 font-bold">${device.altitude ? `${Number(device.altitude).toFixed(1)}m` : '0.0m'}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-400">Heading / Vector:</span>
+                        <span class="text-slate-700 dark:text-slate-200 font-bold">${Math.round(device.bearing || 0)}° (${GeoUtils.bearingToCardinal(Math.round(device.bearing || 0))})</span>
+                    </div>
+                </div>
+
+                <!-- 5. Live GPS Stream Toggle -->
                 <div class="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 text-xs">
                     <div class="flex items-center gap-1.5">
                         <span class="text-xs">🛰️</span>
@@ -183,7 +253,7 @@ export class jButterflyHubView {
                     </label>
                 </div>
 
-                <!-- 5. Quick Action Buttons Strip -->
+                <!-- 6. Quick Action Buttons Strip -->
                 <div class="grid grid-cols-3 gap-1.5 pt-0.5 font-sans">
                     <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
                             onclick="window.MatrixApp.pokeDevice('${device.agentId}')" title="Play Ring Sound">
@@ -218,8 +288,8 @@ export class jButterflyHubView {
                     ${allDevices.length > 0 ? this.renderSelectionMatrixHtml(allDevices, selectedIds, device?.agentId) : ''}
                 </div>
                 
-                <!-- RIGHT: Leaflet Device Telemetry Card with Avatar -->
-                <div class="pointer-events-auto">
+                <!-- RIGHT: Leaflet Device Telemetry Card with Avatar (Positioned clear of zoom controls) -->
+                <div class="pointer-events-auto leaflet-device-card-container mr-12 sm:mr-14">
                     ${device ? this.renderDeviceDetailCardHtml(device) : ''}
                 </div>
             </div>

@@ -17,7 +17,7 @@ export class DashboardView {
         this.onOpenSettings = options.onOpenSettings || null;
         this.onNavigateMap = options.onNavigateMap || null;
         
-        this.activeFilter = "in_radius"; // 'in_radius', 'outside_radius', 'online', 'all', 'cluster_X'
+        this.activeFilter = "all";       // 'all', 'in_radius', 'outside_radius', 'online', 'cluster_X'
         this.timeWindowFilter = "all";   // 'all', 'live', 'today', '24h'
         this.viewMode = "grid";          // 'grid' (3D Flip Cards) or 'table' (Data Sheet)
         this.soundAlerts = true;
@@ -26,6 +26,20 @@ export class DashboardView {
         this.searchQuery = "";
         this.devices = [];
         this.settings = null;
+    }
+
+    /**
+     * Smoothly updates live telemetry from background stream
+     */
+    updateData(devices = [], settings = {}) {
+        // If a search query is currently focused in input, do not interrupt typing
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (activeEl.id === 'dash-search-input' || activeEl.tagName === 'INPUT');
+        if (isTyping) {
+            this.devices = DeviceController.sortByLatestFirst(devices);
+            return;
+        }
+        this.render(devices, settings || this.settings);
     }
 
     /**
@@ -51,8 +65,9 @@ export class DashboardView {
         const container = document.getElementById(this.containerId);
         if (!container) return;
 
-        const refLat = settings.referenceLat !== undefined ? settings.referenceLat : 28.6139;
-        const refLng = settings.referenceLng !== undefined ? settings.referenceLng : 77.2090;
+        // Auto-resolve reference coordinates: fallback to fleet centroid or default to Pune
+        let refLat = settings.referenceLat !== undefined ? settings.referenceLat : 18.5788;
+        let refLng = settings.referenceLng !== undefined ? settings.referenceLng : 73.8887;
         const radiusKm = settings.searchRadiusKm || 10;
         const refAddress = settings.referenceAddress || "Central Operator Station";
 
@@ -671,12 +686,15 @@ export class DashboardView {
                 const flag = sw.getAttribute('data-flag');
                 const val = sw.checked;
                 try {
-                    const res = await fetch('/api/device/toggle-acl', {
+                    const res = await (window.fetchApi ? window.fetchApi('/api/device/toggle-acl', {
+                        method: 'POST',
+                        body: JSON.stringify({ agentId, flag, value: val })
+                    }) : fetch('/api/device/toggle-acl', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentId, flag, value: val })
-                    });
-                    if (!res.ok) throw new Error('Failed to update ACL flag');
+                    }));
+                    if (!res || res.error) throw new Error(res?.error || 'Failed to update ACL flag');
                     FeedbackDialog.showSlideNotification({
                         title: 'Telemetry Access Updated',
                         message: `Telemetry stream for [${agentId}] set to ${val ? 'ACTIVE' : 'SUSPENDED'}`,
@@ -732,12 +750,15 @@ export class DashboardView {
                 const targetName = targetDev ? targetDev.name : agentId;
 
                 if (agentId) {
-                    fetch('/api/poke-device', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ agentId, pokedBy: 'Dashboard_Console' })
-                    })
-                    .then(r => r.json())
+                    const pokePromise = window.FBBridge?.pokeDevice 
+                        ? window.FBBridge.pokeDevice(agentId, 'Dashboard_Console')
+                        : (window.fetchApi || fetch)('/api/poke-device', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ agentId, pokedBy: 'Dashboard_Console' })
+                        }).then(r => r.json ? r.json() : r);
+
+                    pokePromise
                     .then(res => {
                         FeedbackDialog.showToast(`⚡ Poke ping sent to [${targetName}]!`, "success");
                         if (window.log) window.log(`POKE_SUCCESS: Poke sent to [${agentId}]`, "success");

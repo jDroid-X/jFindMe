@@ -22,6 +22,12 @@ public class SystemUpdateScheduler {
         SharedPreferences prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE);
         if (!prefs.getBoolean("silent_update_enabled", true)) return;
 
+        // 🛡️ ZERO-TRUST OFFLINE GATE: Do not schedule cloud checks for unauthenticated devices
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() == null) {
+            SystemLogger.i("SystemUpdateScheduler", "Device unauthenticated. Cloud update scheduler deferred until login.");
+            return;
+        }
+
         // Simulate a silent check. In a real scenario, this would be an API call.
         new Thread(() -> {
             try {

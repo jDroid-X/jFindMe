@@ -101,7 +101,7 @@ object DeviceIdentityHelper {
 
     @JvmStatic
     fun getOrGenerateAgentId(context: Context): String {
-        val cached = RegistryManager.getAgentId(context)
+        val cached = RegistryManager.getString(context, RegistryManager.KEY_AGENT_ID, "")
         if (isValidAgentId(cached)) {
             return cached
         }

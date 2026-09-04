@@ -60,6 +60,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         SystemLogger.i(TAG, "MapViewModel initialized")
+        syncLocalMeshIds()
         repository.startListening()
         fetchCurrentUserRole()
         bindSecureFamilyMesh()
@@ -73,6 +74,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         
         loadLocalDossier()
         loadSafeZones()
+    }
+
+    fun syncLocalMeshIds() {
+        try {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+            val pairedIds = db.getAllPairedDeviceIds()
+            familyMeshIds.addAll(pairedIds)
+            val offlineRoster = db.getOfflineRoster()
+            for (node in offlineRoster) {
+                val u1 = node["uid_1"] as? String
+                val u2 = node["uid_2"] as? String
+                val connId = node["connected_id"] as? String
+                if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
+                if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
+                if (!connId.isNullOrBlank()) familyMeshIds.add(connId.trim())
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed syncing local mesh IDs", e)
+        }
     }
 
     private fun loadLocalDossier() {
@@ -129,6 +149,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshLocations() {
+        syncLocalMeshIds()
+        com.jdroidx.jfindme.engine.map.MultiMarkerEngine.invalidateRoleAndNameCaches()
         fetchCurrentUserRole()
         bindSecureFamilyMesh()
         loadLocalDossier()
@@ -142,28 +164,49 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getCurrentFilterMode(): String = currentFilterMode
 
-    private fun applyTacticalFilter() {
+    /**
+     * 🛰️ WATERFALL PRIORITY & CHRONOLOGY PIPELINE (SSOT)
+     * Filters and sorts user locations strictly:
+     * 1. Priority 1: isSosActive == true (Highest Emergency Priority)
+     * 2. Priority 2: Newest GPS timestamp to Oldest (Descending)
+     * 3. Excludes soft-deleted nodes (DatabaseHelper.isDeviceDeleted)
+     * 4. Validates mesh authorization via Cloud Mesh or Local SQLite pairing
+     */
+    fun applyTacticalFilter(mode: String = currentFilterMode) {
+        this.currentFilterMode = mode
         val safeUid = auth.uid ?: ""
         val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
         
-        // Step 1: Baseline Group Mesh Isolation
-        val authorized = rawLocationCache.filter { 
-            val uid = it.getResolvedUserId()
-            familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid)
+        // Step 1: Baseline Group Mesh Isolation (Cloud Mesh OR Local SQLite Handshake)
+        val authorized = rawLocationCache.filter { loc ->
+            val uid = loc.getResolvedUserId()
+            !db.isDeviceDeleted(uid) && (
+                familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || db.isDevicePaired(uid) || familyMeshIds.isEmpty()
+            )
         }
         
         // Step 2: User-Driven Tactical Filter Application
         val filtered = when (currentFilterMode) {
             "FAMILY" -> authorized.filter { 
                 val uid = it.getResolvedUserId()
-                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || (!it.role_family.equals("None", true) && it.role_family.isNotBlank())
+                val role = db.getRoleForDevice(uid)
+                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || 
+                    (!it.role_family.equals("None", true) && it.role_family.isNotBlank()) ||
+                    (!role.isNullOrBlank() && !role.contains("Friend", true))
             }
             "FRIENDS" -> authorized.filter { 
                 val uid = it.getResolvedUserId()
-                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank())
+                val role = db.getRoleForDevice(uid)
+                uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || 
+                    (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank()) ||
+                    (role?.contains("Friend", true) == true)
             }
             else -> authorized // ALL
-        }
+        }.sortedWith(
+            compareByDescending<com.jdroidx.jfindme.data.model.UserLocation> { it.isSosActive }
+                .thenByDescending { it.getLongTimestamp() }
+        )
         
         _filteredLocations.postValue(filtered)
     }
@@ -217,11 +260,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             val effectiveGroup = if (!myGroupId.isNullOrBlank() && myGroupId != "DEFAULT_GROUP") myGroupId else defaultGroup
                             
                             // 🚀 Strict Security: Only query real private group relationships, never global DEFAULT_GROUP
-                            val relMembersRef = FirebaseComm.relationshipsRef.child(effectiveGroup).child("members")
+                            val relMembersRef = FirebaseComm.relationshipsRef.child(effectiveGroup)
                             activeValueListeners[relMembersRef]?.let { relMembersRef.removeEventListener(it) }
 
                             val relListener = object : com.google.firebase.database.ValueEventListener {
-                                override fun onDataChange(membersSnap: com.google.firebase.database.DataSnapshot) {
+                                override fun onDataChange(groupSnap: com.google.firebase.database.DataSnapshot) {
                                     val newMesh = mutableSetOf<String>()
                                     newMesh.add(finalId)
                                     newMesh.add(safeUid)
@@ -241,8 +284,14 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                         }
                                     } catch (e: Exception) { }
 
-                                    // Add verified cloud circle members from private relationships node
-                                    membersSnap.children.forEach { memberNode ->
+                                    // 1. Add verified circle devices from unified `devices/` node
+                                    groupSnap.child("devices").children.forEach { devNode ->
+                                        val dId = devNode.key ?: ""
+                                        if (dId.isNotEmpty()) newMesh.add(dId)
+                                    }
+
+                                    // 2. Add verified cloud circle members from legacy `members/` node
+                                    groupSnap.child("members").children.forEach { memberNode ->
                                         val mId = memberNode.key ?: ""
                                         if (mId.isNotEmpty()) newMesh.add(mId)
                                     }
@@ -388,8 +437,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateMyLocation(context: Context, location: Location) {
         _myLocation.postValue(location)
-        val currentUser = auth.currentUser ?: return
-        val userId = currentUser.uid
+        val currentUser = auth.currentUser
+        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val userId = currentUser?.uid ?: selfAgentId
         
         // ≡ƒºá QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
@@ -398,7 +448,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         val customName = prefs.getString("user_nickname", null)
         
-        val userName = if (!fullName.isNullOrBlank()) fullName else (customName ?: currentUser.displayName ?: currentUser.email ?: "User Identity")
+        val userName = if (!fullName.isNullOrBlank()) fullName else (customName ?: currentUser?.displayName ?: currentUser?.email ?: "User Identity")
         
         // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
         val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
@@ -414,10 +464,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
         val resolvedAvatarId = "avatar_custom_$dynamicIdx"
         
-        // 🚀 V67.2: Resolve Agent ID before broadcast to ensure Cloud Matrix Parity
-        FirebaseComm.resolveHardwareIdentity(userId) { agentId: String? ->
-            val finalAgentId = agentId ?: userId
-            
+        val publish = { finalAgentId: String ->
             val userLocation = UserLocation(
                 userId = finalAgentId,
                 userName = userName,
@@ -432,26 +479,37 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 role_family = prefs.getString("role_family", "None") ?: "None",
                 role_friend = prefs.getString("role_friend", "None") ?: "None"
             )
-            
             repository.updateMyLocation(userLocation)
+        }
+
+        if (currentUser != null) {
+            FirebaseComm.resolveHardwareIdentity(currentUser.uid) { agentId: String? ->
+                val finalAgentId = agentId ?: selfAgentId
+                publish(finalAgentId)
+            }
+        } else {
+            publish(selfAgentId)
         }
     }
 
     fun toggleSOS(context: Context, state: Boolean) {
-        val currentUser = auth.currentUser ?: return
-        val currentLocs = userLocations.value ?: return
-        val myLoc = currentLocs.find { it.userId == currentUser.uid } ?: return
-        
+        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val currentLocs = userLocations.value ?: emptyList()
+        val myLoc = currentLocs.find { it.userId == selfAgentId || it.userId == auth.currentUser?.uid }
+
         val intentFilter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
         val batteryStatus = context.registerReceiver(null, intentFilter)
         val level = batteryStatus?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        
-        val updatedLoc = myLoc.copy(
+
+        val updatedLoc = (myLoc ?: UserLocation(userId = selfAgentId)).copy(
+            userId = selfAgentId,
             isSosActive = state,
             batteryLevel = level,
             timestamp = System.currentTimeMillis()
         )
         repository.updateMyLocation(updatedLoc)
+        val sirenDur = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(context)
+        com.jdroidx.jfindme.data.remote.FirebaseComm.broadcastEmergencySos(context, sirenDur)
     }
 
     fun pokeUser(targetUserId: String, myName: String) {
@@ -543,23 +601,4 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         triggerRefresh()
     }
 
-    /**
-     * 🛰️ WATERFALL PRIORITY & CHRONOLOGY PIPELINE
-     * Filters and sorts user locations strictly:
-     * 1. Priority 1: isSosActive == true (Highest Emergency Priority)
-     * 2. Priority 2: Newest GPS timestamp to Oldest (Descending)
-     * 3. Excludes soft-deleted nodes (DatabaseHelper.isDeviceDeleted)
-     */
-    fun applyTacticalFilter(mode: String = currentFilterMode) {
-        currentFilterMode = mode
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
-        val filtered = rawLocationCache.filter { loc ->
-            val uid = loc.getResolvedUserId()
-            !db.isDeviceDeleted(uid) && (familyMeshIds.isEmpty() || familyMeshIds.contains(uid) || uid == (auth.uid ?: ""))
-        }.sortedWith(
-            compareByDescending<UserLocation> { it.isSosActive }
-                .thenByDescending { it.getLongTimestamp() }
-        )
-        _filteredLocations.postValue(filtered)
-    }
 }

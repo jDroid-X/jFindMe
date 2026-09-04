@@ -161,6 +161,10 @@ class LocationRepository(internal val context: Context) {
                 if (!connId.isNullOrBlank()) targetUids.add(connId.trim())
             }
 
+            // 🛡️ Include all verified paired device IDs across DevicePairingTable and UserIdentityTable
+            val pairedIds = localDb.getAllPairedDeviceIds()
+            targetUids.addAll(pairedIds)
+
             // 🛡️ SOFT-DELETE PURGE: Immediately evict any target marked as DELETED
             targetUids.removeAll { uid ->
                 uid != myUid && uid != myAgentId && localDb.isDeviceDeleted(uid)
@@ -273,8 +277,16 @@ class LocationRepository(internal val context: Context) {
     }
 
     fun startListening() {
-        val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
+        // 🚀 SYNCHRONOUS BOOTSTRAP: Listen immediately for local SQLite verified devices without waiting for cloud auth
+        updateTargetListeners()
+
+        val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+
+        if (myAuthUid.isNullOrEmpty()) {
+            SystemLogger.w("LocationRepository", "Cloud auth not ready on startListening; local mesh listeners active.")
+            return
+        }
 
         FirebaseComm.resolveHardwareIdentity(myAuthUid) { agentId ->
             val finalId = agentId ?: "LEGACY_NODE"
@@ -294,10 +306,23 @@ class LocationRepository(internal val context: Context) {
                         override fun onDataChange(relSnap: DataSnapshot) {
                             val csv = StringBuilder(finalId).append(",")
                             
+                            // 1. Unified `devices/$finalId/paired_with`
+                            val unifiedPairs = relSnap.child("devices").child(finalId).child("paired_with")
+                            unifiedPairs.children.forEach { pair ->
+                                if (pair.getValue(Boolean::class.java) == true && pair.key != null) {
+                                    if (!csv.contains("${pair.key},")) {
+                                        csv.append(pair.key).append(",")
+                                    }
+                                }
+                            }
+
+                            // 2. Legacy `direct_pairs/$finalId` for backwards compatibility
                             val directPairs = relSnap.child("direct_pairs").child(finalId)
                             directPairs.children.forEach { pair ->
-                                if (pair.getValue(Boolean::class.java) == true) {
-                                    csv.append(pair.key).append(",")
+                                if (pair.getValue(Boolean::class.java) == true && pair.key != null) {
+                                    if (!csv.contains("${pair.key},")) {
+                                        csv.append(pair.key).append(",")
+                                    }
                                 }
                             }
                             
@@ -305,7 +330,9 @@ class LocationRepository(internal val context: Context) {
                             approvals.children.forEach { targetSnap ->
                                 val targetId = targetSnap.key
                                 if (!targetId.isNullOrEmpty() && targetSnap.child(finalId).getValue(Boolean::class.java) == true) {
-                                    csv.append(targetId).append(",")
+                                    if (!csv.contains("$targetId,")) {
+                                        csv.append(targetId).append(",")
+                                    }
                                 }
                             }
                             
@@ -410,6 +437,15 @@ class LocationRepository(internal val context: Context) {
     }
 
     fun fetchHistory(userId: String, startTs: Long, endTs: Long, callback: (List<UserLocation>) -> Unit) {
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val localPoints = db.getRawHistoryPoints(userId, startTs, endTs)
+
+        if (!FirebaseComm.isAuthenticated()) {
+            // 🛡️ Offline / Zero-Trust Sentinel: Provide instant local SQLite ledger history
+            Handler(Looper.getMainLooper()).post { callback(localPoints) }
+            return
+        }
+
         val startKey = FirebaseComm.getInvertedForensicKey(endTs)
         val endKey = FirebaseComm.getInvertedForensicKey(startTs)
 
@@ -421,7 +457,6 @@ class LocationRepository(internal val context: Context) {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val points = mutableListOf<UserLocation>()
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                         snapshot.children.forEach { child ->
                             child.getValue(UserLocation::class.java)?.let { point ->
                                 val effectiveTs = if (point.getLongTimestamp() <= 0L || point.timestamp == "" || point.timestamp == null) {
@@ -441,17 +476,19 @@ class LocationRepository(internal val context: Context) {
                                     point.speed,
                                     point.batteryLevel.toInt(),
                                     point.isSosActive,
-                                    null,
+                                    point.address,
                                     effectiveTs
                                 )
                             }
                         }
-                        Handler(Looper.getMainLooper()).post { callback(points) }
+                        val finalResult = if (points.isNotEmpty()) points else localPoints
+                        Handler(Looper.getMainLooper()).post { callback(finalResult) }
                     }
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    callback(emptyList())
+                    // 🛡️ Closed-Loop Fault Tolerance: Return local SQLite points on cloud abort
+                    Handler(Looper.getMainLooper()).post { callback(localPoints) }
                 }
             })
     }

@@ -374,11 +374,17 @@ public class ProfileActivity extends BaseActivityJava {
         genderField.setFocusable(false);
         genderField.setClickable(true);
         genderField.setOnClickListener(v -> genderField.showDropDown());
+        genderField.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                genderField.showDropDown();
+            }
+            return false;
+        });
 
         countrySpinner = new android.widget.AutoCompleteTextView(this);
         countrySpinner.setHint(android.text.Html.fromHtml("Country <font color='#D32F2F'>(*)</font>"));
         String savedCountry = prefs.getString("user_country", "");
-        countrySpinner.setText(savedCountry.equals("Identifying...") ? "" : savedCountry);
+        countrySpinner.setText(savedCountry.equals("Identifying...") ? "" : savedCountry, false);
         countryAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select Country")));
         countrySpinner.setAdapter(countryAdapter);
         countrySpinner.setThreshold(1);
@@ -386,11 +392,17 @@ public class ProfileActivity extends BaseActivityJava {
         countrySpinner.setFocusable(false);
         countrySpinner.setClickable(true);
         countrySpinner.setOnClickListener(v -> countrySpinner.showDropDown());
+        countrySpinner.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                countrySpinner.showDropDown();
+            }
+            return false;
+        });
 
         stateSpinner = new android.widget.AutoCompleteTextView(this);
         stateSpinner.setHint(android.text.Html.fromHtml("State/Province<font color='#D32F2F'>(*)</font>"));
         String savedState = prefs.getString("user_state", "");
-        stateSpinner.setText(savedState.equals("Identifying...") ? "" : savedState);
+        stateSpinner.setText(savedState.equals("Identifying...") ? "" : savedState, false);
         stateAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select State")));
         stateSpinner.setAdapter(stateAdapter);
         stateSpinner.setThreshold(1);
@@ -398,11 +410,17 @@ public class ProfileActivity extends BaseActivityJava {
         stateSpinner.setFocusable(false);
         stateSpinner.setClickable(true);
         stateSpinner.setOnClickListener(v -> stateSpinner.showDropDown());
+        stateSpinner.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                stateSpinner.showDropDown();
+            }
+            return false;
+        });
         
         citySpinner = new android.widget.AutoCompleteTextView(this);
         citySpinner.setHint(android.text.Html.fromHtml("City/Zone<font color='#D32F2F'>(*)</font>"));
         String savedCity = prefs.getString("user_city", "");
-        citySpinner.setText(savedCity.equals("Identifying...") ? "" : savedCity);
+        citySpinner.setText(savedCity.equals("Identifying...") ? "" : savedCity, false);
         cityAdapter = createEnterpriseDropdownAdapter(new java.util.ArrayList<>(java.util.Collections.singletonList("Select City")));
         citySpinner.setAdapter(cityAdapter);
         citySpinner.setThreshold(1);
@@ -410,12 +428,19 @@ public class ProfileActivity extends BaseActivityJava {
         citySpinner.setFocusable(false);
         citySpinner.setClickable(true);
         citySpinner.setOnClickListener(v -> citySpinner.showDropDown());
+        citySpinner.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                citySpinner.showDropDown();
+            }
+            return false;
+        });
         
         countrySpinner.setOnItemClickListener((parent, view, position, id) -> {
             String selection = countryAdapter.getItem(position);
             if (selection != null && !selection.equals("Select Country") && !selection.equals("Identifying...")) {
-                stateSpinner.setText("");
-                citySpinner.setText("");
+                countrySpinner.setText(selection, false);
+                stateSpinner.setText("", false);
+                citySpinner.setText("", false);
                 if (profileViewModel != null) {
                     profileViewModel.fetchStatesList(selection);
                 }
@@ -426,7 +451,8 @@ public class ProfileActivity extends BaseActivityJava {
             String selection = stateAdapter.getItem(position);
             String parentCountry = countrySpinner.getText().toString().trim();
             if (selection != null && !selection.equals("Select State") && !selection.equals("Select Country First") && !parentCountry.isEmpty()) {
-                citySpinner.setText("");
+                stateSpinner.setText(selection, false);
+                citySpinner.setText("", false);
                 if (profileViewModel != null) {
                     profileViewModel.fetchCitiesList(parentCountry, selection);
                 }
@@ -434,7 +460,10 @@ public class ProfileActivity extends BaseActivityJava {
         });
 
         citySpinner.setOnItemClickListener((parent, view, position, id) -> {
-            // City locked
+            String selection = cityAdapter.getItem(position);
+            if (selection != null && !selection.equals("Select City") && !selection.equals("Select State First")) {
+                citySpinner.setText(selection, false);
+            }
         });
 
         pincodeField = new android.widget.EditText(this);
@@ -1334,6 +1363,20 @@ public class ProfileActivity extends BaseActivityJava {
         }
         inner.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         row.addView(inner);
+        row.setOnClickListener(v -> {
+            if (inner instanceof android.widget.AutoCompleteTextView) {
+                ((android.widget.AutoCompleteTextView) inner).showDropDown();
+            } else {
+                inner.requestFocus();
+            }
+        });
+        icon.setOnClickListener(v -> {
+            if (inner instanceof android.widget.AutoCompleteTextView) {
+                ((android.widget.AutoCompleteTextView) inner).showDropDown();
+            } else {
+                inner.requestFocus();
+            }
+        });
         applyAccessibility(row, "Profile Data Input Node");
         return row;
     }
@@ -1373,6 +1416,20 @@ public class ProfileActivity extends BaseActivityJava {
         }
         inner.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
         row.addView(inner);
+        row.setOnClickListener(v -> {
+            if (inner instanceof android.widget.AutoCompleteTextView) {
+                ((android.widget.AutoCompleteTextView) inner).showDropDown();
+            } else {
+                inner.requestFocus();
+            }
+        });
+        icon.setOnClickListener(v -> {
+            if (inner instanceof android.widget.AutoCompleteTextView) {
+                ((android.widget.AutoCompleteTextView) inner).showDropDown();
+            } else {
+                inner.requestFocus();
+            }
+        });
         applyAccessibility(row, "Profile High-Density Data Matrix Node");
         return row;
     }
