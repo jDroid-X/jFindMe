@@ -144,7 +144,8 @@ object MultiMarkerEngine {
                 accuracyMeters = 10f,
                 rawSpeedMps = ul.speed,
                 rawBearing = ul.bearing,
-                timestamp = ul.getLongTimestamp()
+                timestamp = ul.getLongTimestamp(),
+                context = context
             )
 
             val rawLatLng = smoothed.smoothedLatLng

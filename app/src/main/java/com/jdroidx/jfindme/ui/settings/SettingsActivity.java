@@ -95,6 +95,45 @@ public class SettingsActivity extends BaseActivityJava {
         View batteryLauncher = createIconButton("🔋 BATTERY OPTIMIZATION & PING HUB", com.jdroidx.jfindme.R.drawable.ic_device_health, true, v -> showBatteryOptimizerDialog());
         content.addView(batteryLauncher, btnLp);
 
+        // --- LAYER 1.6: 🏃 HARDWARE MOTION & ACTIVITY RECOGNITION ---
+        content.addView(createSectionHeader("🏃 HARDWARE MOTION & ACTIVITY RECOGNITION"));
+        LinearLayout motionCard = new LinearLayout(this);
+        motionCard.setOrientation(LinearLayout.VERTICAL);
+
+        boolean actRecogEnabled = RegistryManager.isActivityRecognitionEnabled(this);
+        View actRecogSwitch = UiArchitect.createSwitch(this, "Hardware Motion Co-Processor (Zero Still GPS)", actRecogEnabled, (v, isChecked) -> {
+            RegistryManager.setActivityRecognitionEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Motion Sentinel", isChecked ? "Hardware co-processor active (GPS sleeps when still)." : "Continuous background tracking preference active.", false, 2500, null, null);
+        });
+        motionCard.addView(actRecogSwitch, btnLp);
+
+        long stillInt = RegistryManager.getMotionStillIntervalMs(this) / 1000;
+        long vehInt = RegistryManager.getMotionVehicleIntervalMs(this) / 1000;
+        long walkInt = RegistryManager.getMotionWalkingIntervalMs(this) / 1000;
+        String motionLabel = "🏃 CONFIGURE DUTY CYCLES (STILL: " + stillInt + "S | CAR: " + vehInt + "S | WALK: " + walkInt + "S)";
+        motionCard.addView(createIconButton(motionLabel, com.jdroidx.jfindme.R.drawable.ic_settings_gears, v -> showMotionDutyCyclesDialog()), btnLp);
+
+        content.addView(motionCard, getCardParams());
+
+        // --- LAYER 1.7: 🛣️ ROAD SMOOTHING & KALMAN SENSITIVITY ---
+        content.addView(createSectionHeader("🛣️ ROAD SMOOTHING & KALMAN SENSITIVITY"));
+        LinearLayout roadCard = new LinearLayout(this);
+        roadCard.setOrientation(LinearLayout.VERTICAL);
+
+        boolean roadSmoothingEnabled = RegistryManager.isRoadSmoothingEnabled(this);
+        View roadSmoothingSwitch = UiArchitect.createSwitch(this, "Road Alignment & 2D Kalman Filter", roadSmoothingEnabled, (v, isChecked) -> {
+            RegistryManager.setRoadSmoothingEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Road Smoothing", isChecked ? "Kalman filtering and road-aligned azimuth active." : "Raw GNSS coordinates rendered without filter.", false, 2500, null, null);
+        });
+        roadCard.addView(roadSmoothingSwitch, btnLp);
+
+        float emaFactor = RegistryManager.getHeadingEmaFactor(this);
+        float kalNoise = RegistryManager.getKalmanMeasurementNoise(this);
+        String roadLabel = "🛣️ KALMAN NOISE (R=" + (int)kalNoise + ") & EMA FACTOR (" + emaFactor + ")";
+        roadCard.addView(createIconButton(roadLabel, com.jdroidx.jfindme.R.drawable.ic_nav_map, v -> showRoadSmoothingSensitivityDialog()), btnLp);
+
+        content.addView(roadCard, getCardParams());
+
         // --- LAYER 1.8: ⚙️ BACKGROUND JOBS & SENTINELS ---
         content.addView(createSectionHeader("⚙️ BACKGROUND JOBS & SENTINELS"));
         View bgJobsLauncher = createIconButton("⚙️ BACKGROUND JOBS & ENGINE SENTINELS", com.jdroidx.jfindme.R.drawable.ic_settings_gears, true, v -> BackgroundJobsConfigDialog.show(this));
@@ -683,5 +722,74 @@ public class SettingsActivity extends BaseActivityJava {
                 }
             }
         );
+    }
+
+    private void showMotionDutyCyclesDialog() {
+        String[] options = {
+            "⚡ Ultra Aggressive (Still: 60s, Vehicle: 5s, Walk: 10s)",
+            "🚗 Balanced Road Standard (Still: 300s, Vehicle: 10s, Walk: 20s - Recommended)",
+            "🔋 Maximum Battery Eco (Still: 600s, Vehicle: 15s, Walk: 30s)",
+            "🛡️ Custom Dynamic Setup (Still: 180s, Vehicle: 10s, Walk: 15s)"
+        };
+        long[][] values = {
+            {60000L, 5000L, 10000L},
+            {300000L, 10000L, 20000L},
+            {600000L, 15000L, 30000L},
+            {180000L, 10000L, 15000L}
+        };
+
+        long currStill = RegistryManager.getMotionStillIntervalMs(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i][0] == currStill) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🏃 Motion & Battery Duty Cycles")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                long[] chosen = values[which];
+                RegistryManager.setMotionStillIntervalMs(this, chosen[0]);
+                RegistryManager.setMotionVehicleIntervalMs(this, chosen[1]);
+                RegistryManager.setMotionWalkingIntervalMs(this, chosen[2]);
+                UiArchitect.showSlideNotificationBanner(this, "Duty Cycles Saved", "Still: " + (chosen[0]/1000) + "s, Car: " + (chosen[1]/1000) + "s, Walk: " + (chosen[2]/1000) + "s", false, 3000, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showRoadSmoothingSensitivityDialog() {
+        String[] options = {
+            "🛣️ High Responsiveness (EMA: 0.50, Noise: 15.0 - City Corners)",
+            "⚖️ Balanced Road Alignment (EMA: 0.35, Noise: 25.0 - Default)",
+            "🌊 Ultra Smooth Glide (EMA: 0.20, Noise: 40.0 - Highway/Zenly Standard)",
+            "🛡️ High Jitter Rejection (EMA: 0.15, Noise: 60.0 - Dense Skyscrapers)"
+        };
+        float[][] values = {
+            {0.50f, 15.0f},
+            {0.35f, 25.0f},
+            {0.20f, 40.0f},
+            {0.15f, 60.0f}
+        };
+
+        float currEma = RegistryManager.getHeadingEmaFactor(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (Math.abs(values[i][0] - currEma) < 0.05f) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🛣️ Road Smoothing & Kalman Sensitivity")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                float[] chosen = values[which];
+                RegistryManager.setHeadingEmaFactor(this, chosen[0]);
+                RegistryManager.setKalmanMeasurementNoise(this, chosen[1]);
+                UiArchitect.showSlideNotificationBanner(this, "Sensitivity Updated", "Heading EMA: " + chosen[0] + ", Noise R: " + chosen[1], false, 3000, null, null);
+                dialog.dismiss();
+                delayedSafeRecreate();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
     }
 }

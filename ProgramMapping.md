@@ -18,7 +18,7 @@
 | | | | `SystemLogActivity` | `AuditLogger` | 7-Day HTML Audit Log Viewer |
 | | | | `WatchDogAuditActivity`| `WatchDogViewModel` | 14-Table SQLite Forensic Verifier |
 | | | | `FactoryResetActivity` | `FactoryResetViewModel`| Selective Purge & Cloud Recovery |
-| | | | `AboutActivity` | `HelpSupportActivity`| System Documentation & Diagnostics |
+| | **Settings & Control Hub**| `SettingsActivity` | `UiConfigActivity` | `RegistryManager` | Dynamic Motion, Kalman, Geofence & Power Variables |
 | | **Location Engine (Ktx)**| `TrackingService` | `LocationEngine` | `ActivityRecognitionSentinel` | Hardware Motion Co-Processor & Battery Sentinel |
 | | | `MultiMarkerEngine` | `RoadSmoothingEngine` | `SphericalUtil / Kalman` | 2D Kalman Road Snapping & Heading Azimuth |
 | | | `SIMTrackingService` | `SimForensicWorker` | `WorkManager` | Silent Hardware & SIM Audit Engine |

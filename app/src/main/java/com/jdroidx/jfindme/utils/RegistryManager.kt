@@ -116,6 +116,19 @@ object RegistryManager {
     const val KEY_OFFLINE_QUEUE_MAX_POINTS   = "pref_offline_queue_max_points"
     const val KEY_SYNC_WIFI_ONLY             = "pref_sync_wifi_only"
 
+    // 🏃 Hardware Motion & Activity Recognition Sentinel
+    const val KEY_ACTIVITY_RECOGNITION_ENABLED = "pref_activity_recognition_enabled"
+    const val KEY_MOTION_STILL_INTERVAL_MS      = "pref_motion_still_interval_ms"
+    const val KEY_MOTION_VEHICLE_INTERVAL_MS    = "pref_motion_vehicle_interval_ms"
+    const val KEY_MOTION_WALKING_INTERVAL_MS    = "pref_motion_walking_interval_ms"
+
+    // 🛣️ Road Smoothing & Kalman Filter Engine
+    const val KEY_ROAD_SMOOTHING_ENABLED        = "pref_road_smoothing_enabled"
+    const val KEY_KALMAN_PROCESS_NOISE          = "pref_kalman_process_noise"
+    const val KEY_KALMAN_MEASUREMENT_NOISE      = "pref_kalman_measurement_noise"
+    const val KEY_HEADING_EMA_FACTOR            = "pref_heading_ema_factor"
+    const val KEY_MIN_MOTION_SPEED_MPS          = "pref_min_motion_speed_mps"
+
     // Default Fallbacks
     const val DEFAULT_FALLBACK_LAT   = 18.5204
     const val DEFAULT_FALLBACK_LNG   = 73.8567
@@ -150,6 +163,15 @@ object RegistryManager {
     const val DEFAULT_SYSTEM_UPDATE_LINK = "https://drive.google.com/drive/folders/1qs1JRgku7SjfU59EMhZHCc7Kq2yFBGdC"
     const val DEFAULT_GITHUB_UPDATE_LINK = "https://github.com/jDroid-X/jButterfly/tree/main/jbutterfly"
     const val DEFAULT_PURGE_SAFETY_PHRASE = "jbutterfly@123"
+
+    // Motion & Road Tracking Defaults
+    const val DEFAULT_MOTION_STILL_INTERVAL_MS   = 300000L // 5 minutes (Zero GPS drain)
+    const val DEFAULT_MOTION_VEHICLE_INTERVAL_MS = 10000L  // 10 seconds (High velocity road tracking)
+    const val DEFAULT_MOTION_WALKING_INTERVAL_MS = 20000L  // 20 seconds (Pedestrian duty cycle)
+    const val DEFAULT_KALMAN_PROCESS_NOISE       = 3.0f
+    const val DEFAULT_KALMAN_MEASUREMENT_NOISE   = 25.0f
+    const val DEFAULT_HEADING_EMA_FACTOR         = 0.35f
+    const val DEFAULT_MIN_MOTION_SPEED_MPS       = 0.8f
 
     // ─── ACCESS METHODS ───────────────────────────────────────────────────────
 
@@ -466,6 +488,62 @@ object RegistryManager {
         val remMs = bufferTimeMs - elapsed
         return if (remMs > 0) ((remMs / (1000 * 60 * 60)).toInt() + 1) else 0
     }
+
+    // ─── 🏃 MOTION & ROAD TRACKING GETTERS / SETTERS ─────────────────────────
+
+    @JvmStatic fun isActivityRecognitionEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_ACTIVITY_RECOGNITION_ENABLED, true)
+
+    @JvmStatic fun setActivityRecognitionEnabled(context: Context, enabled: Boolean) =
+        putBoolean(context, KEY_ACTIVITY_RECOGNITION_ENABLED, enabled)
+
+    @JvmStatic fun getMotionStillIntervalMs(context: Context): Long =
+        getLong(context, KEY_MOTION_STILL_INTERVAL_MS, DEFAULT_MOTION_STILL_INTERVAL_MS)
+
+    @JvmStatic fun setMotionStillIntervalMs(context: Context, intervalMs: Long) =
+        putLong(context, KEY_MOTION_STILL_INTERVAL_MS, intervalMs)
+
+    @JvmStatic fun getMotionVehicleIntervalMs(context: Context): Long =
+        getLong(context, KEY_MOTION_VEHICLE_INTERVAL_MS, DEFAULT_MOTION_VEHICLE_INTERVAL_MS)
+
+    @JvmStatic fun setMotionVehicleIntervalMs(context: Context, intervalMs: Long) =
+        putLong(context, KEY_MOTION_VEHICLE_INTERVAL_MS, intervalMs)
+
+    @JvmStatic fun getMotionWalkingIntervalMs(context: Context): Long =
+        getLong(context, KEY_MOTION_WALKING_INTERVAL_MS, DEFAULT_MOTION_WALKING_INTERVAL_MS)
+
+    @JvmStatic fun setMotionWalkingIntervalMs(context: Context, intervalMs: Long) =
+        putLong(context, KEY_MOTION_WALKING_INTERVAL_MS, intervalMs)
+
+    @JvmStatic fun isRoadSmoothingEnabled(context: Context): Boolean =
+        getBoolean(context, KEY_ROAD_SMOOTHING_ENABLED, true)
+
+    @JvmStatic fun setRoadSmoothingEnabled(context: Context, enabled: Boolean) =
+        putBoolean(context, KEY_ROAD_SMOOTHING_ENABLED, enabled)
+
+    @JvmStatic fun getKalmanProcessNoise(context: Context): Float =
+        getFloat(context, KEY_KALMAN_PROCESS_NOISE, DEFAULT_KALMAN_PROCESS_NOISE)
+
+    @JvmStatic fun setKalmanProcessNoise(context: Context, value: Float) =
+        putFloat(context, KEY_KALMAN_PROCESS_NOISE, value)
+
+    @JvmStatic fun getKalmanMeasurementNoise(context: Context): Float =
+        getFloat(context, KEY_KALMAN_MEASUREMENT_NOISE, DEFAULT_KALMAN_MEASUREMENT_NOISE)
+
+    @JvmStatic fun setKalmanMeasurementNoise(context: Context, value: Float) =
+        putFloat(context, KEY_KALMAN_MEASUREMENT_NOISE, value)
+
+    @JvmStatic fun getHeadingEmaFactor(context: Context): Float =
+        getFloat(context, KEY_HEADING_EMA_FACTOR, DEFAULT_HEADING_EMA_FACTOR)
+
+    @JvmStatic fun setHeadingEmaFactor(context: Context, factor: Float) =
+        putFloat(context, KEY_HEADING_EMA_FACTOR, factor)
+
+    @JvmStatic fun getMinMotionSpeedMps(context: Context): Float =
+        getFloat(context, KEY_MIN_MOTION_SPEED_MPS, DEFAULT_MIN_MOTION_SPEED_MPS)
+
+    @JvmStatic fun setMinMotionSpeedMps(context: Context, speedMps: Float) =
+        putFloat(context, KEY_MIN_MOTION_SPEED_MPS, speedMps)
 
     // ─── TYPED CONVENIENCE SETTERS ────────────────────────────────────────────
 

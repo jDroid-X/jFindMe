@@ -1,9 +1,9 @@
 package com.jdroidx.jfindme.engine.map
 
-import android.location.Location
+import android.content.Context
 import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.PolyUtil
 import com.google.maps.android.SphericalUtil
+import com.jdroidx.jfindme.utils.RegistryManager
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlin.math.*
 
@@ -15,12 +15,11 @@ import kotlin.math.*
  * 2. Spherical Road Heading / Azimuth Calculation (Smooth marker rotation along road curves).
  * 3. Heading EMA Low-Pass Filter (Prevents erratic marker spinning at intersections/stops).
  * 4. Micro-Step Geodesic Interpolation (60 FPS smooth marker road transitions).
+ * 5. Dynamic Parameter Loading via RegistryManager (User-configurable via Settings).
  */
 object RoadSmoothingEngine {
 
     private const val TAG = "RoadSmoothingEngine"
-    private const val MIN_MOTION_SPEED_MPS = 0.8f // ~2.88 km/h minimum movement threshold
-    private const val HEADING_SMOOTHING_FACTOR = 0.35f // Exponential moving average weight
 
     data class SmoothedResult(
         val smoothedLatLng: LatLng,
@@ -30,14 +29,12 @@ object RoadSmoothingEngine {
     )
 
     private class Kalman1D {
-        private var q = 3.0 // Process noise covariance
-        private var r = 25.0 // Measurement noise covariance
         private var x = 0.0 // Value
         private var p = 100.0 // Estimation error covariance
         private var k = 0.0 // Kalman gain
         private var isInitialized = false
 
-        fun filter(measurement: Double, accuracy: Double, timeStepSec: Double): Double {
+        fun filter(measurement: Double, accuracy: Double, timeStepSec: Double, qParam: Double, rParam: Double): Double {
             if (!isInitialized) {
                 x = measurement
                 p = accuracy * accuracy
@@ -46,11 +43,11 @@ object RoadSmoothingEngine {
             }
 
             // Prediction update
-            p += q * timeStepSec
+            p += qParam * timeStepSec
 
             // Measurement update
-            r = max(4.0, accuracy * accuracy)
-            k = p / (p + r)
+            val effectiveR = max(rParam, accuracy * accuracy)
+            k = p / (p + effectiveR)
             x += k * (measurement - x)
             p *= (1.0 - k)
 
@@ -79,6 +76,7 @@ object RoadSmoothingEngine {
      * Filters raw GPS readings through the Kalman filter and computes road-aligned heading.
      */
     @Synchronized
+    @JvmOverloads
     fun processLocation(
         deviceId: String,
         rawLat: Double,
@@ -86,8 +84,20 @@ object RoadSmoothingEngine {
         accuracyMeters: Float = 10f,
         rawSpeedMps: Float = 0f,
         rawBearing: Float = 0f,
-        timestamp: Long = System.currentTimeMillis()
+        timestamp: Long = System.currentTimeMillis(),
+        context: Context? = null
     ): SmoothedResult {
+        val isSmoothingEnabled = if (context != null) RegistryManager.isRoadSmoothingEnabled(context) else true
+        if (!isSmoothingEnabled) {
+            val rawLatLng = LatLng(rawLat, rawLng)
+            return SmoothedResult(
+                smoothedLatLng = rawLatLng,
+                filteredHeading = rawBearing,
+                smoothedSpeedMps = rawSpeedMps,
+                isMoving = rawSpeedMps > 0.8f
+            )
+        }
+
         var state = deviceStateMap[deviceId]
         if (state == null) {
             state = DeviceMovementState(deviceId = deviceId)
@@ -101,10 +111,16 @@ object RoadSmoothingEngine {
         }
         state.lastTimestamp = timestamp
 
+        // Dynamic parameters from RegistryManager
+        val qNoise = if (context != null) RegistryManager.getKalmanProcessNoise(context).toDouble() else RegistryManager.DEFAULT_KALMAN_PROCESS_NOISE.toDouble()
+        val rNoise = if (context != null) RegistryManager.getKalmanMeasurementNoise(context).toDouble() else RegistryManager.DEFAULT_KALMAN_MEASUREMENT_NOISE.toDouble()
+        val headingEmaFactor = if (context != null) RegistryManager.getHeadingEmaFactor(context) else RegistryManager.DEFAULT_HEADING_EMA_FACTOR
+        val minMotionSpeed = if (context != null) RegistryManager.getMinMotionSpeedMps(context) else RegistryManager.DEFAULT_MIN_MOTION_SPEED_MPS
+
         // 1. Run 2D Kalman Filter on Lat/Lng
         val acc = if (accuracyMeters <= 0f) 10.0 else accuracyMeters.toDouble()
-        val filteredLat = state.latFilter.filter(rawLat, acc, timeStepSec)
-        val filteredLng = state.lngFilter.filter(rawLng, acc, timeStepSec)
+        val filteredLat = state.latFilter.filter(rawLat, acc, timeStepSec, qNoise, rNoise)
+        val filteredLng = state.lngFilter.filter(rawLng, acc, timeStepSec, qNoise, rNoise)
         val filteredLatLng = LatLng(filteredLat, filteredLng)
 
         // 2. Determine Speed and Movement
@@ -119,10 +135,9 @@ object RoadSmoothingEngine {
         val effectiveSpeedMps = if (rawSpeedMps > 0.5f) rawSpeedMps else calculatedSpeedMps
         state.smoothedSpeedMps = (state.smoothedSpeedMps * 0.4f) + (effectiveSpeedMps * 0.6f)
 
-        val isMoving = state.smoothedSpeedMps >= MIN_MOTION_SPEED_MPS && distanceDelta >= 1.5f
+        val isMoving = state.smoothedSpeedMps >= minMotionSpeed && distanceDelta >= 1.5f
 
         // 3. Compute Road-Aligned Bearing / Azimuth
-        var targetHeading = state.smoothedHeading
         if (isMoving && previousLatLng != null) {
             // Compute spherical azimuth between successive coordinate vectors
             val roadAzimuth = SphericalUtil.computeHeading(previousLatLng, filteredLatLng).toFloat()
@@ -137,9 +152,9 @@ object RoadSmoothingEngine {
             }
 
             // Apply EMA Low-Pass Filter to eliminate jitter
-            state.smoothedHeading = smoothHeadingEMA(state.smoothedHeading, candidateHeading, HEADING_SMOOTHING_FACTOR)
+            state.smoothedHeading = smoothHeadingEMA(state.smoothedHeading, candidateHeading, headingEmaFactor)
         } else if (rawBearing > 0.1f && isMoving) {
-            state.smoothedHeading = smoothHeadingEMA(state.smoothedHeading, rawBearing, HEADING_SMOOTHING_FACTOR)
+            state.smoothedHeading = smoothHeadingEMA(state.smoothedHeading, rawBearing, headingEmaFactor)
         }
 
         state.lastSmoothedLatLng = filteredLatLng

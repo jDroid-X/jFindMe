@@ -95,29 +95,40 @@ class LocationEngine(private val context: Context, private val onLocationChanged
 
     private val motionListener: (ActivityRecognitionSentinel.MotionState) -> Unit = { motionState ->
         SystemLogger.i(TAG, "Hardware Activity Recognition update in LocationEngine: $motionState")
+        if (!RegistryManager.isActivityRecognitionEnabled(context)) {
+            val userChoice = RegistryManager.getTrackingInterval(context)
+            trackingPriority = PRIORITY_HIGH_ACCURACY
+            updateInterval = userChoice
+            updateTrackingParams()
+            return@motionListener
+        }
+
         when (motionState) {
             ActivityRecognitionSentinel.MotionState.STILL -> {
-                // 🔋 ZERO GPS SATELLITE DRAIN: Device is stationary, enter balanced power heartbeat (5 min / 25m)
+                // 🔋 ZERO GPS SATELLITE DRAIN: Device is stationary, enter balanced power heartbeat
+                val stillInterval = RegistryManager.getMotionStillIntervalMs(context)
                 trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
-                updateInterval = HEARTBEAT_INTERVAL_MS
+                updateInterval = stillInterval
                 updateTrackingParams()
-                SystemLogger.i(TAG, "🔋 STILL detected: GPS Chip sleeping, heartbeat mode enabled (300s / 25m).")
+                SystemLogger.i(TAG, "🔋 STILL detected: GPS Chip sleeping, heartbeat mode enabled (${stillInterval / 1000}s / 25m).")
             }
             ActivityRecognitionSentinel.MotionState.IN_VEHICLE -> {
-                // 🚗 HIGH VELOCITY: Fast road tracking (10s / 10m)
+                // 🚗 HIGH VELOCITY: Fast road tracking
+                val vehicleInterval = RegistryManager.getMotionVehicleIntervalMs(context)
                 trackingPriority = PRIORITY_HIGH_ACCURACY
-                updateInterval = 10000L
+                updateInterval = vehicleInterval
                 updateTrackingParams()
-                SystemLogger.i(TAG, "🚗 IN_VEHICLE detected: High-accuracy road tracking enabled (10s / 10m).")
+                SystemLogger.i(TAG, "🚗 IN_VEHICLE detected: High-accuracy road tracking enabled (${vehicleInterval / 1000}s / 10m).")
             }
             ActivityRecognitionSentinel.MotionState.WALKING,
             ActivityRecognitionSentinel.MotionState.RUNNING,
             ActivityRecognitionSentinel.MotionState.ON_BICYCLE -> {
-                // 🚶 PEDESTRIAN MOTION: Moderate tracking (20s / 15m)
+                // 🚶 PEDESTRIAN MOTION: Moderate tracking
+                val walkingInterval = RegistryManager.getMotionWalkingIntervalMs(context)
                 trackingPriority = PRIORITY_HIGH_ACCURACY
-                updateInterval = 20000L
+                updateInterval = walkingInterval
                 updateTrackingParams()
-                SystemLogger.i(TAG, "🚶 MOTION detected ($motionState): High-accuracy pedestrian tracking enabled (20s / 15m).")
+                SystemLogger.i(TAG, "🚶 MOTION detected ($motionState): High-accuracy pedestrian tracking enabled (${walkingInterval / 1000}s / 15m).")
             }
             ActivityRecognitionSentinel.MotionState.UNKNOWN -> {
                 // Default fallback to configured user preference
@@ -151,12 +162,14 @@ class LocationEngine(private val context: Context, private val onLocationChanged
             SystemLogger.w(TAG, "PendingIntent GPS registration fallback: " + e.message)
         }
 
-        // 🏃 Initialize Hardware Motion Sentinel
-        try {
-            ActivityRecognitionSentinel.addListener(motionListener)
-            ActivityRecognitionSentinel.startMonitoring(context)
-        } catch (e: Exception) {
-            SystemLogger.w(TAG, "Could not start ActivityRecognition: ${e.message}")
+        // 🏃 Initialize Hardware Motion Sentinel if enabled
+        if (RegistryManager.isActivityRecognitionEnabled(context)) {
+            try {
+                ActivityRecognitionSentinel.addListener(motionListener)
+                ActivityRecognitionSentinel.startMonitoring(context)
+            } catch (e: Exception) {
+                SystemLogger.w(TAG, "Could not start ActivityRecognition: ${e.message}")
+            }
         }
 
         val currentMode = EngineRegistry.getMode(EngineRegistry.ENGINE_LOCATION)
