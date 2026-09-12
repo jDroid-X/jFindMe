@@ -96,7 +96,9 @@ object ValidationEngine {
 
     fun validatePincode(pincode: String?, countryCode: String = ""): ValidationResult {
         val trimmed = pincode?.trim() ?: ""
-        if (trimmed.isEmpty()) return ValidationResult.error("Pincode / ZIP code is required.")
+        // 🛡️ FIX: Skip required check for non-Indian countries (US zip codes, UK postcodes, etc.)
+        val isIndia = "IN".equals(countryCode.trim(), ignoreCase = true)
+        if (trimmed.isEmpty()) return if (isIndia) ValidationResult.error("Pincode is required for India.") else ValidationResult.OK
         return when {
             trimmed.length < 4 -> ValidationResult.error("Pincode is too short (min 4 digits).")
             trimmed.length > 10 -> ValidationResult.error("Pincode is too long (max 10 characters).")

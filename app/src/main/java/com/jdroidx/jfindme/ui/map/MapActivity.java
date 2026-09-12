@@ -98,6 +98,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private TextView navDrawerTitle;
     
     private boolean isDualPaneActive = true;
+    private static final String PREF_DUAL_PANE = "map_dual_pane_active";
     private boolean isMapExpanded = true; // 🚀 Default Full-Screen Tactical Map Mode
     private static final int ID_MAP_CONTAINER = com.jdroidx.jfindme.R.id.map_container;
     private static final int LOCATION_PERMISSION_CODE = 101;
@@ -122,6 +123,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         if (savedInstanceState != null) {
             isDualPaneActive = savedInstanceState.getBoolean("isDualPaneActive", true);
+        } else {
+            // Fallback: restore from SharedPreferences (safeRecreate bypasses bundle)
+            isDualPaneActive = getSharedPreferences("system_registry", MODE_PRIVATE)
+                .getBoolean(PREF_DUAL_PANE, true);
         }
 
         extractIntentTarget(getIntent());
@@ -155,6 +160,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // 🔋 Screen Inactive / Hidden: Immediately transition to ultra-low-power HEARTBEAT mode
         com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
         com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_MAP_RENDER);
+        // Persist dual-pane state to SharedPreferences so safeRecreate can recover it
+        getSharedPreferences("system_registry", MODE_PRIVATE).edit()
+            .putBoolean(PREF_DUAL_PANE, isDualPaneActive).apply();
     }
 
     @Override
@@ -199,6 +207,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putBoolean("isDualPaneActive", isDualPaneActive);
+        // Also persist to SharedPreferences for safeRecreate resilience
+        getSharedPreferences("system_registry", MODE_PRIVATE).edit()
+            .putBoolean(PREF_DUAL_PANE, isDualPaneActive).apply();
     }
 
     @Override

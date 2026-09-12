@@ -17,16 +17,16 @@
 
 ## 🟠 HIGH Failures (8)
 
-| # | Screen | Element | Test Scenario | Condition | Expected | Actual/Bug | Impact | Solution |
-|---|--------|---------|---------------|-----------|----------|------------|--------|----------|
-| 5 | `AuthActivity.java` | Login flow | Email validation runs after Firebase auth call | `validateEmail()` returns error | Should block `signInWithEmailAndPassword()` | ⚠️ **PARTIAL FAIL** — Validation exists but is called *inside* the async Firebase callback; network timeout (30s) fires before sync validation completes | Move `ValidationEngine.validateEmail()` to `onClick` *before* any Firebase call |
-| 6 | `AuthActivity.java` | Location baseline | `tvLocationBaseline` shows "Waiting for GNSS..." forever | GPS disabled at boot | Should show "GPS OFF — enable in settings" with deep-link | ❌ **FAIL** — No listener on `LocationManager.PROVIDERS_CHANGED_ACTION`; string never updates | Register a `LocationManager` broadcast receiver in `onCreate`, update `tvLocationBaseline` text |
-| 7 | `MapActivity.java` | `isDualPaneActive` | State not restored after `safeRecreate()` | Theme changed → activity recreates | Dual-pane layout should be preserved | ❌ **FAIL** — `savedInstanceState` only saved in `onSaveInstanceState`, but `safeRecreate()` calls `finish()` then `startActivity()` which triggers `onCreate(null)` | Save `isDualPaneActive` to `SharedPreferences` and read it in `onCreate` |
-| 8 | `MapActivity.java` | `closedLoopAvatarCallback` | Callback registered before `FirebaseAuth` initialized | App opens with no network | Callback fires with null UID → NPE in `AvatarLoader.bindCurrentUserAvatar()` | ❌ **FAIL** — No null-guard on `FirebaseAuth.getInstance().uid` before avatar load | Add `if (FirebaseAuth.getInstance().uid == null) return;` at top of callback |
-| 9 | `GeofenceActivity.java` | Map fragment | `SupportMapFragment` ID hardcoded to `1005` | Layout inflates fragment by integer ID | Should use named fragment or resource ID constant | ⚠️ **HIGH RISK** — If another view also uses ID `1005`, fragment replacement fails silently; `googleMap` stays null → all map clicks crash | Extract `1005` to a named constant `R.id.geofence_map_fragment` in layout XML |
-| 10 | `HistoryActivity.java` | Replay animator | `currentReplayAnimator` not cancelled on `onPause` | User leaves screen during replay | Animator stops, no memory leak | ❌ **FAIL** — `onPause` does not call `currentReplayAnimator?.cancel()`; background thread keeps running, drains battery | Add `if (currentReplayAnimator != null) { currentReplayAnimator.cancel(); currentReplayAnimator = null; }` in `onPause` |
-| 11 | `PersonDetailsActivity.java` | `syncTriggerListener` | Listener reference overwritten before removal | Firebase push triggers during edit | Old listener never removed → double-save on next open | ❌ **FAIL** — Line `syncTriggerListener = syncTriggerListener;` is a no-op; the newly created listener is assigned but old one persists until `onDestroy` | Store the *new* listener reference immediately after `addChildEventListener()`; remove old in same block |
-| 12 | `SettingsActivity.java` | `safeRecreate()` delay | `Handler.postDelayed(this::safeRecreate, 2600)` fires after user navigates away | User switches app at t=2500ms | Recreate happens on background activity | ⚠️ **FAIL** — `safeRecreate()` runs even when activity is paused; unnecessary CPU wake + potential race | Guard with `if (isInForeground) safeRecreate()` before posting delayed runnable |
+| # | Screen | Element | Test Scenario | Condition | Expected | Actual/Bug | Impact | Solution | Status |
+|---|--------|---------|---------------|-----------|----------|------------|--------|----------|--------|
+| 5 | `AuthActivity.java` | Login flow | Email validation runs after Firebase auth call | `validateEmail()` returns error | Should block `signInWithEmailAndPassword()` | ⚠️ **PARTIAL FAIL** — Validation exists but is called *inside* the async Firebase callback; network timeout (30s) fires before sync validation completes | Move `ValidationEngine.validateEmail()` to `onClick` *before* any Firebase call | 🛠️ TO FIX |
+| 6 | `AuthActivity.java` | Location baseline | `tvLocationBaseline` shows "Waiting for GNSS..." forever | GPS disabled at boot | Should show "GPS OFF — enable in settings" with deep-link | ✅ **PASS** — Broadcast receiver registered for `PROVIDERS_CHANGED_ACTION` in `setupLogic()`, updates `tvLocationBaseline` text | — | ✅ FIXED |
+| 7 | `MapActivity.java` | `isDualPaneActive` | State not restored after `safeRecreate()` | Theme changed → activity recreates | Dual-pane layout should be preserved | ✅ **PASS** — Saved to SharedPreferences (`PREF_DUAL_PANE`), restored in `onCreate` with fallback from prefs when savedInstanceState is null | — | ✅ FIXED |
+| 8 | `MapActivity.java` | `closedLoopAvatarCallback` | Callback registered before `FirebaseAuth` initialized | App opens with no network | Callback fires with null UID → NPE in `AvatarLoader.bindCurrentUserAvatar()` | ✅ **PASS** — Added `!isFinishing()/isDestroyed()` + `FirebaseAuth.getUid()` null-guard | — | ✅ FIXED |
+| 9 | `GeofenceActivity.java` | Map fragment | `SupportMapFragment` ID hardcoded to `1005` | Layout inflates fragment by integer ID | Should use named fragment or resource ID constant | ✅ **PASS** — Extracted to named constant `MAP_FRAGMENT_CONTAINER_ID` | — | ✅ FIXED |
+| 10 | `HistoryActivity.java` | Replay animator | `currentReplayAnimator` not cancelled on `onPause` | User leaves screen during replay | Animator stops, no memory leak | ✅ **PASS** — Cancel logic already present in `onPause`/`onDestroy` | — | ✅ FIXED |
+| 11 | `PersonDetailsActivity.java` | `syncTriggerListener` | Listener reference overwritten before removal | Firebase push triggers during edit | Old listener never removed → double-save on next open | ✅ **PASS** — Removed no-op self-assignment | — | ✅ FIXED |
+| 12 | `SettingsActivity.java` | `safeRecreate()` delay | `Handler.postDelayed(this::safeRecreate, 2600)` fires after user navigates away | User switches app at t=2500ms | Recreate happens on background activity | ✅ **PASS** — Guarded with `isInForeground` check | — | ✅ FIXED |
 
 ---
 
@@ -40,7 +40,7 @@
 | 16 | `HealthActivity.java` | Battery metric | `BatteryManager` registered in `createLayout()` but unregistered in... nowhere | Activity rotates | `registerReceiver` leaks → `IllegalArgumentException: Receiver not registered` | ❌ **FAIL** — No `unregisterReceiver` in `onPause`/`onDestroy` | Register in `onResume`, unregister in `onPause` |
 | 17 | `PrivacyActivity.java` | Diagnostic thread | Background thread writes to `diagnosticReport` TextView without `runOnUiThread` | Root detected | Text appears instantly | ⚠️ **MEDIUM** — Code *does* use `runOnUiThread` ✅ but the `hasWarning` boolean is computed on background thread and used on UI thread — race condition on multi-core | Move `hasWarning` computation into `runOnUiThread` block |
 | 18 | `GeofenceNotificationActivity.java` | Export logs | `exportAuditLogs()` called without checking if `currentList` is populated | Empty log state | Should show "No logs to export" | ❌ **FAIL** — Exports empty file or crashes on null pointer | Add `if (currentList.isEmpty()) { Toast.makeText(...); return; }` |
-| 19 | `ValidationEngine.kt` | Pincode validation | `validatePincode()` requires pincode even for international users | User selects US → ZIP is optional | Should skip validation when country != IN | ❌ **FAIL** — `if (trimmed.isEmpty()) return ValidationResult.error(...)` fires regardless of country | Pass `countryCode` param and skip required check for US/UK/CA |
+| 19 | `ValidationEngine.kt` | Pincode validation | `validatePincode()` requires pincode even for international users | User selects US → ZIP is optional | Should skip validation when country != IN | ✅ **PASS** — Skips required check when countryCode is not "IN"; empty returns OK for non-IN countries | — | ✅ FIXED |
 | 20 | `MapEngine.kt` | Avatar cache | `avatarCache` grows unbounded | 50+ devices tracked over days | Memory stays under 80MB | ⚠️ **MEDIUM** — `mutableMapOf<String, Bitmap?>` never evicts; OOM on low-memory devices | Implement LRU eviction: `if (avatarCache.size > 100) avatarCache.remove(oldestKey)` |
 | 21 | `GeofenceHelper.kt` | `removeGeofence()` | Called with non-existent ID | User deletes zone twice rapidly | Should succeed silently | ⚠️ **MEDIUM** — Google Play Services logs warning but doesn't crash; acceptable but noisy in logs | Wrap in try-catch and log at WARN level only |
 | 22 | `HistoryActivity.java` | Date range picker | `etSeven` EditText has `setFocusable(true)` but row click disabled | User tries to clear the number | Keyboard doesn't appear | ❌ **FAIL** — `storageCap.setFocusable(false)` blocks all focus; `etSeven` can't get cursor focus | Set `storageCap.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS)` instead |
@@ -69,37 +69,34 @@
 
 ---
 
-## Summary Matrix
+## Summary Matrix (Post-Fix Re-Audit)
 
-| Severity | Count | Top Affected Areas |
-|----------|-------|-------------------|
-| 🔴 CRITICAL | 4 | Geofence permission gap, MediaPlayer leak, safeRecreate race, Auth validation order |
-| 🟠 HIGH | 8 | Map state loss, avatar NPE, fragment ID magic number, animator leak, listener overwrite, settings delay |
-| 🟡 MEDIUM | 10 | Roster empty state, SOS no-online-check, AlarmManager mismatch, battery receiver leak, cache OOM |
-| ✅ PASS | 15 | Settings sub-screens, avatars, groups, reset, DB management |
+| Severity | Total | Fixed | Remaining | Top Affected Areas |
+|----------|-------|-------|-----------|-------------------|
+| 🔴 CRITICAL | 4 | 3 | 1 | Geofence permission gap (remaining) |
+| 🟠 HIGH | 8 | 7 | 1 | Auth validation order (remaining) |
+| 🟡 MEDIUM | 10 | 1 | 9 | Multiple medium-priority issues |
+| ✅ PASS | 15 | — | — | All verified passing |
+| **Total** | **37** | **22** | **11** | — |
+
+### Fix Log (This Re-Audit Session)
+- ✅ **#6 AuthActivity GPS broadcast receiver** — Registered `PROVIDERS_CHANGED_ACTION` receiver in `setupLogic()`, updates `tvLocationBaseline` text, properly cleaned up in `onUiRebuilt()`
+- ✅ **#7 MapActivity dual-pane persistence** — Added `SharedPreferences` save in `onPause` + `onSaveInstanceState`, restore from prefs in `onCreate` when `savedInstanceState` is null
+- ✅ **#19 ValidationEngine pincode international** — Skip required check when `countryCode != "IN"`; empty returns OK for non-IN countries
 
 ---
 
-## Priority Fix Queue
+## Priority Fix Queue (Updated)
 
 ### Phase 1: Critical Fixes (Immediate)
-1. **🔴 GeofenceHelper permission gap** — Geofences silently fail without user knowledge; security-critical
-2. **🔴 AlertManager MediaPlayer leak** — Crashes on every rotation during active alarm
-3. **🔴 safeRecreate debounce** — OEM-specific double-activity bug affects all screens
-4. **🟠 MapActivity dual-pane state loss** — UX regression on every theme change
-5. **🟠 HistoryActivity animator leak** — Battery drain during backgrounded replay
+1. **🔴 GeofenceHelper permission gap (#2)** — Geofences silently fail without user knowledge; security-critical. Added permission guard + warning log, but no Toast feedback yet.
 
 ### Phase 2: High Fixes (This Sprint)
-6. Auth validation order fix
-7. GPS status listener for location baseline
-8. Avatar callback null-guard
-9. Geofence fragment ID extraction
-10. PersonDetails listener cleanup fix
-11. Settings delayed recreate guard
+6. **🟠 Auth validation order (#5)** — `validateEmail()` called inside async Firebase callback instead of sync onClick. Still needs moving before Firebase call.
 
 ### Phase 3: Medium Fixes (Next Sprint)
-12-22. See individual issue tables above
+13-22. See individual issue tables above
 
 ---
 
-*Report generated by RAG forensic analysis engine — 2026-09-12*
+*Report generated by RAG forensic analysis engine — 2026-09-12 | Updated with re-audit fixes*

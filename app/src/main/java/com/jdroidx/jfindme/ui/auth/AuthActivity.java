@@ -40,6 +40,7 @@ public class AuthActivity extends BaseActivityJava {
     private final java.util.concurrent.atomic.AtomicBoolean isFinalizing = new java.util.concurrent.atomic.AtomicBoolean(false);
     private String savedEmail = "";
     private String savedPassword = "";
+    private android.content.BroadcastReceiver gpsProviderReceiver;
 
     // 🛡️ Forensic Stability: Explicit LocationListener implementation to prevent AbstractMethodError onProviderDisabled
     private final android.location.LocationListener safeLocationListener = new android.location.LocationListener() {
@@ -57,6 +58,42 @@ public class AuthActivity extends BaseActivityJava {
         @Override
         public void onProviderDisabled(String provider) {}
     };
+
+    // 🛡️ FIX: Broadcast receiver to update tvLocationBaseline when GPS providers change
+    private void registerGpsProviderReceiver() {
+        if (gpsProviderReceiver != null) return;
+        gpsProviderReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                if (!"android.location.PROVIDERS_CHANGED_ACTION".equals(intent.getAction())) return;
+                runOnUiThread(() -> {
+                    try {
+                        android.location.LocationManager lm = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+                        if (lm == null) return;
+                        boolean gpsEnabled = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER);
+                        boolean networkEnabled = lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+                        if (tvLocationBaseline != null) {
+                            if (!gpsEnabled && !networkEnabled) {
+                                tvLocationBaseline.setText("📍 Location: Disabled - Enable GPS in settings");
+                            } else if (gpsEnabled) {
+                                tvLocationBaseline.setText("📍 GPS Active: Waiting for fix...");
+                            } else {
+                                tvLocationBaseline.setText("📍 Network Location: Waiting for fix...");
+                            }
+                        }
+                    } catch (Exception e) {
+                        SystemLogger.e(TAG, "GPS Provider Change Handler Failed", e);
+                    }
+                });
+            }
+        };
+        try {
+            registerReceiver(gpsProviderReceiver, new android.content.IntentFilter(android.location.LocationManager.PROVIDERS_CHANGED_ACTION));
+            SystemLogger.i(TAG, "GPS Provider Change Receiver Registered");
+        } catch (Exception e) {
+            SystemLogger.e(TAG, "Failed to register GPS Provider Receiver", e);
+        }
+    }
 
     @Override
     protected View createLayout() {
@@ -347,7 +384,8 @@ public class AuthActivity extends BaseActivityJava {
     private View createEnterpriseButton(String text, float tSize, int hQuo, boolean isMain, View.OnClickListener listener) {
         TextView btn = new TextView(this);
         btn.setText(text);
-        btn.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        btn.setTextColor(getGradientOverlayText());
         btn.setGravity(Gravity.CENTER);
         btn.setTypeface(null, Typeface.BOLD);
         btn.setTextSize(scaleText(tSize));
@@ -451,11 +489,20 @@ public class AuthActivity extends BaseActivityJava {
             if (etEmail != null) etEmail.setText(email);
             if (etPass != null) etPass.setText(pass);
         }
+        // Unregister old receiver before re-registering after safeRecreate
+        if (gpsProviderReceiver != null) {
+            try { unregisterReceiver(gpsProviderReceiver); } catch (Exception ignored) {}
+            gpsProviderReceiver = null;
+        }
+        registerGpsProviderReceiver();
     }
 
     @Override
     protected void setupLogic() {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
+
+        // 🛡️ Register GPS provider change broadcast receiver to update baseline text
+        registerGpsProviderReceiver();
 
         // 🛡️ User Directives: Fields always start completely BLANK by default.
         // performAutoSetup is ONLY executed when user explicitly taps the 'AUTO SETUP' button.
