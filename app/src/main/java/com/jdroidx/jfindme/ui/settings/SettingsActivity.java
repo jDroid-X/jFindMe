@@ -56,7 +56,9 @@ public class SettingsActivity extends BaseActivityJava {
         themeToggle.setPadding(tPad, tPad, tPad, tPad);
         themeToggle.setOnClickListener(v -> {
             int current = prefs.getInt("theme_id", 0);
-            prefs.edit().putInt("theme_id", (current + 1) % 8).apply();
+            // 🔧 FIX: Use actual theme count from ThemeManager instead of hardcoded 8
+            int totalThemes = com.jdroidx.jfindme.ui.base.ThemeManager.THEMES.length;
+            prefs.edit().putInt("theme_id", (current + 1) % totalThemes).apply();
             safeRecreate(); // 🛡️ Stability Patch: Bypasses OEM Lifecycle crashes
         });
         titleRow.addView(themeToggle, new LinearLayout.LayoutParams(scale(80), scale(80)));
@@ -514,6 +516,8 @@ public class SettingsActivity extends BaseActivityJava {
     }
 
     private void delayedSafeRecreate() {
+        // 🛡️ FIX-11: Guard against recreating activity while app is backgrounded
+        if (!isInForeground) return;
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::safeRecreate, 2600);
     }
 

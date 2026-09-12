@@ -1,6 +1,7 @@
 package com.jdroidx.jfindme.ui.management;
 
 import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
+import com.jdroidx.jfindme.ui.base.ThemeManager;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
@@ -56,6 +57,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private GeofenceViewModel viewModel;
     private android.widget.ImageView myAvatarField;
     private static final int GEOFENCE_PERMISSION_CODE = 200;
+    /** 🛡️ FIX-9: Named constant for map fragment container ID replaces magic number 1005 */
+    private static final int MAP_FRAGMENT_CONTAINER_ID = 1005;
 
     private GoogleMap googleMap;
     private Marker previewMarker;
@@ -118,11 +121,11 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         // 🗺️ Initialize SupportMapFragment inside the editor container
         try {
-            SupportMapFragment mapFrag = (SupportMapFragment) getSupportFragmentManager().findFragmentById(1005);
+            SupportMapFragment mapFrag = (SupportMapFragment) getSupportFragmentManager().findFragmentById(MAP_FRAGMENT_CONTAINER_ID);
             if (mapFrag == null) {
                 mapFrag = SupportMapFragment.newInstance();
                 getSupportFragmentManager().beginTransaction()
-                    .replace(1005, mapFrag)
+                    .replace(MAP_FRAGMENT_CONTAINER_ID, mapFrag)
                     .commitAllowingStateLoss();
             }
             mapFrag.getMapAsync(this);
@@ -322,7 +325,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         mapOverlayCard.setElevation(scale(40));
         
         FrameLayout mapHardwareContainer = new FrameLayout(this);
-        mapHardwareContainer.setId(1005);
+        mapHardwareContainer.setId(MAP_FRAGMENT_CONTAINER_ID);
         mapOverlayCard.addView(mapHardwareContainer, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 6.0f));
 
         // Floating Search Bar Overlay (Internal to Card)
@@ -408,7 +411,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // 📍 FLOATING GPS TARGET BUTTON (Center on Current Location)
         ImageView btnMyGps = new ImageView(this);
         btnMyGps.setImageResource(android.R.drawable.ic_menu_mylocation);
-        btnMyGps.setColorFilter(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        btnMyGps.setColorFilter(ThemeManager.getGradientOverlayColor(currentThemeId));
         android.graphics.drawable.GradientDrawable gGps = new android.graphics.drawable.GradientDrawable();
         gGps.setColor(getGradientStart());
         gGps.setShape(android.graphics.drawable.GradientDrawable.OVAL);
@@ -907,7 +911,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         rootLayer.addView(mapStateContainer);
 
         SupportMapFragment mapFragment = SupportMapFragment.newInstance();
-        getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit(); 
+        getSupportFragmentManager().beginTransaction().replace(MAP_FRAGMENT_CONTAINER_ID, mapFragment).commit();
         mapFragment.getMapAsync(this);
 
         // NOTE: OnBackPressedCallback is registered in setupLogic() — do NOT duplicate here.
@@ -2465,7 +2469,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             
             // 🛰️ Map Fragment Re-Injection: Forced handshake after layout re-pivot
             com.google.android.gms.maps.SupportMapFragment mapFragment = com.google.android.gms.maps.SupportMapFragment.newInstance();
-            getSupportFragmentManager().beginTransaction().replace(1005, mapFragment).commit();
+            getSupportFragmentManager().beginTransaction().replace(MAP_FRAGMENT_CONTAINER_ID, mapFragment).commit();
             mapFragment.getMapAsync(this);
         }
     }

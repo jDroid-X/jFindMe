@@ -94,6 +94,8 @@ object AlertManager {
     private const val CHANNEL_BATTERY_ID = "battery_alerts"
     private const val NOTIFICATION_BATTERY_ID = 912
     private var mediaPlayer: android.media.MediaPlayer? = null
+    // 🛡️ FIX-2: Use application context to avoid Activity leak; hold as instance field for lifecycle sync
+    private var applicationContext: android.content.Context? = null
 
     @JvmStatic
     @Synchronized
@@ -110,9 +112,13 @@ object AlertManager {
             stopRingBeaconAlarm()
             val alertUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
                 ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
-            
+
+            // 🛡️ FIX-2: Store app context reference for safe MediaPlayer ownership transfer
+            val appCtx = applicationContext ?: context.applicationContext
+            applicationContext = appCtx
+
             mediaPlayer = android.media.MediaPlayer().apply {
-                setDataSource(context, alertUri)
+                setDataSource(appCtx, alertUri)
                 setAudioAttributes(
                     android.media.AudioAttributes.Builder()
                         .setUsage(android.media.AudioAttributes.USAGE_ALARM)
@@ -120,8 +126,9 @@ object AlertManager {
                         .build()
                 )
                 isLooping = true
-                prepare()
-                start()
+                // 🛡️ FIX-2: Use onPrepared listener instead of blocking prepare() — prevents
+                // IllegalStateException when called off the main thread
+                setOnPreparedListener { start() }
             }
 
             // Vibrate synchronously with pattern
@@ -149,9 +156,27 @@ object AlertManager {
                 it.release()
             }
             mediaPlayer = null
+            applicationContext = null
             SystemLogger.i(TAG, "ACOUSTIC_RING_BEACON_STOPPED")
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Error stopping ring beacon", e)
+        }
+    }
+
+    /** 🛡️ FIX-2: Release MediaPlayer if alarm is playing during app shutdown */
+    @JvmStatic
+    @Synchronized
+    fun releaseMediaPlayer() {
+        try {
+            mediaPlayer?.let {
+                if (it.isPlaying) it.stop()
+                it.release()
+            }
+            mediaPlayer = null
+            applicationContext = null
+            SystemLogger.i(TAG, "ACOUSTIC_MEDIA_PLAYER_RELEASED_SHUTDOWN")
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Error releasing media player", e)
         }
     }
 

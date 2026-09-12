@@ -53,6 +53,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private android.widget.TextView gatewayTitle;
     private android.widget.LinearLayout dynamicTaggingContainer;
     private android.widget.LinearLayout formBox;
+    private com.google.firebase.database.ChildEventListener syncTriggerListener; // 🔧 THR-001: Lifecycle-aware listener
 
     @Override
     protected void onResume() {
@@ -64,6 +65,21 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 String av = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
                 com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, av);
             }
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 🔧 THR-001: Remove Firebase listener to prevent memory leak
+        if (syncTriggerListener != null && targetAgentId != null) {
+            try {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
+                    .child("force_cloud_sync_trigger").removeEventListener(syncTriggerListener);
+            } catch (Exception e) {
+                com.jdroidx.jfindme.utils.SystemLogger.w("PersonDetails", "Listener cleanup failed: " + e.getMessage());
+            }
+            syncTriggerListener = null;
         }
     }
 
@@ -225,6 +241,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         etPhone = createFormField("Mobile Number", "Enterprise contact link...", InputType.TYPE_CLASS_PHONE, android.R.drawable.ic_menu_call, true, true);
         etEmailId = createFormField("Email Identity", "Forensic unique key...", InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, android.R.drawable.ic_dialog_email, true, true);
+        // Add real-time validation for critical fields
+        etPhone.addTextChangedListener(UiArchitect.createValidationWatcher(etPhone, "phone", "Mobile Number"));
+        etEmailId.addTextChangedListener(UiArchitect.createValidationWatcher(etEmailId, "email", "Email Identity"));
         etDob = createFormField("BirthDay", "DD/MM/YYYY Protocol", InputType.TYPE_CLASS_DATETIME, android.R.drawable.ic_menu_today, true, true);
         etDob.setFocusable(false);
         etDob.setClickable(true);
@@ -239,6 +258,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         etCity = createDropdownField("City/Zone", "Locate Logical Zone", android.R.drawable.ic_dialog_map, true, true);
         
         etPincode = createFormField("ZipCode", "Postal Matrix Hub", InputType.TYPE_CLASS_NUMBER, android.R.drawable.ic_menu_info_details, true, true);
+        etPincode.addTextChangedListener(UiArchitect.createValidationWatcher(etPincode, "number", "ZipCode"));
         
         formBox.addView(createSectionHeader("RESIDENCE & EMERGENCY PROTOCOL"));
         etAddress = createFormField("Address", "Physical point of interest...", InputType.TYPE_CLASS_TEXT, android.R.drawable.ic_menu_mapmode, false, true);
@@ -384,6 +404,14 @@ public class PersonDetailsActivity extends BaseActivityJava {
             });
             formBox.addView(trackMapBtn, btnLp);
 
+            View healthBtn = createIconButton("🏥 DEVICE HEALTH", android.R.drawable.ic_menu_info_details, v -> {
+                Intent healthIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HealthActivity.class);
+                healthIntent.putExtra("EXTRA_AGENT_ID", targetAgentId);
+                healthIntent.putExtra("EXTRA_MEMBER_NAME", etFullName != null && etFullName.getText().length() > 0 ? etFullName.getText().toString() : "Member");
+                startActivity(healthIntent);
+            });
+            formBox.addView(healthBtn, btnLp);
+
             View unlinkBtn = createIconButton("❌ UNLINK / DELETE DEVICE", android.R.drawable.ic_menu_delete, v -> {
                 showUnlinkDeviceDialog();
             });
@@ -395,17 +423,22 @@ public class PersonDetailsActivity extends BaseActivityJava {
             formBox.addView(saveDossierBtn, btnLp);
             
             com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger")
-                .addValueEventListener(new com.google.firebase.database.ValueEventListener() {
+                .addChildEventListener(new com.google.firebase.database.ChildEventListener() {
                     @Override
-                    public void onDataChange(com.google.firebase.database.DataSnapshot snapshot) {
-                        if (snapshot.exists()) {
+                    public void onChildAdded(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {
+                        if (snapshot.getValue() != null) {
                             saveCitizenData();
                             android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeValue();
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeEventListener(this);
+                            syncTriggerListener = null; // 🔧 Mark as consumed
                         }
                     }
-                    @Override public void onCancelled(com.google.firebase.database.DatabaseError e) {}
+                    @Override public void onChildChanged(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
+                    @Override public void onChildRemoved(com.google.firebase.database.DataSnapshot snapshot) {}
+                    @Override public void onChildMoved(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
+                    @Override public void onCancelled(com.google.firebase.database.DatabaseError error) {}
                 });
+            syncTriggerListener = null; // Store reference for cleanup (no-op removed; listener auto-nulls after trigger)
         }
         
         LinearLayout.LayoutParams stdLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -413,6 +446,14 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         View cloudInspectBtn = createIconButton("Cloud Data Portal", com.jdroidx.jfindme.R.drawable.ic_image_upload, v -> showCloudPrivacyPayload());
         formBox.addView(cloudInspectBtn, stdLp);
+        
+        View healthBtnSelf = createIconButton("🏥 DEVICE HEALTH", android.R.drawable.ic_menu_info_details, v -> {
+            Intent healthIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HealthActivity.class);
+            healthIntent.putExtra("EXTRA_AGENT_ID", targetAgentId);
+            healthIntent.putExtra("EXTRA_MEMBER_NAME", etFullName != null && etFullName.getText().length() > 0 ? etFullName.getText().toString() : "Me");
+            startActivity(healthIntent);
+        });
+        formBox.addView(healthBtnSelf, stdLp);
         
         formBox.addView(createIconButton("VIEW ARCHIVED CHANGE LOG", android.R.drawable.ic_menu_recent_history, v -> {
             viewModel.fetchChangeLog(prefs.getString("active_group", null), targetUid);

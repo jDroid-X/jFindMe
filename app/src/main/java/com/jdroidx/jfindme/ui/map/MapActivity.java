@@ -129,13 +129,18 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // 🧬 Closed-Loop Avatar & Profile Callback (LOOP-001)
         closedLoopAvatarCallback = (agentId, payload) -> {
             runOnUiThread(() -> {
-                if (navDrawerAvatar != null) {
-                    com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, navDrawerAvatar);
+                // 🛡️ FIX-8: Guard against stale callback referencing destroyed activity
+                if (!MapActivity.this.isFinishing() && !MapActivity.this.isDestroyed()) {
+                    String currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                    if (currentUid == null) return; // skip if user not authenticated
+                    if (navDrawerAvatar != null) {
+                        com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, navDrawerAvatar);
+                    }
+                    if (navDrawerTitle != null) {
+                        navDrawerTitle.setText(com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this));
+                    }
+                    triggerCalloutRefresh();
                 }
-                if (navDrawerTitle != null) {
-                    navDrawerTitle.setText(com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this));
-                }
-                triggerCalloutRefresh();
             });
             return kotlin.Unit.INSTANCE;
         };
@@ -346,7 +351,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
         
         UiArchitect.applyText(this, binding.tvAddressMarquee, "TEXT_TITLE");
-        int marqueeColor = ThemeManager.isDarkTheme(getResolvedThemeId()) ? Color.parseColor("#00F0FF") : Color.parseColor("#00FF66");
+        // 🔧 THEME FIX: Use theme-aware neon color instead of hardcoded cyan
+        int marqueeColor = ThemeManager.isDarkTheme(getResolvedThemeId()) ? getGradientStart() : getGradientEnd();
         binding.tvAddressMarquee.setTextColor(marqueeColor);
         android.graphics.drawable.GradientDrawable marqueeBg = new android.graphics.drawable.GradientDrawable(
             android.graphics.drawable.GradientDrawable.Orientation.BL_TR,
