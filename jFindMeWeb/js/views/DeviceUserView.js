@@ -57,22 +57,6 @@ export class DeviceUserView {
                 }
             }
         });
-
-        if (typeof window !== 'undefined' && !window.copyToClipboard) {
-            window.copyToClipboard = (text, label = 'Value') => {
-                if (!text) return;
-                const str = String(text).trim();
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(str).then(() => {
-                        FeedbackDialog.showToast ? FeedbackDialog.showToast(`Copied ${label}: ${str}`, 'info') : UIControls.notify(`Copied ${label}`, 'info', { duration: 1500 });
-                    }).catch(() => {
-                        prompt(`Copy ${label}:`, str);
-                    });
-                } else {
-                    prompt(`Copy ${label}:`, str);
-                }
-            };
-        }
     }
 
     /**
@@ -151,94 +135,98 @@ export class DeviceUserView {
         const assignedZonesList = this.getAssignedSafeZonesList(selectedDev, this.safeZones);
 
         container.innerHTML = `
-            <div class="w-full h-full select-text overflow-y-auto custom-scrollbar p-2 font-sans space-y-1.5">
+            <div class="w-full h-full select-text overflow-y-auto custom-scrollbar p-1 font-sans space-y-1">
                 
-                <!-- COMPACT HEADER BAR -->
-                <div class="card-theme px-2.5 py-1.5 flex items-center justify-between shadow-sm">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                        <div class="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-sm shrink-0">
+                <!-- COMPACT HEADER BAR (50% REDUCED PADDING) -->
+                <div class="card-theme px-2 py-1 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-6 h-6 rounded-lg bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 font-bold text-xs shrink-0">
                             📱
                         </div>
                         <div class="min-w-0">
-                            <h2 class="text-xs font-bold tracking-wide text-primary-theme uppercase flex items-center gap-2">
+                            <h2 class="text-[11px] font-bold tracking-wide text-primary-theme uppercase flex items-center gap-1.5">
                                 <span>Device User Oversight Matrix</span>
-                                <span class="badge-status badge-accent text-[8.5px]">DYNAMIC SSOT</span>
+                                <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2">DYNAMIC SSOT</span>
                             </h2>
-                            <p class="text-[10px] text-secondary-theme font-mono truncate select-text">
-                                Master Identity: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (${selectedDev ? selectedDev.agentId : 'N/A'})
+                            <p class="text-[9px] text-secondary-theme font-mono truncate select-text">
+                                Master Identity: <span class="text-sky-400 font-bold">${selectedDev ? selectedDev.name : 'None'}</span> (<span class="copyable-badge text-sky-300 font-mono" data-copy="${selectedDev ? selectedDev.agentId : ''}" title="Click to copy Agent ID">${selectedDev ? selectedDev.agentId : 'N/A'}</span>)
                             </p>
                         </div>
                     </div>
 
-                    ${selectedDev ? `
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        <button id="btn-du-view-map" class="btn-action-primary text-xs py-1 px-2.5">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button id="btn-du-dup-devices" class="btn-action-primary text-[10.5px] py-0.5 px-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-extrabold flex items-center gap-1 shadow-sm border border-amber-400/50" title="Reconcile Duplicate Devices via Silicon SHA-256">
+                            <span>🔄 Dup Device</span>
+                        </button>
+                        ${selectedDev ? `
+                        <button id="btn-du-view-map" class="btn-action-primary text-[10.5px] py-0.5 px-2">
                             <span>🗺️ Locate on Map</span>
                         </button>
+                        ` : ''}
                     </div>
-                    ` : ''}
                 </div>
 
-                <!-- 5-PANE MULTI-COLUMN SMART-FIT WORKSPACE -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-1.5 items-start">
+                <!-- 5-PANE MULTI-COLUMN SMART-FIT WORKSPACE (50% REDUCED GAP & PADDING) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-1 items-start">
                     
-                    <!-- PANE 1: MASTER DEVICE ROSTER & SEARCH BAR -->
-                    <div class="card-theme p-1.5 flex flex-col space-y-1.5 shadow-sm">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
-                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">1. Device Roster</span>
-                            <span class="badge-status badge-accent text-[9px]">${filteredDevices.length}/${this.devices.length}</span>
+                    <!-- PANE 1: MASTER DEVICE ROSTER & SEARCH BAR (SHOWS DEVICE NAME NOT ROLES) -->
+                    <div class="card-theme p-1 flex flex-col space-y-1 shadow-sm">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5">
+                            <span class="text-[11px] font-black uppercase text-sky-400 tracking-wider">1. Device Roster</span>
+                            <span class="badge-status badge-accent text-[8px] px-1 py-0.2">${filteredDevices.length}/${this.devices.length}</span>
                         </div>
 
-                        <!-- Search Input -->
+                        <!-- Search Input (Smart Fit) -->
                         <div class="relative flex items-center">
                             <input type="text" id="du-search-input" 
-                                   placeholder="🔍 Filter name, ID, device..." 
+                                   placeholder="🔍 Filter device, name, ID..." 
                                    value="${this.searchQuery}"
-                                   class="input-theme w-full pl-6 pr-5 py-1 text-[11px] font-mono">
-                            <svg class="w-3 h-3 absolute left-2 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                   class="input-theme w-full pl-5 pr-4 py-0.5 text-[10px] font-mono">
+                            <svg class="w-2.5 h-2.5 absolute left-1.5 text-secondary-theme pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                             </svg>
                             ${this.searchQuery ? `
-                                <button id="btn-du-clear-search" class="absolute right-1 text-muted-theme hover:text-primary-theme text-xs font-bold p-0.5">✕</button>
+                                <button id="btn-du-clear-search" class="absolute right-1 text-muted-theme hover:text-primary-theme text-[10px] font-bold p-0.5">✕</button>
                             ` : ''}
                         </div>
 
-                        <!-- TEMPORAL TIME WINDOW FILTER TOOLBAR (PANE 1) -->
+                        <!-- TEMPORAL TIME WINDOW FILTER TOOLBAR (PANE 1 - ULTRA COMPACT SMART FIT) -->
                         <div class="grid grid-cols-4 gap-0.5 pt-0.5">
-                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'all' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="all">All (${this.devices.length})</button>
-                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'live' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="live">⚡Live</button>
-                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'today' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="today">Today</button>
-                            <button class="btn-du-time-filter text-[8.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === '24h' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="24h">24h</button>
+                            <button class="btn-du-time-filter text-[7.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'all' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="all">All (${this.devices.length})</button>
+                            <button class="btn-du-time-filter text-[7.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'live' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="live">⚡Live</button>
+                            <button class="btn-du-time-filter text-[7.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === 'today' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="today">Today</button>
+                            <button class="btn-du-time-filter text-[7.5px] font-bold py-0.5 px-0.5 rounded truncate text-center transition-all ${this.timeWindowFilter === '24h' ? 'btn-action-primary' : 'btn-action-secondary'}" data-time-filter="24h">24h</button>
                         </div>
 
-                        <!-- Roster List (Sorted: Latest On Top) -->
-                        <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[520px] pr-0.5">
+                        <!-- Roster List (Shows Device Name prominently, Zero Roles) -->
+                        <div class="space-y-0.5 overflow-y-auto custom-scrollbar max-h-[540px] pr-0.5" id="du-roster-list">
                             ${filteredDevices.map(dev => {
                                 const ragColor = dev.getRagColor();
                                 const isSel = dev.agentId === this.selectedAgentId;
                                 const recency = typeof dev.getRecencyTier === 'function' ? dev.getRecencyTier() : { badgeClass: 'badge-status badge-accent', label: 'TELEMETRY' };
-                                const deviceNameText = dev.deviceName || dev.model || 'Android';
+                                const primaryDeviceName = dev.deviceName || dev.model || 'Android Device';
 
                                 return `
-                                    <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-2 select-text"
+                                    <div class="du-device-item cursor-pointer p-1 rounded-md border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-1.5 select-text"
                                          data-agent-id="${dev.agentId}">
                                         <div class="relative shrink-0">
-                                            <img src="${dev.getAvatarUrl()}" alt="${dev.name}" 
-                                                 class="w-7 h-7 rounded-full object-cover border-2 shadow-sm" 
+                                            <img src="${dev.getAvatarUrl()}" alt="${primaryDeviceName}" 
+                                                 class="w-6 h-6 rounded-full object-cover border shadow-sm" 
                                                  style="border-color: ${ragColor};">
-                                            <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-surface" style="background-color: ${ragColor}"></span>
+                                            <span class="absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full border border-surface" style="background-color: ${ragColor}"></span>
                                         </div>
                                         <div class="min-w-0 flex-1">
                                             <div class="flex items-center justify-between gap-1">
-                                                <h4 class="text-xs font-bold truncate text-primary-theme min-w-0 flex items-center gap-1">
-                                                    <span class="truncate">${dev.name}</span>
-                                                    <span class="badge-status badge-accent text-[8px] shrink-0 font-normal truncate max-w-[85px]" title="${deviceNameText}">${deviceNameText}</span>
+                                                <h4 class="text-[11px] font-bold truncate text-primary-theme min-w-0" title="${primaryDeviceName}">
+                                                    ${primaryDeviceName}
                                                 </h4>
-                                                <span class="${recency.badgeClass} text-[7.5px] font-bold shrink-0">${recency.label}</span>
+                                                <span class="${recency.badgeClass} text-[7px] px-1 py-0.2 font-bold shrink-0">${recency.label}</span>
                                             </div>
-                                            <div class="text-[9.5px] text-secondary-theme truncate font-mono flex items-center justify-between mt-0.5 select-text">
-                                                <span class="cursor-pointer hover:text-sky-400 truncate min-w-0" data-copy-text="${dev.agentId}" data-copy-label="Hardware ID" title="Click to copy Hardware ID">ID: ${dev.agentId} 📋</span>
-                                                <span class="text-sky-400 font-sans shrink-0">${dev.getFormattedTimeDelta()}</span>
+                                            <div class="text-[8.5px] text-secondary-theme truncate font-mono flex items-center justify-between mt-0.5 select-text">
+                                                <span class="truncate min-w-0 select-text">
+                                                    <span class="text-sky-400 font-sans font-medium">${dev.name}</span> • <span class="copyable-badge font-mono hover:text-sky-300" data-copy="${dev.agentId}" title="Click to copy ID">ID:${dev.agentId}</span>
+                                                </span>
+                                                <span class="text-sky-400 font-sans shrink-0 ml-1 text-[8px]">${dev.getFormattedTimeDelta()}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -248,202 +236,257 @@ export class DeviceUserView {
                     </div>
 
                     ${selectedDev ? `
-                    <!-- PANE 2: MASTER & SUB-MASTER PROFILE DATA -->
-                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
-                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">2. Master Profile</span>
-                            <div class="flex items-center gap-1">
-                                <button id="btn-edit-profile-dossier" class="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-0.5 cursor-pointer">
+                    <!-- PANE 2: TIER 1 - MASTER DATA (HARDWARE SILICON SENTINEL & IDENTITY) -->
+                    <div class="card-theme p-1 space-y-1 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5 shrink-0">
+                            <div class="flex items-center gap-1 min-w-0">
+                                <span class="text-[11px] font-black uppercase text-sky-400 tracking-wider">2. Master Data</span>
+                                <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2 font-mono">TIER 1</span>
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <button id="btn-edit-profile-dossier" class="px-1 py-0.2 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center gap-0.5 cursor-pointer">
                                     <span>✏️ Edit</span>
                                 </button>
-                                <button id="btn-toggle-org" class="text-[9.5px] text-sky-400 hover:underline font-mono font-bold">
+                                <button id="btn-toggle-org" class="text-[8px] text-sky-400 hover:underline font-mono font-bold">
                                     ${this.isOrgExpanded ? '[-] Hide' : '[+] Org'}
                                 </button>
                             </div>
                         </div>
 
-                        <div class="overflow-y-auto custom-scrollbar space-y-1.5 max-h-[520px] pr-0.5">
-                            <!-- Master Profile Identity Card -->
-                            <div class="surface-theme p-1.5 rounded-lg space-y-1 text-xs font-mono border select-text">
-                                <div class="text-[9.5px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
-                                    <span>👤 Master Identity</span>
-                                    <span class="badge-status badge-accent text-[8px] cursor-pointer hover:underline" data-copy-text="${selectedDev.agentId}" data-copy-label="Agent ID" title="Click to copy">${selectedDev.agentId} 📋</span>
+                        <div class="overflow-y-auto custom-scrollbar space-y-1 max-h-[540px] pr-0.5">
+                            <!-- Tier 1: Master Hardware Anchor & Identity Card -->
+                            <div class="surface-theme p-1 rounded-md space-y-0.5 text-xs font-mono border select-text">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-0.5 flex items-center justify-between">
+                                    <span>🏢 Hardware & Identity</span>
+                                    <span class="copyable-badge badge-status badge-accent text-[7.5px] px-1 py-0.2 select-text font-mono" data-copy="${selectedDev.agentId}" title="Click to copy Agent ID">${selectedDev.agentId} 📋</span>
                                 </div>
 
-                                <div class="flex items-center gap-2 pb-1.5 border-b border-subtle-theme">
-                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-8 h-8 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
-                                    <div class="min-w-0 flex-1">
-                                        <h3 class="font-bold text-xs text-primary-theme truncate cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.name}" data-copy-label="Persona Name" title="Click to copy">${selectedDev.name}</h3>
-                                        <div class="text-[9.5px] text-sky-400 font-sans font-bold">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
-                                        <div class="text-[8.5px] text-secondary-theme truncate">${selectedDev.deviceName || selectedDev.model}</div>
+                                <div class="flex items-center gap-1.5 pb-1 border-b border-subtle-theme">
+                                    <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-7 h-7 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor()};">
+                                    <div class="min-w-0 flex-1 select-text">
+                                        <h3 class="font-bold text-[11px] text-primary-theme truncate select-text">${selectedDev.name}</h3>
+                                        <div class="text-[8.5px] text-sky-400 font-sans font-bold truncate">${selectedDev.roleFamily !== 'None' ? selectedDev.roleFamily : selectedDev.role}</div>
+                                        <div class="text-[8px] text-secondary-theme truncate">${selectedDev.deviceName || selectedDev.model}</div>
                                     </div>
                                 </div>
 
-                                <div class="space-y-1 text-[10.5px]">
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Auth UID:</span> 
-                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text cursor-pointer hover:text-sky-400" data-copy-text="${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}" data-copy-label="Auth UID" title="Click to copy">${(rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'} 📋</span>
+                                <div class="space-y-0.5 text-[9px] select-text">
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Agent ID:</span> 
+                                        <span class="text-sky-400 font-bold truncate text-right flex-1 min-w-0 font-mono select-text copyable-badge" data-copy="${selectedDev.agentId}" title="Click to copy">${selectedDev.agentId}</span>
                                     </div>
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Hardware ID:</span> 
-                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.deviceId}" data-copy-label="Hardware ID" title="Click to copy">${selectedDev.deviceId} 📋</span>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Hardware ID:</span> 
+                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text copyable-badge" data-copy="${selectedDev.deviceId}" title="Click to copy">${selectedDev.deviceId}</span>
                                     </div>
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Device Name:</span> 
-                                        <span class="text-primary-theme font-medium truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.deviceName || selectedDev.model || 'Android Device'}" data-copy-label="Device Name" title="Click to copy">${selectedDev.deviceName || selectedDev.model || 'Android Device'}</span>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Auth UID:</span> 
+                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 font-mono select-text text-[8px]" title="${selectedDev.authUid || 'Unlinked'}">${selectedDev.authUid || (rawNode.Identity && rawNode.Identity.auth_uid) || (rawNode.device && rawNode.device.live && rawNode.device.live.auth_uid) || 'Unlinked'}</span>
                                     </div>
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Phone:</span> 
-                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.phone || 'Not Registered'}" data-copy-label="Phone Number" title="Click to copy">${selectedDev.phone || 'Not Registered'} 📋</span>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Model:</span> 
+                                        <span class="text-primary-theme font-bold truncate text-right flex-1 min-w-0 select-text" title="${selectedDev.brand} / ${selectedDev.model}">${selectedDev.brand} / ${selectedDev.model}</span>
                                     </div>
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5 border-b border-subtle-theme">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Email:</span> 
-                                        <span class="text-primary-theme truncate text-right flex-1 min-w-0 select-text cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.email || 'Not Registered'}" data-copy-label="Email" title="Click to copy">${selectedDev.email || 'Not Registered'}</span>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Chipset:</span> 
+                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text" title="${selectedDev.board} / ${selectedDev.hardware}">${selectedDev.board} / ${selectedDev.hardware}</span>
                                     </div>
-                                    <div class="flex justify-between items-center gap-1.5 py-0.5">
-                                        <span class="text-secondary-theme shrink-0 text-[10px]">Emergency:</span> 
-                                        <span class="${selectedDev.emergencyNote ? 'text-amber-500 font-bold' : 'text-muted-theme'} truncate text-right flex-1 min-w-0 select-text">${selectedDev.emergencyNote || 'None'}</span>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Node:</span> 
+                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text">${selectedDev.device}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">IMEI 1:</span> 
+                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text copyable-badge" data-copy="${selectedDev.imei1}" title="Click to copy IMEI 1">${selectedDev.imei1}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1 py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">IMEI 2:</span> 
+                                        <span class="text-primary-theme font-mono truncate text-right flex-1 min-w-0 select-text copyable-badge" data-copy="${selectedDev.imei2}" title="Click to copy IMEI 2">${selectedDev.imei2}</span>
+                                    </div>
+                                    <div class="flex justify-between items-center gap-1 py-0.2">
+                                        <span class="text-secondary-theme shrink-0 text-[8.5px]">Silicon SHA:</span> 
+                                        <span class="text-amber-400 font-bold font-mono truncate text-right flex-1 min-w-0 select-text text-[8px] copyable-badge" data-copy="${selectedDev.siliconHash}" title="Click to copy Silicon SHA">${selectedDev.siliconHash}</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Sub-Master Expandable Org Data Panel -->
-                            <div id="org-data-panel" class="surface-theme p-1.5 rounded-lg space-y-1 text-xs font-mono border select-text ${this.isOrgExpanded ? 'block' : 'hidden'}">
-                                <div class="text-[9.5px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-1 flex items-center justify-between">
-                                    <span>🏢 Org Metadata & ACL</span>
-                                    <span class="text-[8.5px] text-muted-theme font-mono">SUB-MASTER</span>
+                            <!-- Expandable Org Data Panel -->
+                            <div id="org-data-panel" class="surface-theme p-1 rounded-md space-y-0.5 text-xs font-mono border select-text ${this.isOrgExpanded ? 'block' : 'hidden'}">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-0.5 flex items-center justify-between">
+                                    <span>🏢 Org & Context</span>
+                                    <span class="text-[7.5px] text-muted-theme font-mono">ORG</span>
                                 </div>
-                                <div class="space-y-1 text-[10px]">
-                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Org:</span> <span class="text-primary-theme font-bold">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
-                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Dept:</span> <span class="text-primary-theme">${selectedDev.department || 'General'}</span></div>
-                                    <div class="flex justify-between py-0.5 border-b border-subtle-theme"><span class="text-secondary-theme">Role:</span> <span class="text-primary-theme font-bold">${selectedDev.role}</span></div>
-                                    <div class="pt-1 text-[8.5px] text-secondary-theme uppercase font-sans font-bold border-t border-subtle-theme">Interactive ACL Grants:</div>
-                                    <div class="space-y-1 font-sans pt-0.5">
-                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[9.5px] font-bold text-primary-theme">Live Tracking</span>
-                                            <label class="switch-toggle switch-sm">
-                                                <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_live_tracking" ${selectedDev.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
-                                                <span class="switch-slider"></span>
-                                            </label>
+                                <div class="space-y-0.5 text-[9px]">
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Org:</span> <span class="text-primary-theme font-bold truncate">${(rawNode.profile && rawNode.profile.orgName) || 'jFindMe Fleet'}</span></div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Dept:</span> <span class="text-primary-theme truncate">${selectedDev.department || 'General'}</span></div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Role:</span> <span class="text-primary-theme font-bold truncate">${selectedDev.role}</span></div>
+                                    <div class="flex justify-between py-0.2"><span class="text-secondary-theme">Emergency:</span> <span class="${selectedDev.emergencyNote ? 'text-amber-500 font-bold' : 'text-muted-theme'} truncate">${selectedDev.emergencyNote || 'None'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANE 3: TIER 2 - SUB-MASTER DATA (PROFILE, PERSONA & CONNECTIONS) -->
+                    <div class="card-theme p-1 space-y-1 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5 shrink-0">
+                            <div class="flex items-center gap-1 min-w-0">
+                                <span class="text-[11px] font-black uppercase text-sky-400 tracking-wider">3. Sub-Master</span>
+                                <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2 font-mono">TIER 2</span>
+                            </div>
+                            <span class="badge-status badge-accent text-[8px] px-1 py-0.2 font-mono">📊 ${relCount} Linked</span>
+                        </div>
+
+                        <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[540px] pr-0.5">
+                            <!-- Persona Details Card -->
+                            <div class="surface-theme p-1 rounded-md space-y-0.5 text-xs font-mono border select-text">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-0.5">
+                                    👤 Profile Persona
+                                </div>
+                                <div class="space-y-0.5 text-[9px]">
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Name:</span> <span class="text-primary-theme font-bold truncate select-text">${selectedDev.name}</span></div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Phone:</span> <span class="text-primary-theme font-mono truncate select-text copyable-badge" data-copy="${selectedDev.phone || ''}" title="Click to copy">${selectedDev.phone || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Email:</span> <span class="text-primary-theme truncate select-text copyable-badge" data-copy="${selectedDev.email || ''}" title="${selectedDev.email || ''}">${selectedDev.email || 'Not Registered'}</span></div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme"><span class="text-secondary-theme">Family Role:</span> <span class="text-amber-400 font-bold">${selectedDev.roleFamily}</span></div>
+                                    <div class="flex justify-between py-0.2"><span class="text-secondary-theme">Friend Role:</span> <span class="text-emerald-400 font-bold">${selectedDev.roleFriend}</span></div>
+                                </div>
+                            </div>
+
+                            <!-- Tree Container: Family & Friends Circle Connections -->
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 font-mono select-text">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-0.5 flex items-center justify-between">
+                                    <span>🤝 Circle Connections</span>
+                                    <span class="text-[7.5px] text-muted-theme">RELATIONSHIPS</span>
+                                </div>
+
+                                <!-- Tree Branches -->
+                                <div class="space-y-0.5">
+                                    <!-- Family Branch -->
+                                    <details class="group/family space-y-0.5" open>
+                                        <summary class="cursor-pointer select-none text-[9px] font-bold text-amber-500 font-sans uppercase flex items-center gap-1 list-none hover:text-amber-400">
+                                            <span class="inline-block transition-transform group-open/family:rotate-90 text-[8px] font-black">&gt;</span>
+                                            <span>👨‍👩‍👧‍👦 Family Circle</span>
+                                        </summary>
+                                        <div class="space-y-0.5 pl-1.5 border-l border-amber-500/20 mt-0.5">
+                                            ${this.renderTreeMembers(selectedDev, 'family')}
                                         </div>
-                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[9.5px] font-bold text-primary-theme">Geofence Alerts</span>
-                                            <label class="switch-toggle switch-sm">
-                                                <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_geofence" ${selectedDev.raw?.acl?.acl_geofence === 'DENIED' ? '' : 'checked'}>
-                                                <span class="switch-slider"></span>
-                                            </label>
+                                    </details>
+
+                                    <!-- Friends Branch -->
+                                    <details class="group/friends space-y-0.5" open>
+                                        <summary class="cursor-pointer select-none text-[9px] font-bold text-emerald-500 font-sans uppercase flex items-center gap-1 list-none hover:text-emerald-400">
+                                            <span class="inline-block transition-transform group-open/friends:rotate-90 text-[8px] font-black">&gt;</span>
+                                            <span>🤝 Friends Circle</span>
+                                        </summary>
+                                        <div class="space-y-0.5 pl-1.5 border-l border-emerald-500/20 mt-0.5">
+                                            ${this.renderTreeMembers(selectedDev, 'friends')}
                                         </div>
-                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[9.5px] font-bold text-primary-theme">Route History</span>
-                                            <label class="switch-toggle switch-sm">
-                                                <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_history_audit" ${selectedDev.raw?.acl?.acl_history_audit === 'DENIED' ? '' : 'checked'}>
-                                                <span class="switch-slider"></span>
-                                            </label>
-                                        </div>
-                                        <div class="flex items-center justify-between p-1 rounded-md bg-card-subtle border border-subtle-theme">
-                                            <span class="text-[9.5px] font-bold text-primary-theme">Ghost Override</span>
-                                            <label class="switch-toggle switch-sm">
-                                                <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_ghost_override" ${selectedDev.raw?.acl?.acl_ghost_override === 'GRANTED' ? 'checked' : ''}>
-                                                <span class="switch-slider"></span>
-                                            </label>
-                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+
+                            <!-- Interactive ACL Grants Panel -->
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 font-sans text-xs select-text">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase tracking-wider font-sans border-b border-subtle-theme pb-0.5">
+                                    🛡️ Access Controls (ACL)
+                                </div>
+                                <div class="space-y-0.5 pt-0.5">
+                                    <div class="flex items-center justify-between p-0.5 px-1 rounded bg-card-subtle border border-subtle-theme">
+                                        <span class="text-[9px] font-bold text-primary-theme">Live Tracking</span>
+                                        <label class="switch-toggle switch-sm">
+                                            <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_live_tracking" ${selectedDev.acl.liveTracking ? 'checked' : ''}>
+                                            <span class="switch-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="flex items-center justify-between p-0.5 px-1 rounded bg-card-subtle border border-subtle-theme">
+                                        <span class="text-[9px] font-bold text-primary-theme">Geofence Alerts</span>
+                                        <label class="switch-toggle switch-sm">
+                                            <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_geofence" ${selectedDev.acl.geofence ? 'checked' : ''}>
+                                            <span class="switch-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="flex items-center justify-between p-0.5 px-1 rounded bg-card-subtle border border-subtle-theme">
+                                        <span class="text-[9px] font-bold text-primary-theme">Route History</span>
+                                        <label class="switch-toggle switch-sm">
+                                            <input type="checkbox" class="du-switch-acl" data-agent-id="${selectedDev.agentId}" data-flag="acl_history_audit" ${selectedDev.acl.historyAudit ? 'checked' : ''}>
+                                            <span class="switch-slider"></span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- PANE 3: CONNECTIONS TREE (FAMILY & FRIENDS) -->
-                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
-                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">3. Connections</span>
-                            <div class="flex items-center gap-1">
-                                <span class="badge-status badge-accent text-[8.5px] font-mono">📊 ${relCount} Linked</span>
+                    <!-- PANE 4: TIER 2 & 3 - SAFEZONES & LIVE TELEMETRY DIAGNOSTICS -->
+                    <div class="card-theme p-1 space-y-1 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5 shrink-0">
+                            <div class="flex items-center gap-1 min-w-0">
+                                <span class="text-[11px] font-black uppercase text-sky-400 tracking-wider">4. SafeZones</span>
+                                <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2 font-mono">TIER 2/3</span>
                             </div>
+                            <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2 font-mono">C:${createdZonesList.length} | A:${assignedZonesList.length}</span>
                         </div>
 
-                        <!-- Tree Container with Scrollbar -->
-                        <div class="surface-theme p-1.5 rounded-lg border space-y-1.5 overflow-y-auto custom-scrollbar max-h-[520px] font-mono select-text">
-                            <!-- Root Selected Device Node -->
-                            <div class="flex items-center gap-1.5 p-1.5 rounded-md bg-sky-500/10 border border-sky-500/30 text-primary-theme select-text">
-                                <span class="text-xs">👑</span>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-xs font-bold truncate cursor-pointer hover:text-sky-400" data-copy-text="${selectedDev.name}" data-copy-label="Name">${selectedDev.name}</div>
-                                    <div class="text-[8.5px] text-sky-400 cursor-pointer" data-copy-text="${selectedDev.agentId}" data-copy-label="Hardware ID">Root Node (${selectedDev.agentId}) 📋</div>
-                                </div>
-                            </div>
-
-                            <!-- Tree Branches -->
-                            <div class="pl-1.5 border-l-2 border-sky-500/30 space-y-1.5">
-                                <!-- Family Branch -->
-                                <details class="group/family space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[9.5px] font-bold text-amber-500 font-sans uppercase flex items-center gap-1 list-none hover:text-amber-400">
-                                        <span class="inline-block transition-transform group-open/family:rotate-90 text-[9px] font-black">&gt;</span>
-                                        <span>👨‍👩‍👧‍👦 Family Connections</span>
-                                    </summary>
-                                    <div class="space-y-1 pl-2 border-l border-amber-500/20 mt-0.5">
-                                        ${this.renderTreeMembers(selectedDev, 'family')}
-                                    </div>
-                                </details>
-
-                                <!-- Friends Branch -->
-                                <details class="group/friends space-y-1" open>
-                                    <summary class="cursor-pointer select-none text-[9.5px] font-bold text-emerald-500 font-sans uppercase flex items-center gap-1 list-none hover:text-emerald-400">
-                                        <span class="inline-block transition-transform group-open/friends:rotate-90 text-[9px] font-black">&gt;</span>
-                                        <span>🤝 Friends Connections</span>
-                                    </summary>
-                                    <div class="space-y-1 pl-2 border-l border-emerald-500/20 mt-0.5">
-                                        ${this.renderTreeMembers(selectedDev, 'friends')}
-                                    </div>
-                                </details>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- PANE 4: SAFEZONES (SECTION 1: CREATED | SECTION 2: ASSIGNED) & NOTIFICATIONS -->
-                    <div class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
-                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
-                            <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">4. Safezones & Alerts</span>
-                            <div class="flex items-center gap-1 shrink-0">
-                                <span class="badge-status badge-accent text-[8.5px] font-mono">📊 ${createdZonesList.length} C | ${assignedZonesList.length} A</span>
-                            </div>
-                        </div>
-
-                        <div class="space-y-1.5 overflow-y-auto custom-scrollbar max-h-[520px] pr-0.5">
+                        <div class="space-y-1 overflow-y-auto custom-scrollbar max-h-[540px] pr-0.5">
                             <!-- Section 1: Created Safe Zones -->
-                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
-                                <div class="text-[9.5px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
-                                    <span>Section 1: Created Zones</span>
-                                    <span class="text-[8.5px] font-mono text-muted-theme">(${createdZonesList.length})</span>
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 select-text">
+                                <div class="text-[9px] font-bold text-sky-400 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
+                                    <span>Section 1: Created</span>
+                                    <span class="text-[8px] font-mono text-muted-theme">(${createdZonesList.length})</span>
                                 </div>
-                                <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
+                                <div class="space-y-0.5 max-h-[110px] overflow-y-auto custom-scrollbar">
                                     ${this.renderCreatedSafeZonesHTML(selectedDev, createdZonesList)}
                                 </div>
                             </div>
 
                             <!-- Section 2: Assigned Safe Zones -->
-                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
-                                <div class="text-[9.5px] font-bold text-amber-500 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
-                                    <span>Section 2: Assigned Zones</span>
-                                    <span class="text-[8.5px] font-mono text-muted-theme">(${assignedZonesList.length})</span>
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 select-text">
+                                <div class="text-[9px] font-bold text-amber-500 uppercase font-sans flex items-center justify-between border-b border-subtle-theme pb-0.5">
+                                    <span>Section 2: Assigned</span>
+                                    <span class="text-[8px] font-mono text-muted-theme">(${assignedZonesList.length})</span>
                                 </div>
-                                <div class="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar">
+                                <div class="space-y-0.5 max-h-[110px] overflow-y-auto custom-scrollbar">
                                     ${this.renderAssignedSafeZonesHTML(selectedDev, assignedZonesList)}
                                 </div>
                             </div>
 
-                            <!-- Transactional Geofence Notification Log -->
-                            <div class="surface-theme p-1.5 rounded-lg border space-y-1 select-text">
-                                <div class="text-[9.5px] font-bold text-secondary-theme uppercase font-sans border-b border-subtle-theme pb-0.5">Geofence Event Log</div>
-                                <div class="space-y-1 text-[8.5px] font-mono max-h-[130px] overflow-y-auto custom-scrollbar">
+                            <!-- Live Telemetry & Battery Diagnostics (Tier 3) -->
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 font-mono text-xs select-text">
+                                <div class="text-[9px] font-bold text-emerald-400 uppercase font-sans border-b border-subtle-theme pb-0.5 flex items-center justify-between">
+                                    <span>⚡ Live Hardware Pulse</span>
+                                    <span class="badge-status ${selectedDev.isOnline ? 'badge-success' : 'badge-danger'} text-[7px] px-1 py-0.2">${selectedDev.isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+                                </div>
+                                <div class="space-y-0.5 text-[9px]">
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme">Battery:</span> 
+                                        <span class="font-bold ${selectedDev.battery <= 20 ? 'text-rose-400' : 'text-emerald-400'}">${selectedDev.battery >= 0 ? `${selectedDev.battery}% ${selectedDev.isCharging ? '⚡' : ''}` : 'N/A'}</span>
+                                    </div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme">Network:</span> 
+                                        <span class="text-primary-theme font-bold truncate">${selectedDev.networkType}</span>
+                                    </div>
+                                    <div class="flex justify-between py-0.2 border-b border-subtle-theme">
+                                        <span class="text-secondary-theme">GPS:</span> 
+                                        <span class="${selectedDev.isMockGps ? 'text-rose-400 font-bold' : 'text-emerald-400'}">${selectedDev.isMockGps ? '⚠️ Mock' : '✅ Genuine'}</span>
+                                    </div>
+                                    <div class="flex justify-between py-0.2">
+                                        <span class="text-secondary-theme">Last Seen:</span> 
+                                        <span class="text-sky-400 font-sans font-bold">${selectedDev.getFormattedTimeDelta()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Transactional Geofence Notification Log (Tier 4) -->
+                            <div class="surface-theme p-1 rounded-md border space-y-0.5 select-text">
+                                <div class="text-[9px] font-bold text-secondary-theme uppercase font-sans border-b border-subtle-theme pb-0.5">Geofence Event Log</div>
+                                <div class="space-y-0.5 text-[8px] font-mono max-h-[90px] overflow-y-auto custom-scrollbar">
                                     ${this.renderNotificationItems(selectedDev, rawNode)}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- PANE 5: TRANSACTIONAL LOCATION FIX & TELEMETRY MATRIX -->
-                    <div id="pane-5-container" class="card-theme p-1.5 space-y-1.5 shadow-sm flex flex-col">
+                    <!-- PANE 5: TIER 4 - TRANSACTIONAL LOCATION FIX & TIME-SERIES MATRIX -->
+                    <div id="pane-5-container" class="card-theme p-1 space-y-1 shadow-sm flex flex-col">
                         ${this.renderPane5HTML(selectedDev, rawNode)}
                     </div>
 
@@ -585,8 +628,8 @@ export class DeviceUserView {
                     <div class="flex items-center gap-1.5 min-w-0">
                         <img src="${peerAvatar}" class="w-4 h-4 rounded-full object-cover shrink-0 border" style="border-color: ${peerRag}">
                         <div class="min-w-0 flex-1">
-                            <div class="truncate text-primary-theme font-bold text-xs">${peerName}</div>
-                            <div class="text-[8.5px] text-secondary-theme font-mono truncate select-text cursor-pointer hover:text-sky-400" data-copy-text="${peerTargetId}" data-copy-label="Hardware ID" title="Click to copy ID">${peerSubtext} 📋</div>
+                            <div class="truncate text-primary-theme font-bold text-xs select-text">${peerName}</div>
+                            <div class="text-[8.5px] text-secondary-theme font-mono truncate select-text">${peerSubtext}</div>
                         </div>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
@@ -620,7 +663,7 @@ export class DeviceUserView {
             return `
                 <div class="p-1.5 rounded-md bg-card-subtle border border-subtle-theme text-xs space-y-0.5 select-text">
                     <div class="flex items-center justify-between font-bold text-primary-theme">
-                        <span class="truncate text-sky-400 font-bold cursor-pointer hover:underline" data-copy-text="${zName}" data-copy-label="SafeZone Name" title="Click to copy name">${zName}</span>
+                        <span class="truncate text-sky-400 font-bold select-text">${zName}</span>
                         <div class="flex items-center gap-1 shrink-0">
                             <span class="badge-status badge-accent text-[7.5px]">CREATED</span>
                             <button class="btn-locate-zone px-1 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
@@ -651,7 +694,7 @@ export class DeviceUserView {
             return `
                 <div class="p-1.5 rounded-md bg-card-subtle border border-subtle-theme text-xs space-y-0.5 select-text">
                     <div class="flex items-center justify-between font-bold text-primary-theme">
-                        <span class="truncate text-amber-500 font-bold cursor-pointer hover:underline" data-copy-text="${zName}" data-copy-label="SafeZone Name" title="Click to copy name">${zName}</span>
+                        <span class="truncate text-amber-500 font-bold select-text">${zName}</span>
                         <div class="flex items-center gap-1 shrink-0">
                             <span class="badge-status ${stateTag === 'OUT' ? 'badge-warning' : 'badge-success'} text-[7.5px]">${stateTag}</span>
                             <button class="btn-locate-zone px-1 py-0.5 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30"
@@ -698,37 +741,37 @@ export class DeviceUserView {
         const activeCount = points.length;
 
         return `
-            <div class="flex items-center justify-between border-b border-subtle-theme pb-1 shrink-0">
+            <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5 shrink-0">
                 <div class="flex items-center gap-1 min-w-0">
-                    <span class="text-xs font-extrabold uppercase text-sky-400 tracking-wider">5. Telemetry</span>
-                    <span class="badge-status badge-accent text-[8.5px]">${activeCount} Pts</span>
+                    <span class="text-[11px] font-black uppercase text-sky-400 tracking-wider">5. Telemetry</span>
+                    <span class="badge-status badge-accent text-[7.5px] px-1 py-0.2">${activeCount} Pts</span>
                 </div>
                 
                 <!-- Controls Right: Toggle (Left/Right) & Multi-Option Dialog Button -->
                 <div class="flex items-center gap-1 shrink-0">
                     <!-- Toggle (Left/Right): Live vs History Stream -->
-                    <div class="inline-flex p-0.5 rounded-md bg-surface border border-subtle-theme text-[8.5px] font-mono">
-                        <button id="btn-toggle-stream-live" class="px-1.5 py-0.5 rounded font-bold transition-all ${this.streamMode === 'live' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
+                    <div class="inline-flex p-0.2 rounded bg-surface border border-subtle-theme text-[8px] font-mono">
+                        <button id="btn-toggle-stream-live" class="px-1 py-0.2 rounded font-bold transition-all ${this.streamMode === 'live' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
                             📡 Live
                         </button>
-                        <button id="btn-toggle-stream-history" class="px-1.5 py-0.5 rounded font-bold transition-all ${this.streamMode === 'history' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
+                        <button id="btn-toggle-stream-history" class="px-1 py-0.2 rounded font-bold transition-all ${this.streamMode === 'history' ? 'btn-action-primary' : 'text-secondary-theme hover:text-primary-theme'}">
                             📜 Trail
                         </button>
                     </div>
 
                     <!-- Multi-Option Dialog Trigger Button -->
-                    <button id="btn-telemetry-options" class="btn-action-secondary text-[9px] py-0.5 px-1.5 flex items-center gap-0.5" title="Telemetry options modal">
+                    <button id="btn-telemetry-options" class="btn-action-secondary text-[8px] py-0.2 px-1 flex items-center gap-0.5" title="Telemetry options modal">
                         <span>⚡ Opts</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Primary Filters: Date Preset Dropdown, Date Picker, Time Window, & Switch (On/Off) -->
-            <div class="surface-theme p-1.5 rounded-lg border space-y-1 font-mono text-[9.5px]">
+            <!-- Primary Filters: Date Preset Dropdown, Date Picker, Time Window, & Switch (Smart-Fit 2 Rows) -->
+            <div class="surface-theme p-1 rounded-md border space-y-0.5 font-mono text-[9px]">
                 <!-- Smart Fit Date / Time Filter Rows -->
-                <div class="space-y-1">
+                <div class="space-y-0.5">
                     ${this.availableHistoryDates.length > 0 ? `
-                        <select id="du-telemetry-date-preset" class="input-theme w-full px-1.5 py-0.5 text-[9.5px] font-mono">
+                        <select id="du-telemetry-date-preset" class="input-theme w-full px-1 py-0.5 text-[8.5px] font-mono">
                             <option value="">Detected Days (${this.availableHistoryDates.length})</option>
                             ${this.availableHistoryDates.map(d => `
                                 <option value="${d.date}" ${this.selectedDate === d.date ? 'selected' : ''}>
@@ -738,38 +781,33 @@ export class DeviceUserView {
                         </select>
                     ` : ''}
 
-                    <div class="flex items-center gap-1">
-                        <input type="date" id="du-telemetry-date" 
-                               value="${this.selectedDate}" 
-                               class="input-theme flex-1 min-w-0 px-1.5 py-0.5 text-[9.5px] font-mono">
+                    <!-- Row 1: Full-width Date Picker (Prevents overflow) -->
+                    <input type="date" id="du-telemetry-date" 
+                           value="${this.selectedDate}" 
+                           class="input-theme w-full px-1.5 py-0.5 text-[9px] font-mono">
 
-                        <select id="du-telemetry-time" class="input-theme px-1 py-0.5 text-[9.5px] font-mono shrink-0">
-                            <option value="all" ${this.selectedTimeWindow === 'all' ? 'selected' : ''}>All</option>
-                            <option value="1h" ${this.selectedTimeWindow === '1h' ? 'selected' : ''}>1h</option>
-                            <option value="6h" ${this.selectedTimeWindow === '6h' ? 'selected' : ''}>6h</option>
+                    <!-- Row 2: Time Window Dropdown + Deadband Switch + Go Button -->
+                    <div class="flex items-center justify-between gap-1 pt-0.5">
+                        <select id="du-telemetry-time" class="input-theme flex-1 min-w-0 px-1 py-0.5 text-[8.5px] font-mono">
+                            <option value="all" ${this.selectedTimeWindow === 'all' ? 'selected' : ''}>All Times</option>
+                            <option value="1h" ${this.selectedTimeWindow === '1h' ? 'selected' : ''}>Past 1h</option>
+                            <option value="6h" ${this.selectedTimeWindow === '6h' ? 'selected' : ''}>Past 6h</option>
                             <option value="morning" ${this.selectedTimeWindow === 'morning' ? 'selected' : ''}>06-12h</option>
                             <option value="evening" ${this.selectedTimeWindow === 'evening' ? 'selected' : ''}>18-24h</option>
                         </select>
 
-                        <button id="btn-apply-date-filter" class="btn-action-primary text-[9px] py-0.5 px-2 shrink-0">
+                        <div class="flex items-center gap-1 shrink-0" title="Stationary noise deadband (<15m)">
+                            <label class="switch-toggle switch-sm">
+                                <input type="checkbox" id="switch-deadband-filter" ${this.deadbandEnabled ? 'checked' : ''}>
+                                <span class="switch-slider"></span>
+                            </label>
+                            <span class="text-[7.5px] font-mono font-bold text-sky-400">15m</span>
+                        </div>
+
+                        <button id="btn-apply-date-filter" class="btn-action-primary text-[8px] py-0.5 px-2 shrink-0">
                             Go
                         </button>
                     </div>
-                </div>
-
-                <!-- Switch (On/Off): Stationary Deadbanding Filter (<15m) -->
-                <div class="flex items-center justify-between pt-0.5 border-t border-subtle-theme">
-                    <div class="flex items-center gap-1.5">
-                        <label class="switch-toggle switch-sm" title="Suppress <15m GPS Jitter">
-                            <input type="checkbox" id="switch-deadband-filter" ${this.deadbandEnabled ? 'checked' : ''}>
-                            <span class="switch-slider"></span>
-                        </label>
-                        <span class="text-sky-400 font-bold text-[8.5px]">Deadband</span>
-                        <span class="text-[7.5px] text-muted-theme">&lt;15m</span>
-                    </div>
-                    <span class="badge-status ${this.deadbandEnabled ? 'badge-success' : 'badge-warning'} text-[7.5px]">
-                        ${this.deadbandEnabled ? 'ON' : 'RAW'}
-                    </span>
                 </div>
             </div>
 
@@ -777,12 +815,12 @@ export class DeviceUserView {
             ${this.renderFlipperCard(device, points)}
 
             <!-- List Box with List Details (Dropdown Expandable Accordion) -->
-            <div class="surface-theme p-1.5 rounded-lg border flex-1 flex flex-col min-h-0 overflow-hidden space-y-1">
-                <div class="flex items-center justify-between text-[9.5px] font-bold text-sky-400 uppercase font-sans border-b border-subtle-theme pb-0.5 shrink-0">
+            <div class="surface-theme p-1 rounded-md border flex-1 flex flex-col min-h-0 overflow-hidden space-y-0.5">
+                <div class="flex items-center justify-between text-[9px] font-bold text-sky-400 uppercase font-sans border-b border-subtle-theme pb-0.5 shrink-0">
                     <span>Fix Records</span>
-                    <span class="text-[8px] font-mono text-muted-theme">Latest on top</span>
+                    <span class="text-[7.5px] font-mono text-muted-theme">Latest on top</span>
                 </div>
-                <div id="du-telemetry-list-box" class="space-y-1 overflow-y-auto custom-scrollbar flex-1 pr-0.5 text-xs font-mono">
+                <div id="du-telemetry-list-box" class="space-y-0.5 overflow-y-auto custom-scrollbar flex-1 pr-0.5 text-xs font-mono">
                     ${this.renderTelemetryListBox(points, device)}
                 </div>
             </div>
@@ -896,7 +934,7 @@ export class DeviceUserView {
     renderFlipperCard(device, points) {
         if (points.length === 0) {
             return `
-                <div class="surface-theme p-1.5 rounded-lg border text-center text-[9.5px] text-muted-theme italic font-mono select-text">
+                <div class="surface-theme p-1 rounded-md border text-center text-[8.5px] text-muted-theme italic font-mono select-text">
                     No active telemetry fixes recorded for this criteria.
                 </div>
             `;
@@ -906,22 +944,22 @@ export class DeviceUserView {
         const distDeltaStr = curr.distDeltaMeters ? ` • Δd: ${curr.distDeltaMeters.toFixed(0)}m` : '';
 
         return `
-            <div class="surface-theme p-1.5 rounded-lg border space-y-1 font-mono text-[9.5px] select-text">
+            <div class="surface-theme p-1 rounded-md border space-y-0.5 font-mono text-[9px] select-text">
                 <div class="flex items-center justify-between border-b border-subtle-theme pb-0.5">
                     <div class="flex items-center gap-1 font-sans font-bold text-sky-400">
-                        <span>🎯 FLIPPER</span>
-                        <span class="badge-status badge-accent text-[7.5px]">Pt ${this.flipperIndex + 1}/${points.length}</span>
+                        <span class="text-[9.5px]">🎯 FLIPPER</span>
+                        <span class="badge-status badge-accent text-[7px] px-1 py-0.2">Pt ${this.flipperIndex + 1}/${points.length}</span>
                     </div>
 
                     <!-- Flipper Controls (Prev / Next Buttons & Locate) -->
                     <div class="flex items-center gap-0.5">
-                        <button id="btn-flipper-prev" class="btn-action-secondary px-1.5 py-0.5 text-[8.5px] font-bold" ${this.flipperIndex <= 0 ? 'disabled style="opacity:0.4"' : ''}>
+                        <button id="btn-flipper-prev" class="btn-action-secondary px-1 py-0.2 text-[8px] font-bold" ${this.flipperIndex <= 0 ? 'disabled style="opacity:0.4"' : ''}>
                             ◀
                         </button>
-                        <button id="btn-flipper-next" class="btn-action-secondary px-1.5 py-0.5 text-[8.5px] font-bold" ${this.flipperIndex >= points.length - 1 ? 'disabled style="opacity:0.4"' : ''}>
+                        <button id="btn-flipper-next" class="btn-action-secondary px-1 py-0.2 text-[8px] font-bold" ${this.flipperIndex >= points.length - 1 ? 'disabled style="opacity:0.4"' : ''}>
                             ▶
                         </button>
-                        <button id="btn-flipper-locate" class="px-1 py-0.5 rounded text-[8.5px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center cursor-pointer" title="Center on map radar">
+                        <button id="btn-flipper-locate" class="px-1 py-0.2 rounded text-[8px] font-bold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-all flex items-center cursor-pointer" title="Center on map radar">
                             <span>🎯</span>
                         </button>
                     </div>
@@ -929,16 +967,15 @@ export class DeviceUserView {
 
                 <!-- Active Flipper Readout -->
                 <div class="space-y-0.5 select-text">
-                    <div class="flex items-center justify-between text-primary-theme font-bold text-[10px]">
+                    <div class="flex items-center justify-between text-primary-theme font-bold text-[9.5px]">
                         <span>🕒 ${curr.formattedTime}</span>
-                        <span class="${curr.isLive ? 'badge-status badge-success' : 'badge-status badge-accent'} text-[7.5px]">${curr.isLive ? 'LIVE' : curr.timeDelta}</span>
+                        <span class="${curr.isLive ? 'badge-status badge-success' : 'badge-status badge-accent'} text-[7px] px-1 py-0.2">${curr.isLive ? 'LIVE' : curr.timeDelta}</span>
                     </div>
-                    <div class="text-sky-400 font-bold select-text cursor-pointer hover:underline flex items-center justify-between" data-copy-text="${curr.coords}" data-copy-label="Coordinates" title="Click to copy coordinates">
-                        <span>${curr.coords}</span>
-                        <span class="text-[8.5px] text-muted-theme hover:text-sky-400 font-normal">📋</span>
+                    <div class="text-sky-400 font-bold select-text font-mono flex items-center justify-between">
+                        <span class="copyable-badge truncate text-[8.5px]" data-copy="${curr.coords}" title="Click to copy coordinates">📍 ${curr.coords} 📋</span>
                     </div>
-                    <div class="text-secondary-theme text-[8.5px] truncate select-text cursor-pointer hover:text-primary-theme" data-copy-text="${curr.address}" data-copy-label="Address" title="Click to copy address">📍 ${curr.address}</div>
-                    <div class="flex items-center justify-between text-[8.5px] text-muted-theme pt-0.5 border-t border-subtle-theme">
+                    <div class="text-secondary-theme text-[8px] truncate select-text" title="${curr.address}">🏠 ${curr.address}</div>
+                    <div class="flex items-center justify-between text-[7.5px] text-muted-theme pt-0.5 border-t border-subtle-theme">
                         <span>${curr.speed.toFixed(1)} km/h • ${curr.bearing}°</span>
                         <span>±${curr.accuracy.toFixed(0)}m${distDeltaStr}</span>
                     </div>
@@ -952,7 +989,7 @@ export class DeviceUserView {
      */
     renderTelemetryListBox(points, device) {
         if (points.length === 0) {
-            return `<div class="text-[9.5px] text-muted-theme italic py-2 text-center">No location history matches the date/time filter.</div>`;
+            return `<div class="text-[8.5px] text-muted-theme italic py-1 text-center">No location history matches the date/time filter.</div>`;
         }
 
         return points.map((item, index) => {
@@ -960,33 +997,33 @@ export class DeviceUserView {
             const isSelectedFlipper = (index === this.flipperIndex);
 
             return `
-                <div class="p-1.5 rounded-lg border ${isSelectedFlipper ? 'border-sky-500 bg-sky-500/10' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all space-y-0.5 select-text">
+                <div class="p-1 rounded-md border ${isSelectedFlipper ? 'border-sky-500 bg-sky-500/10' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all space-y-0.5 select-text">
                     <!-- Clickable Header Row -->
                     <div class="du-list-item-header flex items-center justify-between cursor-pointer" data-item-id="${item.id}" data-index="${index}">
                         <div class="flex items-center gap-1 min-w-0">
-                            <span class="text-[9px] text-sky-400 font-bold">${isExpanded ? '▼' : '▶'}</span>
-                            <span class="text-[9.5px] font-bold text-primary-theme truncate">🕒 ${item.formattedTime}</span>
+                            <span class="text-[8px] text-sky-400 font-bold">${isExpanded ? '▼' : '▶'}</span>
+                            <span class="text-[9px] font-bold text-primary-theme truncate">🕒 ${item.formattedTime}</span>
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
-                            <span class="text-[8.5px] font-bold text-emerald-500">${item.speed.toFixed(1)} km/h</span>
-                            <span class="badge-status ${item.isLive ? 'badge-success' : 'badge-accent'} text-[7.5px]">${item.isLive ? 'LIVE' : item.timeDelta}</span>
+                            <span class="text-[8px] font-bold text-emerald-500">${item.speed.toFixed(1)} km/h</span>
+                            <span class="badge-status ${item.isLive ? 'badge-success' : 'badge-accent'} text-[7px] px-1 py-0.2">${item.isLive ? 'LIVE' : item.timeDelta}</span>
                         </div>
                     </div>
 
                     <!-- Primary Location Summary Line -->
-                    <div class="text-[9px] text-secondary-theme truncate pl-2.5 font-mono select-text cursor-pointer hover:text-primary-theme flex items-center justify-between" data-copy-text="${item.coords}" data-copy-label="Coordinates" title="Click to copy coordinates">
-                        <span class="truncate">${item.coords} • ${item.address}</span>
-                        <span class="text-[8px] text-muted-theme shrink-0 ml-1">📋</span>
+                    <div class="text-[8.5px] text-secondary-theme truncate pl-2 font-mono select-text flex items-center justify-between">
+                        <span class="truncate copyable-badge" data-copy="${item.coords}" title="Click to copy">${item.coords}</span>
+                        <span class="truncate ml-1 text-muted-theme text-[8px]">${item.address}</span>
                     </div>
 
                     <!-- Expandable Dropdown Details Box -->
                     ${isExpanded ? `
-                        <div class="pl-2.5 pt-1 border-t border-subtle-theme text-[8.5px] space-y-0.5 font-mono text-secondary-theme bg-surface/40 p-1 rounded mt-0.5 select-text">
-                            <div class="flex justify-between"><span>Latitude:</span> <span class="text-primary-theme font-bold cursor-pointer hover:text-sky-400" data-copy-text="${item.latitude.toFixed(6)}" data-copy-label="Latitude">${item.latitude.toFixed(6)}° 📋</span></div>
-                            <div class="flex justify-between"><span>Longitude:</span> <span class="text-primary-theme font-bold cursor-pointer hover:text-sky-400" data-copy-text="${item.longitude.toFixed(6)}" data-copy-label="Longitude">${item.longitude.toFixed(6)}° 📋</span></div>
+                        <div class="pl-2 pt-0.5 border-t border-subtle-theme text-[8px] space-y-0.5 font-mono text-secondary-theme bg-surface/40 p-1 rounded mt-0.5 select-text">
+                            <div class="flex justify-between"><span>Latitude:</span> <span class="text-primary-theme font-bold select-text copyable-badge" data-copy="${item.latitude.toFixed(6)}">${item.latitude.toFixed(6)}°</span></div>
+                            <div class="flex justify-between"><span>Longitude:</span> <span class="text-primary-theme font-bold select-text copyable-badge" data-copy="${item.longitude.toFixed(6)}">${item.longitude.toFixed(6)}°</span></div>
                             <div class="flex justify-between"><span>Speed & Heading:</span> <span class="text-primary-theme font-bold">${item.speed.toFixed(1)} km/h @ ${item.bearing}°</span></div>
                             <div class="flex justify-between"><span>Altitude & Accuracy:</span> <span class="text-primary-theme font-bold">${item.altitude.toFixed(1)}m (±${item.accuracy.toFixed(0)}m)</span></div>
-                            <div class="flex justify-between"><span>Epoch Timestamp:</span> <span class="text-sky-400 font-bold cursor-pointer hover:underline" data-copy-text="${item.timestamp}" data-copy-label="Timestamp">${item.timestamp} 📋</span></div>
+                            <div class="flex justify-between"><span>Epoch Timestamp:</span> <span class="text-sky-400 font-bold select-text copyable-badge" data-copy="${item.timestamp}">${item.timestamp}</span></div>
                             <div class="flex justify-between"><span>SafeZone State:</span> <span class="text-emerald-400 font-bold">${device.safeZonesCount > 0 ? 'MONITORED' : 'NO_PERIMETER'}</span></div>
                         </div>
                     ` : ''}
@@ -1298,6 +1335,16 @@ export class DeviceUserView {
             const points = this.getAggregatedTelemetryPoints(selectedDev, rawNode);
             this.openTelemetryOptionsModal(selectedDev, points);
         });
+
+        // 7. Clipboard Copy Handler for Pane 5
+        document.querySelectorAll('#pane-5-container .copyable-badge, #pane-5-container [data-copy]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const copyText = el.getAttribute('data-copy') || el.innerText.trim().replace(/📋/g, '').trim();
+                const label = el.getAttribute('data-copy-label') || 'Telemetry Fix';
+                DeviceUserView.copyToClipboard(copyText, label);
+            });
+        });
     }
 
     /**
@@ -1352,26 +1399,9 @@ export class DeviceUserView {
             });
         });
 
-        // Copy-to-clipboard delegated event listener for cards, tiles, and telemetry rows
-        const duContainer = document.getElementById(this.containerId);
-        if (duContainer) {
-            duContainer.addEventListener('click', (e) => {
-                const copyEl = e.target.closest('[data-copy-text]');
-                if (copyEl) {
-                    e.stopPropagation();
-                    const text = copyEl.getAttribute('data-copy-text');
-                    const label = copyEl.getAttribute('data-copy-label') || 'Value';
-                    if (window.copyToClipboard) {
-                        window.copyToClipboard(text, label);
-                    }
-                }
-            });
-        }
-
         // 1. Roster Click Handler (With Complete State Isolation)
         document.querySelectorAll('.du-device-item').forEach(el => {
             el.addEventListener('click', (e) => {
-                if (e.target.closest('[data-copy-text]')) return;
                 const agentId = el.getAttribute('data-agent-id');
                 if (agentId && agentId !== this.selectedAgentId) {
                     this.selectedAgentId = agentId;
@@ -1390,7 +1420,6 @@ export class DeviceUserView {
         // 2. Tree Node Click Handler (With Complete State Isolation)
         document.querySelectorAll('.du-tree-node').forEach(el => {
             el.addEventListener('click', (e) => {
-                if (e.target.closest('[data-copy-text]')) return;
                 const targetAgentId = el.getAttribute('data-target-agent-id');
                 if (targetAgentId && targetAgentId !== this.selectedAgentId) {
                     this.selectedAgentId = targetAgentId;
@@ -1429,6 +1458,13 @@ export class DeviceUserView {
         document.getElementById('btn-du-view-map')?.addEventListener('click', () => {
             if (this.onNavigateMap && this.selectedAgentId) {
                 this.onNavigateMap(this.selectedAgentId);
+            }
+        });
+
+        // 4b. Open Duplicate Device Reconciliation View
+        document.getElementById('btn-du-dup-devices')?.addEventListener('click', () => {
+            if (window.showDupDevice) {
+                window.showDupDevice();
             }
         });
 
@@ -1536,6 +1572,48 @@ export class DeviceUserView {
                 }
             });
         });
+
+        // 10. Universal Clipboard Copy Handler (Cards, Badges & Tile Views)
+        document.querySelectorAll('.copyable-badge, [data-copy]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const copyText = el.getAttribute('data-copy') || el.innerText.trim().replace(/📋/g, '').trim();
+                const label = el.getAttribute('data-copy-label') || 'Data';
+                DeviceUserView.copyToClipboard(copyText, label);
+            });
+        });
+    }
+
+    /**
+     * Universal Clipboard Helper (Supports async navigator.clipboard and fallback execCommand)
+     */
+    static copyToClipboard(text, label = 'Data') {
+        if (!text) return;
+        const str = String(text).trim();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(str).then(() => {
+                FeedbackDialog.showToast(`📋 Copied ${label}: ${str.length > 25 ? str.slice(0, 22) + '...' : str}`, 'info');
+            }).catch(() => DeviceUserView.fallbackCopy(str, label));
+        } else {
+            DeviceUserView.fallbackCopy(str, label);
+        }
+    }
+
+    static fallbackCopy(text, label = 'Data') {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+            document.execCommand('copy');
+            FeedbackDialog.showToast(`📋 Copied ${label}: ${text.length > 25 ? text.slice(0, 22) + '...' : text}`, 'info');
+        } catch (e) {
+            console.warn('Fallback copy failed', e);
+        }
+        document.body.removeChild(ta);
     }
 
     /**

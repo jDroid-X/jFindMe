@@ -21,7 +21,7 @@ export class DeviceCardView {
         const cardinal = GeoUtils.bearingToCardinal(bearing);
 
         return `
-            <div class="matrix-visiting-card card-theme shadow-2xl p-3.5 rounded-2xl border text-primary-theme w-[280px] select-none font-sans">
+            <div class="matrix-visiting-card card-theme shadow-2xl p-3.5 rounded-2xl border text-primary-theme w-[280px] select-text font-sans">
                 <!-- Header: Avatar, Name & Live Status -->
                 <div class="flex items-center gap-3 border-b border-subtle-theme pb-2.5 mb-2.5">
                     <div class="relative shrink-0">
@@ -124,7 +124,7 @@ export class DeviceCardView {
         modal.className = 'fixed inset-0 z-[1050] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in font-sans';
 
         modal.innerHTML = `
-            <div class="card-theme border rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden text-primary-theme flex flex-col max-h-[92vh]">
+            <div class="card-theme border rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden text-primary-theme flex flex-col max-h-[92vh] select-text">
                 <!-- Modal Header -->
                 <div class="p-5 border-b border-subtle-theme flex items-center justify-between surface-theme">
                     <div class="flex items-center gap-3.5 min-w-0">

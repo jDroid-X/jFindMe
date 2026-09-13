@@ -14,7 +14,14 @@ object DeviceTable {
     const val COL_DEVICE_ID = "device_id" // PK
     const val COL_IDENTITY_ID = "identity_id" // 🧬 V65.0: Secure Internal Link (FK)
     const val COL_DEVICE_MODEL = "device_model"
+    const val COL_BRAND = "brand"
+    const val COL_BOARD = "board"
+    const val COL_HARDWARE = "hardware"
+    const val COL_DEVICE_NAME = "device_name"
     const val COL_IMEI = "imei"
+    const val COL_IMEI_1 = "imei_1"
+    const val COL_IMEI_2 = "imei_2"
+    const val COL_IS_DUAL_SIM = "is_dual_sim"
     const val COL_IS_ROOTED = "is_rooted"
     const val COL_BUILD_FINGERPRINT = "build_fingerprint"
     const val COL_LATITUDE = "latitude"
@@ -28,7 +35,14 @@ object DeviceTable {
             $COL_DEVICE_ID TEXT PRIMARY KEY,
             $COL_IDENTITY_ID INTEGER NOT NULL,
             $COL_DEVICE_MODEL TEXT,
+            $COL_BRAND TEXT,
+            $COL_BOARD TEXT,
+            $COL_HARDWARE TEXT,
+            $COL_DEVICE_NAME TEXT,
             $COL_IMEI TEXT,
+            $COL_IMEI_1 TEXT,
+            $COL_IMEI_2 TEXT,
+            $COL_IS_DUAL_SIM INTEGER DEFAULT 0,
             $COL_IS_ROOTED INTEGER DEFAULT 0,
             $COL_BUILD_FINGERPRINT TEXT,
             $COL_LATITUDE REAL,
@@ -40,14 +54,45 @@ object DeviceTable {
         )
     """.trimIndent()
 
-    fun upsert(db: SQLiteDatabase, deviceId: String, identityId: Long, model: String? = null, imei: String? = null, rooted: Boolean? = null, fingerprint: String? = null, lat: Double = 0.0, lng: Double = 0.0, addr: String? = null) {
+    @JvmOverloads
+    fun upsert(
+        db: SQLiteDatabase,
+        deviceId: String,
+        identityId: Long,
+        model: String? = null,
+        imei: String? = null,
+        rooted: Boolean? = null,
+        fingerprint: String? = null,
+        lat: Double = 0.0,
+        lng: Double = 0.0,
+        addr: String? = null,
+        brand: String? = null,
+        board: String? = null,
+        hardware: String? = null,
+        deviceName: String? = null,
+        imei1: String? = null,
+        imei2: String? = null,
+        isDualSim: Boolean? = null
+    ) {
         val now = FirebaseComm.getForensicTimestamp()
         val v = ContentValues()
         
         // 🧬 Forensic Delta Mapping: Identity and Hardware Specs
         v.put(COL_IDENTITY_ID, identityId)
         if (model != null) v.put(COL_DEVICE_MODEL, model)
-        if (imei != null) v.put(COL_IMEI, imei)
+        if (brand != null) v.put(COL_BRAND, brand)
+        if (board != null) v.put(COL_BOARD, board)
+        if (hardware != null) v.put(COL_HARDWARE, hardware)
+        if (deviceName != null) v.put(COL_DEVICE_NAME, deviceName)
+
+        val resolvedImei1 = imei1 ?: imei
+        if (resolvedImei1 != null) {
+            v.put(COL_IMEI, resolvedImei1)
+            v.put(COL_IMEI_1, resolvedImei1)
+        }
+        if (imei2 != null) v.put(COL_IMEI_2, imei2)
+        if (isDualSim != null) v.put(COL_IS_DUAL_SIM, if (isDualSim) 1 else 0)
+
         if (rooted != null) v.put(COL_IS_ROOTED, if (rooted) 1 else 0)
         if (fingerprint != null) v.put(COL_BUILD_FINGERPRINT, fingerprint)
         v.put(COL_UPDATED_AT, now)

@@ -73,11 +73,11 @@ object ApkInstallerHelper {
             return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
         }
 
-        // Direct GitHub Git LFS media endpoint for full binary APK
+        // Direct GitHub direct raw binary endpoint for full binary APK
         if (trimmed.contains("github.com/jDroid-X/jButterfly") || 
             trimmed.contains("raw.githubusercontent.com/jDroid-X/jButterfly") ||
             trimmed.contains("media.githubusercontent.com/media/jDroid-X/jButterfly")) {
-            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
+            return "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/jButterFly.apk"
         }
 
         return trimmed

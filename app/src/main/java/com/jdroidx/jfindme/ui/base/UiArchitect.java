@@ -994,6 +994,97 @@ public class UiArchitect {
         return chip;
     }
 
+    /**
+     * Shows/hides error message below a validated text field.
+     */
+    public static void showFieldError(EditText editText, String errorMsg) {
+        if (editText == null) return;
+        
+        // Find or create error TextView
+        LinearLayout parent = (LinearLayout) editText.getParent();
+        if (parent == null) return;
+        
+        TextView errorView = null;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child instanceof TextView && ((TextView) child).getTag() != null 
+                && "field_error".equals((String) ((TextView) child).getTag())) {
+                errorView = (TextView) child;
+                break;
+            }
+        }
+        
+        if (errorView == null) {
+            errorView = new TextView(editText.getContext());
+            errorView.setTag("field_error");
+            errorView.setTextColor(Color.parseColor("#FF5252"));
+            errorView.setTextSize(11f);
+            errorView.setPadding(4, 4, 0, 0);
+            errorView.setVisibility(View.GONE);
+            parent.addView(errorView, 1); // Insert after EditText
+        }
+        
+        if (errorMsg != null && !errorMsg.isEmpty()) {
+            errorView.setText("⚠ " + errorMsg);
+            errorView.setVisibility(View.VISIBLE);
+            editText.setHintTextColor(Color.parseColor("#FF8A80"));
+        } else {
+            errorView.setVisibility(View.GONE);
+            editText.setHintTextColor(Color.GRAY);
+        }
+    }
+
+    /**
+     * Validates common field types and returns error message (null if valid).
+     */
+    public static String validateField(String type, String value) {
+        if (value == null) value = "";
+        value = value.trim();
+        
+        switch (type) {
+            case "email":
+                if (value.isEmpty()) return "Email required";
+                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(value).matches()) 
+                    return "Invalid email format";
+                return null;
+            case "phone":
+                if (value.isEmpty()) return null; // Optional
+                if (value.length() < 7) return "Phone too short";
+                if (!value.matches("[+]?[0-9\\-\\s()]+")) return "Invalid phone format";
+                return null;
+            case "name":
+                if (value.isEmpty()) return "Name required";
+                if (value.length() < 2) return "Name too short";
+                if (!value.matches("[a-zA-Z0-9\\s._'-]+")) return "Invalid characters";
+                return null;
+            case "number":
+                if (value.isEmpty()) return "Required";
+                try {
+                    Double.parseDouble(value);
+                } catch (NumberFormatException e) {
+                    return "Must be a number";
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Creates a TextWatcher for real-time field validation.
+     */
+    public static android.text.TextWatcher createValidationWatcher(
+            EditText editText, String fieldType, String fieldName) {
+        return new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                String error = validateField(fieldType, s.toString());
+                showFieldError(editText, error);
+            }
+        };
+    }
+
     public static class ValidatedTextFieldResult {
         public LinearLayout container;
         public EditText editText;

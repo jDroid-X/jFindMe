@@ -166,7 +166,8 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         
         TextView tvDays = new TextView(this);
         tvDays.setText(" DAYS");
-        tvDays.setTextColor(Color.GRAY);
+        // 🔧 THEME FIX: Use theme-aware secondary text color instead of hardcoded GRAY
+        tvDays.setTextColor(getSecondaryTextColor());
         UiArchitect.applyText(this, tvDays, "TEXT_MINI");
         pillBox.addView(tvDays);
 

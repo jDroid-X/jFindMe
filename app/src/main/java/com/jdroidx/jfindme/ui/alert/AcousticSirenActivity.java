@@ -17,6 +17,7 @@ import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine;
+import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
@@ -82,7 +83,8 @@ public class AcousticSirenActivity extends AppCompatActivity {
 
         ImageView sirenIcon = new ImageView(this);
         sirenIcon.setImageResource(android.R.drawable.ic_lock_idle_alarm);
-        sirenIcon.setColorFilter(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        sirenIcon.setColorFilter(ThemeManager.getGradientOverlayColor(0));
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(140, 140);
         iconCard.addView(sirenIcon, iconParams);
 

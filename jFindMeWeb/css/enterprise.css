@@ -796,3 +796,36 @@ html.light-theme h4:not(button *) {
     transition: opacity 0.2s ease-out;
 }
 
+/* ==========================================================================
+   Card & Tile Text Copy Utilities (Seamless Clipboard Support)
+   ========================================================================== */
+.select-text,
+.card-theme,
+.surface-theme,
+.du-device-item,
+.flip-card-container,
+.flip-card-inner,
+.matrix-visiting-card,
+.leaflet-device-card {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+
+.copyable-badge {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 4px;
+    padding: 1px 3px;
+    transition: all 0.15s ease;
+}
+.copyable-badge:hover {
+    background-color: rgba(56, 189, 248, 0.15);
+    color: #38bdf8 !important;
+}
+.copyable-badge:active {
+    transform: scale(0.96);
+}
+
+

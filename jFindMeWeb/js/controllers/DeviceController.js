@@ -19,9 +19,18 @@ export class DeviceController {
     /**
      * Subscribes to device list state changes
      * @param {Function} callback 
+     * @returns {Function} Unsubscribe function
      */
     subscribe(callback) {
         this.subscribers.push(callback);
+        
+        // Return unsubscribe function
+        return () => {
+            const index = this.subscribers.indexOf(callback);
+            if (index > -1) {
+                this.subscribers.splice(index, 1);
+            }
+        };
     }
 
     /**
@@ -29,7 +38,11 @@ export class DeviceController {
      */
     notify() {
         for (const cb of this.subscribers) {
-            cb(this.devices, this.settings.searchRadiusKm);
+            try {
+                cb(this.devices, this.settings.searchRadiusKm);
+            } catch (err) {
+                console.error("[DEVICE_CTRL] Subscriber error:", err);
+            }
         }
     }
 

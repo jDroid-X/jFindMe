@@ -20,6 +20,8 @@ object DeviceIdentityHelper {
     private const val TAG = "DeviceIdentityHelper"
     private const val HW_PREFIX = "HW_"
     private const val FALLBACK_RAW = "UNKNOWN_NODE"
+    @Volatile
+    private var agentIdCache: String? = null // Thread-safe cache for generated IDs
 
     /**
      * Reads a system property via reflection (SELinux allowed properties).
@@ -100,23 +102,163 @@ object DeviceIdentityHelper {
     }
 
     @JvmStatic
+    @Synchronized
     fun getOrGenerateAgentId(context: Context): String {
+        // Check cache first (thread-safe due to @Synchronized)
+        agentIdCache?.let { cached ->
+            if (isValidAgentId(cached)) {
+                return cached
+            }
+        }
+
         val cached = RegistryManager.getString(context, RegistryManager.KEY_AGENT_ID, "")
         if (isValidAgentId(cached)) {
+            agentIdCache = cached
             return cached
         }
 
-        // Pure Generic Silicon Derivation (Strategy A: First 4 + Last 4)
         val rawHw = getRawAndroidId(context).uppercase().filter { it.isLetterOrDigit() }
+        val model = (Build.MODEL ?: "").uppercase()
+        val brand = (Build.BRAND ?: "").uppercase()
+        val device = (Build.DEVICE ?: "").uppercase()
+
+        // Generic Silicon Hardware Derivation
         val derivedId = if (rawHw.length >= 8 && rawHw != FALLBACK_RAW) {
             rawHw.take(4) + rawHw.takeLast(4)
         } else {
-            val fallbackSeed = (Build.FINGERPRINT + Build.MODEL).filter { it.isLetterOrDigit() }.uppercase()
-            if (fallbackSeed.length >= 8) fallbackSeed.take(4) + fallbackSeed.takeLast(4) else "NODE0001"
+            val hwFingerprint = "${brand}_${model}_${Build.BOARD}_${Build.HARDWARE}_${device}"
+            try {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val digest = md.digest(hwFingerprint.toByteArray())
+                digest.take(4).joinToString("") { "%02X".format(it) }
+            } catch (e: Exception) {
+                val fallbackSeed = (Build.FINGERPRINT + model).filter { it.isLetterOrDigit() }.uppercase()
+                if (fallbackSeed.length >= 8) fallbackSeed.take(4) + fallbackSeed.takeLast(4) else "NODE0001"
+            }
         }
 
-        RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, derivedId)
-        SystemLogger.i(TAG, "Generic Hardware Agent ID resolved: $derivedId (from raw: $rawHw)")
-        return derivedId
+        // Validate before saving
+        if (isValidAgentId(derivedId)) {
+            RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, derivedId)
+            agentIdCache = derivedId
+            SystemLogger.i(TAG, "Deterministic Hardware Agent ID resolved: $derivedId (from raw: $rawHw)")
+            return derivedId
+        }
+
+        // Fallback: ensure we always return a valid 8-char alphanumeric ID
+        val safeId = derivedId.replace(Regex("[^A-Z0-9]"), "").take(8).padEnd(8, '0').uppercase()
+        RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, safeId)
+        agentIdCache = safeId
+        SystemLogger.w(TAG, "Generated fallback agent ID: $safeId")
+        return safeId
+    }
+
+    /**
+     * Complete Hardware Specifications & Dual-SIM Identifier Snapshot
+     */
+    data class DeviceHardwareInfo(
+        val brand: String,
+        val model: String,
+        val board: String,
+        val hardware: String,
+        val deviceName: String,
+        val imei1: String,
+        val imei2: String,
+        val isDualSim: Boolean
+    )
+
+    @JvmStatic
+    fun getHardwareSpecs(context: Context): DeviceHardwareInfo {
+        val brand = Build.BRAND ?: "UNKNOWN"
+        val model = Build.MODEL ?: "UNKNOWN"
+        val board = Build.BOARD ?: "UNKNOWN"
+        val hardware = Build.HARDWARE ?: "UNKNOWN"
+
+        // 1. Resolve Friendly Device Name
+        var devName: String? = null
+        try {
+            devName = Settings.Global.getString(context.contentResolver, "device_name")
+        } catch (e: Exception) { }
+
+        if (devName.isNullOrBlank()) {
+            try {
+                devName = Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+            } catch (e: Exception) { }
+        }
+
+        if (devName.isNullOrBlank()) {
+            devName = Build.DEVICE ?: "$brand $model"
+        }
+
+        // 2. Dual-SIM Telemetry & IMEI Probe
+        var imei1 = ""
+        var imei2 = ""
+        var isDualSim = false
+
+        try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+            if (tm != null) {
+                val simCount = when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> tm.activeModemCount
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> tm.phoneCount
+                    else -> 1
+                }
+                isDualSim = simCount >= 2
+
+                val hasPhoneState = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.READ_PHONE_STATE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                if (hasPhoneState) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            imei1 = tm.getImei(0) ?: tm.imei ?: ""
+                        } catch (e: SecurityException) {
+                            imei1 = "RESTRICTED_API29+"
+                        } catch (e: Exception) {
+                            imei1 = ""
+                        }
+
+                        if (isDualSim) {
+                            try {
+                                imei2 = tm.getImei(1) ?: ""
+                            } catch (e: SecurityException) {
+                                imei2 = "RESTRICTED_API29+"
+                            } catch (e: Exception) {
+                                imei2 = ""
+                            }
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        try {
+                            imei1 = tm.getDeviceId(0) ?: tm.deviceId ?: ""
+                            if (isDualSim) {
+                                imei2 = tm.getDeviceId(1) ?: ""
+                            }
+                        } catch (e: Exception) {
+                            imei1 = ""
+                            imei2 = ""
+                        }
+                    }
+                } else {
+                    imei1 = "PERMISSION_REQUIRED"
+                    if (isDualSim) imei2 = "PERMISSION_REQUIRED"
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "IMEI telemetry probe encountered: ${e.message}")
+        }
+
+        return DeviceHardwareInfo(
+            brand = brand,
+            model = model,
+            board = board,
+            hardware = hardware,
+            deviceName = devName ?: "$brand $model",
+            imei1 = imei1,
+            imei2 = imei2,
+            isDualSim = isDualSim
+        )
     }
 }

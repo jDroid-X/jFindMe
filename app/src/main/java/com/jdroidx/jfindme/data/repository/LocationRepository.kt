@@ -442,7 +442,13 @@ class LocationRepository(internal val context: Context) {
 
         if (!FirebaseComm.isAuthenticated()) {
             // 🛡️ Offline / Zero-Trust Sentinel: Provide instant local SQLite ledger history
-            Handler(Looper.getMainLooper()).post { callback(localPoints) }
+            Handler(Looper.getMainLooper()).post {
+                if (callback != null) {
+                    callback(localPoints)
+                } else {
+                    SystemLogger.w("LocationRepository", "Callback is null, skipping history response")
+                }
+            }
             return
         }
 
@@ -482,13 +488,21 @@ class LocationRepository(internal val context: Context) {
                             }
                         }
                         val finalResult = if (points.isNotEmpty()) points else localPoints
-                        Handler(Looper.getMainLooper()).post { callback(finalResult) }
+                        Handler(Looper.getMainLooper()).post {
+                            if (callback != null) {
+                                callback(finalResult)
+                            }
+                        }
                     }
                 }
 
                 override fun onCancelled(error: DatabaseError) {
                     // 🛡️ Closed-Loop Fault Tolerance: Return local SQLite points on cloud abort
-                    Handler(Looper.getMainLooper()).post { callback(localPoints) }
+                    Handler(Looper.getMainLooper()).post {
+                        if (callback != null) {
+                            callback(localPoints)
+                        }
+                    }
                 }
             })
     }

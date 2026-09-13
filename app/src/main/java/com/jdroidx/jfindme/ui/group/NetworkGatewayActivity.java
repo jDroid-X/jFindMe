@@ -621,7 +621,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         // R1C2: Square QR Code Box (Exact same square size)
         FrameLayout qrBox = new FrameLayout(this);
-        applySolidCardGeometry(qrBox, Color.WHITE, 20f);
+        // 🔧 THEME FIX: Use theme-aware card color instead of hardcoded WHITE
+        applySolidCardGeometry(qrBox, getCardColor(), 20f);
         qrBox.setPadding(scale(10), scale(10), scale(10), scale(10));
 
         LinearLayout qrPlaceholder = new LinearLayout(this);
@@ -667,7 +668,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         Button btnCopy = new Button(this);
         btnCopy.setText("📋 COPY");
-        btnCopy.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        btnCopy.setTextColor(getGradientOverlayText());
         btnCopy.setTextSize(scaleText(11f));
         btnCopy.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyCardWithOverride(this, btnCopy, "CARD_CAPSULE_BUTTON", 0.9f);
@@ -676,7 +678,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         Button btnShare = new Button(this);
         btnShare.setText("📤 SHARE");
-        btnShare.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        btnShare.setTextColor(getGradientOverlayText());
         btnShare.setTextSize(scaleText(11f));
         btnShare.setTypeface(null, Typeface.BOLD);
         LinearLayout.LayoutParams shareLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);

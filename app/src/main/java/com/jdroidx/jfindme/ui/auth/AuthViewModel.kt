@@ -119,12 +119,20 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                         }
 
                         // 🧬 STEP 2: Execute Master Analytical Handshake with Epoch Isolation (SQLite Ledger)
+                        val hwSpecs = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareSpecs(getApplication())
                         val profileData = mapOf(
                             "name" to finalName,
                             "email" to finalEmail,
-                            "model" to android.os.Build.MODEL,
-                            "fingerprint" to android.os.Build.FINGERPRINT,
-                            "imei" to "REDACTED"
+                            "model" to hwSpecs.model,
+                            "brand" to hwSpecs.brand,
+                            "board" to hwSpecs.board,
+                            "hardware" to hwSpecs.hardware,
+                            "device_name" to hwSpecs.deviceName,
+                            "imei" to hwSpecs.imei1,
+                            "imei_1" to hwSpecs.imei1,
+                            "imei_2" to hwSpecs.imei2,
+                            "is_dual_sim" to hwSpecs.isDualSim.toString(),
+                            "fingerprint" to android.os.Build.FINGERPRINT
                         )
 
                         val groupData = mapOf(
@@ -145,7 +153,15 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                         val cloudPayload = mapOf(
                             "name" to finalName,
                             "email" to finalEmail,
-                            "model" to android.os.Build.MODEL,
+                            "model" to hwSpecs.model,
+                            "brand" to hwSpecs.brand,
+                            "board" to hwSpecs.board,
+                            "hardware" to hwSpecs.hardware,
+                            "device_name" to hwSpecs.deviceName,
+                            "imei" to hwSpecs.imei1,
+                            "imei_1" to hwSpecs.imei1,
+                            "imei_2" to hwSpecs.imei2,
+                            "is_dual_sim" to hwSpecs.isDualSim,
                             "fingerprint" to android.os.Build.FINGERPRINT,
                             "active_group" to activeGroup,
                             "updated_at" to forensicTs
@@ -254,9 +270,18 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
             "ts_onboarded" to timeStampSign
         )
         
+        val hwSpecs = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareSpecs(context)
         // 🧬 V61.5 Registration Location Baseline (Latitude, Longitude, Address)
         val deviceData = mutableMapOf<String, Any>(
-            "model" to android.os.Build.MODEL,
+            "model" to hwSpecs.model,
+            "brand" to hwSpecs.brand,
+            "board" to hwSpecs.board,
+            "hardware" to hwSpecs.hardware,
+            "device_name" to hwSpecs.deviceName,
+            "imei" to hwSpecs.imei1,
+            "imei_1" to hwSpecs.imei1,
+            "imei_2" to hwSpecs.imei2,
+            "is_dual_sim" to hwSpecs.isDualSim,
             "fingerprint" to android.os.Build.FINGERPRINT,
             "os_version" to android.os.Build.VERSION.RELEASE,
             "ts_registered" to timeStampSign,
@@ -325,7 +350,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
             val groupData = mapOf("group_id" to personalGroupId, "group_name" to "My Circle")
             dbHelper.executeTieredHandshake(
                 uid, agentId, hardwareUid, rawHw,
-                profilePayload.mapValues { it.value.toString() },
+                (profilePayload + deviceData).mapValues { it.value.toString() },
                 null, null, groupData, null, null, null,
                 (deviceData["latitude"] as? Double) ?: 0.0,
                 (deviceData["longitude"] as? Double) ?: 0.0,

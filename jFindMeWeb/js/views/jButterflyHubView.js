@@ -132,7 +132,7 @@ export class jButterflyHubView {
     }
 
     /**
-     * Renders Right Panel: Leaflet Selected Device Telemetry Card (Readable Fonts & Top Address Layout)
+     * Renders Right Panel: Leaflet Selected Device Telemetry Card (Collapsible Design)
      * @param {import('../models/DeviceModel.js').DeviceModel} device 
      * @returns {string} HTML string
      */
@@ -144,134 +144,136 @@ export class jButterflyHubView {
         const lastSeen = device.getFormattedLastSeen();
         const avatarUrl = typeof device.getAvatarUrl === 'function' ? device.getAvatarUrl() : '/Avatar/1.png';
         const themeColor = typeof device.getThemeColor === 'function' ? device.getThemeColor() : '#00E5FF';
+        const distance = device.getFormattedDistance ? device.getFormattedDistance() : '--';
         const unified = typeof device.getUnifiedStatus === 'function' ? device.getUnifiedStatus() : { status: device.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: device.isOnline ? 'badge-success' : 'badge-danger', dotClass: device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400', label: device.isOnline ? 'LIVE' : 'OFFLINE' };
 
         return `
-            <div class="leaflet-device-card w-[240px] sm:w-[260px] max-h-[calc(100vh-100px)] select-none pointer-events-auto font-sans animate-fade-in flex flex-col bg-white/96 dark:bg-slate-950/92 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-y-auto custom-scrollbar p-2.5 space-y-2 text-slate-800 dark:text-slate-100">
+            <div class="leaflet-device-card w-[220px] sm:w-[240px] max-h-[calc(100vh-100px)] select-text pointer-events-auto font-sans animate-fade-in flex flex-col bg-white/96 dark:bg-slate-950/92 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden text-slate-800 dark:text-slate-100">
                 
-                <!-- 1. Top Row: Avatar + Identity + Status + Quick Controls -->
-                <div class="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2">
-                    <div class="flex items-center gap-2 min-w-0">
+                <!-- Collapsible Header: Always Visible (Avatar + Name + Distance + Toggle) -->
+                <div class="p-2.5 border-b border-slate-100 dark:border-slate-800/80 bg-gradient-to-r from-slate-50 to-transparent dark:from-slate-900/60 dark:to-transparent">
+                    <div class="flex items-center gap-2.5">
                         <!-- Avatar -->
-                        <div class="relative shrink-0 w-9 h-9 rounded-full p-0.5 border-2 shadow-md" style="border-color: ${themeColor}">
+                        <div class="relative shrink-0 w-10 h-10 rounded-full p-0.5 border-2 shadow-lg" style="border-color: ${themeColor}">
                             <img src="${avatarUrl}" class="w-full h-full rounded-full object-cover bg-slate-900" alt="${device.name}"
                                  onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
                             <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-950 ${unified.dotClass}"></span>
                         </div>
 
-                        <!-- Name & Subtitle -->
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-1">
-                                <h3 class="text-xs font-black text-slate-900 dark:text-white tracking-tight truncate leading-tight">${device.name}</h3>
+                        <!-- Name & Info -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5">
+                                <h3 class="text-xs font-black text-slate-900 dark:text-white tracking-tight truncate">${device.name}</h3>
+                                <span class="${unified.badgeClass} text-[8px] font-bold font-mono px-1 py-0.5 shrink-0">${unified.label}</span>
                             </div>
-                            <div class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
-                                <span class="text-sky-600 dark:text-sky-400 font-bold">${device.agentId}</span> • ${device.deviceName || device.model || 'Android'}
+                            <div class="text-[9px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
+                                <span class="text-sky-600 dark:text-sky-400 font-bold">${device.agentId}</span> • ${lastSeen}
                             </div>
-                            <div class="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
-                                ⏱️ ${lastSeen}
+                            <div class="flex items-center gap-1 mt-0.5">
+                                <span class="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">📍 ${distance}</span>
+                                <span class="text-[8px] text-slate-400">from base</span>
+                            </div>
+                        </div>
+
+                        <!-- Expand/Collapse Toggle -->
+                        <button id="detail-toggle-${device.agentId}" 
+                                class="toggle-btn w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-sky-500 hover:text-white border border-slate-200 dark:border-slate-700 flex items-center justify-center transition-all text-sm font-bold"
+                                onclick="window.toggleDeviceDetails('${device.agentId}')">
+                            ▶
+                        </button>
+                    </div>
+
+                    <!-- Quick Actions Row (Always Visible) -->
+                    <div class="flex items-center gap-1 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                        <button class="action-btn flex-1 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-[9px] font-bold text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition-all"
+                                onclick="window.MatrixApp.showDossier('${device.agentId}')" title="Device Dossier">
+                            📄 Profile
+                        </button>
+                        <button class="action-btn flex-1 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-[9px] font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
+                                onclick="window.MatrixApp.showHistory('${device.agentId}')" title="View History Trail">
+                            🗺️ Trail
+                        </button>
+                        <button class="action-btn py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-[9px] font-bold text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-all"
+                                onclick="window.MatrixApp.closeDeviceCard()" title="Close">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Collapsible Details Section (Hidden by default) -->
+                <div id="detail-content-${device.agentId}" class="detail-content hidden">
+                    <!-- Divider -->
+                    <div class="h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-700 to-transparent my-2"></div>
+
+                    <!-- Geocoded Address -->
+                    ${device.address ? `
+                    <div class="px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800">
+                        <div class="flex items-start gap-1.5">
+                            <span class="text-xs text-sky-500 shrink-0">📍</span>
+                            <div class="text-[9px] text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug font-medium">${device.address}</div>
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Telemetry Grid -->
+                    <div class="grid grid-cols-2 gap-1.5 p-3 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800">
+                        <div class="text-center p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700">
+                            <div class="text-[8px] text-slate-400 uppercase font-semibold">Battery</div>
+                            <div class="text-xs font-bold ${device.battery <= 20 ? 'text-rose-500' : 'text-emerald-500'}">${battery} ${device.isCharging ? '⚡' : ''}</div>
+                        </div>
+                        <div class="text-center p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700">
+                            <div class="text-[8px] text-slate-400 uppercase font-semibold">Speed</div>
+                            <div class="text-xs font-bold text-amber-600 dark:text-amber-400">${device.getFormattedSpeed ? device.getFormattedSpeed() : '0 km/h'}</div>
+                        </div>
+                        <div class="text-center p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700">
+                            <div class="text-[8px] text-slate-400 uppercase font-semibold">Precision</div>
+                            <div class="text-xs font-bold text-slate-700 dark:text-slate-300">±${device.accuracy ? device.accuracy.toFixed(1) : '5.0'}m</div>
+                        </div>
+                        <div class="text-center p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700">
+                            <div class="text-[8px] text-slate-400 uppercase font-semibold">Heading</div>
+                            <div class="text-xs font-bold text-slate-700 dark:text-slate-300">${Math.round(device.bearing || 0)}°</div>
+                        </div>
+                    </div>
+
+                    <!-- Micro Sensor Truth -->
+                    <div class="p-3 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-100 dark:border-slate-800">
+                        <div class="text-[8px] font-bold uppercase tracking-wider text-sky-500 mb-1.5">🐜 GPS Ground Truth</div>
+                        <div class="space-y-1 font-mono text-[9px]">
+                            <div class="flex justify-between text-slate-500 dark:text-slate-400">
+                                <span>Coordinates:</span>
+                                <span class="text-slate-700 dark:text-slate-200 font-bold">${device.latitude ? `${Number(device.latitude).toFixed(4)}°, ${Number(device.longitude).toFixed(4)}°` : '--'}</span>
+                            </div>
+                            <div class="flex justify-between text-slate-500 dark:text-slate-400">
+                                <span>Altitude:</span>
+                                <span class="text-slate-700 dark:text-slate-200 font-bold">${device.altitude ? `${Number(device.altitude).toFixed(0)}m` : '0m'}</span>
+                            </div>
+                            <div class="flex justify-between text-slate-500 dark:text-slate-400">
+                                <span>Signal:</span>
+                                <span class="${device.isMockGps || device.isMock ? 'text-rose-400' : 'text-emerald-400'} font-bold">
+                                    ${device.isMockGps || device.isMock ? '🚨 SPOOFED' : '🛡️ HARDWARE'}
+                                </span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Top Action Badges -->
-                    <div class="flex flex-col items-end gap-1 shrink-0">
-                        <span class="${unified.badgeClass} text-[8.5px] font-bold font-mono px-1.5 py-0.5">
-                            ${unified.label}
-                        </span>
-                        <div class="flex items-center gap-1 text-slate-400">
-                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Device Dossier" onclick="window.MatrixApp.showDossier('${device.agentId}')">📄</button>
-                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs" title="Refresh Location" onclick="window.MatrixApp.refreshNow()">🔄</button>
-                            <button class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-xs text-slate-400 hover:text-rose-500 font-bold transition-all" title="Close Card" onclick="window.MatrixApp.closeDeviceCard()">✕</button>
-                        </div>
+                    <!-- Action Buttons Strip -->
+                    <div class="grid grid-cols-3 gap-1.5 p-3">
+                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-700 transition-all"
+                                onclick="window.MatrixApp.pokeDevice('${device.agentId}')">
+                            <span class="text-sm">🔊</span>
+                            <span class="text-[9px] font-bold mt-0.5">Ring</span>
+                        </button>
+                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 transition-all"
+                                onclick="window.MatrixApp.showHistory('${device.agentId}')">
+                            <span class="text-sm">🗺️</span>
+                            <span class="text-[9px] font-bold mt-0.5">Trail</span>
+                        </button>
+                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-700 transition-all"
+                                onclick="window.MatrixApp.openEditProfile('${device.agentId}')">
+                            <span class="text-sm">✏️</span>
+                            <span class="text-[9px] font-bold mt-0.5">Edit</span>
+                        </button>
                     </div>
-                </div>
-
-                <!-- 2. Geocoded Street Address (Moved ABOVE Proximity Grid) -->
-                ${device.address ? `
-                <div class="bg-slate-100 dark:bg-slate-900/80 rounded-xl p-2 text-[10px] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 flex items-start gap-1.5 font-sans shadow-sm">
-                    <span class="text-xs text-sky-500 shrink-0">📍</span>
-                    <div class="line-clamp-2 leading-snug font-medium">${device.address}</div>
-                </div>
-                ` : `
-                <div class="bg-slate-100 dark:bg-slate-900/80 rounded-xl p-1.5 text-[9px] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 flex items-center gap-1 font-sans">
-                    <span class="text-xs text-slate-400 shrink-0">📍</span>
-                    <span class="truncate font-mono">${device.latitude ? `${device.latitude.toFixed(4)}°, ${device.longitude.toFixed(4)}°` : 'Live Satellite Position'}</span>
-                </div>
-                `}
-
-                <!-- 3. Telemetry Grid (Readable Proximity, Velocity, Battery, Precision) -->
-                <div class="grid grid-cols-2 gap-1.5 font-mono text-[10px] bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <div>
-                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Proximity</span>
-                        <span class="font-bold text-sky-600 dark:text-sky-400 truncate block text-[11px]">${device.getFormattedDistance ? device.getFormattedDistance() : '--'}</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Velocity</span>
-                        <span class="font-bold text-amber-600 dark:text-amber-400 truncate block text-[11px]">${device.getFormattedSpeed ? device.getFormattedSpeed() : '0.0 km/h'}</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">Battery</span>
-                        <span class="font-bold ${device.battery <= 20 ? 'text-rose-500' : 'text-emerald-500'} truncate block text-[11px]">🔋 ${battery} ${device.isCharging ? '⚡' : ''}</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-400 block text-[8.5px] uppercase font-semibold leading-none mb-0.5">GPS Precision</span>
-                        <span class="font-bold text-slate-700 dark:text-slate-300 truncate block text-[11px]">±${device.accuracy ? device.accuracy.toFixed(1) : '5.0'}m</span>
-                    </div>
-                </div>
-
-                <!-- 4. "The Ant" Micro Sensor Ground Truth (Eagle Analytics Merged) -->
-                <div class="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800 font-mono text-[9px] space-y-1">
-                    <div class="flex items-center justify-between text-slate-400 border-b border-slate-200 dark:border-slate-800/80 pb-1 mb-1">
-                        <span class="font-bold uppercase tracking-wider text-[8px] text-sky-500">🐜 Micro Sensor Truth</span>
-                        <span class="${device.isMockGps || device.isMock ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'} text-[8px]">
-                            ${device.isMockGps || device.isMock ? '🚨 SPOOFED GPS' : '🛡️ HARDWARE GPS'}
-                        </span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-slate-400">Sub-Meter Raw:</span>
-                        <span class="text-slate-700 dark:text-slate-200 font-bold select-all">${device.latitude ? `${Number(device.latitude).toFixed(6)}°, ${Number(device.longitude).toFixed(6)}°` : '--'}</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-slate-400">Altitude AMSL:</span>
-                        <span class="text-slate-700 dark:text-slate-200 font-bold">${device.altitude ? `${Number(device.altitude).toFixed(1)}m` : '0.0m'}</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-slate-400">Heading / Vector:</span>
-                        <span class="text-slate-700 dark:text-slate-200 font-bold">${Math.round(device.bearing || 0)}° (${GeoUtils.bearingToCardinal(Math.round(device.bearing || 0))})</span>
-                    </div>
-                </div>
-
-                <!-- 5. Live GPS Stream Toggle -->
-                <div class="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 text-xs">
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-xs">🛰️</span>
-                        <span class="text-[10.5px] font-bold text-slate-700 dark:text-slate-300">Live GPS Stream</span>
-                    </div>
-                    <label class="switch-toggle switch-sm" style="transform: scale(0.9); transform-origin: right center;" title="Toggle Live GPS Stream">
-                        <input type="checkbox" class="hub-switch-stream" data-agent-id="${device.agentId}" ${device.raw?.acl?.acl_live_tracking === 'DENIED' ? '' : 'checked'}>
-                        <span class="switch-slider"></span>
-                    </label>
-                </div>
-
-                <!-- 6. Quick Action Buttons Strip -->
-                <div class="grid grid-cols-3 gap-1.5 pt-0.5 font-sans">
-                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
-                            onclick="window.MatrixApp.pokeDevice('${device.agentId}')" title="Play Ring Sound">
-                        <span class="text-sm">🔊</span>
-                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Ring</span>
-                    </button>
-
-                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
-                            onclick="window.MatrixApp.showHistory('${device.agentId}')" title="View History Route Trail">
-                        <span class="text-sm">🗺️</span>
-                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Trail</span>
-                    </button>
-
-                    <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-800 transition-all text-center"
-                            onclick="window.MatrixApp.showDossier('${device.agentId}')" title="Lock & Device Dossier">
-                        <span class="text-sm">📄</span>
-                        <span class="text-[9.5px] font-bold leading-tight mt-0.5">Dossier</span>
-                    </button>
                 </div>
             </div>
         `;
@@ -294,6 +296,29 @@ export class jButterflyHubView {
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Toggle device details panel visibility
+     * @param {string} agentId 
+     */
+    static toggleDetails(agentId) {
+        const content = document.getElementById(`detail-content-${agentId}`);
+        const btn = document.getElementById(`detail-toggle-${agentId}`);
+        
+        if (content && btn) {
+            const isHidden = content.classList.contains('hidden');
+            
+            if (isHidden) {
+                content.classList.remove('hidden');
+                btn.textContent = '▼';
+                btn.classList.add('bg-sky-500', 'text-white');
+            } else {
+                content.classList.add('hidden');
+                btn.textContent = '▶';
+                btn.classList.remove('bg-sky-500', 'text-white');
+            }
+        }
     }
 
     /**
@@ -340,3 +365,8 @@ export class jButterflyHubView {
 
 // SSOT Alias for backwards compatibility
 export const GoogleFindHubView = jButterflyHubView;
+
+// Register global toggle function
+window.toggleDeviceDetails = (agentId) => {
+    jButterflyHubView.toggleDetails(agentId);
+};

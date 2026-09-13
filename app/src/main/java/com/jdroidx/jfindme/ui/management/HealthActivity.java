@@ -3,6 +3,7 @@ package com.jdroidx.jfindme.ui.management;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
@@ -25,10 +26,26 @@ import java.io.File;
 public class HealthActivity extends BaseActivityJava {
 
     private final String TAG = "HealthActivity";
-    private TextView tvBattery, tvGps, tvNetwork, tvStorage, tvVitalsBody;
+    private TextView tvBattery, tvGps, tvNetwork, tvStorage, tvVitalsBody, tvHwBody;
+    private String targetAgentId;
+    private String targetMemberName;
+    private boolean isRemoteMember = false;
 
     @Override
     protected View createLayout() {
+        targetAgentId = getIntent().getStringExtra("EXTRA_AGENT_ID");
+        if (targetAgentId == null) targetAgentId = getIntent().getStringExtra("target_agent_id");
+        targetMemberName = getIntent().getStringExtra("EXTRA_MEMBER_NAME");
+        if (targetMemberName == null) targetMemberName = getIntent().getStringExtra("target_name");
+
+        String myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        if (targetAgentId != null && !targetAgentId.trim().isEmpty() && !targetAgentId.equals(myAgentId)) {
+            isRemoteMember = true;
+        } else {
+            targetAgentId = myAgentId;
+            isRemoteMember = false;
+        }
+
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
         mainRoot.setBackgroundColor(getPrimaryColor());
@@ -42,6 +59,14 @@ public class HealthActivity extends BaseActivityJava {
         topRow.setOrientation(LinearLayout.HORIZONTAL);
         topRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         
+        android.widget.ImageView backBtn = new android.widget.ImageView(this);
+        backBtn.setImageResource(android.R.drawable.ic_menu_revert);
+        backBtn.setColorFilter(getGradientOverlayText());
+        int bSize = scale(120);
+        backBtn.setPadding(scale(20), scale(20), scale(20), scale(20));
+        backBtn.setOnClickListener(v -> finish());
+        topRow.addView(backBtn, new LinearLayout.LayoutParams(bSize, bSize));
+
         TextView title = new TextView(this);
         title.setText("DEVICE HEALTH");
         title.setTextColor(getGradientOverlayText());
@@ -52,11 +77,15 @@ public class HealthActivity extends BaseActivityJava {
         header.addView(topRow);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Hardware Diagnostics & Core Operations");
+        if (isRemoteMember) {
+            subtitle.setText((targetMemberName != null ? targetMemberName : "Member") + " • Node [" + targetAgentId + "]");
+        } else {
+            subtitle.setText("Hardware Diagnostics & Core Operations");
+        }
         subtitle.setTextColor(getGradientOverlayText());
         subtitle.setAlpha(0.8f);
         subtitle.setTextSize(12);
-        subtitle.setPadding(0, 10, 0, 0);
+        subtitle.setPadding(scale(20), 10, 0, 0);
         header.addView(subtitle);
 
         mainRoot.addView(header);
@@ -171,6 +200,23 @@ public class HealthActivity extends BaseActivityJava {
         );
         content.addView(vitalsAccordion, cardLp);
 
+        // --- LAYER 2.8: SILICON & TELEPHONY DOSSIER ---
+        tvHwBody = new TextView(this);
+        tvHwBody.setTextColor(getSecondaryTextColor());
+        tvHwBody.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        tvHwBody.setLineSpacing(scale(4), 1.0f);
+
+        loadHardwareDossier();
+
+        View hwAccordion = UiArchitect.createExpandableListBox(
+            this,
+            "Physical Silicon & Telephony Dossier",
+            "Brand, Board, Model, Chipset & IMEI Telemetry",
+            android.R.drawable.ic_menu_agenda,
+            tvHwBody
+        );
+        content.addView(hwAccordion, cardLp);
+
         // --- LAYER 3: ACTION CONTROLLER ---
         View btnRefresh = UiArchitect.createPrimaryButton(this, "RERUN SYSTEM DIAGNOSTICS", android.R.drawable.ic_popup_sync, v -> {
             updateMetrics();
@@ -218,14 +264,127 @@ public class HealthActivity extends BaseActivityJava {
         return row;
     }
 
+    private void loadHardwareDossier() {
+        if (tvHwBody == null) return;
+        if (isRemoteMember) {
+            // 1. Load from local SQLite cache
+            java.util.Map<String, Object> localDossier = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getForensicDossierComplete(targetAgentId);
+            renderHardwareMap(localDossier);
+
+            // 2. Query cloud device node
+            com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
+                .child(targetAgentId)
+                .child("device")
+                .get()
+                .addOnSuccessListener(snapshot -> {
+                    if (snapshot.exists()) {
+                        java.util.Map<String, Object> cloudDossier = new java.util.HashMap<>();
+                        for (com.google.firebase.database.DataSnapshot child : snapshot.getChildren()) {
+                            cloudDossier.put(child.getKey(), child.getValue());
+                        }
+                        renderHardwareMap(cloudDossier);
+                    }
+                });
+        } else {
+            com.jdroidx.jfindme.utils.DeviceIdentityHelper.DeviceHardwareInfo hw = 
+                com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareSpecs(this);
+            StringBuilder hwText = new StringBuilder();
+            hwText.append("• Device Name: ").append(hw.getDeviceName()).append("\n");
+            hwText.append("• Brand / OEM: ").append(hw.getBrand()).append("\n");
+            hwText.append("• Model: ").append(hw.getModel()).append("\n");
+            hwText.append("• Motherboard: ").append(hw.getBoard()).append("\n");
+            hwText.append("• Hardware Chipset: ").append(hw.getHardware()).append("\n");
+            hwText.append("• SIM Configuration: ").append(hw.isDualSim() ? "Dual SIM Architecture (2 Modems)" : "Single SIM Node").append("\n");
+            hwText.append("• Primary IMEI: ").append(hw.getImei1().isEmpty() ? "UNAVAILABLE" : hw.getImei1());
+            if (hw.isDualSim()) {
+                hwText.append("\n• Secondary IMEI: ").append(hw.getImei2().isEmpty() ? "UNAVAILABLE" : hw.getImei2());
+            }
+            tvHwBody.setText(hwText.toString());
+        }
+    }
+
+    private void renderHardwareMap(java.util.Map<String, Object> map) {
+        if (tvHwBody == null || map == null || map.isEmpty()) return;
+        String devName = map.containsKey("device_name") && map.get("device_name") != null ? map.get("device_name").toString() : (targetMemberName != null ? targetMemberName : "Remote Device");
+        String brand = map.containsKey("brand") && map.get("brand") != null ? map.get("brand").toString() : "UNKNOWN";
+        String model = map.containsKey("model") && map.get("model") != null ? map.get("model").toString() : (map.containsKey("device_model") && map.get("device_model") != null ? map.get("device_model").toString() : "UNKNOWN");
+        String board = map.containsKey("board") && map.get("board") != null ? map.get("board").toString() : "UNKNOWN";
+        String hardware = map.containsKey("hardware") && map.get("hardware") != null ? map.get("hardware").toString() : "UNKNOWN";
+        boolean isDual = Boolean.TRUE.equals(map.get("is_dual_sim")) || "true".equalsIgnoreCase(String.valueOf(map.get("is_dual_sim"))) || (map.get("is_dual_sim") instanceof Number && ((Number) map.get("is_dual_sim")).intValue() == 1);
+        String imei1 = map.containsKey("imei_1") && map.get("imei_1") != null ? map.get("imei_1").toString() : (map.containsKey("imei") && map.get("imei") != null ? map.get("imei").toString() : "UNAVAILABLE");
+        String imei2 = map.containsKey("imei_2") && map.get("imei_2") != null ? map.get("imei_2").toString() : "UNAVAILABLE";
+
+        StringBuilder hwText = new StringBuilder();
+        hwText.append("• Device Name: ").append(devName).append("\n");
+        hwText.append("• Brand / OEM: ").append(brand).append("\n");
+        hwText.append("• Model: ").append(model).append("\n");
+        hwText.append("• Motherboard: ").append(board).append("\n");
+        hwText.append("• Hardware Chipset: ").append(hardware).append("\n");
+        hwText.append("• SIM Configuration: ").append(isDual ? "Dual SIM Architecture (2 Modems)" : "Single SIM Node").append("\n");
+        hwText.append("• Primary IMEI: ").append(imei1.isEmpty() ? "UNAVAILABLE" : imei1);
+        if (isDual) {
+            hwText.append("\n• Secondary IMEI: ").append(imei2.isEmpty() ? "UNAVAILABLE" : imei2);
+        }
+        tvHwBody.setText(hwText.toString());
+    }
+
+    private void updateRemoteMetrics() {
+        if (targetAgentId == null) return;
+        com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
+            .child(targetAgentId)
+            .child("device")
+            .child("live")
+            .get()
+            .addOnSuccessListener(snapshot -> {
+                if (snapshot.exists()) {
+                    Long bat = snapshot.child("battery_level").getValue(Long.class);
+                    Boolean charging = snapshot.child("is_charging").getValue(Boolean.class);
+                    String net = snapshot.child("network_type").getValue(String.class);
+                    Boolean mock = snapshot.child("is_mock_gps").getValue(Boolean.class);
+                    Boolean root = snapshot.child("is_rooted").getValue(Boolean.class);
+                    Long signal = snapshot.child("signal_dbm").getValue(Long.class);
+
+                    if (tvBattery != null && bat != null) {
+                        tvBattery.setText(bat + "% " + (Boolean.TRUE.equals(charging) ? "(⚡ CHARGING)" : "(DISCHARGING)"));
+                        tvBattery.setTextColor(bat > 20 ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+                    }
+                    if (tvNetwork != null && net != null) {
+                        tvNetwork.setText(net + " (SYNCED)");
+                    }
+                    if (tvGps != null) {
+                        tvGps.setText("LIVE TRACKING ACTIVE");
+                        tvGps.setTextColor(Color.parseColor("#4CAF50"));
+                    }
+                    if (tvStorage != null) {
+                        tvStorage.setText("REMOTE STORAGE MANAGED");
+                    }
+                    if (tvVitalsBody != null) {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("• Cellular Signal: ").append(signal != null ? signal + " dBm" : "Optimal RSSI").append("\n");
+                        sb.append("• Network Interface: ").append(net != null ? net : "Cellular/WiFi Bridge").append("\n");
+                        sb.append("• Mock GPS Spoofing: ").append(Boolean.TRUE.equals(mock) ? "⚠️ DETECTED" : "✅ CLEAN").append("\n");
+                        sb.append("• Root Anchor: ").append(Boolean.TRUE.equals(root) ? "⚠️ TRIPPED" : "✅ SECURE").append("\n");
+                        sb.append("• Cloud Telemetry: ACTIVE STREAM");
+                        tvVitalsBody.setText(sb.toString());
+                    }
+                }
+            });
+    }
+
     private void updateMetrics() {
-        // 1. Battery Metric & Charging State
+        if (isRemoteMember) {
+            updateRemoteMetrics();
+            loadHardwareDossier();
+            return;
+        }
+
+        // 1. Battery Metric & Charging State — use sticky broadcast (no receiver leak)
         IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-        Intent batteryStatus = registerReceiver(null, ifilter);
+        Intent batteryStatus = getApplicationContext().registerReceiver(null, ifilter);
         int level = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) : -1;
         int status = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1) : -1;
         boolean isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
-        
+
         if (tvBattery != null) {
             String bText = level + "% " + (isCharging ? "(⚡ CHARGING)" : "(DISCHARGING)");
             tvBattery.setText(bText);

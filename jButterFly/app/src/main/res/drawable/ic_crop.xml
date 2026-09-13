@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Main Crop Frame L-Shape (Top-Left) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M7,17V1H5V5H1V7H5V17C5,18.1 5.9,19 7,19H17V23H19V19H23V17H7Z" />
+    <!-- Top-Right Anchor Point -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M19,15V7C19,5.9 18.1,5 17,5H9V7H17V15H19Z" />
+    <!-- Diagonal Dashed Line (Simulating the user image diagonal) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M15,15L17,17M11,11L13,13M7,7L9,9M19,19L21,21"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+</vector>

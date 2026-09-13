@@ -7,53 +7,226 @@ import { AvatarService } from '../services/AvatarService.js';
  */
 export class DeviceModel {
     constructor(data = {}) {
-        this.agentId = data.agentId || "";
-        this.deviceId = data.deviceId || `DEV_${this.agentId}`;
-        this.name = data.name || data.agentId || "Unknown Agent";
-        this.deviceName = data.deviceName || data.model || "Android Device";
-        this.model = data.model || data.deviceName || "";
-        this.hostName = data.hostName || this.name;
-        this.avatarId = data.avatarId || "avatar_custom_1";
-        
-        // Geospatial state
-        this.latitude = parseFloat(data.latitude || 0);
-        this.longitude = parseFloat(data.longitude || 0);
-        this.hasValidLocation = Boolean(data.hasValidLocation && !isNaN(this.latitude) && !isNaN(this.longitude) && this.latitude !== 0 && this.longitude !== 0);
-        this.speed = parseFloat(data.speed || 0);
-        this.bearing = parseFloat(data.bearing || 0);
-        this.accuracy = parseFloat(data.accuracy || 0);
-        this.altitude = parseFloat(data.altitude || 0);
-        this.address = data.address || "";
+        this.raw = data.raw || data || {};
+        const raw = this.raw;
 
-        // Telemetry & Hardware
-        this.battery = parseInt(data.battery != null ? data.battery : -1);
-        this.isCharging = Boolean(data.isCharging);
-        this.isMockGps = Boolean(data.isMockGps);
-        this.isAirplaneMode = Boolean(data.isAirplaneMode);
-        this.networkType = data.networkType || "UNKNOWN";
-        this.lastSeen = data.lastSeen || data.lastUpdated || data.timestamp || 0;
+        // ==========================================
+        // TIER 1: MASTER DATA (Immutable Identity & Silicon Anchor)
+        // ==========================================
+        this.agentId = data.agentId || raw.agentId || raw.agent_id || "";
+        this.deviceId = data.deviceId || raw.deviceId || raw.device_id || `DEV_${this.agentId}`;
+        this.authUid = raw.Identity?.auth_uid || raw.auth_uid || raw.device?.live?.auth_uid || "";
+        this.ownerUid = raw.Identity?.owner_uid || raw.owner_uid || raw.profile?.owner_uid || "";
+        this.connectedId = raw.Identity?.connected_id || raw.connected_id || "";
+        this.activeGroup = raw.Identity?.active_group || raw.active_group || raw.profile?.group || "Default Circle";
+
+        // Hardware Silicon Specifications (Brand + Model + Board + Hardware + Device + IMEI 1/2)
+        const hwProps = raw.Hardware || raw.Identity?.Hardware || raw.hardwareProperties || raw.device?.hardware || {};
+        this.brand = hwProps.brand || raw.brand || "Android";
+        this.model = hwProps.model || raw.model || data.model || data.deviceName || "Device";
+        this.board = hwProps.board || raw.board || "universal";
+        this.hardware = hwProps.hardware || raw.hardware || "qcom";
+        this.device = hwProps.device || raw.device || "generic";
+        this.imei1 = hwProps.imei1 || raw.imei1 || hwProps.imei || raw.imei || "Not Detected";
+        this.imei2 = hwProps.imei2 || raw.imei2 || "Not Detected (Single SIM)";
+        this.siliconHash = hwProps.siliconHash || raw.siliconHash || data.siliconHash || this._generateSiliconSignature();
+
+        // ==========================================
+        // TIER 2: SUB-MASTER DATA (Profile, Persona, Circles & ACL Access)
+        // ==========================================
+        const prof = raw.profile || raw.Profile || {};
+        this.name = prof.name || data.name || raw.name || data.agentId || "Unknown Agent";
+        this.deviceName = data.deviceName || prof.deviceName || this.model || "Android Device";
+        this.hostName = prof.hostName || data.hostName || this.name;
+        this.avatarId = prof.avatarId || data.avatarId || "avatar_custom_1";
+        this.email = prof.email || data.email || "";
+        this.phone = prof.phone || data.phone || "";
+        this.dob = prof.dob || raw.dob || "";
+        this.gender = prof.gender || raw.gender || "";
+        this.role = prof.role || data.role || "MEMBER";
+        this.roleFamily = prof.role_family || prof.roleFamily || data.role_family || "None";
+        this.roleFriend = prof.role_friend || prof.roleFriend || data.role_friend || "None";
+        this.roleTitle = prof.role_title || prof.roleTitle || data.roleTitle || this.role;
+        this.department = prof.department || data.department || "General";
+        this.emergencyNote = prof.emergencyNote || data.emergencyNote || "";
+        this.safeZonesCount = parseInt(data.safeZonesCount || Object.keys(raw.safe_zones || raw.SafeZones || {}).length || 0);
+        this.relationshipsCount = parseInt(data.relationshipsCount || Object.keys(raw.relationships || {}).length || 0);
+
+        // Access Controls & Permissions (ACL)
+        const acl = raw.acl || raw.Access || {};
+        this.acl = {
+            liveTracking: acl.acl_live_tracking !== 'DENIED',
+            geofence: acl.acl_geofence !== 'DENIED',
+            historyAudit: acl.acl_history_audit !== 'DENIED',
+            ghostOverride: acl.acl_ghost_override === 'GRANTED',
+            camera: acl.camera !== 'DENIED',
+            gps: acl.gps !== 'DENIED',
+            bluetooth: acl.bluetooth !== 'DENIED',
+            foregroundService: acl.foreground_service !== 'DENIED'
+        };
+
+        // ==========================================
+        // TIER 3: SUB-SUB-MASTER DATA (Live Telemetry & Diagnostics)
+        // ==========================================
+        const live = raw.device?.live || raw.live || {};
+        this.latitude = parseFloat(live.latitude || data.latitude || raw.latitude || 0);
+        this.longitude = parseFloat(live.longitude || data.longitude || raw.longitude || 0);
+        this.hasValidLocation = Boolean(!isNaN(this.latitude) && !isNaN(this.longitude) && this.latitude !== 0 && this.longitude !== 0);
+        this.speed = parseFloat(live.speed || data.speed || raw.speed || 0);
+        this.bearing = parseFloat(live.bearing || data.bearing || raw.bearing || 0);
+        this.accuracy = parseFloat(live.accuracy || data.accuracy || raw.accuracy || 0);
+        this.altitude = parseFloat(live.altitude || data.altitude || raw.altitude || 0);
+        this.address = live.address || data.address || raw.address || "";
+        this.geohash = live.geohash || raw.geohash || "";
+
+        const telem = raw.telemetry || raw.device?.telemetry || {};
+        this.battery = parseInt(telem.battery != null ? telem.battery : (data.battery != null ? data.battery : -1));
+        this.isCharging = Boolean(telem.isCharging != null ? telem.isCharging : data.isCharging);
+        this.isMockGps = Boolean(telem.isMockGps != null ? telem.isMockGps : data.isMockGps);
+        this.isAirplaneMode = Boolean(telem.isAirplaneMode != null ? telem.isAirplaneMode : data.isAirplaneMode);
+        this.networkType = telem.networkType || data.networkType || "UNKNOWN";
+        this.lastSeen = live.timestamp || telem.timestamp || data.lastSeen || data.lastUpdated || data.timestamp || 0;
         const epochInit = GeoUtils.parseTimestampToEpoch(this.lastSeen);
         this.timestamp = epochInit > 0 ? epochInit : (typeof data.timestamp === 'number' ? data.timestamp : 0);
         const elapsedInit = epochInit > 0 ? (Date.now() - epochInit) : Infinity;
-        this.isOnline = Boolean(data.isOnline || (data.st_session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
-        this.sessionState = data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
+        this.isOnline = Boolean(data.isOnline || (raw.st_session_state === "ONLINE") || (telem.session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
+        this.sessionState = telem.sessionState || data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
+        this.oldDeviceIdArchive = raw.Old_Device_ID || {};
 
-        // Profile & Organization
-        this.email = data.email || "";
-        this.phone = data.phone || "";
-        this.role = data.role || "MEMBER";
-        this.roleFamily = data.role_family || "None";
-        this.roleFriend = data.role_friend || "None";
-        this.department = data.department || "";
-        this.emergencyNote = data.emergencyNote || "";
-        this.safeZonesCount = parseInt(data.safeZonesCount || 0);
-        this.relationshipsCount = parseInt(data.relationshipsCount || 0);
-        
-        // Dynamic Distance computation (calculated against current reference location)
+        // Dynamic Distance computation against reference station
         this.distanceFromRefKm = Infinity;
         this.isWithinSearchRadius = false;
-        
-        this.raw = data.raw || {};
+    }
+
+    /**
+     * Generates a deterministic SHA-like silicon signature fallback from physical hardware fields
+     */
+    _generateSiliconSignature() {
+        const rawKey = `${this.brand}|${this.model}|${this.board}|${this.hardware}|${this.device}`.toLowerCase();
+        let hash = 0;
+        for (let i = 0; i < rawKey.length; i++) {
+            const char = rawKey.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash |= 0;
+        }
+        return 'SILICON_' + Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+    }
+
+    /**
+     * TIER 1: Master Data Representation
+     * @returns {Object}
+     */
+    getMasterData() {
+        return {
+            tier: 1,
+            tierName: "Master Data (Identity & Silicon Anchor)",
+            agentId: this.agentId,
+            deviceId: this.deviceId,
+            authUid: this.authUid,
+            ownerUid: this.ownerUid,
+            connectedId: this.connectedId,
+            activeGroup: this.activeGroup,
+            hardware: {
+                brand: this.brand,
+                model: this.model,
+                board: this.board,
+                hardware: this.hardware,
+                device: this.device,
+                imei1: this.imei1,
+                imei2: this.imei2,
+                siliconHash: this.siliconHash
+            }
+        };
+    }
+
+    /**
+     * TIER 2: Sub-Master Data Representation
+     * @returns {Object}
+     */
+    getSubMasterData() {
+        return {
+            tier: 2,
+            tierName: "Sub-Master Data (Profile, Persona & ACL)",
+            profile: {
+                name: this.name,
+                deviceName: this.deviceName,
+                hostName: this.hostName,
+                avatarId: this.avatarId,
+                avatarUrl: this.getAvatarUrl(),
+                phone: this.phone,
+                email: this.email,
+                dob: this.dob,
+                gender: this.gender,
+                role: this.role,
+                roleFamily: this.roleFamily,
+                roleFriend: this.roleFriend,
+                roleTitle: this.roleTitle,
+                department: this.department,
+                emergencyNote: this.emergencyNote
+            },
+            relationshipsCount: this.relationshipsCount,
+            safeZonesCount: this.safeZonesCount,
+            acl: this.acl,
+            rawRelationships: this.raw.relationships || {},
+            rawSafeZones: this.raw.safe_zones || this.raw.SafeZones || {}
+        };
+    }
+
+    /**
+     * TIER 3: Sub-Sub-Master Data Representation
+     * @returns {Object}
+     */
+    getSubSubMasterData() {
+        return {
+            tier: 3,
+            tierName: "Sub-Sub-Master Data (Telemetry & Diagnostics)",
+            telemetry: {
+                battery: this.battery,
+                isCharging: this.isCharging,
+                isMockGps: this.isMockGps,
+                isAirplaneMode: this.isAirplaneMode,
+                networkType: this.networkType,
+                isOnline: this.isOnline,
+                sessionState: this.sessionState,
+                lastSeen: this.lastSeen,
+                formattedLastSeen: this.getFormattedLastSeen(),
+                formattedDateTime: this.getFormattedDateTime()
+            },
+            liveFix: {
+                latitude: this.latitude,
+                longitude: this.longitude,
+                hasValidLocation: this.hasValidLocation,
+                speed: this.speed,
+                bearing: this.bearing,
+                altitude: this.altitude,
+                accuracy: this.accuracy,
+                address: this.address,
+                geohash: this.geohash,
+                formattedCoords: this.getFormattedCoords(),
+                formattedSpeed: this.getFormattedSpeed()
+            },
+            oldDeviceIdArchive: this.oldDeviceIdArchive
+        };
+    }
+
+    /**
+     * TIER 4: Transactional Data Representation
+     * @returns {Object}
+     */
+    getTransactionalData() {
+        const historyEntries = Object.entries(this.raw.history || {}).map(([k, v]) => ({ id: k, ...v }));
+        const changeLogs = this.raw.Change_Log || this.raw.change_log || {};
+        const alerts = this.raw.alerts || {};
+
+        return {
+            tier: 4,
+            tierName: "Transactional Data (Time-Series & Forensic Logs)",
+            historyPointsCount: historyEntries.length,
+            history: historyEntries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+            changeLog: changeLogs,
+            alerts: alerts,
+            systemAudit: this.raw.system_audit || {}
+        };
     }
 
     /**

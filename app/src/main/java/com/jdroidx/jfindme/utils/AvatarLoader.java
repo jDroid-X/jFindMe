@@ -58,52 +58,60 @@ public class AvatarLoader {
      */
     public static void bindCurrentUserAvatar(Context context, ImageView targetView) {
         if (targetView == null || context == null) return;
-        targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        targetView.setAdjustViewBounds(true);
+        
+        // 🔧 NULL-002: Add null safety for all operations
+        try {
+            targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            targetView.setAdjustViewBounds(true);
 
-        String prefsName = "system_registry";
-        android.content.SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
-        int currentId = prefs.getInt("equipped_avatar_id", 1);
-        String customPath = prefs.getString("equipped_vrm_string", "");
+            String prefsName = "system_registry";
+            android.content.SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
+            if (prefs == null) return;
+            
+            int currentId = prefs.getInt("equipped_avatar_id", 1);
+            String customPath = prefs.getString("equipped_vrm_string", "");
 
-        if (currentId == -1 || currentId == 999) {
-            String cacheKey = "local_custom_hq_" + customPath;
-            Bitmap cached = bitmapCache.get(cacheKey);
-            if (cached != null) {
-                targetView.setImageBitmap(cached);
-                return;
-            }
-
-            File targetFile = null;
-            if (!customPath.isEmpty()) targetFile = new File(customPath);
-            if (targetFile == null || !targetFile.exists()) {
-                targetFile = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
-            }
-
-            if (targetFile.exists()) {
-                BitmapFactory.Options opts = new BitmapFactory.Options();
-                opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
-                Bitmap b = BitmapFactory.decodeFile(targetFile.getAbsolutePath(), opts);
-                if (b != null) {
-                    bitmapCache.put(cacheKey, b);
-                    targetView.setImageBitmap(b);
+            if (currentId == -1 || currentId == 999) {
+                String cacheKey = "local_custom_hq_" + customPath;
+                Bitmap cached = bitmapCache.get(cacheKey);
+                if (cached != null) {
+                    targetView.setImageBitmap(cached);
                     return;
                 }
-            }
-        }
 
-        int dynIdx = getResolvedAvatarIndex(currentId);
-        int dynRes = 0;
-        if (dynIdx > 0) {
-            dynRes = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+                File targetFile = null;
+                if (!customPath.isEmpty()) targetFile = new File(customPath);
+                if (targetFile == null || !targetFile.exists()) {
+                    targetFile = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
+                }
+
+                if (targetFile.exists()) {
+                    BitmapFactory.Options opts = new BitmapFactory.Options();
+                    opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                    Bitmap b = BitmapFactory.decodeFile(targetFile.getAbsolutePath(), opts);
+                    if (b != null) {
+                        bitmapCache.put(cacheKey, b);
+                        targetView.setImageBitmap(b);
+                        return;
+                    }
+                }
+            }
+
+            int dynIdx = getResolvedAvatarIndex(currentId);
+            int dynRes = 0;
+            if (dynIdx > 0) {
+                dynRes = context.getResources().getIdentifier("avatar_custom_" + dynIdx, "drawable", context.getPackageName());
+            }
+            if (dynRes == 0) {
+                dynRes = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
+            }
+            if (dynRes == 0) {
+                dynRes = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
+            }
+            targetView.setImageResource(dynRes != 0 ? dynRes : android.R.drawable.ic_menu_myplaces);
+        } catch (Exception e) {
+            // Silently ignore any avatar loading errors
         }
-        if (dynRes == 0) {
-            dynRes = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
-        }
-        if (dynRes == 0) {
-            dynRes = context.getResources().getIdentifier("avatar_custom_1", "drawable", context.getPackageName());
-        }
-        targetView.setImageResource(dynRes != 0 ? dynRes : android.R.drawable.ic_menu_myplaces);
     }
 
     /**

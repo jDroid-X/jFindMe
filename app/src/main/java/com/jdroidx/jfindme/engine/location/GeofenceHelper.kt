@@ -23,6 +23,17 @@ class GeofenceHelper(context: Context) {
     }
 
     fun addGeofence(id: String, lat: Double, lng: Double, radius: Float) {
+        // Permission check before registration — show feedback to user
+        val hasFineLocation = android.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasFineLocation) {
+            SystemLogger.w(TAG, "addGeofence: ACCESS_FINE_LOCATION not granted, skipping $id")
+            android.widget.Toast.makeText(context, 
+                "Location permission required to set geofence", 
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val effectiveRadius = if (radius >= 50f) radius else 100f
         val geofence = Geofence.Builder()
             .setRequestId(id)
@@ -51,9 +62,13 @@ class GeofenceHelper(context: Context) {
     }
 
     fun removeGeofence(id: String) {
-        geofencingClient.removeGeofences(listOf(id)).run {
-            addOnSuccessListener { SystemLogger.i(TAG, "Geofence Removed: $id") }
-            addOnFailureListener { SystemLogger.e(TAG, "Failed to remove geofence: $id", it) }
+        try {
+            geofencingClient.removeGeofences(listOf(id)).run {
+                addOnSuccessListener { SystemLogger.i(TAG, "Geofence Removed: $id") }
+                addOnFailureListener { SystemLogger.w(TAG, "Failed to remove geofence: $id") }
+            }
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "removeGeofence exception: ${e.message}")
         }
     }
 }

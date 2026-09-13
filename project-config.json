@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "project": "jFindMe",
+  "package": "com.jdroidx.jfindme",
+  "lastUpdated": "2026-09-12",
+  "agentConfig": {
+    "totalAgents": 7,
+    "skills": [
+      "firebase-integration",
+      "geofencing-gis",
+      "chaquopy-python-kotlin",
+      "android-background-services",
+      "android-mvvm-architecture"
+    ],
+    "configuration": {
+      "vscode": {
+        "settings": ".vscode/settings.json",
+        "prompts": ".vscode/.prompt.md",
+        "agent": ".vscode/.agent.md"
+      },
+      "claude": {
+        "skillsPath": "~/.claude/skills/",
+        "mainSkills": [
+          "firebase-integration/SKILL.md",
+          "geofencing-gis/SKILL.md",
+          "chaquopy-python-kotlin/SKILL.md",
+          "android-background-services/SKILL.md",
+          "android-mvvm-architecture/SKILL.md"
+        ]
+      }
+    }
+  },
+  "workflow": {
+    "branchStrategy": "feat/fix/refactor/chore prefix",
+    "commitConvention": "conventional commits",
+    "buildCommands": [
+      "./gradlew assembleDebug",
+      "./gradlew assembleRelease",
+      "./gradlew clean",
+      "./gradlew test"
+    ]
+  },
+  "documentation": {
+    "quickReference": "QUICK_REFERENCE.md",
+    "workflowGuide": "WORKFLOW_GUIDE.md",
+    "onboarding": "ONBOARDING_CHECKLIST.md",
+    "structure": "PROJECT_STRUCTURE.md"
+  }
+}

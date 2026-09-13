@@ -45,18 +45,48 @@ object GisSpatialEngine {
     }
 
     /**
+     * Normalizes polygon vertex order to counter-clockwise (CCW) for consistent ray-casting.
+     * Ensures correct point-in-polygon detection regardless of drawing direction.
+     */
+    @JvmStatic
+    fun normalizePolygonOrientation(polygon: List<LatLng>): List<LatLng> {
+        if (polygon.size < 3) return polygon
+        
+        // Calculate signed area using shoelace formula
+        var area = 0.0
+        val n = polygon.size
+        for (i in 0 until n) {
+            val current = polygon[i]
+            val next = polygon[(i + 1) % n]
+            area += (next.longitude - current.longitude) * (next.latitude + current.latitude)
+        }
+        
+        // If area is negative, polygon is clockwise - reverse it
+        return if (area < 0) {
+            polygon.reversed()
+        } else {
+            polygon
+        }
+    }
+
+    /**
      * Ray-Casting algorithm to determine if a point is inside a polygon boundary.
+     * Automatically normalizes polygon orientation for consistent results.
      */
     @JvmStatic
     fun isPointInPolygon(point: LatLng, polygon: List<LatLng>): Boolean {
         if (polygon.size < 3) return false
+        
+        // Normalize to ensure consistent winding order
+        val normalized = normalizePolygonOrientation(polygon)
+        
         var inside = false
-        val n = polygon.size
+        val n = normalized.size
         var j = n - 1
 
         for (i in 0 until n) {
-            val pi = polygon[i]
-            val pj = polygon[j]
+            val pi = normalized[i]
+            val pj = normalized[j]
 
             if ((pi.longitude > point.longitude) != (pj.longitude > point.longitude) &&
                 (point.latitude < (pj.latitude - pi.latitude) * (point.longitude - pi.longitude) / (pj.longitude - pi.longitude) + pi.latitude)

@@ -19,8 +19,17 @@ export class SafeZoneCreateModalView {
      * @param {number} defaultLat 
      * @param {number} defaultLng 
      */
-    show(devices = [], defaultLat = 28.6139, defaultLng = 77.2090) {
+    show(devices = [], defaultLat = null, defaultLng = null) {
         this.close();
+
+        // Dynamically resolve center coordinates from first active device with location if not explicitly provided
+        let centerLat = defaultLat;
+        let centerLng = defaultLng;
+        if (centerLat == null || centerLng == null || (centerLat === 0 && centerLng === 0)) {
+            const devWithLoc = (Array.isArray(devices) ? devices : []).find(d => d.hasValidLocation || (d.latitude && d.longitude));
+            centerLat = devWithLoc ? devWithLoc.latitude : 18.5788;
+            centerLng = devWithLoc ? devWithLoc.longitude : 73.8887;
+        }
 
         const modal = document.createElement('div');
         modal.id = 'safezone-create-modal';
@@ -59,12 +68,12 @@ export class SafeZoneCreateModalView {
                     <div class="grid grid-cols-2 gap-3 surface-theme p-3 rounded-xl border">
                         <div>
                             <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Center Latitude (-90 to 90)</label>
-                            <input type="number" step="any" id="sz-lat" value="${defaultLat}" 
+                            <input type="number" step="any" id="sz-lat" value="${centerLat}" 
                                    class="input-theme w-full p-2 text-xs font-mono">
                         </div>
                         <div>
                             <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Center Longitude (-180 to 180)</label>
-                            <input type="number" step="any" id="sz-lng" value="${defaultLng}" 
+                            <input type="number" step="any" id="sz-lng" value="${centerLng}" 
                                    class="input-theme w-full p-2 text-xs font-mono">
                         </div>
                     </div>

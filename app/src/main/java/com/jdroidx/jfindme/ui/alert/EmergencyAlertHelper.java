@@ -22,6 +22,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine;
+import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.utils.AvatarLoader;
 import com.jdroidx.jfindme.utils.RegistryManager;
 
@@ -93,7 +94,8 @@ public class EmergencyAlertHelper {
 
         TextView tvTitle = new TextView(activity);
         tvTitle.setText("🚨 EMERGENCY SOS BROADCAST");
-        tvTitle.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        tvTitle.setTextColor(ThemeManager.getGradientOverlayColor(0));
         tvTitle.setTextSize(17f);
         tvTitle.setTypeface(null, Typeface.BOLD);
         tvTitle.setPadding((int) (10 * activity.getResources().getDisplayMetrics().density), 0, 0, 0);

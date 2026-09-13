@@ -200,7 +200,7 @@ export class EagleAnalyticsTreeView {
 
         return {
             id: 'root',
-            label: '🏢 Enterprise Global Network',
+            label: '🏢 Tier 1: Master Enterprise Fleet',
             count: this.devices.length,
             groups: Object.entries(groups).map(([groupName, devs]) => ({
                 id: `group-${groupName.replace(/\s+/g, '-').toLowerCase()}`,
@@ -219,7 +219,10 @@ export class EagleAnalyticsTreeView {
                     data-action="toggle-node" data-id="root">
                     <span class="text-slate-400 text-[10px]">${isRootOpen ? '▼' : '▶'}</span>
                     <span class="text-sm">🦅</span>
-                    <span class="font-bold flex-1">${treeData.label}</span>
+                    <div class="flex-1 flex items-center gap-1.5 min-w-0">
+                        <span class="font-bold truncate">${treeData.label}</span>
+                        <span class="badge-status badge-accent text-[8px] font-mono shrink-0">TIER 1</span>
+                    </div>
                     <span class="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] text-slate-400 font-mono">${treeData.count}</span>
                 </div>
         `;
@@ -234,7 +237,10 @@ export class EagleAnalyticsTreeView {
                             data-action="select-group" data-id="${grp.id}" data-group="${grp.name}">
                             <span class="text-slate-500 text-[9px]" data-action="toggle-node" data-id="${grp.id}">${isGrpOpen ? '▼' : '▶'}</span>
                             <span class="text-xs">📂</span>
-                            <span class="flex-1 font-semibold">${grp.name}</span>
+                            <div class="flex-1 flex items-center gap-1 min-w-0">
+                                <span class="font-semibold truncate">${grp.name}</span>
+                                <span class="badge-status badge-accent text-[7.5px] font-mono shrink-0">TIER 2</span>
+                            </div>
                             <span class="px-1.5 py-0.2 rounded bg-slate-800/80 text-[10px] text-slate-400">${grp.count}</span>
                         </div>
                 `;
@@ -256,6 +262,7 @@ export class EagleAnalyticsTreeView {
                                 <div class="flex-1 truncate font-mono text-[11px]">
                                     <span class="font-bold text-white">${dev.nickname || dev.name || dev.agentId}</span>
                                     <span class="text-slate-500 text-[10px] ml-1">(${dev.agentId?.slice(0, 6)})</span>
+                                    <span class="badge-status badge-accent text-[7px] font-mono ml-1">TIER 3</span>
                                 </div>
                                 <span class="text-[10px] font-mono text-slate-400">${Number(speed) > 0 ? `${speed} ${this.speedUnit === 'mph' ? 'mph' : 'km/h'}` : 'Idle'}</span>
                             </div>

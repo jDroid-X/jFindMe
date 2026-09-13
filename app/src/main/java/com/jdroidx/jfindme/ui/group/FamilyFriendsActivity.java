@@ -341,7 +341,14 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         rosterContainer.addView(buildSearchAndFilterCluster());
         rosterContainer.addView(buildRootGuardianAnchor());
 
-        List<RosterNode> admins = new ArrayList<>();
+    // Show loading skeleton while data hasn't arrived yet
+    if (currentRoster == null || currentRoster.isEmpty()) {
+        View loading = buildLoadingSkeleton("SYNCING_ROSTER");
+        rosterContainer.addView(loading);
+        return;
+    }
+
+    List<RosterNode> admins = new ArrayList<>();
         List<RosterNode> spouses = new ArrayList<>();
         List<RosterNode> children = new ArrayList<>();
 
@@ -389,6 +396,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         UiArchitect.applySelection(this, tabFamily, false);
         UiArchitect.applySelection(this, tabFriends, true);
         rosterContainer.removeAllViews();
+
+        // Show loading skeleton while data hasn't arrived yet
+        if (currentRoster == null || currentRoster.isEmpty()) {
+            View loading = buildLoadingSkeleton("SYNCING_FRIENDS");
+            rosterContainer.addView(loading);
+            return;
+        }
 
         rosterContainer.addView(buildSearchAndFilterCluster());
 
@@ -473,6 +487,33 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         }
 
         return card;
+    }
+
+    private View buildLoadingSkeleton(String state) {
+        LinearLayout loading = new LinearLayout(this);
+        loading.setOrientation(LinearLayout.VERTICAL);
+        loading.setGravity(Gravity.CENTER);
+        int pad = scale(32);
+        loading.setPadding(pad, pad * 2, pad, pad * 2);
+        UiArchitect.applyCard(this, loading, "CARD_STANDARD");
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, scale(16), 0, scale(24));
+        loading.setLayoutParams(lp);
+
+        ProgressBar progressBar = new ProgressBar(this);
+        progressBar.setIndeterminate(true);
+        loading.addView(progressBar, new LinearLayout.LayoutParams(scale(48), scale(48)));
+
+        TextView tvLoading = new TextView(this);
+        tvLoading.setText(state.equals("SYNCING_ROSTER") ? "Sincronizando lista..." : "Cargando...");
+        tvLoading.setTextColor(getSecondaryTextColor());
+        tvLoading.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SUB"));
+        tvLoading.setGravity(Gravity.CENTER);
+        tvLoading.setPadding(0, scale(12), 0, 0);
+        loading.addView(tvLoading);
+
+        return loading;
     }
 
     private void applySorting(List<RosterNode> list) {
@@ -842,6 +883,9 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                     startActivity(mapIntent);
                     break;
                 case 1: // Ring
+                    if (!node.isOnline()) {
+                        Toast.makeText(this, "⚠️ Device is currently offline — siren may not reach it", Toast.LENGTH_LONG).show();
+                    }
                     int sirenDur = RegistryManager.getSirenDurationSec(this);
                     FirebaseComm.triggerRemoteRingDevice(node.getUid(), sirenDur);
                     Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (" + sirenDur + "s)", Toast.LENGTH_LONG).show();

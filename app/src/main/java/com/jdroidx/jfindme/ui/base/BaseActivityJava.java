@@ -214,6 +214,10 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         if (prefs != null) {
             prefs.unregisterOnSharedPreferenceChangeListener(this);
         }
+        // Clean up static handler to prevent memory leaks
+        if (registryHandler != null) {
+            registryHandler.removeCallbacksAndMessages(null);
+        }
         super.onDestroy();
     }
 

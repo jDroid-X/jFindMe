@@ -17,6 +17,14 @@ import { EagleAnalyticsTreeView } from './views/EagleAnalyticsTreeView.js';
 import { ThemeManager } from './core/ThemeManager.js';
 import { FeedbackDialog } from './components/FeedbackDialog.js';
 import { UIControls } from './components/UIControls.js';
+import { DeviceController } from './controllers/DeviceController.js';
+import { GeoUtils } from './core/GeoUtils.js';
+import { KeyboardShortcuts } from './components/KeyboardShortcuts.js';
+import { OfflineQueue } from './core/OfflineQueue.js';
+import { DeviceRegistrationWizardInstance as DeviceRegistrationWizard } from './components/DeviceRegistrationWizard.js';
+import { DataExport } from './components/DataExport.js';
+import { OptimizedLeafletMap } from './views/OptimizedLeafletMap.js';
+import { MapPerformanceOptimizer } from './core/MapPerformance.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator

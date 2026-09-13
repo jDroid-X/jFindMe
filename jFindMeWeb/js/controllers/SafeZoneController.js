@@ -15,14 +15,27 @@ export class SafeZoneController {
     /**
      * Subscribes to safe zone state updates
      * @param {Function} callback 
+     * @returns {Function} Unsubscribe function
      */
     subscribe(callback) {
         this.subscribers.push(callback);
+        
+        // Return unsubscribe function
+        return () => {
+            const index = this.subscribers.indexOf(callback);
+            if (index > -1) {
+                this.subscribers.splice(index, 1);
+            }
+        };
     }
 
     notify() {
         for (const cb of this.subscribers) {
-            cb(this.safeZones);
+            try {
+                cb(this.safeZones);
+            } catch (err) {
+                console.error("[SAFE_ZONE_CTRL] Subscriber error:", err);
+            }
         }
     }
 

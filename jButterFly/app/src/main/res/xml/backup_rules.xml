@@ -1,13 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Exclude transient local storage to prevent state corruption across fresh installs -->
+    <exclude domain="database" path="DatabaseHelper.db" />
+    <exclude domain="database" path="DatabaseHelper.db-journal" />
+    <exclude domain="database" path="DatabaseHelper.db-wal" />
+    <exclude domain="database" path="DatabaseHelper.db-shm" />
+    <exclude domain="sharedpref" path="system_registry.xml" />
 </full-backup-content>

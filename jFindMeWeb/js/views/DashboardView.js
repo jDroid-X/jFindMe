@@ -149,7 +149,7 @@ export class DashboardView {
         displayList = DeviceController.sortByLatestFirst(displayList);
 
         container.innerHTML = `
-            <div class="h-full overflow-y-auto custom-scrollbar p-6 space-y-6 select-none font-sans">
+            <div class="h-full overflow-y-auto custom-scrollbar p-4 space-y-4 select-text font-sans">
                 
                 <!-- TOP BAR: Station Context & Radius Configuration -->
                 <div class="card-theme p-4 flex flex-wrap items-center justify-between gap-4">
@@ -471,7 +471,7 @@ export class DashboardView {
                                                             </div>
                                                             <div class="min-w-0">
                                                                 <h4 class="text-xs font-bold text-primary-theme group-hover:text-sky-400 transition-colors truncate">${dev.name}</h4>
-                                                                <div class="text-[10px] text-secondary-theme truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold">${dev.agentId}</span></div>
+                                                                <div class="text-[10px] text-secondary-theme truncate">${dev.deviceName || dev.model || 'Android'} • <span class="font-mono text-sky-400 font-bold copyable-badge" data-copy="${dev.agentId}" title="Click to copy ID">${dev.agentId}</span></div>
                                                             </div>
                                                         </div>
 
@@ -498,14 +498,14 @@ export class DashboardView {
                                                     </div>
 
                                                     <!-- Location & Timestamp Metadata -->
-                                                    <div class="bg-card-subtle rounded-xl p-2 space-y-1 border border-subtle-theme">
+                                                    <div class="bg-card-subtle rounded-xl p-2 space-y-1 border border-subtle-theme select-text">
                                                         <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-subtle-theme pb-1">
-                                                            <span class="flex items-center gap-1">🕒 <span>${dev.getFormattedDateTime()}</span></span>
+                                                            <span class="flex items-center gap-1">🕒 <span class="copyable-badge font-mono" data-copy="${dev.getFormattedDateTime()}" title="Click to copy time">${dev.getFormattedDateTime()}</span></span>
                                                             <span class="text-secondary-theme font-normal">${dev.getFormattedTimeDelta()}</span>
                                                         </div>
                                                         <div class="text-[11px] text-secondary-theme line-clamp-2 flex items-start gap-1 pt-0.5">
                                                             <span class="text-muted-theme">📍</span>
-                                                            <span class="truncate">${dev.address || 'No street address recorded'}</span>
+                                                            <span class="truncate copyable-badge" data-copy="${dev.address || dev.getFormattedCoords()}" title="Click to copy address/coords">${dev.address || 'No street address recorded'}</span>
                                                         </div>
                                                     </div>
 
@@ -530,41 +530,61 @@ export class DashboardView {
                                                     </div>
                                                 </div>
 
-                                                <!-- BACK OF CARD (HARDWARE & SENSOR DIAGNOSTICS) -->
-                                                <div class="flip-card-back p-3 bg-surface border border-indigo-500/40 rounded-2xl shadow-xl space-y-2">
+                                                <!-- BACK OF CARD (TIER 1 HARDWARE & TIER 3 SENSOR DIAGNOSTICS) -->
+                                                <div class="flip-card-back p-3 bg-surface border border-indigo-500/40 rounded-2xl shadow-xl space-y-2 select-text">
                                                     <div class="flex items-center justify-between border-b border-subtle-theme pb-1.5">
-                                                        <div class="flex items-center gap-1.5">
-                                                            <span class="text-indigo-400 font-bold text-xs">⚡ HARDWARE TELEMETRY</span>
-                                                            <span class="badge-status badge-accent text-[8px]">${dev.agentId}</span>
+                                                        <div class="flex items-center gap-1.5 min-w-0">
+                                                            <span class="text-indigo-400 font-bold text-xs truncate">⚡ HARDWARE SILICON SENTINEL</span>
+                                                            <span class="badge-status badge-accent text-[8px] font-mono shrink-0 copyable-badge" data-copy="${dev.agentId}" title="Click to copy">${dev.agentId}</span>
                                                         </div>
-                                                        <button class="btn-flip-back text-xs text-muted-theme hover:text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-subtle-theme transition-all" data-agent-id="${dev.agentId}">
-                                                            ↩️ Return
+                                                        <button class="btn-flip-back text-xs text-muted-theme hover:text-indigo-400 font-bold px-1.5 py-0.5 rounded border border-subtle-theme transition-all shrink-0" data-agent-id="${dev.agentId}">
+                                                            ↩️ Front
                                                         </button>
                                                     </div>
 
-                                                    <!-- Live Sensor Grid -->
-                                                    <div class="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                                                    <!-- Tier 1 Silicon Specs -->
+                                                    <div class="space-y-1 text-[9.5px] font-mono bg-card-subtle p-2 rounded-xl border border-subtle-theme select-text">
+                                                        <div class="flex justify-between py-0.5 border-b border-subtle-theme">
+                                                            <span class="text-secondary-theme">Hardware Model:</span>
+                                                            <span class="text-primary-theme font-bold truncate">${dev.brand} ${dev.model} (${dev.device})</span>
+                                                        </div>
+                                                        <div class="flex justify-between py-0.5 border-b border-subtle-theme">
+                                                            <span class="text-secondary-theme">Board / Chip:</span>
+                                                            <span class="text-primary-theme truncate">${dev.board} / ${dev.hardware}</span>
+                                                        </div>
+                                                        <div class="flex justify-between py-0.5 border-b border-subtle-theme">
+                                                            <span class="text-secondary-theme">IMEI 1 / 2:</span>
+                                                            <span class="text-primary-theme truncate copyable-badge" data-copy="${dev.imei1}">${dev.imei1} / ${dev.imei2}</span>
+                                                        </div>
+                                                        <div class="flex justify-between py-0.5">
+                                                            <span class="text-secondary-theme">Silicon SHA:</span>
+                                                            <span class="text-amber-400 font-bold truncate text-[8.5px] copyable-badge" data-copy="${dev.siliconHash}" title="Click to copy Silicon SHA">${dev.siliconHash}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Live Sensor Grid (Tier 3) -->
+                                                    <div class="grid grid-cols-2 gap-1.5 text-[9.5px] font-mono">
                                                         <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
-                                                            <div class="text-muted-theme uppercase">Altitude</div>
+                                                            <div class="text-muted-theme uppercase text-[8px]">Altitude</div>
                                                             <div class="font-bold text-primary-theme">${dev.altitude ? `${dev.altitude}m MSL` : '182m MSL'}</div>
                                                         </div>
                                                         <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
-                                                            <div class="text-muted-theme uppercase">Heading Bearing</div>
+                                                            <div class="text-muted-theme uppercase text-[8px]">Heading Bearing</div>
                                                             <div class="font-bold text-primary-theme">${Math.round(dev.bearing || 0)}° North</div>
                                                         </div>
                                                         <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
-                                                            <div class="text-muted-theme uppercase">GPS Precision</div>
-                                                            <div class="font-bold text-emerald-400">±3.8m HDOP</div>
+                                                            <div class="text-muted-theme uppercase text-[8px]">GPS Precision</div>
+                                                            <div class="font-bold text-emerald-400">±${(dev.accuracy || 3.8).toFixed(1)}m HDOP</div>
                                                         </div>
                                                         <div class="bg-card-subtle p-1.5 rounded-lg border border-subtle-theme">
-                                                            <div class="text-muted-theme uppercase">Mock GPS Bypass</div>
-                                                            <div class="font-bold text-emerald-400">🛡️ Verified Clean</div>
+                                                            <div class="text-muted-theme uppercase text-[8px]">Provider State</div>
+                                                            <div class="font-bold ${dev.isMockGps ? 'text-rose-400' : 'text-emerald-400'}">${dev.isMockGps ? '⚠️ MOCK GPS' : '🛡️ GENUINE HW'}</div>
                                                         </div>
                                                     </div>
 
                                                     <!-- Direct Switch: Live Telemetry Stream -->
-                                                    <div class="flex items-center justify-between p-2 rounded-xl bg-card-subtle border border-subtle-theme">
-                                                        <span class="text-[11px] font-bold text-primary-theme">Telemetry Stream</span>
+                                                    <div class="flex items-center justify-between p-1.5 rounded-xl bg-card-subtle border border-subtle-theme">
+                                                        <span class="text-[10.5px] font-bold text-primary-theme">Telemetry Stream</span>
                                                         <label class="switch-toggle switch-sm">
                                                             <input type="checkbox" class="dash-switch-acl" data-agent-id="${dev.agentId}" data-flag="acl_live_tracking" checked>
                                                             <span class="switch-slider"></span>
@@ -818,6 +838,20 @@ export class DashboardView {
         // 9. Launch Live Map Button
         document.getElementById('btn-dash-open-map')?.addEventListener('click', () => {
             if (window.showLiveMap) window.showLiveMap();
+        });
+
+        // 10. Universal Clipboard Copy for Dashboard Cards & Tiles
+        document.querySelectorAll('.copyable-badge, [data-copy]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const copyText = el.getAttribute('data-copy') || el.innerText.trim().replace(/📋/g, '').trim();
+                const label = el.getAttribute('data-copy-label') || 'Data';
+                if (copyText && navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(copyText).then(() => {
+                        FeedbackDialog.showToast(`📋 Copied ${label}: ${copyText}`, 'info');
+                    }).catch(() => {});
+                }
+            });
         });
     }
 }

@@ -136,12 +136,53 @@ export class MapSettingsView {
                         <div>
                             <label class="text-[10px] font-bold uppercase tracking-wider text-muted-theme block mb-1">Live Refresh</label>
                             <select id="setting-refresh" class="input-theme w-full p-1.5 text-xs">
-                                <option value="3" ${settings.refreshIntervalSec === 3 ? 'selected' : ''}>Every 3s</option>
-                                <option value="5" ${settings.refreshIntervalSec === 5 ? 'selected' : ''}>Every 5s (Optimal)</option>
-                                <option value="10" ${settings.refreshIntervalSec === 10 ? 'selected' : ''}>Every 10s</option>
-                                <option value="30" ${settings.refreshIntervalSec === 30 ? 'selected' : ''}>Every 30s</option>
-                                <option value="0" ${settings.refreshIntervalSec === 0 ? 'selected' : ''}>Manual</option>
+                                <option value="3" ${settings.refreshIntervalSec === 3 ? 'selected' : ''}>Every 3s (High Perf)</option>
+                                <option value="5" ${settings.refreshIntervalSec === 5 ? 'selected' : ''}>Every 5s (Balanced)</option>
+                                <option value="10" ${settings.refreshIntervalSec === 10 ? 'selected' : ''}>Every 10s (Battery Saver)</option>
+                                <option value="30" ${settings.refreshIntervalSec === 30 ? 'selected' : ''}>Every 30s (Ultra Save)</option>
+                                <option value="0" ${settings.refreshIntervalSec === 0 ? 'selected' : ''}>Manual Only</option>
                             </select>
+                        </div>
+                    </div>
+                    
+                    <!-- SECTION 4: PERFORMANCE OPTIONS -->
+                    <div class="space-y-2.5 surface-theme p-3 rounded-xl border">
+                        <div class="flex items-center justify-between">
+                            <label class="text-xs font-bold uppercase tracking-wider text-sky-400">
+                                ⚡ Performance Options
+                            </label>
+                        </div>
+                        
+                        <div class="space-y-2 pt-1">
+                            <!-- Battery Saver Toggle -->
+                            <div class="flex items-center justify-between py-2 border-b border-subtle-theme">
+                                <div>
+                                    <div class="text-xs font-medium text-primary-theme">Battery Saver Mode</div>
+                                    <div class="text-[10px] text-muted-theme">Reduce animations & updates</div>
+                                </div>
+                                <label class="switch-toggle switch-sm" title="Enable Battery Saver">
+                                    <input type="checkbox" id="setting-battery-saver" ${settings.batterySaverMode ? 'checked' : ''}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <!-- Viewport Culling Toggle -->
+                            <div class="flex items-center justify-between py-2 border-b border-subtle-theme">
+                                <div>
+                                    <div class="text-xs font-medium text-primary-theme">Viewport Culling</div>
+                                    <div class="text-[10px] text-muted-theme">Only show markers in view</div>
+                                </div>
+                                <label class="switch-toggle switch-sm" title="Enable Viewport Culling">
+                                    <input type="checkbox" id="setting-viewport-cull" ${!settings.disableViewportCulling ? 'checked' : ''}>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <!-- Adaptive Polling Info -->
+                            <div class="flex items-center gap-2 p-2 rounded-lg bg-sky-500/10 border border-sky-500/30 text-[10px] text-sky-400">
+                                <span>ℹ️</span>
+                                <span>Adaptive polling automatically adjusts refresh rate based on device activity</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -246,32 +287,52 @@ export class MapSettingsView {
             const theme = modal.querySelector('#setting-theme').value;
             const refresh = parseInt(modal.querySelector('#setting-refresh').value, 10);
             const showCircle = modal.querySelector('#setting-show-circle').checked;
+            const batterySaver = modal.querySelector('#setting-battery-saver')?.checked || false;
+            const viewportCull = !(modal.querySelector('#setting-viewport-cull')?.checked ?? true);
 
             if (isNaN(lat) || isNaN(lng)) {
-                FeedbackDialog.showToast("Invalid reference coordinates.", "error");
+                FeedbackDialog.showToast("Invalid coordinates. Please enter valid Latitude and Longitude.", "error");
                 return;
             }
 
-            settings.referenceLat = lat;
-            settings.referenceLng = lng;
-            settings.searchRadiusKm = radius;
-            settings.mapEngine = engine;
-            settings.mapTileTheme = theme;
-            settings.refreshIntervalSec = refresh;
-            settings.showRadiusCircle = showCircle;
-            settings.save();
-
-            if (this.onSave) {
-                this.onSave(settings);
-            }
+            const updated = Object.assign({}, settings, {
+                referenceLat: lat,
+                referenceLng: lng,
+                searchRadiusKm: radius,
+                mapEngine: engine,
+                mapTileTheme: theme,
+                refreshIntervalSec: refresh,
+                showRadiusCircle: showCircle,
+                batterySaverMode: batterySaver,
+                disableViewportCulling: viewportCull
+            });
 
             this.close();
-            FeedbackDialog.showToast("Radar settings applied!", "success");
+
+            if (this.onSave) {
+                this.onSave(updated).then(() => {
+                    FeedbackDialog.showToast("Settings saved successfully!", "success");
+                }).catch(err => {
+                    console.error("[SETTINGS] Save failed:", err);
+                    FeedbackDialog.showToast("Failed to save settings.", "error");
+                });
+            } else {
+                FeedbackDialog.showToast("Settings saved locally (no callback).", "info");
+            }
         });
+
+        this.modalElement = modal;
+        document.body.appendChild(modal);
+
+        // Focus first input
+        setTimeout(() => {
+            const firstInput = modal.querySelector('input[type="number"]');
+            if (firstInput) firstInput.focus();
+        }, 100);
     }
 
     close() {
-        if (this.modalElement) {
+        if (this.modalElement && this.modalElement.parentNode) {
             this.modalElement.remove();
             this.modalElement = null;
         }

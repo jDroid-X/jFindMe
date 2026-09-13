@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
+    <!-- L1.4: Telephony Hardware & Dual-SIM Identification -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    
     <!-- L1: Storage Support -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

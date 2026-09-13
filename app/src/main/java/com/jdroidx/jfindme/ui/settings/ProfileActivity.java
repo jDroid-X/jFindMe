@@ -13,6 +13,7 @@ import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.google.firebase.auth.FirebaseAuth;
 import com.jdroidx.jfindme.engine.security.SecurityEngine;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.UiScalingMatrixTable;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
@@ -664,13 +665,15 @@ public class ProfileActivity extends BaseActivityJava {
 
         TextView valTxt = new TextView(this);
         valTxt.setText(value);
-        valTxt.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        valTxt.setTextColor(ThemeManager.getGradientOverlayColor(currentThemeId));
         valTxt.setTextSize(UiScalingMatrixTable.scaleText(stage, 18, true));
         valTxt.setTypeface(null, Typeface.BOLD);
         
         TextView titleTxt = new TextView(this);
         titleTxt.setText(title);
-        titleTxt.setTextColor(Color.GRAY);
+        // 🔧 THEME FIX: Use theme-aware secondary text color instead of hardcoded GRAY
+        titleTxt.setTextColor(getSecondaryTextColor());
         titleTxt.setTextSize(UiScalingMatrixTable.scaleText(stage, 10));
         titleTxt.setPadding(0, 10, 0, 0);
 
@@ -873,7 +876,8 @@ public class ProfileActivity extends BaseActivityJava {
                 // Tick Box Indicator
                 TextView activeBadge = new TextView(this);
                 activeBadge.setText(isCustomEquipped ? "✓" : "☐");
-                activeBadge.setTextColor(Color.WHITE);
+                // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+                activeBadge.setTextColor(getGradientOverlayText());
                 activeBadge.setTextSize(isCustomEquipped ? 10 : 12);
                 activeBadge.setTypeface(null, Typeface.BOLD);
                 activeBadge.setGravity(Gravity.CENTER);
@@ -890,7 +894,8 @@ public class ProfileActivity extends BaseActivityJava {
 
                 ImageView deleteBtn = new ImageView(this);
                 deleteBtn.setImageResource(android.R.drawable.ic_menu_delete);
-                deleteBtn.setColorFilter(Color.WHITE);
+                // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+                deleteBtn.setColorFilter(getGradientOverlayText());
                 android.graphics.drawable.GradientDrawable delBg = new android.graphics.drawable.GradientDrawable();
                 delBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
                 delBg.setColor(Color.parseColor("#EF4444"));

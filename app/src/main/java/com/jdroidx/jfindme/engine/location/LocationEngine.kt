@@ -100,42 +100,41 @@ class LocationEngine(private val context: Context, private val onLocationChanged
             trackingPriority = PRIORITY_HIGH_ACCURACY
             updateInterval = userChoice
             updateTrackingParams()
-            return@motionListener
-        }
-
-        when (motionState) {
-            ActivityRecognitionSentinel.MotionState.STILL -> {
-                // 🔋 ZERO GPS SATELLITE DRAIN: Device is stationary, enter balanced power heartbeat
-                val stillInterval = RegistryManager.getMotionStillIntervalMs(context)
-                trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
-                updateInterval = stillInterval
-                updateTrackingParams()
-                SystemLogger.i(TAG, "🔋 STILL detected: GPS Chip sleeping, heartbeat mode enabled (${stillInterval / 1000}s / 25m).")
-            }
-            ActivityRecognitionSentinel.MotionState.IN_VEHICLE -> {
-                // 🚗 HIGH VELOCITY: Fast road tracking
-                val vehicleInterval = RegistryManager.getMotionVehicleIntervalMs(context)
-                trackingPriority = PRIORITY_HIGH_ACCURACY
-                updateInterval = vehicleInterval
-                updateTrackingParams()
-                SystemLogger.i(TAG, "🚗 IN_VEHICLE detected: High-accuracy road tracking enabled (${vehicleInterval / 1000}s / 10m).")
-            }
-            ActivityRecognitionSentinel.MotionState.WALKING,
-            ActivityRecognitionSentinel.MotionState.RUNNING,
-            ActivityRecognitionSentinel.MotionState.ON_BICYCLE -> {
-                // 🚶 PEDESTRIAN MOTION: Moderate tracking
-                val walkingInterval = RegistryManager.getMotionWalkingIntervalMs(context)
-                trackingPriority = PRIORITY_HIGH_ACCURACY
-                updateInterval = walkingInterval
-                updateTrackingParams()
-                SystemLogger.i(TAG, "🚶 MOTION detected ($motionState): High-accuracy pedestrian tracking enabled (${walkingInterval / 1000}s / 15m).")
-            }
-            ActivityRecognitionSentinel.MotionState.UNKNOWN -> {
-                // Default fallback to configured user preference
-                val userChoice = RegistryManager.getTrackingInterval(context)
-                trackingPriority = PRIORITY_HIGH_ACCURACY
-                updateInterval = userChoice
-                updateTrackingParams()
+        } else {
+            when (motionState) {
+                ActivityRecognitionSentinel.MotionState.STILL -> {
+                    // 🔋 ZERO GPS SATELLITE DRAIN: Device is stationary, enter balanced power heartbeat
+                    val stillInterval = RegistryManager.getMotionStillIntervalMs(context)
+                    trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
+                    updateInterval = stillInterval
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "🔋 STILL detected: GPS Chip sleeping, heartbeat mode enabled (${stillInterval / 1000}s / 25m).")
+                }
+                ActivityRecognitionSentinel.MotionState.IN_VEHICLE -> {
+                    // 🚗 HIGH VELOCITY: Fast road tracking
+                    val vehicleInterval = RegistryManager.getMotionVehicleIntervalMs(context)
+                    trackingPriority = PRIORITY_HIGH_ACCURACY
+                    updateInterval = vehicleInterval
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "🚗 IN_VEHICLE detected: High-accuracy road tracking enabled (${vehicleInterval / 1000}s / 10m).")
+                }
+                ActivityRecognitionSentinel.MotionState.WALKING,
+                ActivityRecognitionSentinel.MotionState.RUNNING,
+                ActivityRecognitionSentinel.MotionState.ON_BICYCLE -> {
+                    // 🚶 PEDESTRIAN MOTION: Moderate tracking
+                    val walkingInterval = RegistryManager.getMotionWalkingIntervalMs(context)
+                    trackingPriority = PRIORITY_HIGH_ACCURACY
+                    updateInterval = walkingInterval
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "🚶 MOTION detected ($motionState): High-accuracy pedestrian tracking enabled (${walkingInterval / 1000}s / 15m).")
+                }
+                ActivityRecognitionSentinel.MotionState.UNKNOWN -> {
+                    // Default fallback to configured user preference
+                    val userChoice = RegistryManager.getTrackingInterval(context)
+                    trackingPriority = PRIORITY_HIGH_ACCURACY
+                    updateInterval = userChoice
+                    updateTrackingParams()
+                }
             }
         }
     }

@@ -23,7 +23,8 @@ public class AvatarCropActivity extends BaseActivityJava {
     @Override
     protected View createLayout() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
+        // 🔧 THEME FIX: Use dark background instead of hardcoded BLACK
+        root.setBackgroundColor(Color.parseColor("#121212"));
         
         java.io.File cf = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
         if (!cf.exists()) {
@@ -46,7 +47,8 @@ public class AvatarCropActivity extends BaseActivityJava {
         Button saveBtn = new Button(this);
         saveBtn.setText("EXECUTE FACE CROP");
         saveBtn.setBackgroundColor(getGradientStart());
-        saveBtn.setTextColor(Color.WHITE);
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        saveBtn.setTextColor(getGradientOverlayText());
         saveBtn.setTypeface(null, Typeface.BOLD);
         saveBtn.setCompoundDrawablesWithIntrinsicBounds(com.jdroidx.jfindme.R.drawable.ic_crop, 0, 0, 0);
         saveBtn.setCompoundDrawablePadding(30);
@@ -60,8 +62,9 @@ public class AvatarCropActivity extends BaseActivityJava {
         saveBtn.setOnClickListener(v -> cv.performCropAndSave());
         Button rotateBtn = new Button(this);
         rotateBtn.setText("ROTATE IMAGE 90° ⟳");
-        rotateBtn.setBackgroundColor(Color.parseColor("#424242")); // iOS Dark Mode Hue
-        rotateBtn.setTextColor(Color.WHITE);
+        rotateBtn.setBackgroundColor(getCardColor());
+        // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+        rotateBtn.setTextColor(getGradientOverlayText());
         rotateBtn.setTypeface(null, Typeface.BOLD);
         rotateBtn.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_rotate, 0, 0, 0);
         rotateBtn.setCompoundDrawablePadding(30);

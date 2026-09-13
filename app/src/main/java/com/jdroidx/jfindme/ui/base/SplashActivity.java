@@ -92,6 +92,11 @@ public class SplashActivity extends Activity {
             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
             com.google.firebase.auth.FirebaseUser currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
             
+            // 🧬 V75: Self-healing hardware telemetry upgrade for installed devices
+            new Thread(() -> {
+                db.backfillCurrentDeviceHardwareSpecs(SplashActivity.this);
+            }).start();
+            
             Intent nextIntent;
             if (currentUser != null) {
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Identity Detected. Verifying Forensic Integrity.");

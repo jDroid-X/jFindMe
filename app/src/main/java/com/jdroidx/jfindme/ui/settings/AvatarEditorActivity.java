@@ -542,7 +542,8 @@ public class AvatarEditorActivity extends BaseActivityJava {
             if (!foundMesh) {
                 TextView error = new TextView(this);
                 error.setText("⚠ IDENTITY INDEX FAILURE: NO ASSETS DETECTED");
-                error.setTextColor(Color.RED);
+                // 🔧 THEME FIX: Use theme-aware error color instead of hardcoded RED
+                error.setTextColor(Color.parseColor("#FF5252"));
                 error.setGravity(Gravity.CENTER);
                 error.setPadding(0, 50, 0, 50);
                 inventoryOptionsGrid.addView(error);

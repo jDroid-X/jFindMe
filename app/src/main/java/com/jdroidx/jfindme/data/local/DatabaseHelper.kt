@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 74 // 🧬 V74: Master-Transactional Schema, Deduplication & Anti-GIGO Engine
+        const val DATABASE_VERSION = 75 // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -229,12 +229,48 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
-     * 📱 Device Analytical Sync: Hardware-locked registration.
+     * 📱 Device Analytical Sync: Hardware-locked registration & hardware telemetry.
      */
-    fun syncDeviceAnalytical(uid1: String, deviceId: String, model: String?, imei: String?, rooted: Boolean, fingerprint: String?, lat: Double = 0.0, lng: Double = 0.0, addr: String? = null) {
+    @JvmOverloads
+    fun syncDeviceAnalytical(
+        uid1: String,
+        deviceId: String,
+        model: String?,
+        imei: String?,
+        rooted: Boolean,
+        fingerprint: String?,
+        lat: Double = 0.0,
+        lng: Double = 0.0,
+        addr: String? = null,
+        brand: String? = null,
+        board: String? = null,
+        hardware: String? = null,
+        deviceName: String? = null,
+        imei1: String? = null,
+        imei2: String? = null,
+        isDualSim: Boolean? = null
+    ) {
         val db = this.writableDatabase
         val iId = resolveInternalId(uid1)
-        if (iId != -1L) DeviceTable.upsert(db, deviceId, iId, model, imei, rooted, fingerprint, lat, lng, addr)
+        if (iId != -1L) DeviceTable.upsert(
+            db = db,
+            deviceId = deviceId,
+            identityId = iId,
+            model = model,
+            imei = imei,
+            rooted = rooted,
+            fingerprint = fingerprint,
+            lat = lat,
+            lng = lng,
+            addr = addr,
+            brand = brand,
+            board = board,
+            hardware = hardware,
+            deviceName = deviceName,
+            imei1 = imei1,
+            imei2 = imei2,
+            isDualSim = isDualSim
+        )
     }
 
     // --- SYSTEM LIFECYCLE ---
@@ -933,6 +969,34 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 android.util.Log.e("DatabaseHelper", "V74 Upgrade error: ${e.message}")
             }
         }
+
+        if (oldVersion < 75) {
+            db.beginTransaction()
+            try {
+                val newCols = mapOf(
+                    DeviceTable.COL_BRAND to "TEXT",
+                    DeviceTable.COL_BOARD to "TEXT",
+                    DeviceTable.COL_HARDWARE to "TEXT",
+                    DeviceTable.COL_DEVICE_NAME to "TEXT",
+                    DeviceTable.COL_IMEI_1 to "TEXT",
+                    DeviceTable.COL_IMEI_2 to "TEXT",
+                    DeviceTable.COL_IS_DUAL_SIM to "INTEGER DEFAULT 0"
+                )
+                for ((col, def) in newCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${DeviceTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${DeviceTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V75 Schema Migration: Hardware specifications & Dual-SIM columns deployed.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V75 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
     }
 
     /**
@@ -1021,7 +1085,26 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     nodeIndex = nIdx
                 )
             }
-            DeviceTable.upsert(db, deviceId, iId, profileData["model"], profileData["imei"], false, profileData["fingerprint"], lat, lng, addr)
+            val isDualSimVal = profileData["is_dual_sim"]?.equals("true", ignoreCase = true) == true
+            DeviceTable.upsert(
+                db = db,
+                deviceId = deviceId,
+                identityId = iId,
+                model = profileData["model"],
+                imei = profileData["imei"],
+                rooted = false,
+                fingerprint = profileData["fingerprint"],
+                lat = lat,
+                lng = lng,
+                addr = addr,
+                brand = profileData["brand"],
+                board = profileData["board"],
+                hardware = profileData["hardware"],
+                deviceName = profileData["device_name"],
+                imei1 = profileData["imei_1"] ?: profileData["imei"],
+                imei2 = profileData["imei_2"],
+                isDualSim = isDualSimVal
+            )
             
             // STEP 2: PROFILE & ORGANIZATION (Tier 1)
             UserProfileTable.upsert(db, iId, profileData)
@@ -1973,6 +2056,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     d.${DeviceTable.COL_LONGITUDE} as longitude,
                     COALESCE(p.${UserProfileTable.COL_ADDRESS}, d.${DeviceTable.COL_ADDRESS}) as Address,
                     d.${DeviceTable.COL_DEVICE_MODEL} as model,
+                    d.${DeviceTable.COL_BRAND} as brand,
+                    d.${DeviceTable.COL_BOARD} as board,
+                    d.${DeviceTable.COL_HARDWARE} as hardware,
+                    d.${DeviceTable.COL_DEVICE_NAME} as device_name,
+                    d.${DeviceTable.COL_IMEI} as imei,
+                    d.${DeviceTable.COL_IMEI_1} as imei_1,
+                    d.${DeviceTable.COL_IMEI_2} as imei_2,
+                    d.${DeviceTable.COL_IS_DUAL_SIM} as is_dual_sim,
                     d.${DeviceTable.COL_BUILD_FINGERPRINT} as fingerprint
                 FROM ${UserIdentityTable.TABLE_NAME} i
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} p ON i.${UserIdentityTable.COL_ID} = p.${UserProfileTable.COL_IDENTITY_ID}
@@ -1999,6 +2090,62 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             }
         } catch (e: Exception) { }
         return map
+    }
+
+    /**
+     * 🧬 V75: Self-Healing Hardware Specifications Backfill & Sync Engine
+     * Updates old/existing installations by inspecting hardware, persisting to local SQLite,
+     * and pushing atomic updates to Firebase Cloud.
+     */
+    fun backfillCurrentDeviceHardwareSpecs(context: Context) {
+        try {
+            val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
+            val specs = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareSpecs(context)
+
+            // 1. Update local SQLite DeviceTable
+            syncDeviceAnalytical(
+                uid1 = agentId,
+                deviceId = hardwareUid,
+                model = specs.model,
+                imei = specs.imei1,
+                rooted = false,
+                fingerprint = android.os.Build.FINGERPRINT,
+                brand = specs.brand,
+                board = specs.board,
+                hardware = specs.hardware,
+                deviceName = specs.deviceName,
+                imei1 = specs.imei1,
+                imei2 = specs.imei2,
+                isDualSim = specs.isDualSim
+            )
+
+            // 2. Immediate Cloud Matrix Update if authenticated
+            val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+            if (!authUid.isNullOrBlank()) {
+                val fullDossier = getForensicDossierComplete(agentId).toMutableMap()
+                fullDossier["brand"] = specs.brand
+                fullDossier["model"] = specs.model
+                fullDossier["board"] = specs.board
+                fullDossier["hardware"] = specs.hardware
+                fullDossier["device_name"] = specs.deviceName
+                fullDossier["imei"] = specs.imei1
+                fullDossier["imei_1"] = specs.imei1
+                fullDossier["imei_2"] = specs.imei2
+                fullDossier["is_dual_sim"] = specs.isDualSim
+                fullDossier["fingerprint"] = android.os.Build.FINGERPRINT
+
+                com.jdroidx.jfindme.data.remote.FirebaseComm.syncForensicHeartbeat(
+                    authUid,
+                    agentId,
+                    hardwareUid,
+                    fullDossier
+                )
+            }
+            SystemLogger.i("DatabaseHelper", "V75: Hardware specifications backfilled for $agentId ($specs)")
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "V75 Hardware backfill failed: ${e.message}")
+        }
     }
 
     /**

@@ -112,8 +112,18 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 // Fetch the COMPLETE local truth before syncing to prevent cloud-wiping of identity/location metadata.
                 val localTruth = db.getForensicDossierComplete(finalAgentId)
                 
+                val hwSpecs = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareSpecs(context)
+
                 val hardwareMetadata = mutableMapOf<String, Any>(
-                    "model" to android.os.Build.MODEL,
+                    "model" to hwSpecs.model,
+                    "brand" to hwSpecs.brand,
+                    "board" to hwSpecs.board,
+                    "hardware" to hwSpecs.hardware,
+                    "device_name" to hwSpecs.deviceName,
+                    "imei" to hwSpecs.imei1,
+                    "imei_1" to hwSpecs.imei1,
+                    "imei_2" to hwSpecs.imei2,
+                    "is_dual_sim" to hwSpecs.isDualSim,
                     "fingerprint" to android.os.Build.FINGERPRINT,
                     "os_version" to android.os.Build.VERSION.RELEASE,
                     "manufacturer" to android.os.Build.MANUFACTURER
@@ -128,7 +138,21 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 val hardwareId = fullPayload["uid_2"]?.toString()?.takeIf { it.isNotBlank() } ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
                 
                 FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
-                db.syncDeviceAnalytical(finalAgentId, hardwareId, hardwareMetadata["model"]?.toString(), "REDACTED", false, hardwareMetadata["fingerprint"]?.toString())
+                db.syncDeviceAnalytical(
+                    uid1 = finalAgentId,
+                    deviceId = hardwareId,
+                    model = hwSpecs.model,
+                    imei = hwSpecs.imei1,
+                    rooted = false,
+                    fingerprint = android.os.Build.FINGERPRINT,
+                    brand = hwSpecs.brand,
+                    board = hwSpecs.board,
+                    hardware = hwSpecs.hardware,
+                    deviceName = hwSpecs.deviceName,
+                    imei1 = hwSpecs.imei1,
+                    imei2 = hwSpecs.imei2,
+                    isDualSim = hwSpecs.isDualSim
+                )
             }
     }
 

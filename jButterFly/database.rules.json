@@ -1,0 +1,31 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "devices": {
+      "$agentId": {
+        ".indexOn": ["category", "role", "lastSeenTs"]
+      }
+    },
+    "locations": {
+      "$agentId": {
+        ".indexOn": ["timestamp", "batteryPct"]
+      }
+    },
+    "commands": {
+      "$agentId": {
+        ".indexOn": ["timestamp"]
+      }
+    },
+    "pairings": {
+      "$targetAgentId": {
+        ".indexOn": ["timestamp", "status"]
+      }
+    },
+    "safezones": {
+      "$agentId": {
+        ".indexOn": ["createdAt"]
+      }
+    }
+  }
+}

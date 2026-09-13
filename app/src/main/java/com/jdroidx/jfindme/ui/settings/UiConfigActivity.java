@@ -240,7 +240,8 @@ public class UiConfigActivity extends BaseActivityJava {
             
             TextView tIcon = new TextView(this);
             tIcon.setText(stageNames[i].substring(0, 2)); // Use first 2 chars
-            tIcon.setTextColor(Color.WHITE);
+            // 🔧 THEME FIX: Use theme-aware overlay color instead of hardcoded WHITE
+            tIcon.setTextColor(getGradientOverlayText());
             tIcon.setTextSize(18);
             tIcon.setTypeface(null, Typeface.BOLD);
             tIcon.setGravity(Gravity.CENTER);

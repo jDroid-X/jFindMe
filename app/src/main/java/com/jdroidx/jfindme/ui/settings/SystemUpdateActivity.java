@@ -233,16 +233,16 @@ public class SystemUpdateActivity extends BaseActivityJava {
         TextView ghLbl = createLabel("GITHUB REPOSITORY DISTRIBUTION (*)");
         ghHeader.addView(ghLbl, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        TextView btnOpenGh = new TextView(this);
-        btnOpenGh.setText("🌐 OPEN IN BROWSER");
-        btnOpenGh.setTextColor(getGradientStart());
-        btnOpenGh.setTypeface(null, Typeface.BOLD);
-        UiArchitect.applyText(this, btnOpenGh, "TEXT_MINI");
-        btnOpenGh.setPadding(scale(10), scale(10), scale(10), scale(10));
-        btnOpenGh.setClickable(true);
-        btnOpenGh.setFocusable(true);
-        btnOpenGh.setOnClickListener(v -> viewModel.openGithubInBrowser(this));
-        ghHeader.addView(btnOpenGh);
+        TextView btnDirectGh = new TextView(this);
+        btnDirectGh.setText("📥 DIRECT DOWNLOAD");
+        btnDirectGh.setTextColor(getGradientStart());
+        btnDirectGh.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnDirectGh, "TEXT_MINI");
+        btnDirectGh.setPadding(scale(10), scale(10), scale(10), scale(10));
+        btnDirectGh.setClickable(true);
+        btnDirectGh.setFocusable(true);
+        btnDirectGh.setOnClickListener(v -> viewModel.installGithubApk(this));
+        ghHeader.addView(btnDirectGh);
 
         TextView btnEditGh = new TextView(this);
         btnEditGh.setText("EDIT");
@@ -275,8 +275,8 @@ public class SystemUpdateActivity extends BaseActivityJava {
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setWeightSum(3.0f);
 
-        // Hooked to Version Selection Hub
-        View btnInstall = createSmallButton("INSTALL VERSION", android.R.drawable.ic_menu_save, true, v -> showVersionSelectionModal());
+        // Direct in-app install without browser
+        View btnInstall = createSmallButton("DOWNLOAD & INSTALL", android.R.drawable.ic_menu_save, true, v -> viewModel.installGithubApk(this));
         View btnUpdate = createSmallButton("CHECK UPDATE", android.R.drawable.ic_popup_sync, true, v -> viewModel.executeUpdate(this));
         View btnCancel = createSmallButton("CLOSE", android.R.drawable.ic_menu_close_clear_cancel, false, v -> finish());
 

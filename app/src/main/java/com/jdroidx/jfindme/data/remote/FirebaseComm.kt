@@ -365,11 +365,11 @@ object FirebaseComm {
 
                 callback(hasNew, remoteName, remoteCode, bestUrl, size)
             } else {
-                // Fallback to Production Master Defaults
-                val defaultCode = 62
-                val defaultName = "1.0.0"
-                val defaultUrl = "https://raw.githubusercontent.com/jDroid-X/jButterfly/main/jbutterfly/app-release.apk"
-                val defaultSize = "84.1 MB"
+                // Fallback to Production Master Defaults (v1.0.2)
+                val defaultCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
+                val defaultName = com.jdroidx.jfindme.BuildConfig.VERSION_NAME
+                val defaultUrl = "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/jButterFly.apk"
+                val defaultSize = "95.9 MB"
                 val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
                 val hasNew = defaultCode > currentCode
 
@@ -680,10 +680,17 @@ object FirebaseComm {
         // 3. DEVICE NODE (Tier 2 Hardware Specifications & Fingerprints)
         val devPath = "$NODE_DEVICES/$agentId/device"
         atomicPayload["$devPath/device_id"] = hardwareId
-        atomicPayload["$devPath/model"] = payload["model"] ?: android.os.Build.MODEL
-        atomicPayload["$devPath/imei"] = payload["imei"] ?: ""
-        atomicPayload["$devPath/is_rooted"] = if (payload["is_rooted"] == true) "1" else "0"
-        atomicPayload["$devPath/fingerprint"] = payload["fingerprint"] ?: ""
+        atomicPayload["$devPath/brand"] = payload["brand"] ?: android.os.Build.BRAND ?: ""
+        atomicPayload["$devPath/model"] = payload["model"] ?: android.os.Build.MODEL ?: ""
+        atomicPayload["$devPath/board"] = payload["board"] ?: android.os.Build.BOARD ?: ""
+        atomicPayload["$devPath/hardware"] = payload["hardware"] ?: android.os.Build.HARDWARE ?: ""
+        atomicPayload["$devPath/device_name"] = payload["device_name"] ?: ""
+        atomicPayload["$devPath/imei"] = payload["imei"] ?: payload["imei_1"] ?: ""
+        atomicPayload["$devPath/imei_1"] = payload["imei_1"] ?: payload["imei"] ?: ""
+        atomicPayload["$devPath/imei_2"] = payload["imei_2"] ?: ""
+        atomicPayload["$devPath/is_dual_sim"] = payload["is_dual_sim"] ?: false
+        atomicPayload["$devPath/is_rooted"] = if (payload["is_rooted"] == true || payload["is_rooted"] == "1") "1" else "0"
+        atomicPayload["$devPath/fingerprint"] = payload["fingerprint"] ?: android.os.Build.FINGERPRINT ?: ""
         atomicPayload["$devPath/updated_at"] = now
 
         // 🛡️ V67.8: ALL OTHER NODES DECOMMISSIONED

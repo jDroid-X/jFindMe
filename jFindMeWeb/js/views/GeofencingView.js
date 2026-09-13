@@ -35,11 +35,31 @@ export class GeofencingView {
     }
 
     /**
+     * Debounce helper to prevent rapid re-renders
+     */
+    _debounce(fn, delay) {
+        let timeoutId;
+        return function(...args) {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn.apply(this, args), delay);
+        }.bind(this);
+    }
+
+    /**
      * Renders the 4-Pane Geofencing Workspace (Polymorphic inputs)
      * @param {Array<any>} arg1 Devices or SafeZones
      * @param {Array<any>} arg2 SafeZones or Devices
      */
     render(arg1 = [], arg2 = []) {
+        // Debounce to prevent race conditions
+        const debouncedRender = this._debounce(this._doRender, 150);
+        debouncedRender(arg1, arg2);
+    }
+
+    /**
+     * Actual render implementation (debounced)
+     */
+    _doRender(arg1 = [], arg2 = []) {
         let inputDevices = [];
         let inputZones = [];
 

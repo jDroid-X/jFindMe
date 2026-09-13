@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24.0"
+    android:viewportHeight="24.0">
+    <!-- Target Silhouette -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,6c1.1,0 2,-0.9 2,-2c0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2C10,5.1 10.9,6 12,6z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M10,7c-1.1,0 -2,0.9 -2,2v5.5c0,0.28 0.22,0.5 0.5,0.5h1v6c0,.55 .45,1 1,1h3c.55,0 1,-.45 1,-1v-6h1c.28,0 .5,-.22 .5,-0.5V9c0,-1.1 -0.9,-2 -2,-2H10z" />
+    <!-- Elliptical Scanning Base -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,23c3.87,0 7,-0.9 7,-2s-3.13,-2 -7,-2s-7,0.9 -7,2S8.13,23 12,23zM12,22c-3.31,0 -6,-0.67 -6,-1.5s2.69,-1.5 6,-1.5s6,0.67 6,1.5S15.31,22 12,22z" />
+</vector>

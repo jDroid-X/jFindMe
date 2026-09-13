@@ -90,6 +90,12 @@ class MapEngine(private val context: Context, private val googleMap: GoogleMap) 
                 val showName = !hideMode || (System.currentTimeMillis() - revealedAt < 5000L)
                 
                 // 🚀 QA Fix: Prevent Main-Thread GUI freezing by mapping directly to Cache!
+                // 🛡️ FIX #20: Add LRU eviction to prevent OOM when 50+ devices tracked
+                if (avatarCache.size > 100) {
+                    val oldestKey = avatarCache.keys.first()
+                    avatarCache.remove(oldestKey)
+                    SystemLogger.w("MapEngine", "Avatar cache evicted oldest entry (size > 100)")
+                }
                 var remoteAvatarBmp: android.graphics.Bitmap? = avatarCache[location.avatar_id]
                 if (remoteAvatarBmp == null && location.avatar_id.isNotEmpty()) {
                     val resId = context.resources.getIdentifier(location.avatar_id, "drawable", context.packageName)
