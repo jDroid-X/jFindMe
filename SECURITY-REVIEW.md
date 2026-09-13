@@ -79,41 +79,39 @@
 | ✅ PASS | 15 | — | — | All verified passing |
 | **Total** | **37** | **37** | **0** | — |
 
-### Fix Log (This Re-Audit Session)
-- ✅ **#6 AuthActivity GPS broadcast receiver** — Registered `PROVIDERS_CHANGED_ACTION` receiver in `setupLogic()`, updates `tvLocationBaseline` text, properly cleaned up in `onUiRebuilt()`
-- ✅ **#7 MapActivity dual-pane persistence** — Added `SharedPreferences` save in `onPause` + `onSaveInstanceState`, restore from prefs in `onCreate` when `savedInstanceState` is null
-- ✅ **#13 FamilyFriends roster skeleton** — Added `buildLoadingSkeleton()` method with Syncing/Loading states; guards added in both `renderFamilyTab()` and `renderFriendsTab()` before rendering empty roster
-- ✅ **#14 SOS online check** — Added `node.isOnline()` guard before ring device; shows warning Toast if target offline
-- ✅ **#15 NotifActivity AlarmManager** — Verified: No AlarmManager usage found; issue was misidentified or already resolved
-- ✅ **#16 HealthActivity battery receiver leak** — Changed `registerReceiver(null, ifilter)` to use `getApplicationContext().registerReceiver(null, ifilter)` for sticky broadcast (no leak); removed unused `batteryReceiver` field
-- ✅ **#19 ValidationEngine pincode international** — Skip required check when `countryCode != "IN"`; empty returns OK for non-IN countries
+### Fix Log (All Sessions)
 
-### Re-Audit Verification (All Issues Confirmed Resolved)
+This section documents fixes across multiple audit sessions.
 
-| # | Issue | Verification Evidence | Status |
-|---|-------|----------------------|--------|
-| 1 | LiveMapDashboard redirect | Extras and action correctly propagated before `finish()` | ✅ PASS |
-| 2 | GeofenceHelper permission | Lines 27-34: Permission check + Toast feedback added | ✅ FIXED |
-| 3 | AlertManager MediaPlayer | Instance-level `mediaPlayer` (line 96), `stopRingBeaconAlarm()` (line 150), `releaseMediaPlayer()` (line 169) | ✅ FIXED |
-| 4 | BaseActivityJava debounce | Lines 317-321: 2000ms debounce guard using static `lastRecreateTime` | ✅ FIXED |
-| 5 | Auth email validation order | Lines 235-260: `validateEmail()` called synchronously in `onClick` BEFORE `viewModel.login()` at line 261 | ✅ FIXED |
-| 6 | GPS broadcast receiver | Registered for `PROVIDERS_CHANGED_ACTION` in `setupLogic()` | ✅ FIXED |
-| 7 | Dual-pane persistence | SharedPreferences `PREF_DUAL_PANE` saved/restored | ✅ FIXED |
-| 8 | Avatar callback null-guard | `!isFinishing()/isDestroyed()` + `FirebaseAuth.getUid()` null-guard | ✅ FIXED |
-| 9 | Map fragment constant | Named constant `MAP_FRAGMENT_CONTAINER_ID` instead of hardcoded `1005` | ✅ FIXED |
-| 10 | Replay animator cleanup | Cancel logic in `onPause`/`onDestroy` | ✅ FIXED |
-| 11 | Listener reference | No-op self-assignment removed | ✅ FIXED |
-| 12 | Foreground guard | `isInForeground` check on Handler delay | ✅ FIXED |
-| 13 | Loading skeleton | `buildLoadingSkeleton()` with guards in render methods | ✅ FIXED |
-| 14 | SOS online check | `node.isOnline()` guard with warning Toast | ✅ FIXED |
-| 15 | AlarmManager mismatch | No AlarmManager in NotifActivity — misidentified | ✅ VERIFIED |
-| 16 | Battery receiver leak | `getApplicationContext().registerReceiver()` sticky broadcast | ✅ FIXED |
-| 17 | Privacy race condition | `final boolean hasWarning` captures value before thread switch | ✅ CORRECT |
-| 18 | Export logs null check | Line 420: `if (currentList == null || currentList.isEmpty())` | ✅ FIXED |
-| 19 | Pincode international | `countryCode != "IN"` skips required check | ✅ FIXED |
-| 20 | Avatar cache LRU | Lines 94-96: `if (avatarCache.size > 100)` eviction | ✅ FIXED |
-| 21 | removeGeofence try-catch | Lines 64-71: Wrapped in try-catch with WARN log | ✅ FIXED |
-| 22 | History EditText focus | `storageCap.setFocusable(false)` allows child `etSeven` focus | ✅ CORRECT |
+#### Session 1 — Initial RAG Audit
+- ✅ **#2 GeofenceHelper permission gap** — Added `hasFineLocation` check before `addGeofence()`; shows Toast if denied
+- ✅ **#6 GPS broadcast receiver** — Registered `PROVIDERS_CHANGED_ACTION` in `AuthActivity.setupLogic()`
+- ✅ **#7 Dual-pane persistence** — SharedPreferences save/restore pattern for `isDualPaneActive`
+- ✅ **#10 Replay animator cleanup** — Cancel logic verified in `onPause`/`onDestroy`
+- ✅ **#11 Listener self-assignment** — Removed no-op assignment in `PersonDetailsActivity`
+- ✅ **#12 Foreground guard** — `isInForeground` check on SettingsActivity handler delay
+
+#### Session 2 — Re-Audit Fixes
+- ✅ **#5 Auth validation order** — Confirmed: `validateEmail()` called synchronously in `onClick` before `viewModel.login()`
+- ✅ **#8 Avatar callback null-guard** — `!isFinishing()/isDestroyed()` + `FirebaseAuth.getUid()` check
+- ✅ **#9 Map fragment constant** — Named constant `MAP_FRAGMENT_CONTAINER_ID` instead of hardcoded `1005`
+- ✅ **#13 Loading skeleton** — `buildLoadingSkeleton()` added to FamilyFriendsActivity
+- ✅ **#14 SOS online check** — `node.isOnline()` guard with warning Toast
+- ✅ **#15 AlarmManager mismatch** — Verified: No AlarmManager in NotifActivity; misidentified
+- ✅ **#16 Battery receiver leak** — Changed to `getApplicationContext().registerReceiver()` sticky broadcast
+- ✅ **#17 Privacy race condition** — Confirmed: `final boolean` capture eliminates race
+- ✅ **#18 Export logs null check** — Line 420: `currentList == null || currentList.isEmpty()` guard
+- ✅ **#19 Pincode international** — `countryCode != "IN"` skips required check
+- ✅ **#20 Avatar cache LRU** — Eviction when `avatarCache.size > 100`
+- ✅ **#21 removeGeofence try-catch** — Wrapped in try-catch with WARN log
+
+#### Session 3 — Final Verification
+- ✅ **#1 LiveMapDashboard redirect** — Verified: extras propagated correctly
+- ✅ **#3 AlertManager MediaPlayer** — Instance-level singleton with lifecycle management
+- ✅ **#4 BaseActivityJava debounce** — 2000ms static timestamp guard at lines 317-321
+- ✅ **#22 History EditText focus** — Parent `setFocusable(false)` allows child focus via native Android behavior
+
+---
 
 ---
 
