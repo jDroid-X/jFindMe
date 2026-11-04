@@ -12,8 +12,10 @@ import { DeviceModel } from './models/DeviceModel.js';
 import { DeviceCardView } from './views/DeviceCardView.js';
 import { MapSettingsView } from './views/MapSettingsView.js';
 import { DeviceUserView } from './views/DeviceUserView.js';
+import { DupDeviceView } from './views/DupDeviceView.js';
 import { GeofencingView } from './views/GeofencingView.js';
 import { EagleAnalyticsTreeView } from './views/EagleAnalyticsTreeView.js';
+import { CoordinateTreeMindMapView } from './views/CoordinateTreeMindMapView.js';
 import { ThemeManager } from './core/ThemeManager.js';
 import { FeedbackDialog } from './components/FeedbackDialog.js';
 import { UIControls } from './components/UIControls.js';
@@ -23,8 +25,6 @@ import { KeyboardShortcuts } from './components/KeyboardShortcuts.js';
 import { OfflineQueue } from './core/OfflineQueue.js';
 import { DeviceRegistrationWizardInstance as DeviceRegistrationWizard } from './components/DeviceRegistrationWizard.js';
 import { DataExport } from './components/DataExport.js';
-import { OptimizedLeafletMap } from './views/OptimizedLeafletMap.js';
-import { MapPerformanceOptimizer } from './core/MapPerformance.js';
 
 /**
  * jFindMe Matrix Manager V3 - Main Orchestrator
@@ -44,12 +44,148 @@ class App {
         this.schema1 = new SchemaView1('workspace-root');
         this.editor = new JsonEditor();
         this.settingsModel = new SettingsModel();
+        this.settingsModel.load(); // Load immediately from local storage cache
+        this.settingsModel.loadFromServer().catch(err => {
+            console.warn("[SETTINGS] Server load defer:", err.message);
+        });
+
+        // Initialize Offline Queue & Closed-Loop Network Synchronization
+        OfflineQueue.init().then(() => {
+            console.log("[OFFLINE_QUEUE] IndexedDB Engine Ready.");
+            if (navigator.onLine) {
+                OfflineQueue.syncAll().then(res => {
+                    if (res && res.synced > 0 && window.log) {
+                        window.log([OFFLINE_SYNC] Auto-flushed ${res.synced} queued telemetry points., "success");
+                    }
+                }).catch(e => console.warn("[OFFLINE_QUEUE] Initial flush skipped:", e.message));
+            }
+        }).catch(err => {
+            console.warn("[OFFLINE_QUEUE] Storage warning:", err.message);
+        });
+
+        // Register Global Network Resilience Listeners
+        window.addEventListener('online', async () => {
+            const syncEl = document.getElementById('sync-indicator');
+            if (syncEl) {
+                syncEl.className = 'flex items-center gap-2 text-xs font-bold text-emerald-400 tracking-wider';
+                syncEl.innerHTML = <div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_ACTIVE</span>;
+            }
+            if (window.log) window.log("Network connectivity re-established. Draining offline queue...", "success");
+            try {
+                const res = await OfflineQueue.syncAll();
+                if (res && res.synced > 0 && window.log) {
+                    window.log([OFFLINE_SYNC] Reconnected: ${res.synced} pending updates synchronized., "success");
+                }
+            } catch (syncErr) {
+                console.warn("[OFFLINE_QUEUE] Reconnect drain failed:", syncErr);
+            }
+        });
+
+        window.addEventListener('offline', () => {
+            const syncEl = document.getElementById('sync-indicator');
+            if (syncEl) {
+                syncEl.className = 'flex items-center gap-2 text-xs font-bold text-rose-500 tracking-wider';
+                syncEl.innerHTML = <div class="w-2 h-2 bg-rose-500 rounded-full"></div><span class="hidden md:inline">OFFLINE</span>;
+            }
+            if (window.log) window.log("Network dropped. Mutations will be stored in persistent offline queue.", "warning");
+        });
+
+        // Master Global MatrixApp Bridge Facade (Active across all views)
+        window.MatrixApp = {
+            focusDevice: (agentId) => {
+                if (!this.mapController) {
+                    window.showLiveMap();
+                    setTimeout(() => {
+                        const dev = this.mapController?.deviceController?.getDeviceById(agentId);
+                        if (dev) this.mapController?.handleDeviceSelected(dev);
+                    }, 400);
+                    return;
+                }
+                const dev = this.mapController.deviceController?.getDeviceById(agentId);
+                if (dev) this.mapController.handleDeviceSelected(dev);
+            },
+            toggleDeviceSelection: (agentId) => this.mapController?.toggleDeviceSelection(agentId),
+            closeDeviceCard: () => this.mapController?.closeDeviceCard(),
+            selectAllDevices: () => this.mapController?.selectAllDevices(),
+            showDossier: (agentId) => {
+                const dev = this.cachedDevices?.find(d => d.agentId === agentId) || this.mapController?.deviceController?.getDeviceById(agentId);
+                if (dev) {
+                    DeviceCardView.showDossierModal(dev, {
+                        onPoke: (id) => this.mapController?.pokeDevice(id),
+                        onEdit: (id) => this.mapController?.openEditProfileModal(id),
+                        onHistory: (id) => {
+                            window.showLiveMap();
+                            setTimeout(() => this.mapController?.showDeviceHistoryTrail(id), 400);
+                        }
+                    });
+                }
+            },
+            openEditProfile: (agentId) => this.mapController?.openEditProfileModal(agentId),
+            openCreateSafeZone: () => {
+                if (!this.mapController) {
+                    window.showLiveMap();
+                    setTimeout(() => this.mapController?.openCreateSafeZoneModal(), 400);
+                } else {
+                    this.mapController.openCreateSafeZoneModal();
+                }
+            },
+            toggleTraffic: () => this.mapController?.toggleTraffic(),
+            pokeDevice: (agentId) => this.mapController?.pokeDevice(agentId),
+            showHistory: (agentId) => {
+                if (!this.mapController) {
+                    window.showLiveMap();
+                    setTimeout(() => this.mapController?.showDeviceHistoryTrail(agentId), 400);
+                } else {
+                    this.mapController.showDeviceHistoryTrail(agentId);
+                }
+            },
+            openSettings: () => {
+                this.settingsView?.show(this.settingsModel);
+            },
+            focusStation: () => this.mapController?.focusStation(),
+            fitAll: () => this.mapController?.fitAll(),
+            zoomIn: () => {
+                if (this.mapController?.mapView?.zoomIn) this.mapController.mapView.zoomIn();
+                else if (this.mapController?.mapView?.map) this.mapController.mapView.map.zoomIn();
+            },
+            zoomOut: () => {
+                if (this.mapController?.mapView?.zoomOut) this.mapController.mapView.zoomOut();
+                else if (this.mapController?.mapView?.map) this.mapController.mapView.map.zoomOut();
+            },
+            toggleFullscreen: () => this.mapController?.toggleFullscreen(),
+            interrogateFleet: async () => this.mapController?.triggerFleetWakeupBurst(),
+            refreshNow: async () => {
+                window.log?.("RADAR_SYNC: Requesting instantaneous device refresh...", "system");
+                if (this.mapController) {
+                    await Promise.all([
+                        this.mapController.deviceController?.fetchLiveDevices?.(),
+                        this.mapController.safeZoneController?.fetchSafeZones?.()
+                    ]);
+                }
+                window.log?.("RADAR_SYNC: Devices & Geofences synchronized.", "success");
+            }
+        };
+
         this.settingsView = new MapSettingsView({
-            onSave: (updated) => {
+            onSave: async (updated) => {
                 this.settingsModel = updated;
+                try {
+                    await (window.fetchApi ? window.fetchApi('/api/save-settings', {
+                        method: 'POST',
+                        body: JSON.stringify(updated)
+                    }) : fetch('/api/save-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updated)
+                    }));
+                } catch (e) {
+                    console.warn("[SETTINGS] Backend sync skip:", e.message);
+                }
                 if (window.log) window.log(`SETTINGS_UPDATE: Search Radius set to ${updated.searchRadiusKm}km`, "success");
                 if (document.getElementById('nav-dashboard')?.classList.contains('active')) {
                     window.showDashboard();
+                } else if (this.currentView === 'live-map' && this.mapController) {
+                    this.mapController.updateRadarSettings(updated);
                 }
             }
         });
@@ -89,6 +225,22 @@ class App {
             }
         });
 
+        this.dupDeviceView = new DupDeviceView('workspace-root', {
+            onBackToDeviceUser: () => {
+                if (window.showDeviceUser) window.showDeviceUser();
+            },
+            onNavigateMap: (agentId) => {
+                window.showLiveMap();
+                setTimeout(() => {
+                    const dev = this.mapController?.deviceController.getDeviceById(agentId);
+                    if (dev) this.mapController?.handleDeviceSelected(dev);
+                }, 400);
+            },
+            onMergeSuccess: () => {
+                if (window.showDeviceUser) window.showDeviceUser();
+            }
+        });
+
         this.geofencingView = new GeofencingView('workspace-root', {
             onNavigateMap: (zoneId) => {
                 window.showLiveMap();
@@ -97,6 +249,8 @@ class App {
                 }, 400);
             }
         });
+
+        this.mindMapView = new CoordinateTreeMindMapView('workspace-root', {});
 
         this.eagleAnalyticsView = new EagleAnalyticsTreeView('workspace-root', {
             onNavigateMap: (agentId) => {
@@ -111,6 +265,11 @@ class App {
         // Theme & Modal Dialog Systems
         ThemeManager.init();
         window.toggleTheme = () => ThemeManager.toggleTheme();
+        window.appLogout = () => {
+            if (confirm("Terminate administrative matrix session and lock console?")) {
+                Auth.logout();
+            }
+        };
         window.FeedbackDialog = FeedbackDialog;
         window.UIControls = UIControls;
         window.notify = (msg, type = 'info', opt = {}) => UIControls.notify(msg, type, opt);
@@ -263,10 +422,10 @@ class App {
             }
 
             // After successful retrieval, hide terminal unless we are in Audit mode
-            document.getElementById('terminal').style.display = 'none';
+            // Forensic terminal remains visible for operator oversight
         } catch (err) {
             window.log(`BRIDGE_FAILURE: ${err.message}`, "error");
-            window.log("ACTION: Verify 'service-account.json' and 'jFireBase.bat' state.", "warning");
+            window.log("ACTION: Verify 'service-account.json' and 'scripts/deployment/jFireBase.bat' state.", "warning");
             window.log("HINT: Ensure backend proxy is running at http://127.0.0.1:3000 (via jFireBase.bat or 'node js/server.js').", "warning");
 
             // Automatic Reconnect Watchdog (Retries every 5 seconds)
@@ -303,6 +462,29 @@ class App {
                 ]);
 
                 if (liveData && (liveData.devices || Array.isArray(liveData))) {
+                    // Transparent Source Indicator (Live Cloud vs Local Mock)
+                    const projBadge = document.getElementById('project-id-label');
+                    if (projBadge) {
+                        if (liveData.source === "LOCAL_MOCK_FALLBACK") {
+                            projBadge.className = "px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold tracking-wider border border-amber-500/30 shrink-0";
+                            projBadge.textContent = "jfindme-3b15c [MOCK]";
+                            projBadge.title = "Using offline mock fixture because cloud RTDB timed out";
+                        } else if (liveData.source === "LIVE_CLOUD_RTDB") {
+                            projBadge.className = "px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold tracking-wider border border-emerald-500/30 shrink-0";
+                            projBadge.textContent = "jfindme-3b15c [LIVE]";
+                            projBadge.title = "Live Google Cloud Firebase Realtime Database connected";
+                        }
+                    }
+
+                    const mockBanner = document.getElementById('mock-fallback-banner');
+                    if (mockBanner) {
+                        if (liveData.source === "LOCAL_MOCK_FALLBACK") {
+                            mockBanner.classList.remove('hidden');
+                        } else {
+                            mockBanner.classList.add('hidden');
+                        }
+                    }
+
                     const rawDevices = Array.isArray(liveData) ? liveData : (liveData.devices || []);
                     if (rawDevices.length > 0) {
                         const mapped = rawDevices.map(d => new DeviceModel(d));
@@ -332,9 +514,8 @@ class App {
                         }
                     }
 
-                    // Update sync UI in header with live node count
-                    const nodeCount = (this.cachedDevices && this.cachedDevices.length) || 0;
-                    this.updateSyncUI('SYNCED', nodeCount);
+                    // Update sync UI in header with live grouped RAG fleet metrics
+                    this.updateSyncUI('SYNCED', this.cachedDevices);
 
                     // Push updates directly to active view
                     if (this.currentView === 'live-map' && this.mapController) {
@@ -353,7 +534,7 @@ class App {
                         this.geofencingView.updateData(this.cachedDevices, this.cachedSafeZones);
                     }
                 } else if (this.cachedDevices && this.cachedDevices.length > 0) {
-                    this.updateSyncUI('SYNCED', this.cachedDevices.length);
+                    this.updateSyncUI('SYNCED', this.cachedDevices);
                 }
             } catch (err) {
                 console.warn("[TELEMETRY_STREAM] Polling skip:", err.message);
@@ -451,7 +632,13 @@ class App {
         
         // Update Title & Cloud Path
         const header = document.querySelector('header h1');
-        if (header) header.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+        if (header) {
+            if (this.currentView === 'audit' || name === 'system_audit') {
+                header.textContent = "Forensic Audit Ledger";
+            } else {
+                header.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+            }
+        }
         
         const link = document.getElementById('cloud-path-link');
         const config = Store.getState().system.config;
@@ -569,6 +756,8 @@ class App {
     }
 
     normalizeRecords(nodeName, data) {
+        const nodeLower = (nodeName || '').toLowerCase();
+
         return Object.entries(data || {}).map(([id, val]) => {
             const isObj = val && typeof val === 'object';
             const keyCount = isObj ? Object.keys(val).length : 0;
@@ -585,6 +774,70 @@ class App {
                 };
             }
             
+            // Forensic Primary Projection for Devices
+            if (nodeLower === 'devices' && isObj) {
+                const prof = val.profile || {};
+                const dev = val.device || {};
+                const live = val.live || {};
+                const telem = val.telemetry || {};
+                const identity = val.Identity || {};
+
+                return {
+                    id,
+                    name: prof.name || prof.fullName || dev.device_name || id,
+                    role: prof.role || 'Member',
+                    model: dev.model || dev.device_model || 'Unknown',
+                    status: telem.status || identity.st_session_state || 'ONLINE',
+                    battery: (live.battery != null && live.battery > 0) ? `${live.battery}%` : (telem.battery_pct != null ? `${telem.battery_pct}%` : 'N/A'),
+                    address: live.address || 'Unknown Location',
+                    latitude: live.latitude || live.lat || '0.0000',
+                    longitude: live.longitude || live.lng || '0.0000',
+                    app_version: dev.app_version || 'N/A',
+                    last_seen: telem.last_seen || telem.last_heartbeat || live.updated_at || 'Recent',
+                    ...val
+                };
+            }
+
+            // Forensic Primary Projection for Safe Zones / Geofencing
+            if ((nodeLower === 'geofencing' || nodeLower === 'safe_zones') && isObj) {
+                return {
+                    id,
+                    zone_name: val.zone_name || val.name || val.device_name || id,
+                    status: val.status || (val.isActive ? 'ACTIVE' : 'INACTIVE'),
+                    radius: val.radius || val.range || '100m',
+                    lat: val.lat || val.latitude || '0.0000',
+                    lng: val.lng || val.longitude || '0.0000',
+                    creator_uid: val.creator_uid || val.owner_uid || val.creatorId || '--',
+                    ...val
+                };
+            }
+
+            // Forensic Primary Projection for Relationships / Groups
+            if (nodeLower === 'relationships' && isObj) {
+                const memberCount = val.members ? (Array.isArray(val.members) ? val.members.length : Object.keys(val.members).length) : 0;
+                return {
+                    id,
+                    group_name: val.group_name || val.name || id,
+                    owner_id: val.owner_id || val.owner || '--',
+                    members: `${memberCount} members`,
+                    created_at: val.created_at || val.timestamp || '--',
+                    ...val
+                };
+            }
+
+            // Forensic Primary Projection for Version Update releases
+            if (nodeLower === 'version_update' && isObj) {
+                return {
+                    id,
+                    version_name: val.version_name || val.version || id,
+                    version_code: val.version_code || val.build || '--',
+                    release_date: val.release_date || val.timestamp || '--',
+                    download_url: val.download_url || val.url || '--',
+                    is_mandatory: val.is_mandatory != null ? String(val.is_mandatory) : 'false',
+                    ...val
+                };
+            }
+
             return {
                 id,
                 ...(isObj ? val : { [nodeName + '_value']: val })
@@ -592,26 +845,148 @@ class App {
         });
     }
 
-    updateSyncUI(status, nodeCount = 0) {
+    updateSyncUI(status, devicesOrCount = null) {
         const syncEl = document.getElementById('sync-indicator');
-        if (syncEl) {
-            switch(status) {
-                case 'PENDING':
-                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-amber-400 tracking-wider";
-                    syncEl.innerHTML = `<div class="w-2 h-2 bg-amber-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_PENDING</span>`;
-                    break;
-                case 'SYNCED':
-                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-emerald-400 tracking-wider";
-                    syncEl.innerHTML = `<div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">LIVE (${nodeCount} DEVICES)</span>`;
-                    break;
-                case 'ERROR':
-                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-rose-400 tracking-wider";
-                    syncEl.innerHTML = `<div class="w-2 h-2 bg-rose-400 rounded-full"></div><span class="hidden md:inline">SIGNAL_LOST</span>`;
-                    break;
-                default:
-                    syncEl.className = "flex items-center gap-2 text-xs font-bold text-slate-400 tracking-wider";
-                    syncEl.innerHTML = `<div class="w-2 h-2 bg-slate-400 rounded-full"></div><span class="hidden md:inline">SYNC_IDLE</span>`;
+        if (!syncEl) return;
+
+        switch(status) {
+            case 'PENDING':
+                syncEl.className = "flex items-center gap-2 text-xs font-bold text-amber-500 tracking-wider";
+                syncEl.innerHTML = `<div class="w-2 h-2 bg-amber-500 rounded-full animate-ping"></div><span class="hidden md:inline font-mono">SYNC_PENDING</span>`;
+                break;
+
+            case 'ERROR':
+                syncEl.className = "flex items-center gap-2 text-xs font-bold text-rose-500 tracking-wider";
+                syncEl.innerHTML = `<div class="w-2 h-2 bg-rose-500 rounded-full"></div><span class="hidden md:inline font-mono">SIGNAL_LOST</span>`;
+                break;
+
+            case 'SYNCED': {
+                const devices = Array.isArray(devicesOrCount) 
+                    ? devicesOrCount 
+                    : (this.cachedDevices || []);
+
+                let sosCount = 0;
+                let liveCount = 0;
+                let inactiveCount = 0;
+                let staleCount = 0;
+                let unlinkedCount = 0;
+
+                devices.forEach(d => {
+                    const u = typeof d.getUnifiedStatus === 'function' ? d.getUnifiedStatus() : { key: d.isOnline ? 'live' : 'stale' };
+                    if (u.key === 'sos') sosCount++;
+                    else if (u.key === 'live') liveCount++;
+                    else if (u.key === 'inactive') inactiveCount++;
+                    else if (u.key === 'stale') staleCount++;
+                    else unlinkedCount++;
+                });
+
+                syncEl.className = "relative inline-block";
+                syncEl.innerHTML = `
+                    <div id="fleet-rag-pill-btn" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full surface-theme border border-subtle-theme shadow-sm hover:border-sky-400/50 cursor-pointer select-none transition-all group font-mono" title="Click to view full Fleet RAG Breakdown">
+                        ${sosCount > 0 ? `
+                            <span class="inline-flex items-center gap-1 text-[11px] font-black text-rose-500 animate-pulse">
+                                <span class="w-2 h-2 rounded-full bg-rose-500"></span>${sosCount} SOS
+                            </span>
+                            <span class="text-muted-theme text-[9px]">•</span>
+                        ` : ''}
+                        <span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500" title="${liveCount} Live (< 15m)">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>${liveCount} Live
+                        </span>
+                        <span class="text-muted-theme text-[9px]">•</span>
+                        <span class="inline-flex items-center gap-1 text-[11px] font-bold text-amber-500" title="${inactiveCount} Inactive (< 6h)">
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${inactiveCount} Inact
+                        </span>
+                        <span class="text-muted-theme text-[9px]">•</span>
+                        <span class="inline-flex items-center gap-1 text-[11px] font-bold text-rose-400" title="${staleCount} Offline (> 6h)">
+                            <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>${staleCount} Off
+                        </span>
+                        ${unlinkedCount > 0 ? `
+                            <span class="text-muted-theme text-[9px]">•</span>
+                            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400" title="${unlinkedCount} Ghost / Unlinked">
+                                ${unlinkedCount} Ghost
+                            </span>
+                        ` : ''}
+                        <span class="text-[9px] text-muted-theme group-hover:text-primary-theme ml-0.5 transition-colors">▾</span>
+                    </div>
+
+                    <!-- Interactive Dropdown Popover on Click -->
+                    <div id="fleet-rag-popover" class="hidden absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto card-theme p-3 rounded-2xl shadow-2xl border border-subtle-theme z-[250] space-y-2.5 custom-scrollbar animate-scale-up font-sans">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-2">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                                <span class="text-xs font-black uppercase tracking-wider text-primary-theme">Fleet Nodes (${devices.length})</span>
+                            </div>
+                            <span class="text-[9.5px] font-mono text-secondary-theme">RAG Central Engine</span>
+                        </div>
+                        <div class="space-y-1.5">
+                            ${devices.length === 0 ? `
+                                <div class="text-xs text-secondary-theme text-center py-4 font-mono">No devices registered</div>
+                            ` : devices.map(dev => {
+                                const u = typeof dev.getUnifiedStatus === 'function' ? dev.getUnifiedStatus() : { label: dev.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: 'badge-neutral', color: '#64748B', shortLabel: dev.isOnline ? 'Live' : 'Off' };
+                                const avatar = typeof dev.getAvatarUrl === 'function' ? dev.getAvatarUrl() : '/assets/avatars/1.png';
+                                const devName = dev.name || dev.agentId;
+                                const batt = dev.battery !== undefined && dev.battery !== null ? `${dev.battery}%` : '--';
+                                const seenStr = dev.getFormattedLastSeen ? dev.getFormattedLastSeen() : 'recently';
+                                return `
+                                    <div class="flex items-center justify-between p-2 rounded-xl surface-theme hover:border-sky-500/40 border border-subtle-theme transition-all cursor-pointer fleet-dropdown-row group" data-agent-id="${dev.agentId}">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <div class="relative shrink-0">
+                                                <img src="${avatar}" class="w-7 h-7 rounded-full object-cover border" style="border-color: ${u.color}">
+                                                <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-surface ${u.dotClass}"></span>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <div class="text-xs font-bold text-primary-theme group-hover:text-sky-400 transition-colors truncate">${devName}</div>
+                                                <div class="text-[9.5px] font-mono text-secondary-theme truncate">
+                                                    <span>${dev.agentId}</span> • <span>🔋${batt}</span> • <span>${seenStr}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <span class="${u.badgeClass} text-[8px] font-bold px-1.5 py-0.5 shrink-0 ml-2">${u.shortLabel || u.label}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+
+                // Bind popover toggling
+                const pillBtn = syncEl.querySelector('#fleet-rag-pill-btn');
+                const popover = syncEl.querySelector('#fleet-rag-popover');
+                if (pillBtn && popover) {
+                    pillBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        popover.classList.toggle('hidden');
+                    };
+
+                    // Close on outside click
+                    const closeHandler = (e) => {
+                        if (!syncEl.contains(e.target)) {
+                            popover.classList.add('hidden');
+                            document.removeEventListener('click', closeHandler);
+                        }
+                    };
+                    document.addEventListener('click', closeHandler);
+                }
+
+                // Bind click to navigate
+                syncEl.querySelectorAll('.fleet-dropdown-row').forEach(row => {
+                    row.onclick = (e) => {
+                        e.stopPropagation();
+                        popover?.classList.add('hidden');
+                        const targetId = row.dataset.agentId;
+                        if (window.showDeviceUser) {
+                            window.showDeviceUser(targetId);
+                        } else if (window.showLiveMap) {
+                            window.showLiveMap();
+                        }
+                    };
+                });
+                break;
             }
+
+            default:
+                syncEl.className = "flex items-center gap-2 text-xs font-bold text-slate-400 tracking-wider";
+                syncEl.innerHTML = `<div class="w-2 h-2 bg-slate-400 rounded-full"></div><span class="hidden md:inline font-mono">SYNC_IDLE</span>`;
         }
     }
 
@@ -702,6 +1077,10 @@ class App {
                             <span>➖</span>
                         </button>
                         <div class="h-4 w-px bg-slate-300 dark:bg-white/10 mx-0.5"></div>
+                        <button class="px-2 py-1 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] transition-all flex items-center gap-1 border border-emerald-500/30 shadow-sm" onclick="window.MatrixApp.interrogateFleet()" title="Send silent high-priority FCM wakeup burst to shake sleeping devices out of Android Doze Mode">
+                            <span>⚡</span>
+                            <span>Wake Fleet</span>
+                        </button>
                         <button class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[10px] transition-all flex items-center gap-1 border border-slate-200/60 dark:border-white/5" onclick="window.MatrixApp.refreshNow()">
                             <span>🔄</span>
                             <span>Refresh</span>
@@ -790,6 +1169,11 @@ class App {
                 },
                 toggleFullscreen: () => {
                     if (this.mapController) this.mapController.toggleFullscreen();
+                },
+                interrogateFleet: async () => {
+                    if (this.mapController) {
+                        await this.mapController.triggerFleetWakeupBurst();
+                    }
                 },
                 refreshNow: async () => {
                     if (this.mapController) {
@@ -886,7 +1270,8 @@ class App {
             try {
                 const [devRes, zoneRes] = await Promise.all([
                     FBBridge.getDevicesLive(),
-                    FBBridge.getSafeZones()
+                    FBBridge.getSafeZones(),
+                    this.deviceUserView.loadMasterRelease()
                 ]);
                 const devicesPayload = devRes?.devices || devRes || [];
                 if (Array.isArray(devicesPayload) && devicesPayload.length > 0) {
@@ -900,6 +1285,27 @@ class App {
                 console.error("[DEVICE_USER] Failed to load devices:", err);
                 this.deviceUserView.render(this.cachedDevices || [], agentId, this.cachedSafeZones || []);
             }
+        };
+
+        window.showDupDevice = async () => {
+            this.currentView = 'dup-device';
+            Store.dispatch('SET_NAV', { activeTab: 'dup-device', activeView: 'dup-device', activeNode: null });
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-dup-device')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Silicon Duplicate Device Reconciliation";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: RTDB | RECONCILIATION: Silicon SHA-256";
+                pathLink.href = "#";
+            }
+
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            await this.dupDeviceView.loadDuplicates();
         };
 
         window.showGeofencing = async () => {
@@ -947,17 +1353,52 @@ class App {
             }
         };
 
-        // Deprecated: Eagle Analytics Tree features merged into Flagship Live Map Radar
+        window.showMindMap = () => {
+            this.currentView = 'mindmap';
+            Store.dispatch('SET_NAV', { activeTab: 'mindmap', activeView: 'mindmap', activeNode: null });
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-mindmap')?.classList.add('active');
+
+            const headerTitle = document.getElementById('header-node-title');
+            if (headerTitle) {
+                headerTitle.innerHTML = `<span>🧠</span><span class="text-sky-400 font-bold ml-1">Coordinate Tree & MindMap Explorer</span>`;
+            }
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SPEC: ROOT ⊃ BR ⊃ EL ⊃ FE ⊃ BE ⊃ DB | 32 Android & 11 Web Screens";
+                pathLink.href = "#";
+            }
+            this.mindMapView.render();
+        };
+
         window.showEagleAnalytics = () => {
-            window.showLiveMap();
+            this.currentView = 'eagle';
+            Store.dispatch('SET_NAV', { activeTab: 'eagle', activeView: 'eagle', activeNode: null });
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-eagle')?.classList.add('active');
+
+            const headerTitle = document.getElementById('header-node-title');
+            if (headerTitle) {
+                headerTitle.innerHTML = `<span>🦅</span><span class="text-indigo-400 font-bold ml-1">Eagle Analytics Deep-Dive Tree</span>`;
+            }
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "HIERARCHY: Global -> SafeZones -> Node Unit -> GPS Telemetry";
+                pathLink.href = "#";
+            }
+            this.eagleAnalyticsView.render(this.cachedDevices || [], this.cachedSafeZones || []);
         };
 
         window.showAudit = () => {
             this.currentView = 'audit';
             Store.dispatch('SET_NAV', { activeTab: 'audit', activeView: 'audit', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('nav-audit').classList.add('active');
-            document.querySelector('header h1').textContent = "Forensic Audit Ledger";
+            document.getElementById('nav-audit')?.classList.add('active');
+            
+            const headerTitle = document.getElementById('header-node-title');
+            if (headerTitle) {
+                headerTitle.innerHTML = `<span>📜</span><span class="text-slate-400 font-bold ml-1">Forensic Audit Ledger</span>`;
+            }
             
             const pathLink = document.getElementById('cloud-path-link');
             if (pathLink) {
@@ -965,16 +1406,22 @@ class App {
                 pathLink.href = "#";
             }
             
-            document.getElementById('terminal').style.display = 'block';
+            const term = document.getElementById('terminal');
+            if (term) term.style.display = 'block';
             this.loadNode('system_audit');
         };
 
         window.showSchema = () => {
             this.currentView = 'schema';
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            document.getElementById('btn-schema').classList.add('active');
-            document.querySelector('header h1').textContent = "Database Schema Architect";
-            document.getElementById('terminal').style.display = 'none';
+            document.getElementById('nav-architect')?.classList.add('active');
+            
+            const headerTitle = document.getElementById('header-node-title');
+            if (headerTitle) {
+                headerTitle.innerHTML = `<span>📐</span><span class="text-rose-400 font-bold ml-1">Database Schema Architect</span>`;
+            }
+            const term = document.getElementById('terminal');
+            if (term) term.style.display = 'none';
             this.schema.render();
         };
 
@@ -983,16 +1430,49 @@ class App {
             Store.dispatch('SET_NAV', { activeTab: 'architect', activeView: 'architect', activeNode: null });
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             document.getElementById('nav-architect')?.classList.add('active');
-            document.querySelector('header h1').textContent = "Database Architect V2 (Hierarchical)";
+            
+            const headerTitle = document.getElementById('header-node-title');
+            if (headerTitle) {
+                headerTitle.innerHTML = `<span>📐</span><span class="text-rose-400 font-bold ml-1">Database Schema Architect: Spiderweb Relational ER</span>`;
+            }
             
             const pathLink = document.getElementById('cloud-path-link');
             if (pathLink) {
-                pathLink.textContent = "SOURCE: RTDB + FS | PATH: /SchemaMatrix";
+                pathLink.textContent = "SOURCE: Firebase RTDB (jfindme-3b15c) | HUB: /devices";
                 pathLink.href = "#";
             }
             
-            document.getElementById('terminal').style.display = 'none';
+            const term = document.getElementById('terminal');
+            if (term) term.style.display = 'none';
             this.schema1.render();
+        };
+
+        window.showDatabaseSync = () => {
+            this.currentView = 'db-sync';
+            Store.dispatch('SET_NAV', { activeTab: 'db-sync', activeView: 'db-sync', activeNode: null });
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.getElementById('nav-db-sync')?.classList.add('active');
+            
+            const header = document.querySelector('header h1');
+            if (header) header.textContent = "Database Sync Settings & Field Matrix";
+
+            const pathLink = document.getElementById('cloud-path-link');
+            if (pathLink) {
+                pathLink.textContent = "SOURCE: SQLite (17 Tables) + Firebase RTDB | SYNC: Dual-Engine Matrix";
+                pathLink.href = "database-sync-settings.html";
+            }
+            
+            const terminal = document.getElementById('terminal');
+            if (terminal) terminal.style.display = 'none';
+
+            const workspace = document.getElementById('workspace-root');
+            if (workspace) {
+                workspace.innerHTML = `
+                    <div class="w-full h-full flex flex-col bg-slate-950 overflow-hidden relative">
+                        <iframe src="database-sync-settings.html" class="w-full h-full border-0" title="Database Sync Settings Matrix"></iframe>
+                    </div>
+                `;
+            }
         };
 
         window.handleSearch = (term) => Store.dispatch('SET_SEARCH', term);

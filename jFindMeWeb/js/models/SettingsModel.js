@@ -32,10 +32,17 @@ export class SettingsModel {
         this.autoFitBounds = false;
         this.lastSyncTime = null;
         
-        // Performance optimization settings (NEW)
+        // Performance optimization settings
         this.batterySaverMode = false; // Reduced animations and updates
         this.disableViewportCulling = false; // Show all markers regardless of viewport
         this.adaptivePolling = true; // Automatically adjust poll rate based on activity
+
+        // Enterprise Target Master Release Settings (Dynamic Operator SSOT)
+        this.targetVersionName = "1.0.13";
+        this.targetVersionCode = 87;
+        this.targetPackageSizeFormatted = "80.6 MB";
+        this.targetDatabaseSchema = "V75";
+        this.targetDownloadUrl = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly_V87.apk";
     }
 
     /**
@@ -69,10 +76,17 @@ export class SettingsModel {
         if (parsed.showAllDevicesIfOutsideRadius != null) this.showAllDevicesIfOutsideRadius = Boolean(parsed.showAllDevicesIfOutsideRadius);
         if (parsed.lastSyncTime != null) this.lastSyncTime = parsed.lastSyncTime;
         
-        // NEW: Performance settings
+        // Performance settings
         if (parsed.batterySaverMode != null) this.batterySaverMode = Boolean(parsed.batterySaverMode);
         if (parsed.disableViewportCulling != null) this.disableViewportCulling = Boolean(parsed.disableViewportCulling);
         if (parsed.adaptivePolling != null) this.adaptivePolling = Boolean(parsed.adaptivePolling);
+
+        // Enterprise Target Master Release Settings
+        if (parsed.targetVersionName != null) this.targetVersionName = String(parsed.targetVersionName);
+        if (parsed.targetVersionCode != null) this.targetVersionCode = parseInt(parsed.targetVersionCode, 10);
+        if (parsed.targetPackageSizeFormatted != null) this.targetPackageSizeFormatted = String(parsed.targetPackageSizeFormatted);
+        if (parsed.targetDatabaseSchema != null) this.targetDatabaseSchema = String(parsed.targetDatabaseSchema);
+        if (parsed.targetDownloadUrl != null) this.targetDownloadUrl = String(parsed.targetDownloadUrl);
     }
 
     /**
@@ -124,10 +138,14 @@ export class SettingsModel {
             showRadiusCircle: this.showRadiusCircle,
             showAllDevicesIfOutsideRadius: this.showAllDevicesIfOutsideRadius,
             lastSyncTime: Date.now(),
-            // NEW: Performance settings
             batterySaverMode: this.batterySaverMode,
             disableViewportCulling: this.disableViewportCulling,
-            adaptivePolling: this.adaptivePolling
+            adaptivePolling: this.adaptivePolling,
+            targetVersionName: this.targetVersionName,
+            targetVersionCode: this.targetVersionCode,
+            targetPackageSizeFormatted: this.targetPackageSizeFormatted,
+            targetDatabaseSchema: this.targetDatabaseSchema,
+            targetDownloadUrl: this.targetDownloadUrl
         };
     }
 
@@ -147,6 +165,20 @@ export class SettingsModel {
                     data: payload
                 })
             });
+
+            // Synchronize master release SSOT in Firebase RTDB
+            await FBBridge.fetchRaw('/api/system-release', {
+                method: 'POST',
+                body: JSON.stringify({
+                    version_name: this.targetVersionName,
+                    version_code: this.targetVersionCode,
+                    package_size_formatted: this.targetPackageSizeFormatted,
+                    database_schema: this.targetDatabaseSchema,
+                    download_url_direct: this.targetDownloadUrl,
+                    download_url_versioned: this.targetDownloadUrl
+                })
+            }).catch(() => null);
+
             this.lastSyncTime = Date.now();
             SettingsModel._syncing = false;
         } catch (e) {

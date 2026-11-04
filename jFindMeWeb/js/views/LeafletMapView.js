@@ -80,6 +80,13 @@ export class LeafletMapView {
         window.addEventListener('resize', () => {
             if (this.map) this.map.invalidateSize();
         });
+
+        // 🕸️ Zoom-Adaptive Spiderweb Re-projection
+        this.map.on('zoomend', () => {
+            if (this.lastDevices && this.lastDevices.length > 0) {
+                this.renderDeviceMarkers(this.lastDevices, this.lastShowAll);
+            }
+        });
     }
 
     setTheme(themeKey) {
@@ -134,10 +141,17 @@ export class LeafletMapView {
 
     renderDeviceMarkers(devices = [], showAll = true) {
         if (!this.map) return;
+        this.lastDevices = devices;
+        this.lastShowAll = showAll;
         const currentAgentIds = new Set();
 
-        // 🛡️ Coordinate Dispersion Matrix (Anti-Overlap Physics matching Android MapEngine.kt)
-        const displacedFleet = GeoUtils.applyAntiOverlapDisplacement(devices);
+        // 🛡️ Coordinate Dispersion Matrix (Anti-Overlap Physics matching Android MapEngine.kt & MultiMarkerEngine.kt)
+        const displacedFleet = GeoUtils.applyAntiOverlapDisplacement(devices, {
+            map: this.map,
+            zoom: this.map.getZoom ? this.map.getZoom() : 14,
+            spacingPx: 65.0,
+            collisionThresholdPx: 60.0
+        });
 
         for (const item of displacedFleet) {
             const { device, displayLat, displayLng } = item;
@@ -166,11 +180,27 @@ export class LeafletMapView {
 
             if (this.deviceMarkers.has(device.agentId)) {
                 const existing = this.deviceMarkers.get(device.agentId);
-                existing.setLatLng(latLng);
-                existing.setIcon(customIcon);
-                existing.setTooltipContent(DeviceCardView.renderTooltipHtml(device));
+                const prevLatLng = existing.getLatLng();
+                
+                // Update position smoothly
+                if (prevLatLng.lat !== latLng[0] || prevLatLng.lng !== latLng[1]) {
+                    existing.setLatLng(latLng);
+                }
+
+                // Check marker state fingerprint before forcing heavy DOM reflow
+                const isGhost = Boolean(device.isGhostMode || device.ragStatus === 'GHOST');
+                const stateSignature = `${device.name}|${device.ragStatus}|${device.isOnline}|${isGhost}|${Math.round(device.speed || 0)}|${themeColor}|${avatarUrl}`;
+                
+                if (existing._stateSignature !== stateSignature) {
+                    existing._stateSignature = stateSignature;
+                    existing.setIcon(customIcon);
+                    existing.setTooltipContent(DeviceCardView.renderTooltipHtml(device));
+                }
             } else {
                 const marker = L.marker(latLng, { icon: customIcon }).addTo(this.map);
+                const isGhost = Boolean(device.isGhostMode || device.ragStatus === 'GHOST');
+                marker._stateSignature = `${device.name}|${device.ragStatus}|${device.isOnline}|${isGhost}|${Math.round(device.speed || 0)}|${themeColor}|${avatarUrl}`;
+                
                 marker.bindTooltip(DeviceCardView.renderTooltipHtml(device), {
                     direction: 'auto',
                     offset: [0, 0],

@@ -89,6 +89,13 @@ export class GoogleMapView {
         // Initialize Places Autocomplete
         this.initPlacesAutocomplete();
 
+        // 🕸️ Zoom-Adaptive Spiderweb Re-projection
+        this.map.addListener("zoom_changed", () => {
+            if (this.lastDevices && this.lastDevices.length > 0) {
+                this.renderDeviceMarkers(this.lastDevices, this.lastShowAll);
+            }
+        });
+
         console.log(`[GOOGLE_MAP_VIEW] Google Maps V3 initialized at [${centerLat}, ${centerLng}].`);
     }
 
@@ -192,12 +199,30 @@ export class GoogleMapView {
      */
     renderDeviceMarkers(devices = [], showAll = true) {
         if (!this.map || !this.google) return;
+        this.lastDevices = devices;
+        this.lastShowAll = showAll;
 
         const currentAgentIds = new Set();
         const OverlayView = this.google.maps.OverlayView;
 
-        // 🛡️ Coordinate Dispersion Matrix (Anti-Overlap Physics matching Android MapEngine.kt)
-        const displacedFleet = GeoUtils.applyAntiOverlapDisplacement(devices);
+        // 🛡️ Coordinate Dispersion Matrix (Anti-Overlap Physics matching Android MapEngine.kt & MultiMarkerEngine.kt)
+        const displacedFleet = GeoUtils.applyAntiOverlapDisplacement(devices, {
+            map: this.map,
+            zoom: this.map.getZoom ? this.map.getZoom() : 14,
+            spacingPx: 65.0,
+            collisionThresholdPx: 60.0
+        });
+
+        // 🕸️ Clear existing Spiderweb Polylines & Centroids
+        if (!this.spiderPolylines) this.spiderPolylines = [];
+        this.spiderPolylines.forEach(p => p.setMap(null));
+        this.spiderPolylines = [];
+
+        if (!this.spiderCentroids) this.spiderCentroids = [];
+        this.spiderCentroids.forEach(c => c.setMap(null));
+        this.spiderCentroids = [];
+
+        const drawnCentroids = new Set();
 
         for (const item of displacedFleet) {
             const { device, displayLat, displayLng } = item;
@@ -235,6 +260,38 @@ export class GoogleMapView {
                     }
                 );
                 this.customMarkers.set(device.agentId, overlay);
+            }
+
+            // 🕸️ Draw Spiderweb connecting polyline to cluster centroid
+            if (item.isDisplaced && item.centroidLat && item.centroidLng) {
+                const line = new this.google.maps.Polyline({
+                    path: [
+                        { lat: displayLat, lng: displayLng },
+                        { lat: item.centroidLat, lng: item.centroidLng }
+                    ],
+                    geodesic: true,
+                    strokeColor: themeColor || '#00E5FF',
+                    strokeOpacity: 0.75,
+                    strokeWeight: 1.5,
+                    map: this.map
+                });
+                this.spiderPolylines.push(line);
+
+                const cKey = `${item.centroidLat.toFixed(5)}_${item.centroidLng.toFixed(5)}`;
+                if (!drawnCentroids.has(cKey)) {
+                    drawnCentroids.add(cKey);
+                    const circle = new this.google.maps.Circle({
+                        center: { lat: item.centroidLat, lng: item.centroidLng },
+                        radius: 4,
+                        strokeColor: '#00E5FF',
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2,
+                        fillColor: '#00E5FF',
+                        fillOpacity: 0.5,
+                        map: this.map
+                    });
+                    this.spiderCentroids.push(circle);
+                }
             }
         }
 
@@ -435,21 +492,24 @@ class GoogleCustomMarkerOverlay {
 
     renderHtml() {
         if (!this.div) return;
-        const themeColor = this.device.getThemeColor();
+        const isGhost = Boolean(this.device.isGhostMode || this.device.ragStatus === 'GHOST' || this.device.sessionState === 'GHOST' || this.device.sessionState === 'UNINSTALLED');
+        const themeColor = isGhost ? '#64748B' : this.device.getThemeColor();
         const avatarUrl = this.device.getAvatarUrl();
         const bearing = Math.round(this.device.bearing || 0);
 
+        this.div.className = `matrix-marker-wrapper in-radar ${isGhost ? 'ghost-mode' : (this.device.isOnline ? 'online' : 'offline')}`;
+
         this.div.innerHTML = `
-            <div class="marker-callout-pill" style="border-color: ${themeColor};">
-                <span class="marker-name-text">${this.device.name}</span>
+            <div class="marker-callout-pill" style="border-color: ${themeColor}; border-style: ${isGhost ? 'dashed' : 'solid'};">
+                <span class="marker-name-text">${isGhost ? '👻 ' : ''}${this.device.name}</span>
             </div>
-            <div class="marker-avatar-container" style="border-color: ${themeColor}; box-shadow: 0 0 12px ${themeColor}60;">
+            <div class="marker-avatar-container" style="border-color: ${themeColor}; border-style: ${isGhost ? 'dashed' : 'solid'}; ${isGhost ? 'opacity: 0.75;' : ''} box-shadow: 0 0 12px ${themeColor}60;">
                 <img src="${avatarUrl}" class="marker-avatar-img" alt="${this.device.name}"
-                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2248%22 fill=%22%230f172a%22/><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2235%22>👤</text></svg>'">
-                <span class="marker-status-dot ${this.device.isOnline ? 'online' : 'offline'}"></span>
+                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2248%22 fill=%22%23080c14%22/><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2235%22>👤</text></svg>'">
+                <span class="marker-status-dot ${isGhost ? 'ghost' : (this.device.isOnline ? 'online' : 'offline')}"></span>
                 ${this.device.battery >= 0 ? `<span class="marker-battery-pill">${this.device.battery}%</span>` : ''}
             </div>
-            ${this.device.speed > 0.8 ? `<div class="marker-bearing-arrow" style="transform: rotate(${bearing}deg); border-bottom-color: ${themeColor}"></div>` : ''}
+            ${!isGhost && this.device.speed > 0.8 ? `<div class="marker-bearing-arrow" style="transform: rotate(${bearing}deg); border-bottom-color: ${themeColor}"></div>` : ''}
             <div class="marker-pin-tip" style="border-top-color: ${themeColor};"></div>
         `;
     }

@@ -126,7 +126,9 @@ export class GeoUtils {
             const hh = parseInt(str.substring(8, 10), 10);
             const mm = parseInt(str.substring(10, 12), 10);
             const ss = parseInt(str.substring(12, 14), 10);
-            const date = new Date(y, m, d, hh, mm, ss);
+            const rem = str.substring(14);
+            const ms = rem ? parseInt(rem.padEnd(3, '0').slice(0, 3), 10) : 0;
+            const date = new Date(y, m, d, hh, mm, ss, ms);
             return date.getTime();
         }
         const parsed = Date.parse(str);
@@ -183,20 +185,21 @@ export class GeoUtils {
 
     /**
      * Enterprise Anti-Overlap Multi-Marker Engine (Matching MultiMarkerEngine.kt)
-     * Implements precise Geometric Formations:
+     * Implements precise Geometric & Spiderweb Formations:
      * - 1 Device:  Exact GPS Point (•)
      * - 2 Devices: Symmetrical Line (—)
      * - 3 Devices: Equilateral Triangle with Top Apex (Δ)
      * - 4 Devices: Diamond / Square (◇)
      * - 5 Devices: Regular Pentagon (⬟)
      * - 6 Devices: Regular Hexagon (⬡)
-     * - 7+ Devices: Regular Equidistant N-gon Circle (◯)
+     * - 7-8 Devices: Regular Equidistant N-gon Circle (◯)
+     * - >8 Devices: Multi-ring Archimedean Spiderweb Spiral
      * 
      * @param {Array<import('../models/DeviceModel.js').DeviceModel>} devices
-     * @param {number} collisionThresholdMeters Default: 25 meters
+     * @param {number|Object} optionsOrThreshold Collision threshold or config object { map, zoom, spacingPx, collisionThresholdPx }
      * @returns {Array<{ device: import('../models/DeviceModel.js').DeviceModel, displayLat: number, displayLng: number, isDisplaced: boolean, clusterSize: number, indexInCluster: number, centroidLat: number, centroidLng: number }>}
      */
-    static applyAntiOverlapDisplacement(devices = [], collisionThresholdMeters = 25.0) {
+    static applyAntiOverlapDisplacement(devices = [], optionsOrThreshold = {}) {
         const validDevices = devices.filter(d => d && d.hasValidLocation);
         const nonLocated = devices.filter(d => !d || !d.hasValidLocation);
 
@@ -213,7 +216,38 @@ export class GeoUtils {
             }));
         }
 
-        // 1. Transitive Connected Component Clustering (BFS matching Android MultiMarkerEngine.kt)
+        const options = (typeof optionsOrThreshold === 'number') 
+            ? { collisionThresholdMeters: optionsOrThreshold } 
+            : (optionsOrThreshold || {});
+
+        const map = options.map || null;
+        const currentZoom = options.zoom || (map && typeof map.getZoom === 'function' ? map.getZoom() : 14);
+        const targetSpacingPx = options.spacingPx || 65.0; // 65px center-to-center
+        const collisionThresholdPx = options.collisionThresholdPx || 60.0;
+
+        // Leaflet screen layerPoint projection support
+        const hasLeafletProjection = map && typeof map.latLngToLayerPoint === 'function' && typeof map.layerPointToLatLng === 'function';
+
+        // 1. Convert to screen points or calculate zoom-adaptive collision distance
+        const candidateMap = new Map();
+        for (const dev of validDevices) {
+            let pt = null;
+            if (hasLeafletProjection) {
+                try {
+                    pt = map.latLngToLayerPoint([dev.latitude, dev.longitude]);
+                } catch (e) {
+                    pt = null;
+                }
+            }
+            candidateMap.set(dev.agentId, {
+                device: dev,
+                point: pt,
+                lat: dev.latitude,
+                lng: dev.longitude
+            });
+        }
+
+        // 2. Transitive Connected Component Clustering (BFS matching Android MultiMarkerEngine.kt)
         const clusters = [];
         const visited = new Set();
 
@@ -228,16 +262,33 @@ export class GeoUtils {
             while (queue.length > 0) {
                 const curr = queue.shift();
                 currentCluster.push(curr);
+                const currData = candidateMap.get(curr.agentId);
 
                 for (const neighbor of validDevices) {
                     if (visited.has(neighbor.agentId)) continue;
+                    const neighData = candidateMap.get(neighbor.agentId);
 
-                    const distMeters = this.calculateDistanceKm(
-                        curr.latitude, curr.longitude,
-                        neighbor.latitude, neighbor.longitude
-                    ) * 1000.0;
+                    let isColliding = false;
+                    // Check exact co-location first
+                    if (Math.abs(curr.latitude - neighbor.latitude) < 0.00002 && Math.abs(curr.longitude - neighbor.longitude) < 0.00002) {
+                        isColliding = true;
+                    } else if (hasLeafletProjection && currData.point && neighData.point) {
+                        const dx = currData.point.x - neighData.point.x;
+                        const dy = currData.point.y - neighData.point.y;
+                        const distPx = Math.sqrt(dx * dx + dy * dy);
+                        isColliding = distPx <= collisionThresholdPx;
+                    } else {
+                        // Zoom-adaptive geographic threshold
+                        const metersPerPixel = 156543.03392 * Math.cos(curr.latitude * Math.PI / 180.0) / Math.pow(2, currentZoom);
+                        const effectiveThresholdMeters = Math.max(30.0, collisionThresholdPx * metersPerPixel);
+                        const distMeters = this.calculateDistanceKm(
+                            curr.latitude, curr.longitude,
+                            neighbor.latitude, neighbor.longitude
+                        ) * 1000.0;
+                        isColliding = distMeters <= effectiveThresholdMeters;
+                    }
 
-                    if (distMeters <= collisionThresholdMeters) {
+                    if (isColliding) {
                         visited.add(neighbor.agentId);
                         queue.push(neighbor);
                     }
@@ -246,13 +297,12 @@ export class GeoUtils {
             clusters.push(currentCluster);
         }
 
-        // 2. Apply Equidistant Geometric Progression across each cluster
+        // 3. Apply Spiderweb / Screen-Space Equidistant Geometric Progression across each cluster
         const results = [];
 
         for (const cluster of clusters) {
             const count = cluster.length;
-            
-            // Single device - no displacement needed
+
             if (count === 1) {
                 const dev = cluster[0];
                 results.push({
@@ -268,44 +318,101 @@ export class GeoUtils {
                 continue;
             }
 
-            // Calculate true center of mass (centroid)
+            // True centroid calculation
             const centroidLat = cluster.reduce((sum, d) => sum + d.latitude, 0) / count;
             const centroidLng = cluster.reduce((sum, d) => sum + d.longitude, 0) / count;
 
-            // Target spacing between adjacent avatars (~22 meters separation on map)
-            const targetSpacingMeters = 22.0;
-            // Radius formula: r = d / (2 * sin(PI / N))
-            const sinVal = Math.sin(Math.PI / count);
-            const dispersionRadiusMeters = targetSpacingMeters / (2.0 * (sinVal > 0.01 ? sinVal : 1.0));
+            if (hasLeafletProjection) {
+                // SCREEN-SPACE SPIDERWEB PROJECTION (Exact Leaflet Layer Points)
+                const clusterPoints = cluster.map(d => candidateMap.get(d.agentId).point || map.latLngToLayerPoint([d.latitude, d.longitude]));
+                const centroidX = clusterPoints.reduce((sum, p) => sum + p.x, 0) / count;
+                const centroidY = clusterPoints.reduce((sum, p) => sum + p.y, 0) / count;
 
-            // Base orientation angle matching Android MultiMarkerEngine.kt:
-            // 2 Devices: Symmetrical Line along horizontal axis (0°)
-            // 3 Devices: Equilateral Triangle with top apex at 12 o'clock (-90°) -> (Δ)
-            // 4 Devices: Diamond with vertices at 12, 3, 6, 9 o'clock (-90°) -> (◇)
-            // 5+ Devices: Regular N-gon starting at 12 o'clock (-90°)
-            let baseAngle = -Math.PI / 2.0;
-            if (count === 2) {
-                baseAngle = 0.0; // Symmetrical horizontal line
-            }
+                // Dispersion radius formula matching Android MultiMarkerEngine.kt
+                let dispersionRadiusPx = 48.0;
+                if (count === 2) {
+                    dispersionRadiusPx = 38.0;
+                } else if (count === 3) {
+                    dispersionRadiusPx = 46.0;
+                } else if (count === 4) {
+                    dispersionRadiusPx = 54.0;
+                } else {
+                    const sinVal = Math.sin(Math.PI / Math.min(count, 8));
+                    dispersionRadiusPx = Math.max(48.0, (targetSpacingPx / 2.0) / (sinVal > 0.01 ? sinVal : 1.0));
+                }
 
-            for (let idx = 0; idx < count; idx++) {
-                const dev = cluster[idx];
-                const angle = baseAngle + (2.0 * Math.PI * idx / count);
+                const baseAngle = (count === 2) ? 0.0 : -Math.PI / 2.0;
 
-                // Geographic Offset Conversion
-                const deltaLat = (dispersionRadiusMeters / 111111.0) * Math.sin(angle);
-                const deltaLng = (dispersionRadiusMeters / (111111.0 * Math.cos(centroidLat * Math.PI / 180.0))) * Math.cos(angle);
+                for (let idx = 0; idx < count; idx++) {
+                    const dev = cluster[idx];
+                    let angle, radius;
 
-                results.push({
-                    device: dev,
-                    displayLat: centroidLat + deltaLat,
-                    displayLng: centroidLng + deltaLng,
-                    isDisplaced: true,
-                    clusterSize: count,
-                    indexInCluster: idx,
-                    centroidLat,
-                    centroidLng
-                });
+                    if (count > 8) {
+                        // Multi-ring Archimedean spiderweb spiral for dense clusters
+                        const ring = Math.floor(idx / 8);
+                        const ringIdx = idx % 8;
+                        const ringCapacity = Math.min(8, count - ring * 8);
+                        angle = -Math.PI / 2.0 + (2.0 * Math.PI * ringIdx / ringCapacity);
+                        radius = dispersionRadiusPx * (1.0 + ring * 0.65);
+                    } else {
+                        angle = baseAngle + (2.0 * Math.PI * idx / count);
+                        radius = dispersionRadiusPx;
+                    }
+
+                    const offsetX = centroidX + radius * Math.cos(angle);
+                    const offsetY = centroidY + radius * Math.sin(angle);
+                    const displaced = map.layerPointToLatLng([offsetX, offsetY]);
+
+                    results.push({
+                        device: dev,
+                        displayLat: displaced.lat,
+                        displayLng: displaced.lng,
+                        isDisplaced: true,
+                        clusterSize: count,
+                        indexInCluster: idx,
+                        centroidLat,
+                        centroidLng
+                    });
+                }
+
+            } else {
+                // ZOOM-ADAPTIVE GEOGRAPHIC SPIDERWEB PROJECTION
+                const metersPerPixel = 156543.03392 * Math.cos(centroidLat * Math.PI / 180.0) / Math.pow(2, currentZoom);
+                const targetSpacingMeters = Math.max(25.0, targetSpacingPx * metersPerPixel);
+                const sinVal = Math.sin(Math.PI / Math.min(count, 8));
+                const dispersionRadiusMeters = (targetSpacingMeters / 2.0) / (sinVal > 0.01 ? sinVal : 1.0);
+
+                const baseAngle = (count === 2) ? 0.0 : -Math.PI / 2.0;
+
+                for (let idx = 0; idx < count; idx++) {
+                    const dev = cluster[idx];
+                    let angle, radiusMeters;
+
+                    if (count > 8) {
+                        const ring = Math.floor(idx / 8);
+                        const ringIdx = idx % 8;
+                        const ringCapacity = Math.min(8, count - ring * 8);
+                        angle = -Math.PI / 2.0 + (2.0 * Math.PI * ringIdx / ringCapacity);
+                        radiusMeters = dispersionRadiusMeters * (1.0 + ring * 0.65);
+                    } else {
+                        angle = baseAngle + (2.0 * Math.PI * idx / count);
+                        radiusMeters = dispersionRadiusMeters;
+                    }
+
+                    const deltaLat = (radiusMeters / 111111.0) * Math.sin(angle);
+                    const deltaLng = (radiusMeters / (111111.0 * Math.cos(centroidLat * Math.PI / 180.0))) * Math.cos(angle);
+
+                    results.push({
+                        device: dev,
+                        displayLat: centroidLat + deltaLat,
+                        displayLng: centroidLng + deltaLng,
+                        isDisplaced: true,
+                        clusterSize: count,
+                        indexInCluster: idx,
+                        centroidLat,
+                        centroidLng
+                    });
+                }
             }
         }
 

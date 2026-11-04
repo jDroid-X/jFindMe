@@ -87,12 +87,15 @@ export class MapController {
     async init() {
         const settings = this.settingsController.settings;
 
-        // 1. Initialize Map Engine (Google Maps or Leaflet)
+        // 1. Initialize Map Engine (Google Maps or Leaflet) with theme awareness
+        const currentGlobalTheme = (typeof window !== 'undefined' && window.localStorage?.getItem('jfindme_theme_preference')) || 'dark';
+        const initialTileTheme = currentGlobalTheme === 'light' ? 'google_clean' : (settings.mapTileTheme || 'carto_dark');
+
         await this.mapView.init(
             settings.referenceLat,
             settings.referenceLng,
             15,
-            settings.mapTileTheme,
+            initialTileTheme,
             settings.mapEngine || "leaflet"
         );
 
@@ -121,6 +124,19 @@ export class MapController {
             this.allDevicesCache = devices;
             if (!this.selectedDeviceIds) {
                 this.selectedDeviceIds = devices.map(d => d.agentId);
+            } else {
+                // 🔄 Dynamic Fleet Expansion: Auto-include newly paired devices into the visible selection
+                const existingSet = new Set(this.selectedDeviceIds);
+                let fleetExpanded = false;
+                for (const d of devices) {
+                    if (!existingSet.has(d.agentId)) {
+                        this.selectedDeviceIds.push(d.agentId);
+                        fleetExpanded = true;
+                    }
+                }
+                if (fleetExpanded) {
+                    console.log(`[MAP_CTRL] 🛰️ New circle peer dynamically added to live viewport (${this.selectedDeviceIds.length} nodes).`);
+                }
             }
 
             const visibleDevices = devices.filter(d => this.selectedDeviceIds.includes(d.agentId));
@@ -156,7 +172,17 @@ export class MapController {
         };
         window.addEventListener('themeChanged', this._themeListener);
 
-        // 6. Initial Data Fetch
+        // 5.5 Instant Stencil Primer: Render last-known fleet state immediately (< 15ms)
+        const stencilLoaded = this.deviceController.loadStencilFromStorage();
+        if (stencilLoaded) {
+            setTimeout(() => {
+                if (this.mapView && typeof this.mapView.fitAllBounds === 'function') {
+                    this.mapView.fitAllBounds();
+                }
+            }, 50);
+        }
+
+        // 6. Initial Data Fetch (Full Detailed Sync)
         await Promise.all([
             this.deviceController.fetchLiveDevices(),
             this.safeZoneController.fetchSafeZones()
@@ -167,7 +193,7 @@ export class MapController {
             this.mapView.fitAllBounds();
         }, 300);
 
-        // 7. Start Polling Engine
+        // 7. Start Polling Engine (Optimized High-Frequency Compact Stream)
         this.startPolling();
 
         this.isInitialized = true;
@@ -183,11 +209,11 @@ export class MapController {
         if (intervalSec > 0) {
             this.pollTimer = setInterval(async () => {
                 await Promise.all([
-                    this.deviceController.fetchLiveDevices(),
+                    this.deviceController.fetchLiveDevices({ compact: true }),
                     this.safeZoneController.fetchSafeZones()
                 ]);
             }, intervalSec * 1000);
-            console.log(`[MAP_CTRL] Live stream active (every ${intervalSec}s).`);
+            console.log(`[MAP_CTRL] Live stream active (every ${intervalSec}s, compact stream).`);
         }
     }
 
@@ -326,14 +352,14 @@ export class MapController {
                         title: 'Live GPS Stream Toggled',
                         message: `Telemetry stream for [${agentId}] is now ${val ? 'TRANSMITTING' : 'PAUSED'}`,
                         type: val ? 'success' : 'warning',
-                        timeout: 3500
+                        duration: 3500
                     });
                 } catch (err) {
                     FeedbackDialog.showSlideNotification({
                         title: 'Stream Toggle Failed',
                         message: err.message,
-                        type: 'danger',
-                        timeout: 3500
+                        type: 'error',
+                        duration: 3500
                     });
                     sw.checked = !val;
                 }
@@ -401,15 +427,44 @@ export class MapController {
     }
 
     /**
+     * Dispatches a silent high-priority FCM wake-up burst to all connected devices in the fleet
+     * Shakes dormant backgrounded devices out of Android Doze Mode and forces an immediate fresh GPS fix.
+     */
+    async triggerFleetWakeupBurst() {
+        try {
+            FeedbackDialog.showToast("⚡ Dispatching high-priority radar sync burst to sleeping devices...", "info");
+            const res = await this.deviceController.interrogateFleet();
+            if (res && res.status === "SUCCESS") {
+                FeedbackDialog.showToast(`🛰️ Radar burst dispatched (${res.fcmPushesDispatched} devices woken via FCM)!`, "success");
+                if (window.log) {
+                    window.log(`RADAR_BURST: Dispatched silent FCM wake-up to ${res.fcmPushesDispatched} devices.`, "success");
+                }
+                // Fetch updated GPS positions after short 2.5s acquisition delay
+                setTimeout(async () => {
+                    await this.deviceController.fetchLiveDevices();
+                }, 2500);
+            }
+        } catch (e) {
+            FeedbackDialog.showToast(`Radar wakeup burst failed: ${e.message}`, "error");
+        }
+    }
+
+    /**
      * Handles Settings Updated event
      * @param {import('../models/SettingsModel.js').SettingsModel} settings 
      */
     handleSettingsUpdated(settings) {
+        if (!settings) return;
+        this.settingsController.settings = settings;
+        this.deviceController.settings = settings;
+
         // If engine changed, reinitialize map
         if (this.mapView.activeEngineType !== settings.mapEngine) {
             this.mapView.init(settings.referenceLat, settings.referenceLng, 13, settings.mapTileTheme, settings.mapEngine);
         } else {
-            this.mapView.setTheme(settings.mapTileTheme);
+            if (settings.mapTileTheme) {
+                this.mapView.setTheme(settings.mapTileTheme);
+            }
             this.mapView.updateReferenceLocation(
                 settings.referenceLat,
                 settings.referenceLng,
@@ -425,9 +480,16 @@ export class MapController {
         // Restart polling with new interval
         this.startPolling();
 
-        if (window.log) {
+        if (window.log && typeof settings.referenceLat === 'number') {
             window.log(`RADAR_SETTINGS: Station calibrated to [${settings.referenceLat.toFixed(4)}, ${settings.referenceLng.toFixed(4)}] with ${settings.searchRadiusKm}km Radius.`, "success");
         }
+    }
+
+    /**
+     * Alias for external controllers updating radar parameters
+     */
+    updateRadarSettings(settings) {
+        this.handleSettingsUpdated(settings);
     }
 
     /**

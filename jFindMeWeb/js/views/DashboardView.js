@@ -26,12 +26,19 @@ export class DashboardView {
         this.searchQuery = "";
         this.devices = [];
         this.settings = null;
+        this.isPaused = false; // Pause / Unpause status (default active)
     }
 
     /**
      * Smoothly updates live telemetry from background stream
      */
     updateData(devices = [], settings = {}) {
+        // If user has paused live telemetry, preserve current display and do not overwrite
+        if (this.isPaused) {
+            this.devices = DeviceController.sortByLatestFirst(devices);
+            return;
+        }
+
         // If a search query is currently focused in input, do not interrupt typing
         const activeEl = document.activeElement;
         const isTyping = activeEl && (activeEl.id === 'dash-search-input' || activeEl.tagName === 'INPUT');
@@ -65,11 +72,20 @@ export class DashboardView {
         const container = document.getElementById(this.containerId);
         if (!container) return;
 
-        // Auto-resolve reference coordinates: fallback to fleet centroid or default to Pune
+        // Auto-resolve reference coordinates: dynamic fleet centroid fallback (removes hardcoding)
         let refLat = settings.referenceLat !== undefined ? settings.referenceLat : 18.5788;
         let refLng = settings.referenceLng !== undefined ? settings.referenceLng : 73.8887;
         const radiusKm = settings.searchRadiusKm || 10;
-        const refAddress = settings.referenceAddress || "Central Operator Station";
+        let refAddress = settings.referenceAddress || "Central Operator Station";
+
+        const locatedDevices = this.devices.filter(d => d.hasValidLocation);
+        if ((!settings.referenceLat || refLat === 18.5788) && locatedDevices.length > 0) {
+            refLat = locatedDevices.reduce((sum, d) => sum + d.latitude, 0) / locatedDevices.length;
+            refLng = locatedDevices.reduce((sum, d) => sum + d.longitude, 0) / locatedDevices.length;
+            if (!settings.referenceAddress || settings.referenceAddress === "Operator Station") {
+                refAddress = `Fleet Centroid Cluster (${locatedDevices.length} Nodes)`;
+            }
+        }
 
         // Compute dynamic distance metrics for all devices
         this.devices.forEach(d => {
@@ -160,11 +176,30 @@ export class DashboardView {
                         <div>
                             <div class="flex items-center gap-2">
                                 <span class="text-xs font-extrabold uppercase tracking-widest text-sky-400">Reference Location Station</span>
-                                <span class="badge-status badge-success">MONITORING ACTIVE</span>
+                                ${this.isPaused ? `
+                                    <span id="dash-monitoring-status-badge" class="badge-status badge-warning bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold flex items-center gap-1 cursor-pointer select-none transition-all hover:scale-105" title="Live refresh is PAUSED. Click to resume telemetry stream.">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                                        <span>PAUSED (ORANGE)</span>
+                                    </span>
+                                ` : `
+                                    <span id="dash-monitoring-status-badge" class="badge-status badge-success font-bold flex items-center gap-1 cursor-pointer select-none transition-all hover:scale-105" title="Live refresh is ACTIVE. Click to pause telemetry stream.">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                        <span>MONITORING ACTIVE</span>
+                                    </span>
+                                `}
                             </div>
                             <h2 class="text-base font-bold text-primary-theme tracking-tight mt-0.5">${refAddress}</h2>
-                            <p class="text-xs font-mono text-secondary-theme">
-                                Coordinates: <span class="text-primary-theme font-bold">${refLat.toFixed(5)}° N, ${refLng.toFixed(5)}° E</span> • Active Window: <span class="text-amber-500 font-bold">${radiusKm} km</span>
+                            <p class="text-xs font-mono text-secondary-theme flex items-center gap-2 flex-wrap mt-0.5">
+                                <span>Coordinates: <strong class="text-primary-theme font-bold">${refLat.toFixed(5)}° N, ${refLng.toFixed(5)}° E</strong></span>
+                                <span>•</span>
+                                <span class="inline-flex items-center gap-1 bg-surface/80 px-2 py-0.5 rounded-md border border-amber-500/30">
+                                    <span class="text-secondary-theme">Radius:</span>
+                                    <input type="number" id="dash-radius-input" min="1" max="5000" step="1" value="${radiusKm}" class="w-14 bg-surface text-amber-400 font-bold font-mono text-xs text-center border border-amber-500/40 rounded px-1 py-0.2 focus:outline-none focus:ring-1 focus:ring-amber-400" title="Editable radius value (km) - updates proximity immediately">
+                                    <span class="text-amber-400 font-bold text-xs font-mono">km</span>
+                                    <button id="btn-save-radius" class="text-[8.5px] px-1.5 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/40 border border-amber-500/40 cursor-pointer transition-colors" title="Save & Apply Radius">
+                                        Save
+                                    </button>
+                                </span>
                             </p>
                         </div>
                     </div>
@@ -175,9 +210,9 @@ export class DashboardView {
                             <span>⚙️</span>
                             <span>Radius & Station</span>
                         </button>
-                        <button id="btn-dash-refresh" class="btn-action-primary text-xs">
-                            <span>🔄</span>
-                            <span>Refresh Live Fleet</span>
+                        <button id="btn-dash-refresh" class="${this.isPaused ? 'btn-action-warning bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black shadow-md border border-amber-400/50' : 'btn-action-primary text-xs'} flex items-center gap-1.5 cursor-pointer transition-all" title="${this.isPaused ? 'Telemetry is currently paused (Orange). Click to unpause and resume live fleet.' : 'Telemetry is active. Click to pause live refresh.'}">
+                            <span>${this.isPaused ? '⏸️' : '🔄'}</span>
+                            <span>${this.isPaused ? 'Paused (Orange)' : 'Refresh Live Fleet'}</span>
                         </button>
                     </div>
                 </div>
@@ -553,6 +588,10 @@ export class DashboardView {
                                                             <span class="text-primary-theme truncate">${dev.board} / ${dev.hardware}</span>
                                                         </div>
                                                         <div class="flex justify-between py-0.5 border-b border-subtle-theme">
+                                                            <span class="text-secondary-theme">SIM / Cellular:</span>
+                                                            <span class="text-emerald-400 font-bold truncate">${dev.simStatus || 'No SIM Detected'}</span>
+                                                        </div>
+                                                        <div class="flex justify-between py-0.5 border-b border-subtle-theme">
                                                             <span class="text-secondary-theme">IMEI 1 / 2:</span>
                                                             <span class="text-primary-theme truncate copyable-badge" data-copy="${dev.imei1}">${dev.imei1} / ${dev.imei2}</span>
                                                         </div>
@@ -824,16 +863,103 @@ export class DashboardView {
             if (this.onOpenSettings) this.onOpenSettings();
         });
 
-        // 8. Refresh Fleet Trigger
-        document.getElementById('btn-dash-refresh')?.addEventListener('click', async () => {
-            if (window.MatrixApp && window.MatrixApp.refreshNow) {
-                await window.MatrixApp.refreshNow();
+        // 7b. Editable Radius Entry Handler
+        const handleRadiusUpdate = async () => {
+            const inputEl = document.getElementById('dash-radius-input');
+            if (!inputEl) return;
+            const val = parseFloat(inputEl.value);
+            if (isNaN(val) || val <= 0) {
+                FeedbackDialog.showToast('Please enter a valid radius greater than 0 km.', 'warning');
+                inputEl.value = this.settings?.searchRadiusKm || 10;
+                return;
             }
-            if (window.showDashboard) {
-                window.showDashboard();
+
+            if (this.settings) {
+                this.settings.searchRadiusKm = val;
             }
-            FeedbackDialog.showToast("Fleet proximity & telemetry refreshed.", "info");
+
+            try {
+                await (window.fetchApi ? window.fetchApi('/api/save-settings', {
+                    method: 'POST',
+                    body: JSON.stringify({ searchRadiusKm: val })
+                }) : fetch('/api/save-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ searchRadiusKm: val })
+                }).then(r => r.json()));
+
+                if (window.appInstance?.settingsModel) {
+                    window.appInstance.settingsModel.searchRadiusKm = val;
+                }
+
+                FeedbackDialog.showSlideNotification({
+                    title: 'Search Radius Updated',
+                    message: `Station proximity radius set to ${val} km. In-radius metrics updated.`,
+                    type: 'success',
+                    timeout: 3000
+                });
+
+                this.render(this.devices, this.settings);
+            } catch (err) {
+                FeedbackDialog.showToast(`Failed to persist radius: ${err.message}`, 'error');
+                this.render(this.devices, this.settings);
+            }
+        };
+
+        document.getElementById('btn-save-radius')?.addEventListener('click', handleRadiusUpdate);
+        document.getElementById('dash-radius-input')?.addEventListener('change', handleRadiusUpdate);
+        document.getElementById('dash-radius-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleRadiusUpdate();
+            }
         });
+
+        // 8. Refresh Fleet Trigger & Pause / Unpause Toggle
+        const updateHeaderSyncStatus = () => {
+            const syncEl = document.getElementById('sync-indicator');
+            if (syncEl) {
+                if (this.isPaused) {
+                    syncEl.className = 'flex items-center gap-2 text-xs font-bold text-amber-400 tracking-wider';
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-amber-400 rounded-full"></div><span class="hidden md:inline">STREAM_PAUSED</span>`;
+                } else {
+                    syncEl.className = 'flex items-center gap-2 text-xs font-bold text-emerald-400 tracking-wider';
+                    syncEl.innerHTML = `<div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_ACTIVE</span>`;
+                }
+            }
+        };
+
+        const togglePauseRefresh = async () => {
+            this.isPaused = !this.isPaused;
+            updateHeaderSyncStatus();
+            if (this.isPaused) {
+                FeedbackDialog.showSlideNotification({
+                    title: 'Live Refresh Paused',
+                    message: 'Telemetry auto-refresh is PAUSED (Orange). Click button again to resume live fleet stream.',
+                    type: 'warning',
+                    timeout: 3500
+                });
+                this.render(this.devices, this.settings);
+            } else {
+                FeedbackDialog.showSlideNotification({
+                    title: 'Live Refresh Resumed',
+                    message: 'Telemetry auto-refresh is ACTIVE. Refreshing fleet data now...',
+                    type: 'success',
+                    timeout: 3500
+                });
+                if (window.MatrixApp && window.MatrixApp.refreshNow) {
+                    await window.MatrixApp.refreshNow();
+                }
+                if (window.showDashboard) {
+                    window.showDashboard();
+                } else {
+                    this.render(this.devices, this.settings);
+                }
+            }
+        };
+
+        document.getElementById('btn-dash-refresh')?.addEventListener('click', togglePauseRefresh);
+        document.getElementById('dash-monitoring-status-badge')?.addEventListener('click', togglePauseRefresh);
 
         // 9. Launch Live Map Button
         document.getElementById('btn-dash-open-map')?.addEventListener('click', () => {

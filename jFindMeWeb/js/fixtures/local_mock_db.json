@@ -1,0 +1,94 @@
+{
+  "devices": {
+    "UNIT0001": {
+      "Identity": { "uid_2": "HW_UNIT0001", "auth_uid": "AUTH_DEV_01", "avatar_id": "avatar_custom_1" },
+      "device": {
+        "model": "Samsung Galaxy S24",
+        "device_name": "Field Unit Alpha",
+        "live": { "latitude": 19.0760, "longitude": 72.8777, "speed": 12.5, "bearing": 180, "accuracy": 5, "battery": 92, "updated_at": 1793600000000 }
+      },
+      "profile": { "name": "Inspector Alpha", "email": "alpha@jbutterfly.io", "avatar_id": "avatar_custom_1" },
+      "history": {
+        "HIST_01": { "latitude": 19.0755, "longitude": 72.8770, "timestamp": 1793599900000 }
+      },
+      "telemetry": { "battery": 92, "is_charging": false, "last_seen": 1793600000000 },
+      "relationships": {
+        "UNIT0002": { "agentId": "UNIT0002", "name": "Inspector Bravo", "role": "Peer", "source": "family" }
+      }
+    },
+    "UNIT0002": {
+      "Identity": { "uid_2": "HW_UNIT0002", "auth_uid": "AUTH_DEV_02", "avatar_id": "avatar_custom_2" },
+      "device": {
+        "model": "Google Pixel 8",
+        "device_name": "Field Unit Bravo",
+        "live": { "latitude": 19.0820, "longitude": 72.8810, "speed": 0, "bearing": 90, "accuracy": 3, "battery": 85, "updated_at": 1793600000000 }
+      },
+      "profile": { "name": "Inspector Bravo", "email": "bravo@jbutterfly.io", "avatar_id": "avatar_custom_2" },
+      "history": {
+        "HIST_02": { "latitude": 19.0815, "longitude": 72.8805, "timestamp": 1793599900000 }
+      },
+      "telemetry": { "battery": 85, "is_charging": true, "last_seen": 1793600000000 }
+    }
+  },
+  "lookup_indices": {
+    "auth_to_device": {
+      "AUTH_DEV_01": "UNIT0001",
+      "AUTH_DEV_02": "UNIT0002"
+    },
+    "device_to_hw": {
+      "UNIT0001": "HW_UNIT0001",
+      "UNIT0002": "HW_UNIT0002"
+    }
+  },
+  "Geofencing": {
+    "AUDIT_DISPATCHER": {
+      "safe_zones": {
+        "ZONE_CENTRAL": {
+          "zone_id": "ZONE_CENTRAL",
+          "zone_name": "Central Command Headquarters",
+          "lat": 19.0760,
+          "lng": 72.8777,
+          "radius": 500,
+          "is_active": true,
+          "alerts_enabled": true,
+          "connected_devices": {
+            "UNIT0001": { "device_name": "Field Unit Alpha", "status": "ACTIVE" }
+          }
+        }
+      }
+    }
+  },
+  "Version_Update": {
+    "master_release": {
+      "version_name": "1.0.13",
+      "version_code": 87,
+      "database_schema": "V75",
+      "package_size_formatted": "80.6 MB",
+      "package_size_bytes": 84510920,
+      "status": "PUBLISHED_MASTER"
+    }
+  },
+  "config": {
+    "circles": [
+      { "id": "family", "name": "Family Circle" },
+      { "id": "operations", "name": "Operations" },
+      { "id": "field", "name": "Field Service" }
+    ],
+    "operator": {
+      "settings": {
+        "theme": "dark",
+        "rag_verified": true
+      }
+    }
+  },
+  "database_archive": {
+    "summary": {
+      "ARCH0001": {
+        "name": "Decommissioned Patrol 9",
+        "model": "Moto G54",
+        "archived_at": 1793500000000
+      }
+    }
+  }
+}
+

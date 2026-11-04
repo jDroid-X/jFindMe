@@ -68,20 +68,44 @@
     position: relative;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: 50% !important;
+    -webkit-border-radius: 50% !important;
     border: 2.5px solid #00E5FF;
     background: transparent !important;
-    padding: 1.5px;
+    padding: 0 !important;
     box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
     transition: all 0.3s ease;
+    overflow: hidden !important;
+    clip-path: circle(50% at 50% 50%) !important;
+    -webkit-clip-path: circle(50% at 50% 50%) !important;
 }
 
+.marker-avatar-container img,
 .marker-avatar-img {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    object-fit: cover;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 50% !important;
+    -webkit-border-radius: 50% !important;
+    object-fit: cover !important;
     background: transparent !important;
+    display: block !important;
+    clip-path: circle(50% at 50% 50%) !important;
+    -webkit-clip-path: circle(50% at 50% 50%) !important;
+}
+
+/* Ghost Mode Marker Pin & Aura */
+.matrix-marker-wrapper.ghost-mode .marker-avatar-container {
+    opacity: 0.72;
+    filter: grayscale(60%);
+    border-style: dashed !important;
+    border-color: #64748B !important;
+    box-shadow: 0 0 10px rgba(100, 116, 139, 0.4) !important;
+}
+
+.matrix-marker-wrapper.ghost-mode .marker-callout-pill {
+    border-style: dashed !important;
+    border-color: #64748B !important;
+    background: rgba(15, 23, 42, 0.9) !important;
 }
 
 /* Online Live Status Pulsar Dot */
@@ -93,6 +117,7 @@
     height: 11px;
     border-radius: 50%;
     border: 2px solid #080c14;
+    z-index: 5;
 }
 
 .marker-status-dot.online {
@@ -103,6 +128,27 @@
 
 .marker-status-dot.offline {
     background: #64748B;
+}
+
+.marker-status-dot.ghost {
+    background: #64748B;
+    border-style: dashed;
+}
+
+.marker-status-dot.warning {
+    background: #F59E0B;
+    box-shadow: 0 0 6px #F59E0B;
+}
+
+.marker-status-dot.critical {
+    background: #EF4444;
+    box-shadow: 0 0 8px #EF4444;
+}
+
+.marker-status-dot.sos {
+    background: #EF4444;
+    box-shadow: 0 0 12px #EF4444;
+    animation: statusPulse 0.8s infinite;
 }
 
 /* Battery Pill */
@@ -374,8 +420,26 @@
    Leaflet Right Device Card Spacing - Prevent hiding zoom controls
    ========================================================================== */
 .leaflet-device-card-container {
-    margin-right: 16px !important;
-    transition: margin-right 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    position: absolute;
+    top: 60px;
+    right: 16px;
+    z-index: 1000;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Desktop: Explicit width to prevent overflow */
+@media (min-width: 1024px) {
+    .leaflet-device-card-container {
+        margin-left: 220px !important;
+    }
+}
+
+/* Tablet: Adjust positioning */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .leaflet-device-card-container {
+        margin-left: 180px !important;
+        right: 12px !important;
+    }
 }
 
 /* Collapsible Toggle Button */

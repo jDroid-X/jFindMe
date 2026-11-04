@@ -92,13 +92,24 @@
 }
 
 /* ============================================
-   EXTRA SMALL MOBILE (< 375px)
+   EXTRA SMALL MOBILE (< 375px) & TERMINAL COMPACT
    ============================================ */
+@media (max-width: 575.98px) {
+    #terminal { height: 120px !important; }
+    #terminal.expanded { height: 280px !important; }
+    header { padding: 6px 10px !important; }
+    #cloud-path-link { display: none !important; }
+}
+
 @media (max-width: 374px) {
-    .matrix-selection-panel { font-size: 11px !important; }
-    .leaflet-device-card { font-size: 12px !important; }
-    .matrix-selection-panel > div { padding: 8px !important; }
-    .leaflet-device-card > div { padding: 10px !important; }
+    .matrix-selection-panel { font-size: 11px !important; width: 100% !important; }
+    .leaflet-device-card { font-size: 11px !important; width: 100% !important; }
+    .matrix-selection-panel > div { padding: 6px !important; }
+    .leaflet-device-card > div { padding: 8px !important; }
+    #terminal { height: 85px !important; }
+    #terminal-body { font-size: 9px !important; }
+    #project-id-label { display: none !important; }
+    header h1 { font-size: 11px !important; }
 }
 
 /* ============================================

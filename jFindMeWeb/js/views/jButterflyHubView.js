@@ -87,7 +87,7 @@ export class jButterflyHubView {
                         const selected = isDeviceSelected(d);
                         const isFocused = d.agentId === focusedAgentId;
                         const unified = typeof d.getUnifiedStatus === 'function' ? d.getUnifiedStatus() : { status: d.isOnline ? 'LIVE' : 'OFFLINE', dotClass: d.isOnline ? 'bg-emerald-400' : 'bg-slate-500' };
-                        const avatarUrl = typeof d.getAvatarUrl === 'function' ? d.getAvatarUrl() : '/Avatar/1.png';
+                        const avatarUrl = typeof d.getAvatarUrl === 'function' ? d.getAvatarUrl() : '/assets/avatars/1.png';
                         const themeColor = typeof d.getThemeColor === 'function' ? d.getThemeColor() : '#00E5FF';
 
                         return `
@@ -109,7 +109,13 @@ export class jButterflyHubView {
                                             <span class="text-[10px] font-bold text-slate-900 dark:text-slate-100 truncate leading-tight font-sans">${d.name}</span>
                                             <span class="w-1.5 h-1.5 rounded-full ${unified.dotClass} shrink-0" title="${unified.label}"></span>
                                         </div>
-                                        <div class="text-[8px] text-slate-500 dark:text-slate-400 truncate">${d.agentId} • ${d.battery >= 0 ? `${d.battery}%` : '--'}</div>
+                                        <div class="text-[8px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                                            <span>${d.agentId}</span>
+                                            <span>•</span>
+                                            <span class="text-emerald-600 dark:text-emerald-400 font-semibold font-sans">📍 ${d.getFormattedDistance ? d.getFormattedDistance() : '--'}</span>
+                                            <span>•</span>
+                                            <span>${d.battery >= 0 ? `${d.battery}%` : '--'}</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -127,6 +133,36 @@ export class jButterflyHubView {
                         `;
                     }).join('')}
                 </div>
+
+                <!-- 🗺️ Standardized Centralized RAG Status Legend Footer -->
+                <div class="px-2.5 py-1.5 bg-slate-100/90 dark:bg-slate-900/95 border-t border-slate-200 dark:border-white/10 select-none text-[8.5px] font-mono">
+                    <div class="text-[8px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 flex items-center justify-between">
+                        <span>MAP COLOR CODING (RAG)</span>
+                        <span class="text-[7.5px] text-sky-500 font-sans">SSOT V3.0</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-x-1.5 gap-y-0.5 text-slate-700 dark:text-slate-300">
+                        <div class="flex items-center gap-1 truncate" title="Heartbeat / update < 15 minutes">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                            <span class="truncate">🟢 LIVE (&lt;15m)</span>
+                        </div>
+                        <div class="flex items-center gap-1 truncate" title="Last seen 15m - 6h OR Battery ≤ 20%">
+                            <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                            <span class="truncate">🟡 IDLE (&lt;6h/Low)</span>
+                        </div>
+                        <div class="flex items-center gap-1 truncate" title="Last seen > 6 hours">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+                            <span class="truncate">🔴 OFFLINE (&gt;6h)</span>
+                        </div>
+                        <div class="flex items-center gap-1 truncate" title="Active Emergency SOS alert">
+                            <span class="w-2 h-2 rounded-full bg-rose-600 animate-ping shrink-0"></span>
+                            <span class="truncate text-rose-500 font-bold">🚨 SOS ALERT</span>
+                        </div>
+                        <div class="col-span-2 flex items-center gap-1 pt-0.5 border-t border-slate-200/60 dark:border-white/5 truncate" title="Ghost Mode / Unlinked / Frozen privacy mode">
+                            <span class="w-2 h-2 rounded-full bg-slate-500 border border-dashed border-slate-300 shrink-0"></span>
+                            <span class="truncate text-slate-500 dark:text-slate-400">👻 GHOST / UNLINKED</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -142,7 +178,7 @@ export class jButterflyHubView {
         const battery = device.battery >= 0 ? `${device.battery}%` : 'N/A';
         const wifiName = (device.networkType && device.networkType !== 'UNKNOWN') ? device.networkType : (device.isOnline ? 'Cellular / WiFi' : 'Disconnected');
         const lastSeen = device.getFormattedLastSeen();
-        const avatarUrl = typeof device.getAvatarUrl === 'function' ? device.getAvatarUrl() : '/Avatar/1.png';
+        const avatarUrl = typeof device.getAvatarUrl === 'function' ? device.getAvatarUrl() : '/assets/avatars/1.png';
         const themeColor = typeof device.getThemeColor === 'function' ? device.getThemeColor() : '#00E5FF';
         const distance = device.getFormattedDistance ? device.getFormattedDistance() : '--';
         const unified = typeof device.getUnifiedStatus === 'function' ? device.getUnifiedStatus() : { status: device.isOnline ? 'LIVE' : 'OFFLINE', badgeClass: device.isOnline ? 'badge-success' : 'badge-danger', dotClass: device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400', label: device.isOnline ? 'LIVE' : 'OFFLINE' };
@@ -257,18 +293,23 @@ export class jButterflyHubView {
                     </div>
 
                     <!-- Action Buttons Strip -->
-                    <div class="grid grid-cols-3 gap-1.5 p-3">
-                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-700 transition-all"
-                                onclick="window.MatrixApp.pokeDevice('${device.agentId}')">
+                    <div class="grid grid-cols-4 gap-1 p-2.5">
+                        <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-all"
+                                onclick="window.MatrixApp.pokeDevice('${device.agentId}')" title="Dispatches silent high-priority FCM wake burst to shake device from Doze Mode">
+                            <span class="text-sm">⚡</span>
+                            <span class="text-[9px] font-bold mt-0.5">Wake</span>
+                        </button>
+                        <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 border border-slate-200 dark:border-slate-700 transition-all"
+                                onclick="window.FBBridge.pokeDevice('${device.agentId}', 'RING_ALARM')" title="Triggers remote ring beacon alarm">
                             <span class="text-sm">🔊</span>
                             <span class="text-[9px] font-bold mt-0.5">Ring</span>
                         </button>
-                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 transition-all"
+                        <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 transition-all"
                                 onclick="window.MatrixApp.showHistory('${device.agentId}')">
                             <span class="text-sm">🗺️</span>
                             <span class="text-[9px] font-bold mt-0.5">Trail</span>
                         </button>
-                        <button class="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-700 transition-all"
+                        <button class="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-amber-50 dark:hover:bg-amber-950/50 text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 border border-slate-200 dark:border-slate-700 transition-all"
                                 onclick="window.MatrixApp.openEditProfile('${device.agentId}')">
                             <span class="text-sm">✏️</span>
                             <span class="text-[9px] font-bold mt-0.5">Edit</span>
@@ -299,7 +340,7 @@ export class jButterflyHubView {
     }
 
     /**
-     * Toggle device details panel visibility
+     * Toggle device details panel visibility (global function for onclick handlers)
      * @param {string} agentId 
      */
     static toggleDetails(agentId) {
@@ -328,33 +369,39 @@ export class jButterflyHubView {
      */
     static renderTacticalPinHtml(device) {
         if (!device) return '';
-        const themeColor = device.getThemeColor ? device.getThemeColor() : '#00E5FF';
+        const isGhost = Boolean(device.isGhostMode || device.ragStatus === 'GHOST' || device.sessionState === 'GHOST' || device.sessionState === 'UNINSTALLED');
+        const themeColor = isGhost ? '#64748B' : (device.getThemeColor ? device.getThemeColor() : '#00E5FF');
         const avatarUrl = device.getAvatarUrl ? device.getAvatarUrl() : 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>';
         const isWithin = device.isWithinSearchRadius !== undefined ? device.isWithinSearchRadius : true;
         const bearing = Math.round(device.bearing || 0);
 
+        // Standardized Centralized RAG Status Engine Integration (Agent 2 & 3)
+        const unified = typeof device.getUnifiedStatus === 'function' ? device.getUnifiedStatus() : {
+            color: isGhost ? '#64748B' : (device.ragColor || (device.isOnline ? '#22C55E' : '#EF4444')),
+            dotClass: isGhost ? 'bg-slate-500' : (device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500')
+        };
+        const ragFontColor = isGhost ? '#94A3B8' : (unified.color || (device.isOnline ? '#22C55E' : '#EF4444'));
+
         return `
-            <div class="matrix-marker-wrapper ${isWithin ? 'in-radar' : 'out-radar'} ${device.isOnline ? 'online' : 'offline'} flex flex-col items-center select-none cursor-pointer">
-                <!-- Device Name Callout Pill -->
-                <div class="marker-callout-pill" style="border: 1.5px solid ${themeColor}; background: rgba(8, 12, 22, 0.95); backdrop-filter: blur(8px); border-radius: 9999px; padding: 2px 8px; font-size: 10px; font-weight: 800; color: #ffffff; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.6); margin-bottom: 2px; pointer-events: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
-                    <span class="marker-name-text">${device.name}</span>
+            <div class="matrix-marker-wrapper ${isWithin ? 'in-radar' : 'out-radar'} ${isGhost ? 'ghost-mode' : (device.isOnline ? 'online' : 'offline')} flex flex-col items-center select-none cursor-pointer">
+                <!-- Top Name Callout Pill (Role Color Border & RAG Font Color) -->
+                <div class="marker-callout-pill" style="border: 1.5px ${isGhost ? 'dashed' : 'solid'} ${themeColor}; background: rgba(8, 12, 22, 0.95); backdrop-filter: blur(8px); border-radius: 9999px; padding: 2px 8px; font-size: 10px; font-weight: 800; color: ${ragFontColor}; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.5); margin-bottom: 2px; pointer-events: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis;">
+                    <span class="marker-name-text">${isGhost ? '👻 ' : ''}${device.name}</span>
                 </div>
 
-                <!-- Avatar Container with Theme Glow (Transparent Background) -->
-                <div class="marker-avatar-container relative w-10 h-10 rounded-full bg-transparent p-0 shadow-lg transition-transform hover:scale-110" 
-                     style="border: 2.5px solid ${themeColor}; box-shadow: 0 0 14px ${themeColor}60;">
+                <!-- Clean Direct Avatar Container (Strict 50% Circular Mask, No Black Box) -->
+                <div class="marker-avatar-container relative w-10 h-10 rounded-full bg-transparent p-0 shadow-md transition-transform hover:scale-105" 
+                     style="border: 2px ${isGhost ? 'dashed' : 'solid'} ${themeColor}; ${isGhost ? 'opacity: 0.75;' : ''}">
                     <img src="${avatarUrl}" class="w-full h-full rounded-full object-cover bg-transparent" alt="${device.name}"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
+                         style="border-radius: 50% !important; clip-path: circle(50% at 50% 50%) !important; -webkit-clip-path: circle(50% at 50% 50%) !important;"
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2248%22 fill=%22%23080c14%22/><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
                     
-                    <!-- Live Online Pulsar Dot -->
-                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-950 ${device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
-                    
-                    <!-- Battery Pill Badge -->
-                    ${device.battery >= 0 ? `<span class="absolute -top-1.5 -right-2 px-1 py-0.2 rounded-full bg-slate-950/90 text-white text-[8px] font-mono font-bold border border-white/20">${device.battery}%</span>` : ''}
+                    <!-- Live Status Dot (5-Stage Centralized RAG Status) -->
+                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-950 ${isGhost ? 'bg-slate-500' : unified.dotClass}"></span>
                 </div>
 
-                <!-- Direction Bearing Indicator -->
-                ${device.speed > 0.8 ? `<div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[6px] mt-0.5" style="transform: rotate(${bearing}deg); border-bottom-color: ${themeColor};"></div>` : ''}
+                <!-- Motion Heading Chevron (Clean Directional Vector) -->
+                ${!isGhost && device.speed > 0.8 ? `<div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[6px] mt-0.5" style="transform: rotate(${bearing}deg); border-bottom-color: ${themeColor};"></div>` : ''}
 
                 <!-- Pin Anchor Point -->
                 <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px]" style="border-top-color: ${themeColor}; margin-top: -1px;"></div>

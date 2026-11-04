@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>jButterfly | Tactical Live Radar Matrix</title>
     
-    <!-- Pre-Hydrate Theme to Prevent Flash of Split Theme -->
+    <!-- Pre-Hydrate Theme to Prevent Flash of Split Theme & Auto-Bridge file:// Launches -->
     <script>
+        if (window.location.protocol === 'file:') {
+            window.location.replace('launcher.html');
+        }
         (function() {
             try {
                 const saved = localStorage.getItem('jfindme_theme_preference') || 'dark';
@@ -64,6 +67,29 @@
     
     <!-- Mobile Sidebar Overlay -->
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    
+    <script>
+        // Mobile Menu Toggle Handler
+        (function() {
+            const menuBtn = document.getElementById('mobile-menu-btn');
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            
+            if (menuBtn && sidebar) {
+                menuBtn.addEventListener('click', () => {
+                    sidebar.classList.toggle('open');
+                    overlay.classList.toggle('active');
+                });
+                
+                if (overlay) {
+                    overlay.addEventListener('click', () => {
+                        sidebar.classList.remove('open');
+                        overlay.classList.remove('active');
+                    });
+                }
+            }
+        })();
+    </script>
     <style>
         .log-line { padding: 2px 6px; border-radius: 4px; border-left: 3px solid transparent; font-size: 11px; }
         .log-system { color: #94a3b8; }
@@ -113,6 +139,22 @@
                     <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <span>Database Architect</span>
                 </div>
+                <div class="nav-item" id="nav-dup-device" onclick="window.showDupDevice()">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                    <span>Duplicate Device</span>
+                </div>
+                <div class="nav-item" id="nav-db-sync" onclick="window.showDatabaseSync()">
+                    <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                    <span>DB Sync Matrix</span>
+                </div>
+                <div class="nav-item" id="nav-mindmap" onclick="window.showMindMap()">
+                    <svg class="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                    <span>MindMap & Tree</span>
+                </div>
+                <div class="nav-item" id="nav-eagle" onclick="window.showEagleAnalytics()">
+                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span>Eagle Analytics</span>
+                </div>
             </div>
 
             <div class="nav-section">
@@ -158,10 +200,19 @@
                             <div class="text-[10px] font-bold tracking-tight text-primary-theme">CORE_AUDIT</div>
                             <div class="text-[9px] text-slate-400 truncate max-w-[120px]">jfindme-3b15c</div>
                         </div>
-                        <div class="w-8 h-8 bg-sky-500/15 border border-sky-500/30 rounded-xl flex items-center justify-center text-sky-400 font-bold text-xs shadow-sm">M</div>
+                        <div onclick="window.appLogout()" title="Session: Admin | Click to Logout" class="w-8 h-8 bg-sky-500/15 hover:bg-rose-500/20 hover:text-rose-400 hover:border-rose-500/40 cursor-pointer border border-sky-500/30 rounded-xl flex items-center justify-center text-sky-400 font-bold text-xs shadow-sm transition-all">M</div>
                     </div>
                 </div>
             </header>
+
+            <!-- MOCK FALLBACK NOTICE BANNER -->
+            <div id="mock-fallback-banner" class="hidden bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 text-xs text-amber-300 font-medium flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm">⚠️</span>
+                    <span><strong>OFFLINE FALLBACK ACTIVE:</strong> Operating on local mock fixture because live cloud RTDB timed out or is unreachable.</span>
+                </div>
+                <button onclick="window.retryMatrixBridge()" class="px-2 py-0.5 rounded bg-amber-500/30 hover:bg-amber-500/50 text-amber-200 font-bold text-[10px] uppercase tracking-wider transition-all">Reconnect Cloud</button>
+            </div>
 
             <!-- ZONE C: MISSION CONTROL WORKSPACE -->
             <div id="workspace-root" class="flex-1 overflow-hidden relative">
@@ -220,6 +271,6 @@
         };
         console.log("[SYSTEM] Fault Anchor Primed.");
     </script>
-    <script type="module" src="js/app.js?v=20260904_v7"></script>
+    <script type="module" src="js/app.js?v=20261008_v8"></script>
 </body>
 </html>

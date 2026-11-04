@@ -7,8 +7,10 @@ export const AppConfig = {
     APP_NAME: "jFindMe Matrix Radar",
     VERSION: "3.0.0",
     
-    // Google Maps JavaScript API Credentials
-    GOOGLE_MAPS_API_KEY: "AIzaSyBFhlNKDNCu37_ZjkABUglfvZW9Iwm0qPs",
+    // Google Maps JavaScript API Credentials (Dynamic Environment / Settings Override)
+    GOOGLE_MAPS_API_KEY: (typeof window !== "undefined" && window.ENV?.GOOGLE_MAPS_API_KEY) || 
+                         (typeof localStorage !== "undefined" && localStorage.getItem("pref_google_maps_key")) || 
+                         "AIzaSyBFhlNKDNCu37_ZjkABUglfvZW9Iwm0qPs",
     GOOGLE_MAPS_LIBRARIES: ["places", "geometry", "drawing", "visualization"],
 
     // Backend Proxy Endpoints
@@ -28,10 +30,13 @@ export const AppConfig = {
         PING: "/api/ping"
     },
 
-    // Map Defaults
+    // Map Defaults (Dynamic LocalStorage Override with SSOT Baseline)
     MAP_DEFAULTS: {
-        CENTER: { lat: 18.5788, lng: 73.8887 }, // Centered on Live Device Fleet
-        ZOOM: 16,
+        CENTER: { 
+            lat: (typeof localStorage !== "undefined" && parseFloat(localStorage.getItem("pref_default_lat"))) || 18.5788, 
+            lng: (typeof localStorage !== "undefined" && parseFloat(localStorage.getItem("pref_default_lng"))) || 73.8887 
+        },
+        ZOOM: (typeof localStorage !== "undefined" && parseInt(localStorage.getItem("pref_default_zoom"), 10)) || 16,
         SEARCH_RADIUS_KM: 10.0, // 10 km default
         ENGINE: "leaflet",      // 'leaflet' (Clean Google/OSM Map - Zero API Key Restrictions)
         THEME: "google_clean",

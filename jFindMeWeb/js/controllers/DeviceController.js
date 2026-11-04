@@ -119,18 +119,89 @@ export class DeviceController {
     }
 
     /**
+     * ⚡ Loads last-known fleet state immediately from local stencil cache (< 15ms)
+     * Provides instantaneous zero-latency cold-start rendering before network packet arrives.
+     * @returns {boolean} True if valid cached devices were primed
+     */
+    loadStencilFromStorage() {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage) return false;
+            const raw = window.localStorage.getItem('jfindme_fleet_stencil');
+            if (!raw) return false;
+            const cached = JSON.parse(raw);
+            if (Array.isArray(cached) && cached.length > 0) {
+                const mapped = cached.map(d => new DeviceModel(d));
+                this.devices = DeviceController.sortByLatestFirst(mapped);
+                this.recalculateProximities();
+                this.notify();
+                console.log(`[DEVICE_CTRL] ⚡ Instant Stencil Loaded: ${this.devices.length} devices primed from cache in < 15ms.`);
+                return true;
+            }
+        } catch (e) {
+            console.warn("[DEVICE_CTRL] Stencil cache read failed:", e);
+        }
+        return false;
+    }
+
+    /**
+     * Persists lightweight fleet state into local storage stencil
+     * @param {Array<DeviceModel>} devicesList
+     */
+    saveStencilToStorage(devicesList) {
+        try {
+            if (typeof window === 'undefined' || !window.localStorage || !Array.isArray(devicesList)) return;
+            const minimalStencil = devicesList.map(d => ({
+                agentId: d.agentId,
+                name: d.name,
+                hostName: d.hostName,
+                deviceName: d.deviceName,
+                model: d.model,
+                latitude: d.latitude,
+                longitude: d.longitude,
+                bearing: d.bearing,
+                speed: d.speed,
+                accuracy: d.accuracy,
+                battery: d.battery,
+                isOnline: d.isOnline,
+                status: d.status,
+                ragStatus: d.ragStatus,
+                ragColor: d.ragColor,
+                ragLabel: d.ragLabel,
+                isSos: d.isSos,
+                isGhost: d.isGhost,
+                avatarId: d.avatarId,
+                avatarUrl: d.avatarUrl,
+                avatarData: d.avatarData,
+                role: d.role,
+                role_family: d.role_family,
+                role_friend: d.role_friend,
+                address: d.address,
+                lastSeen: d.lastSeen,
+                timestamp: d.timestamp,
+                hasValidLocation: d.hasValidLocation
+            }));
+            window.localStorage.setItem('jfindme_fleet_stencil', JSON.stringify(minimalStencil));
+        } catch (e) {
+            console.warn("[DEVICE_CTRL] Stencil cache write failed:", e);
+        }
+    }
+
+    /**
      * Fetches all registered devices and their live locations from Firebase Bridge
+     * @param {object} options - { compact: boolean }
      * @returns {Promise<Array<DeviceModel>>}
      */
-    async fetchLiveDevices() {
+    async fetchLiveDevices(options = {}) {
         this.isLoading = true;
         try {
-            const res = await FBBridge.fetchRaw('/api/devices-live');
+            const endpoint = options.compact ? '/api/fleet/compact-live' : '/api/devices-live';
+            const res = await FBBridge.fetchRaw(endpoint);
             if (res && res.devices && Array.isArray(res.devices)) {
                 const mapped = res.devices.map(d => new DeviceModel(d));
                 this.devices = DeviceController.sortByLatestFirst(mapped);
                 this.recalculateProximities();
                 this.lastFetchTime = Date.now();
+                this.saveStencilToStorage(this.devices);
                 this.notify();
 
                 // Background reverse-geocode any device missing a readable address
@@ -202,7 +273,13 @@ export class DeviceController {
                 const device = this.getDeviceById(agentId);
                 if (device) {
                     if (profileData.name) device.name = profileData.name;
-                    if (profileData.avatar_id) device.avatarId = profileData.avatar_id;
+                    if (profileData.avatar_id || profileData.avatarId) {
+                        device.avatarId = profileData.avatar_id || profileData.avatarId;
+                    }
+                    if (profileData.avatar_data || profileData.avatarData) {
+                        device.avatarData = profileData.avatar_data || profileData.avatarData;
+                    }
+                    device.avatarUrl = (device.avatarData ? (device.avatarData.startsWith('data:image/') ? device.avatarData : `data:image/jpeg;base64,${device.avatarData}`) : AvatarService.getAvatarUrl(device.avatarId, device.name, device.avatarData));
                     if (profileData.department) device.department = profileData.department;
                     if (profileData.phone) device.phone = profileData.phone;
                     if (profileData.email) device.email = profileData.email;
@@ -286,4 +363,111 @@ export class DeviceController {
             return [];
         }
     }
+
+    /**
+     * Fetches current published Master Release metadata
+     * @returns {Promise<object|null>}
+     */
+    async fetchSystemRelease() {
+        try {
+            const res = await FBBridge.fetchRaw('/api/system-release');
+            if (res && res.release) {
+                return res.release;
+            }
+            return null;
+        } catch (err) {
+            console.error('[DEVICE_CTRL] Failed to fetch system release:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Pushes a remote system/OTA update command to a target device (Option 1: Screen & Web Control, Option 2: Background Script)
+     * @param {string} agentId 
+     * @param {object} updatePayload { targetVersion, targetCode, downloadUrl, mode: 'INTERACTIVE_SCREEN' | 'BACKGROUND_BEST_OPTION' }
+     * @returns {Promise<object>}
+     */
+    async pushDeviceUpdate(agentId, updatePayload = {}) {
+        try {
+            const res = await FBBridge.fetchRaw('/api/device/push-update', {
+                method: 'POST',
+                body: JSON.stringify({ agentId, ...updatePayload })
+            });
+            return res;
+        } catch (err) {
+            console.error(`[DEVICE_CTRL] Remote update push failed for ${agentId}:`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Sends interactive operator control actions to target device during installation
+     * @param {string} agentId 
+     * @param {string} action 'OPEN_INSTALLER_SCREEN' | 'ABORT_INSTALL' | 'SWITCH_TO_BACKGROUND' | 'PING_STATUS'
+     * @param {object} extraPayload
+     * @returns {Promise<object>}
+     */
+    async controlDeviceInstall(agentId, action, extraPayload = {}) {
+        try {
+            const res = await FBBridge.fetchRaw('/api/device/install-control', {
+                method: 'POST',
+                body: JSON.stringify({ agentId, action, ...extraPayload })
+            });
+            return res;
+        } catch (err) {
+            console.error(`[DEVICE_CTRL] Install control action [${action}] failed for ${agentId}:`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Retrieves real-time OTA installation status and progress for target device
+     * @param {string} agentId 
+     * @returns {Promise<object>}
+     */
+    async getDeviceInstallStatus(agentId) {
+        try {
+            const res = await FBBridge.fetchRaw(`/api/device/install-status?agentId=${encodeURIComponent(agentId)}`);
+            return res;
+        } catch (err) {
+            console.warn(`[DEVICE_CTRL] Failed to fetch install status for ${agentId}:`, err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Dispatches telemetry poke signal to target device via FBBridge
+     * @param {string} agentId 
+     * @param {string} pokedBy 
+     * @returns {Promise<object>}
+     */
+    async pokeDevice(agentId, pokedBy = "Web_Commander") {
+        try {
+            const res = await FBBridge.fetchRaw('/api/poke-device', {
+                method: 'POST',
+                body: JSON.stringify({ agentId, pokedBy })
+            });
+            return res;
+        } catch (err) {
+            console.error(`[DEVICE_CTRL] Poke dispatch failed for ${agentId}:`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Dispatches silent high-priority FCM interrogation burst to wake dormant fleet devices
+     * @param {Array<string>|null} agentIds 
+     * @returns {Promise<object>}
+     */
+    async interrogateFleet(agentIds = null) {
+        try {
+            const res = await FBBridge.interrogateFleet(agentIds);
+            return res;
+        } catch (err) {
+            console.error("[DEVICE_CTRL] Fleet interrogation failed:", err);
+            throw err;
+        }
+    }
 }
+
+

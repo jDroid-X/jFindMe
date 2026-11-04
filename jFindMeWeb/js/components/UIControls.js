@@ -434,6 +434,115 @@ export class UIControls {
     }
 
     /**
+     * Agent 3 UI/UX Mandate: Slide-Out Right Drawer
+     * Provides a 2-column compact smart fit viewport-height right drawer with smooth transitions.
+     * @param {Object} options { title, subtitle, icon, fields: [{ label, value }], actions: [{ id, label, variant }], onAction, onDismiss }
+     */
+    static showRightSlideDrawer(options = {}) {
+        const {
+            title = 'Details & Actions',
+            subtitle = '',
+            icon = '⚡',
+            fields = [],
+            actions = [],
+            onAction = null,
+            onDismiss = null
+        } = options;
+
+        const existing = document.getElementById('ui-right-slide-drawer');
+        if (existing) existing.remove();
+
+        const backdrop = document.createElement('div');
+        backdrop.id = 'ui-right-slide-drawer';
+        backdrop.className = 'fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex justify-end font-sans transition-opacity duration-300 opacity-0 select-none';
+
+        const fieldsHtml = fields.map(f => `
+            <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-sky-500/30 transition-all">
+                <div class="text-[9.5px] font-mono uppercase tracking-wider text-slate-400 font-semibold">${f.label}</div>
+                <div class="text-xs font-bold text-slate-200 mt-1 truncate" title="${f.value || '-'}">${f.value || '-'}</div>
+            </div>
+        `).join('');
+
+        const actionsHtml = actions.map(act => {
+            const isDanger = act.variant === 'danger';
+            const isPrimary = act.variant === 'primary';
+            const btnClass = isDanger 
+                ? 'bg-rose-600/20 text-rose-300 border border-rose-500/30 hover:bg-rose-600 hover:text-white' 
+                : (isPrimary 
+                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 hover:bg-sky-500' 
+                    : 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white');
+            return `
+                <button type="button" class="drawer-action-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${btnClass}" data-action="${act.id}">
+                    ${act.label}
+                </button>
+            `;
+        }).join('');
+
+        backdrop.innerHTML = `
+            <div class="w-full sm:w-[420px] md:w-[480px] h-full bg-slate-950/95 border-l border-slate-800 shadow-2xl flex flex-col transform transition-transform duration-300 translate-x-full" id="ui-drawer-panel">
+                <div class="p-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/70">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-lg shrink-0">
+                            ${icon}
+                        </div>
+                        <div class="min-w-0">
+                            <h3 class="text-sm font-bold text-white tracking-wide truncate">${title}</h3>
+                            ${subtitle ? `<div class="text-[10px] text-slate-400 truncate mt-0.5">${subtitle}</div>` : ''}
+                        </div>
+                    </div>
+                    <button type="button" id="drawer-close-btn" class="w-8 h-8 rounded-lg bg-slate-800/80 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-all">
+                        ✕
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+                    <div class="grid grid-cols-2 gap-2.5">
+                        ${fieldsHtml}
+                    </div>
+                </div>
+                <div class="p-3 border-t border-slate-800/80 bg-slate-900/70 flex items-center gap-2">
+                    ${actionsHtml}
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(backdrop);
+
+        const panel = backdrop.querySelector('#ui-drawer-panel');
+        requestAnimationFrame(() => {
+            backdrop.classList.remove('opacity-0');
+            backdrop.classList.add('opacity-100');
+            panel.classList.remove('translate-x-full');
+            panel.classList.add('translate-x-0');
+        });
+
+        const closeDrawer = () => {
+            backdrop.classList.remove('opacity-100');
+            backdrop.classList.add('opacity-0');
+            panel.classList.remove('translate-x-0');
+            panel.classList.add('translate-x-full');
+            setTimeout(() => {
+                backdrop.remove();
+                if (onDismiss) onDismiss();
+            }, 300);
+        };
+
+        backdrop.querySelector('#drawer-close-btn').onclick = closeDrawer;
+        backdrop.onclick = (e) => {
+            if (e.target === backdrop) closeDrawer();
+        };
+
+        backdrop.querySelectorAll('.drawer-action-btn').forEach(btn => {
+            btn.onclick = () => {
+                const actId = btn.getAttribute('data-action');
+                if (onAction) onAction(actId);
+                closeDrawer();
+            };
+        });
+
+        return { close: closeDrawer };
+    }
+
+    /**
      * Form Validation Helper Methods
      */
     static Validator = {

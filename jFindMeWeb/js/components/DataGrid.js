@@ -11,6 +11,12 @@ export class DataGrid {
         this.currentPage = 1;
         this.pageSize = 15;
         this.SCHEMA_COLS = {
+            'devices': ['name', 'role', 'model', 'status', 'battery', 'address', 'latitude', 'longitude', 'app_version', 'last_seen'],
+            'Geofencing': ['zone_name', 'status', 'radius', 'lat', 'lng', 'creator_uid'],
+            'safe_zones': ['zone_name', 'status', 'radius', 'lat', 'lng', 'creator_uid'],
+            'relationships': ['group_name', 'owner_id', 'members', 'created_at'],
+            'Version_Update': ['version_name', 'version_code', 'release_date', 'download_url', 'is_mandatory'],
+            'History': ['timestamp', 'latitude', 'longitude', 'speed', 'address'],
             'users': ['name', 'email', 'active_group', 'status', 'role', 'avatar_id'],
             'locations': ['lat', 'lng', 'batteryLevel', 'accuracy', 'timestamp'],
             'groups': ['name', 'host', 'members', 'description'],
@@ -25,7 +31,9 @@ export class DataGrid {
 
         Store.subscribe((state) => {
             // Guard: Do not re-render or overwrite workspace if another view (Live Map, Dashboard, Device User, Geofencing) is active!
-            if (window.appInstance && window.appInstance.currentView && window.appInstance.currentView !== 'datagrid') {
+            if (window.appInstance && window.appInstance.currentView && 
+                window.appInstance.currentView !== 'datagrid' && 
+                window.appInstance.currentView !== 'audit') {
                 return;
             }
             // Reset page if node changes
@@ -38,8 +46,10 @@ export class DataGrid {
     }
 
     render() {
-        // Guard: Prevent rendering DataGrid if active view is not 'datagrid'
-        if (window.appInstance && window.appInstance.currentView && window.appInstance.currentView !== 'datagrid') {
+        // Guard: Prevent rendering DataGrid if active view is neither 'datagrid' nor 'audit'
+        if (window.appInstance && window.appInstance.currentView && 
+            window.appInstance.currentView !== 'datagrid' && 
+            window.appInstance.currentView !== 'audit') {
             return;
         }
         const state = Store.getState();

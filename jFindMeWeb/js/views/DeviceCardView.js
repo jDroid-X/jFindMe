@@ -29,13 +29,14 @@ export class DeviceCardView {
                              class="w-10 h-10 rounded-full object-cover border-2 shadow-md bg-transparent" 
                              style="border-color: ${themeColor};"
                              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2255%%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22white%22 font-size=%2245%22>👤</text></svg>'">
-                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-canvas ${device.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
+                        <span class="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-canvas" style="background-color: ${device.ragColor || (device.isOnline ? '#22C55E' : '#EF4444')}; ${device.ragStatus === 'ACTIVE' || device.ragStatus === 'EMERGENCY_SOS' ? 'box-shadow: 0 0 6px ' + device.ragColor : ''}"></span>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center justify-between gap-1">
                             <h4 class="font-bold text-sm text-primary-theme truncate tracking-tight">${device.name}</h4>
-                            <span class="badge-status ${device.isOnline ? 'badge-success' : 'badge-danger'} text-[8px]">
-                                ${device.isOnline ? 'LIVE' : 'OFF'}
+                            <span class="badge-status text-[8px] font-bold px-1.5 py-0.5 rounded-full border" 
+                                  style="color: ${device.ragColor}; border-color: ${device.ragColor}55; background-color: ${device.ragColor}20;">
+                                ${device.ragLabel || (device.isOnline ? 'ACTIVE (LIVE)' : 'OFFLINE')}
                             </span>
                         </div>
                         <div class="text-[10px] text-secondary-theme truncate flex items-center gap-1 mt-0.5 font-mono">
@@ -80,6 +81,7 @@ export class DeviceCardView {
                 <div class="surface-theme rounded-xl p-2.5 mb-2.5 border space-y-1.5">
                     <div class="flex items-center justify-between text-[10px] font-mono text-sky-400 font-bold border-b border-subtle-theme pb-1">
                         <span class="flex items-center gap-1">🕒 <span>${device.getFormattedDateTime()}</span></span>
+                        <span class="text-[8px] px-1.5 py-0.2 rounded font-mono ${device.activeRoute?.includes('FAST') ? 'bg-emerald-500/20 text-emerald-400' : 'bg-sky-500/20 text-sky-400'}">${device.activeRoute || 'N1_FAST'}</span>
                     </div>
                     <div class="text-[11px] text-secondary-theme line-clamp-2 pt-0.5 leading-relaxed">
                         <span class="text-sky-400">📍 </span>${device.address || 'No street address registered'}
@@ -245,6 +247,22 @@ export class DeviceCardView {
                                     <span class="badge-status badge-accent text-[8px]">${device.safeZonesCount} Zones</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Cellular Baseband & Failover Route Block -->
+                    <div class="surface-theme p-3.5 rounded-xl border text-xs space-y-1.5 font-mono">
+                        <div class="flex items-center justify-between text-xs font-bold text-sky-400 font-sans border-b border-subtle-theme pb-1">
+                            <span class="flex items-center gap-1.5">📡 <span>Cellular Baseband & Failover Routing</span></span>
+                            <span class="badge-status text-[8px] font-bold px-1.5 py-0.5 rounded-full ${device.activeRoute?.includes('FAST') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}">
+                                ${device.activeRoute || 'N1_CELLULAR_FAST'}
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                            <div><span class="text-muted-theme">Operator:</span> <span class="text-primary-theme font-semibold">${device.cellularOperator || 'Unknown'}</span></div>
+                            <div><span class="text-muted-theme">Tower RSSI:</span> <span class="font-bold ${device.cellularSignalDbm >= -85 ? 'text-emerald-400' : (device.cellularSignalDbm >= -105 ? 'text-amber-400' : 'text-rose-400')}">${device.cellularSignalDbm} dBm</span></div>
+                            <div><span class="text-muted-theme">MCC-MNC:</span> <span class="text-secondary-theme">${device.cellularMccMnc || '000-00'}</span></div>
+                            <div><span class="text-muted-theme">LAC-CID:</span> <span class="text-secondary-theme">${device.cellularLacCid || '0000-00000'}</span></div>
                         </div>
                     </div>
 

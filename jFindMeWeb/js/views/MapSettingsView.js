@@ -185,6 +185,45 @@ export class MapSettingsView {
                             </div>
                         </div>
                     </div>
+
+                    <!-- SECTION 5: MASTER OTA TARGET RELEASE (DYNAMIC OPERATOR SSOT) -->
+                    <div class="space-y-2.5 surface-theme p-3 rounded-xl border">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <label class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                                <span>📦 Master OTA Target Release</span>
+                            </label>
+                            <span class="badge-status badge-accent text-[8px] font-mono">CLOUD SSOT</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Target Version</label>
+                                <input type="text" id="setting-ota-ver" value="${settings.targetVersionName || '1.0.13'}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="1.0.13">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Target Build Code</label>
+                                <input type="number" id="setting-ota-code" value="${settings.targetVersionCode || 87}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="87">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Database Schema</label>
+                                <input type="text" id="setting-ota-schema" value="${settings.targetDatabaseSchema || 'V75'}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="V75">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Package Size</label>
+                                <input type="text" id="setting-ota-size" value="${settings.targetPackageSizeFormatted || '80.6 MB'}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="80.6 MB">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Download APK URL</label>
+                            <input type="url" id="setting-ota-url" value="${settings.targetDownloadUrl || ''}" 
+                                   class="input-theme w-full p-1.5 text-xs font-mono truncate" placeholder="https://...">
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Modal Footer -->
@@ -290,6 +329,12 @@ export class MapSettingsView {
             const batterySaver = modal.querySelector('#setting-battery-saver')?.checked || false;
             const viewportCull = !(modal.querySelector('#setting-viewport-cull')?.checked ?? true);
 
+            const otaVer = modal.querySelector('#setting-ota-ver')?.value?.trim() || settings.targetVersionName || "1.0.13";
+            const otaCode = parseInt(modal.querySelector('#setting-ota-code')?.value, 10) || settings.targetVersionCode || 87;
+            const otaSchema = modal.querySelector('#setting-ota-schema')?.value?.trim() || settings.targetDatabaseSchema || "V75";
+            const otaSize = modal.querySelector('#setting-ota-size')?.value?.trim() || settings.targetPackageSizeFormatted || "80.6 MB";
+            const otaUrl = modal.querySelector('#setting-ota-url')?.value?.trim() || settings.targetDownloadUrl || "";
+
             if (isNaN(lat) || isNaN(lng)) {
                 FeedbackDialog.showToast("Invalid coordinates. Please enter valid Latitude and Longitude.", "error");
                 return;
@@ -304,18 +349,33 @@ export class MapSettingsView {
                 refreshIntervalSec: refresh,
                 showRadiusCircle: showCircle,
                 batterySaverMode: batterySaver,
-                disableViewportCulling: viewportCull
+                disableViewportCulling: viewportCull,
+                targetVersionName: otaVer,
+                targetVersionCode: otaCode,
+                targetDatabaseSchema: otaSchema,
+                targetPackageSizeFormatted: otaSize,
+                targetDownloadUrl: otaUrl
             });
 
             this.close();
 
             if (this.onSave) {
-                this.onSave(updated).then(() => {
-                    FeedbackDialog.showToast("Settings saved successfully!", "success");
-                }).catch(err => {
+                try {
+                    const res = this.onSave(updated);
+                    if (res && typeof res.then === 'function') {
+                        res.then(() => {
+                            FeedbackDialog.showToast("Settings saved successfully!", "success");
+                        }).catch(err => {
+                            console.error("[SETTINGS] Save failed:", err);
+                            FeedbackDialog.showToast("Failed to save settings: " + (err.message || err), "error");
+                        });
+                    } else {
+                        FeedbackDialog.showToast("Settings saved successfully!", "success");
+                    }
+                } catch (err) {
                     console.error("[SETTINGS] Save failed:", err);
-                    FeedbackDialog.showToast("Failed to save settings.", "error");
-                });
+                    FeedbackDialog.showToast("Failed to save settings: " + err.message, "error");
+                }
             } else {
                 FeedbackDialog.showToast("Settings saved locally (no callback).", "info");
             }

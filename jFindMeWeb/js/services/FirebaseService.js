@@ -6,10 +6,11 @@ export class FirebaseService {
     constructor() {
         const hasWindow = typeof window !== 'undefined';
         const host = (hasWindow && window.location && window.location.hostname) || '127.0.0.1';
-        const port = (hasWindow && window.location && window.location.port) || '8080';
+        const port = (hasWindow && window.location && window.location.port) || '3000';
         const origin = (hasWindow && window.location && window.location.origin) || `http://${host}:${port}`;
-        // If window.API_BASE_URL is explicitly set, use it. Otherwise use current origin (both 3000 and 8080 support /api/*)
+        // Primary and resilient secondary fallback endpoints (auto-failover between 8080 and 3000)
         this.baseUrl = (hasWindow && window.API_BASE_URL) || origin;
+        this.fallbackBaseUrl = this.baseUrl.includes('3000') ? `http://${host}:8080` : `http://${host}:3000`;
         this.inFlightRequests = new Map(); // Request coalescing map for GET requests
     }
 
@@ -32,6 +33,18 @@ export class FirebaseService {
                 if (!response.ok) throw new Error(`HTTP_${response.status}`);
                 return await response.json();
             } catch (err) {
+                // Secondary Fallback Attempt: If primary port (8080/3000) was unreachable, try alternate port
+                try {
+                    const fallbackRes = await fetch(`${this.fallbackBaseUrl}${endpoint}`, {
+                        ...options,
+                        headers: { 'Content-Type': 'application/json', ...options.headers }
+                    });
+                    if (fallbackRes.ok) {
+                        return await fallbackRes.json();
+                    }
+                } catch (fallbackErr) {
+                    // Ignore fallback error and log main error
+                }
                 console.error(`[BRIDGE_ERROR] ${endpoint}`, err);
                 throw err;
             } finally {
@@ -125,6 +138,13 @@ export class FirebaseService {
         return this.fetchRaw('/api/poke-device', {
             method: 'POST',
             body: JSON.stringify({ agentId, action })
+        });
+    }
+
+    async interrogateFleet(agentIds = null) {
+        return this.fetchRaw('/api/fleet/interrogate-live', {
+            method: 'POST',
+            body: JSON.stringify({ agentIds, requester: 'Web_Live_Radar' })
         });
     }
 

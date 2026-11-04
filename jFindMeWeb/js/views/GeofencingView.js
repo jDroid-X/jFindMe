@@ -19,6 +19,7 @@ export class GeofencingView {
         this.selectedZoneId = null;
         this.selectedDeviceId = null;
         this.searchQuery = "";
+        this._debouncedDoRender = this._debounce(this._doRender, 150);
     }
 
     /**
@@ -51,9 +52,8 @@ export class GeofencingView {
      * @param {Array<any>} arg2 SafeZones or Devices
      */
     render(arg1 = [], arg2 = []) {
-        // Debounce to prevent race conditions
-        const debouncedRender = this._debounce(this._doRender, 150);
-        debouncedRender(arg1, arg2);
+        // Enforce true debouncing across multiple rapid telemetry calls
+        this._debouncedDoRender(arg1, arg2);
     }
 
     /**
@@ -548,6 +548,30 @@ export class GeofencingView {
 
         // 4. Locate on Map
         document.getElementById('btn-gf-view-map')?.addEventListener('click', () => {
+            const selectedZone = this.safeZones.find(z => (z.zoneId || z.id) === this.selectedZoneId) || this.safeZones[0];
+            if (selectedZone) {
+                const lat = parseFloat(selectedZone.center?.lat || selectedZone.center?.latitude || selectedZone.lat || selectedZone.latitude);
+                const lng = parseFloat(selectedZone.center?.lng || selectedZone.center?.longitude || selectedZone.lng || selectedZone.longitude);
+                if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                    if (window.showLiveMap) window.showLiveMap();
+                    const centerZone = (attempts = 0) => {
+                        const mapInstance = window.appInstance?.mapController?.mapView?.map;
+                        if (mapInstance && typeof mapInstance.setView === 'function') {
+                            mapInstance.setView([lat, lng], 16);
+                        } else if (attempts < 15) {
+                            setTimeout(() => centerZone(attempts + 1), 100);
+                        }
+                    };
+                    centerZone();
+                    FeedbackDialog.showSlideNotification({
+                        title: "Safe Zone Located",
+                        message: `Radar centered on perimeter: ${selectedZone.zoneName || selectedZone.zoneId || 'Safe Zone'}`,
+                        type: "info",
+                        duration: 3000
+                    });
+                    return;
+                }
+            }
             if (this.onNavigateMap && this.selectedZoneId) {
                 this.onNavigateMap(this.selectedZoneId);
             }

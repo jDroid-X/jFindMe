@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jFindMeWeb | GPS Telemetry System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a0f1d 0%, #111827 50%, #1e1b4b 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e2e8f0;
+        }
+        .container {
+            max-width: 640px;
+            width: 90%;
+            padding: 40px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+        }
+        .logo {
+            font-size: 3.8rem;
+            margin-bottom: 12px;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        h1 {
+            font-size: 2.4rem;
+            margin-bottom: 6px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.05rem;
+            margin-bottom: 28px;
+        }
+        .project-info {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            text-align: left;
+        }
+        .project-info h3 {
+            color: #38bdf8;
+            margin-bottom: 12px;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.9rem;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #94a3b8; }
+        .info-value { color: #e2e8f0; font-weight: 600; font-family: Consolas, monospace; }
+        
+        .action-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .launch-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #0284c7, #6366f1);
+            color: white;
+            padding: 14px 28px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-size: 1.05rem;
+            font-weight: 600;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 20px rgba(2, 132, 199, 0.3);
+            border: 1px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+        }
+        .launch-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+            color: #fff;
+        }
+        .launch-btn.secondary {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        .start-server-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .start-server-btn:hover {
+            transform: scale(1.03);
+            box-shadow: 0 6px 22px rgba(16, 185, 129, 0.5);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 18px;
+            background: rgba(34, 197, 94, 0.08);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 12px;
+            color: #4ade80;
+            transition: all 0.3s;
+        }
+        .status.starting {
+            background: rgba(56, 189, 248, 0.1);
+            border-color: rgba(56, 189, 248, 0.4);
+            color: #38bdf8;
+        }
+        .status.warning {
+            background: rgba(234, 179, 8, 0.1);
+            border-color: rgba(234, 179, 8, 0.4);
+            color: #facc15;
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #f87171;
+        }
+
+        .pulse-loader {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: currentColor;
+            margin-right: 6px;
+            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1.3); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0.5; }
+        }
+
+        .countdown-badge {
+            margin-top: 10px;
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            color: #f1f5f9;
+        }
+
+        .note {
+            margin-top: 22px;
+            font-size: 0.82rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🦋</div>
+        <h1>jFindMe Web</h1>
+        <p class="subtitle">GPS Telemetry, Geofence Radar & Cloud Bridge</p>
+        
+        <div class="project-info">
+            <h3>📍 Environment Identity</h3>
+            <div class="info-row">
+                <span class="info-label">Project Root:</span>
+                <span class="info-value">C:\Users\jiten\jAnitGravity\jFindMe\jFindMeWeb\</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Node Server:</span>
+                <span class="info-value">js/server.js (Port 3000)</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Reverse Proxy UI:</span>
+                <span class="info-value">Port 8080 (Optional)</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Firebase Project:</span>
+                <span class="info-value">jfindme-3b15c</span>
+            </div>
+        </div>
+
+        <div class="action-row">
+            <a href="http://127.0.0.1:3000/" class="launch-btn" id="launchBtn3000" style="flex: 1; min-width: 200px;">
+                ⚡ Direct Live UI (Port 3000)
+            </a>
+            <a href="http://127.0.0.1:8080/" class="launch-btn secondary" id="launchBtn8080" style="flex: 1; min-width: 200px;">
+                🚀 Web UI (Port 8080)
+            </a>
+        </div>
+
+        <div class="status starting" id="statusBox">
+            <div id="statusText">
+                <span class="pulse-loader"></span>Checking Node server status...
+            </div>
+            <div id="statusDetails" style="font-size: 0.85rem; margin-top: 8px; opacity: 0.95;"></div>
+            <div id="countdownArea" style="display: none;"></div>
+        </div>
+
+        <div style="margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button onclick="triggerNodeServer(true)" class="start-server-btn" id="forceStartBtn">
+                ⚡ Auto-Run Node Server
+            </button>
+            <button onclick="checkServer(true)" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: #cbd5e1; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-size: 0.88rem; transition: background 0.2s;">
+                🔄 Re-check Status
+            </button>
+        </div>
+
+        <p class="note">
+            💡 <strong>Auto-Boot Active:</strong> When launched, this file automatically signals the Node.js server to run and bridges directly into the live tracking dashboard.
+        </p>
+    </div>
+
+    <!-- Hidden iframe for Windows protocol invocation -->
+    <iframe id="protocolIframe" style="display: none; width: 0; height: 0;"></iframe>
+
+    <script>
+        let autoStartTriggered = false;
+        let countdownTimer = null;
+        let countdownRemaining = 3;
+        let isRedirecting = false;
+
+        // Auto-run node server execution engine
+        function triggerNodeServer(manualClick) {
+            console.log("[SYSTEM] Invoking Node Server Auto-Boot Sequence...");
+            
+            // Method 1: Native Windows WScript.Shell (HTA or IE-Mode)
+            try {
+                if (typeof ActiveXObject !== "undefined") {
+                    const shell = new ActiveXObject("WScript.Shell");
+                    shell.Run('cmd.exe /c "C:\\Users\\jiten\\jAnitGravity\\jFindMe\\jFindMeWeb\\scripts\\launch_server.bat"', 0, false);
+                    console.log("[LAUNCHER] WScript.Shell executed launch_server.bat");
+                    return;
+                }
+            } catch (e) {
+                console.warn("[LAUNCHER] ActiveX not available in current browser sandbox.");
+            }
+
+            // Method 2: Custom URI Scheme jfindme://run
+            try {
+                const iframe = document.getElementById('protocolIframe');
+                if (iframe) {
+                    iframe.src = "jfindme://run";
+                } else {
+                    window.location.href = "jfindme://run";
+                }
+                console.log("[LAUNCHER] Dispatched jfindme://run protocol handler");
+            } catch (err) {
+                console.warn("[LAUNCHER] Protocol dispatch error:", err);
+            }
+        }
+
+        async function checkServer(userInitiated) {
+            const statusBox = document.getElementById('statusBox');
+            const statusText = document.getElementById('statusText');
+            const statusDetails = document.getElementById('statusDetails');
+            const countdownArea = document.getElementById('countdownArea');
+            const btn8080 = document.getElementById('launchBtn8080');
+            const btn3000 = document.getElementById('launchBtn3000');
+            const forceStartBtn = document.getElementById('forceStartBtn');
+            
+            let apiOk = false;
+            let webOk = false;
+            let apiProject = 'jfindme-3b15c';
+
+            // Check Port 3000 (API & Direct Express)
+            try {
+                const res3000 = await fetch('http://127.0.0.1:3000/api/ping', { 
+                    method: 'GET',
+                    signal: AbortSignal.timeout(1800)
+                });
+                if (res3000.ok) {
+                    const data = await res3000.json().catch(() => ({}));
+                    apiOk = true;
+                    if (data.project) apiProject = data.project;
+                }
+            } catch (e) {
+                // Secondary fallback check on /api/discovery
+                try {
+                    const resDisc = await fetch('http://127.0.0.1:3000/api/discovery', { 
+                        signal: AbortSignal.timeout(1500) 
+                    });
+                    if (resDisc.ok) apiOk = true;
+                } catch (e2) {}
+            }
+
+            // Check Port 8080 (Static Proxy)
+            try {
+                await fetch('http://127.0.0.1:8080/index.html', { 
+                    method: 'HEAD',
+                    mode: 'no-cors',
+                    signal: AbortSignal.timeout(1500)
+                });
+                webOk = true;
+            } catch (e) {}
+
+            // State Handling
+            if (apiOk) {
+                statusBox.className = 'status';
+                statusText.innerHTML = '🟢 Node Server Running Active';
+                statusDetails.innerHTML = `API Bridge Online • Project: <strong>${apiProject}</strong> • Live Port: 3000`;
+                btn3000.style.opacity = '1';
+                btn8080.style.opacity = webOk ? '1' : '0.6';
+                forceStartBtn.style.display = 'none';
+
+                // Automatically redirect to live dashboard
+                if (!isRedirecting && !countdownTimer) {
+                    countdownArea.style.display = 'block';
+                    countdownRemaining = 2;
+                    countdownArea.innerHTML = `<span class="countdown-badge">⚡ Auto-redirecting to live dashboard in ${countdownRemaining}s... <a href="#" onclick="cancelRedirect(event)" style="color: #cbd5e1; text-decoration: underline; margin-left: 6px;">Stay here</a></span>`;
+                    
+                    countdownTimer = setInterval(() => {
+                        countdownRemaining--;
+                        if (countdownRemaining <= 0) {
+                            clearInterval(countdownTimer);
+                            isRedirecting = true;
+                            countdownArea.innerHTML = `<span class="countdown-badge">🚀 Launching Dashboard...</span>`;
+                            window.location.href = "http://127.0.0.1:3000/";
+                        } else {
+                            countdownArea.innerHTML = `<span class="countdown-badge">⚡ Auto-redirecting to live dashboard in ${countdownRemaining}s... <a href="#" onclick="cancelRedirect(event)" style="color: #cbd5e1; text-decoration: underline; margin-left: 6px;">Stay here</a></span>`;
+                        }
+                    }, 1000);
+                }
+            } else {
+                // Server is Offline - Trigger Auto Start!
+                btn3000.style.opacity = '0.5';
+                btn8080.style.opacity = '0.5';
+                forceStartBtn.style.display = 'inline-flex';
+
+                if (!autoStartTriggered) {
+                    autoStartTriggered = true;
+                    statusBox.className = 'status starting';
+                    statusText.innerHTML = '<span class="pulse-loader"></span>Starting Node Server Automatically...';
+                    statusDetails.innerHTML = 'Dispatched boot command to <code>js/server.js</code>. Detecting telemetry lifesigns...';
+                    triggerNodeServer(false);
+                } else {
+                    statusBox.className = 'status starting';
+                    statusText.innerHTML = '<span class="pulse-loader"></span>Waiting for Node Server to initialize...';
+                    statusDetails.innerHTML = 'Initializing Firebase Admin & GPS Telemetry Bridge on Port 3000. Hang tight...';
+                }
+            }
+        }
+
+        function cancelRedirect(e) {
+            if (e) e.preventDefault();
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            document.getElementById('countdownArea').innerHTML = '<span class="countdown-badge" style="background: rgba(255,255,255,0.06);">Auto-redirect paused. Click buttons above to open.</span>';
+        }
+
+        // Initialize immediately on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            checkServer(false);
+            // Poll rapidly every 1.5 seconds during boot
+            setInterval(checkServer, 1500);
+        });
+    </script>
+</body>
+</html>

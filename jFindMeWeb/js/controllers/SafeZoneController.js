@@ -84,3 +84,43 @@ export class SafeZoneController {
         }
     }
 }
+
+// [Variables]: payload, container, catalog, map, mode
+// [Constants]: DRAW_MODES
+// [Dependencies]: FBBridge, SafeZoneModel
+// [Integration Points]: GeofencingView.js, SafeZoneController.js, index.html
+export const GeofenceRepository = {
+    async saveGeofence(payload) {
+        const ctrl = new SafeZoneController();
+        return await ctrl.createSafeZone(payload);
+    }
+};
+
+export const GeofenceListRenderer = {
+    renderCatalog(container, catalog = []) {
+        if (!container) return;
+        if (!catalog || catalog.length === 0) {
+            container.innerHTML = '<div class="text-muted p-2">No active perimeters registered.</div>';
+            return;
+        }
+        let html = '<ul class="list-group list-group-flush">';
+        catalog.forEach(z => {
+            html += `<li class="list-group-item bg-transparent text-light d-flex justify-content-between"><span><strong>${z.name || 'Perimeter'}</strong> (${z.radius || 100}m)</span><span class="badge bg-primary">${z.alertsEnabled ? 'ACTIVE' : 'MUTED'}</span></li>`;
+        });
+        html += '</ul>';
+        container.innerHTML = html;
+    }
+};
+
+export const LeafletDraw = {
+    enableDrawMode(map, mode = 'polygon') {
+        console.log(`[LeafletDraw] Enabling drawing mode: ${mode}`);
+        return { active: true, mode };
+    }
+};
+
+if (typeof window !== 'undefined') {
+    window.GeofenceRepository = GeofenceRepository;
+    window.GeofenceListRenderer = GeofenceListRenderer;
+    window.LeafletDraw = LeafletDraw;
+}

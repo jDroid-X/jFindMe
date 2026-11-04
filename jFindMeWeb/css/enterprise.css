@@ -232,6 +232,10 @@ header {
 .text-primary-theme { color: var(--text-primary) !important; }
 .text-secondary-theme { color: var(--text-secondary) !important; }
 .text-muted-theme { color: var(--text-muted) !important; }
+.text-accent-theme { color: var(--accent-primary) !important; }
+.text-success-theme { color: var(--success-text) !important; }
+.text-warning-theme { color: var(--warning-text) !important; }
+.text-danger-theme { color: var(--danger-text) !important; }
 .border-subtle-theme { border-color: var(--border-subtle) !important; }
 
 /* Status Badges */
@@ -683,19 +687,37 @@ header {
     border-color: var(--border-strong);
 }
 
-/* Light theme support for Tailwind slate classes without breaking button text */
+/* ==========================================================================
+   Comprehensive Light Theme Overrides - Strict Enterprise Contrast & Readability
+   ========================================================================== */
+
+/* Canvases & Surface Overrides */
 html.light-theme .bg-\[\#05070a\],
 html.light-theme .bg-\[\#0a0f1d\],
-html.light-theme .bg-\[\#070b14\] {
+html.light-theme .bg-\[\#070b14\],
+html.light-theme .bg-\[\#0b1120\],
+html.light-theme .bg-\[\#0e1526\] {
     background-color: var(--bg-canvas) !important;
 }
 
 html.light-theme .bg-slate-900\/90,
 html.light-theme .bg-slate-900,
 html.light-theme .bg-slate-950,
+html.light-theme .bg-slate-950\/95,
 html.light-theme .bg-slate-950\/90,
 html.light-theme .bg-slate-950\/80 {
     background-color: var(--bg-surface) !important;
+    border-color: var(--border-subtle) !important;
+    color: var(--text-primary) !important;
+}
+
+html.light-theme .bg-slate-800,
+html.light-theme .bg-slate-800\/80,
+html.light-theme .bg-slate-800\/60,
+html.light-theme .bg-slate-800\/50,
+html.light-theme .bg-slate-800\/40,
+html.light-theme .bg-slate-850 {
+    background-color: var(--bg-card-subtle) !important;
     border-color: var(--border-subtle) !important;
     color: var(--text-primary) !important;
 }
@@ -708,6 +730,56 @@ html.light-theme .bg-black\/30 {
     color: var(--text-primary) !important;
 }
 
+/* Modal Backdrops in Light Theme: Airy Frosted Blur instead of pitch-black */
+html.light-theme .bg-black\/85,
+html.light-theme .bg-black\/80,
+html.light-theme .bg-black\/75,
+html.light-theme .bg-black\/60 {
+    background-color: rgba(15, 23, 42, 0.6) !important;
+    backdrop-filter: blur(8px) !important;
+}
+
+/* Borders in Light Theme: Crisp slate gray dividers */
+html.light-theme .border-slate-800,
+html.light-theme .border-slate-700,
+html.light-theme .border-slate-700\/50,
+html.light-theme .border-slate-800\/80,
+html.light-theme .border-slate-600 {
+    border-color: #e2e8f0 !important;
+}
+
+html.light-theme .border-white\/10,
+html.light-theme .border-white\/5,
+html.light-theme .border-white\/15,
+html.light-theme .border-white\/20 {
+    border-color: #cbd5e1 !important;
+}
+
+html.light-theme .border-subtle-theme {
+    border-color: #e2e8f0 !important;
+}
+
+html.light-theme .divide-subtle-theme > * + * {
+    border-color: #e2e8f0 !important;
+}
+
+/* Subtle surfaces in light theme */
+html.light-theme .bg-surface\/30,
+html.light-theme .bg-surface\/20,
+html.light-theme .bg-surface\/10 {
+    background-color: #f8fafc !important;
+}
+html.light-theme .bg-surface\/60,
+html.light-theme .bg-surface\/80 {
+    background-color: #ffffff !important;
+}
+html.light-theme .bg-white\/5,
+html.light-theme .bg-white\/10 {
+    background-color: #f1f5f9 !important;
+}
+
+/* Typography Contrast in Light Theme */
+html.light-theme .text-slate-100,
 html.light-theme .text-slate-200,
 html.light-theme .text-slate-300 {
     color: var(--text-primary) !important;
@@ -721,12 +793,149 @@ html.light-theme .text-slate-500 {
     color: var(--text-muted) !important;
 }
 
-/* Only change headings / loose text to dark, never buttons */
+/* Headings in Light Theme */
 html.light-theme h1:not(button *),
 html.light-theme h2:not(button *),
 html.light-theme h3:not(button *),
 html.light-theme h4:not(button *) {
     color: var(--text-heading) !important;
+}
+
+/* Global Tables in Light Theme: Clean, High-Contrast Data Grids */
+html.light-theme table {
+    color: var(--text-primary);
+}
+
+html.light-theme table thead th {
+    background-color: #f1f5f9 !important;
+    color: #1e293b !important;
+    border-bottom: 2px solid #cbd5e1 !important;
+}
+
+html.light-theme table tbody tr {
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html.light-theme table tbody tr:nth-child(even) {
+    background-color: #f8fafc !important;
+}
+
+html.light-theme table tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}
+
+html.light-theme table tbody td {
+    color: #0f172a !important;
+}
+
+/* Forensic Terminal in Light Theme */
+html.light-theme #terminal {
+    background-color: #ffffff !important;
+    border-top: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+}
+html.light-theme #terminal > div:first-child {
+    background-color: #f1f5f9 !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* Interactive UI Controls in Light Theme */
+html.light-theme .input-theme,
+html.light-theme input[type="text"],
+html.light-theme input[type="search"],
+html.light-theme select {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+}
+
+html.light-theme .input-theme:focus,
+html.light-theme input[type="text"]:focus,
+html.light-theme input[type="search"]:focus {
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+}
+
+html.light-theme .toggle-segment-group {
+    background-color: #e2e8f0 !important;
+    border: 1px solid #cbd5e1 !important;
+}
+
+html.light-theme .toggle-segment-btn {
+    color: #475569 !important;
+}
+
+html.light-theme .toggle-segment-btn.active {
+    background-color: #ffffff !important;
+    color: var(--accent-primary) !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1) !important;
+}
+
+html.light-theme .btn-action-secondary {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #1e293b !important;
+}
+
+html.light-theme .btn-action-secondary:hover {
+    background-color: #f1f5f9 !important;
+    border-color: #94a3b8 !important;
+}
+
+html.light-theme .btn-time-filter.btn-action-secondary {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+}
+
+/* Card Themes in Light Theme */
+html.light-theme .card-theme {
+    background-color: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.08) !important;
+}
+
+html.light-theme .surface-theme {
+    background-color: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+
+html.light-theme .flip-card-back {
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+}
+
+html.light-theme input,
+html.light-theme select,
+html.light-theme textarea,
+html.light-theme .input-theme {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+}
+
+html.light-theme input:focus,
+html.light-theme select:focus,
+html.light-theme textarea:focus,
+html.light-theme .input-theme:focus {
+    border-color: #0284c7 !important;
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15) !important;
+}
+
+html.light-theme .badge-accent {
+    background-color: rgba(2, 132, 199, 0.12) !important;
+    color: #0369a1 !important;
+    border-color: rgba(2, 132, 199, 0.3) !important;
+}
+
+/* Shake Animation for Input Verification & Validation Feedback */
+@keyframes shakeAnimation {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+}
+.animate-shake {
+    animation: shakeAnimation 0.4s ease-in-out;
 }
 
 /* ==========================================================================

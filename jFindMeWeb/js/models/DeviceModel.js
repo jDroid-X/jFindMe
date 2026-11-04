@@ -1,5 +1,6 @@
 import { GeoUtils } from '../core/GeoUtils.js';
 import { AvatarService } from '../services/AvatarService.js';
+import { SanitizerService } from '../services/SanitizerService.js';
 
 /**
  * jFindMe Matrix - Device Entity Model (OOPS Architecture)
@@ -13,44 +14,113 @@ export class DeviceModel {
         // ==========================================
         // TIER 1: MASTER DATA (Immutable Identity & Silicon Anchor)
         // ==========================================
-        this.agentId = data.agentId || raw.agentId || raw.agent_id || "";
+        this.agentId = SanitizerService.sanitizeHardwareId(data.agentId || raw.agentId || raw.agent_id || "");
         this.deviceId = data.deviceId || raw.deviceId || raw.device_id || `DEV_${this.agentId}`;
         this.authUid = raw.Identity?.auth_uid || raw.auth_uid || raw.device?.live?.auth_uid || "";
         this.ownerUid = raw.Identity?.owner_uid || raw.owner_uid || raw.profile?.owner_uid || "";
-        this.connectedId = raw.Identity?.connected_id || raw.connected_id || "";
         this.activeGroup = raw.Identity?.active_group || raw.active_group || raw.profile?.group || "Default Circle";
+        this.connectedId = SanitizerService.sanitizeConnectedId(raw.Identity?.connected_id || raw.connected_id, this.activeGroup);
 
         // Hardware Silicon Specifications (Brand + Model + Board + Hardware + Device + IMEI 1/2)
-        const hwProps = raw.Hardware || raw.Identity?.Hardware || raw.hardwareProperties || raw.device?.hardware || {};
-        this.brand = hwProps.brand || raw.brand || "Android";
-        this.model = hwProps.model || raw.model || data.model || data.deviceName || "Device";
-        this.board = hwProps.board || raw.board || "universal";
-        this.hardware = hwProps.hardware || raw.hardware || "qcom";
-        this.device = hwProps.device || raw.device || "generic";
-        this.imei1 = hwProps.imei1 || raw.imei1 || hwProps.imei || raw.imei || "Not Detected";
-        this.imei2 = hwProps.imei2 || raw.imei2 || "Not Detected (Single SIM)";
+        const hwProps = raw.Hardware || raw.Identity?.Hardware || raw.hardwareProperties || (typeof raw.device?.hardware === 'object' ? raw.device?.hardware : {}) || {};
+        this.brand = hwProps.brand || raw.brand || raw.device?.brand || "Android";
+        this.model = hwProps.model || raw.model || raw.device?.model || data.model || data.deviceName || "Device";
+        this.board = hwProps.board || raw.board || raw.device?.board || "universal";
+        this.hardware = hwProps.hardware || raw.hardware || (typeof raw.device?.hardware === 'string' ? raw.device.hardware : "qcom");
+        const rawDevNode = hwProps.device || (typeof raw.device === 'string' ? raw.device : (raw.device?.device_name || raw.device?.name || raw.device?.model || raw.product_device || ""));
+        this.device = (typeof rawDevNode === 'string' && rawDevNode && rawDevNode !== '[object Object]') ? rawDevNode : "generic_node";
+
+        // Deep Dual-SIM & Cellular Telemetry Resolution (Extracts from raw.device, raw.profile, raw.Hardware, raw.telemetry)
+        const devObj = (raw.device && typeof raw.device === 'object') ? raw.device : {};
+        const rawProf = raw.profile || raw.Profile || {};
+        const simDossier = rawProf.sim_dossier || raw.telemetry?.sim_dossier || null;
+        this.simDossier = simDossier;
+        const rawImei1 = hwProps.imei1 || raw.imei1 || devObj.imei_1 || devObj.imei1 || devObj.imei || hwProps.imei || raw.imei || "";
+        const rawImei2 = hwProps.imei2 || raw.imei2 || devObj.imei_2 || devObj.imei2 || "";
+        const isDualSim = Boolean(devObj.is_dual_sim || raw.is_dual_sim || hwProps.is_dual_sim || hwProps.isDualSim);
+        let userPhone = rawProf.phone || rawProf.userPhone || data.phone || devObj.phone || devObj.sim_number || "";
+        if (!userPhone && simDossier?.slot_0?.phone && simDossier.slot_0.phone !== "Not Detected") {
+            userPhone = simDossier.slot_0.phone;
+        }
+        let carrier = devObj.carrier || raw.carrier || rawProf.carrier || raw.telemetry?.carrier || data.carrier || "";
+        if (!carrier && simDossier?.slot_0?.carrier) {
+            carrier = simDossier.slot_0.carrier;
+        }
+        const networkPreference = devObj.network_preference || raw.network_preference || rawProf.network_preference || data.networkPreference || "AUTO_ANY_ACTIVE";
+
+        // Format IMEI 1 with smart detection & privacy protection awareness (Android 10+ privacy policy)
+        if (rawImei1 && rawImei1 !== "PERMISSION_REQUIRED" && rawImei1 !== "RESTRICTED_API29+" && rawImei1 !== "UNAVAILABLE" && rawImei1 !== "Not Detected") {
+            this.imei1 = rawImei1;
+        } else if (rawImei1 === "PERMISSION_REQUIRED" || rawImei1 === "RESTRICTED_API29+") {
+            this.imei1 = "Protected (Android 10+)";
+        } else if (userPhone || isDualSim) {
+            this.imei1 = "Active (SIM Detected)";
+        } else {
+            this.imei1 = "Not Detected";
+        }
+
+        // Format IMEI 2 with dual SIM awareness
+        if (rawImei2 && rawImei2 !== "PERMISSION_REQUIRED" && rawImei2 !== "RESTRICTED_API29+" && rawImei2 !== "UNAVAILABLE" && !rawImei2.includes("Not Detected")) {
+            this.imei2 = rawImei2;
+        } else if (isDualSim) {
+            if (rawImei2 === "PERMISSION_REQUIRED" || rawImei2 === "RESTRICTED_API29+") {
+                this.imei2 = "Slot 2 (OS Protected)";
+            } else {
+                this.imei2 = "Slot 2 Active";
+            }
+        } else {
+            this.imei2 = "Not Detected (Single SIM)";
+        }
+
+        this.carrier = carrier;
+        this.networkPreference = networkPreference;
+        this.isDualSim = isDualSim;
+        this.hasSim = Boolean(userPhone || isDualSim || rawImei1 === "PERMISSION_REQUIRED" || rawImei1 === "RESTRICTED_API29+");
+        const carrierTag = carrier ? ` (${carrier})` : '';
+        this.simStatus = this.hasSim
+            ? (isDualSim ? `Dual SIM Active${carrierTag}${userPhone ? ` • ${userPhone}` : ''}` : `SIM Active${carrierTag}${userPhone ? ` • ${userPhone}` : ''}`)
+            : "No SIM Detected";
+        this.simPhone = userPhone;
         this.siliconHash = hwProps.siliconHash || raw.siliconHash || data.siliconHash || this._generateSiliconSignature();
+
+        // System App Package & Build Versioning (Clean SSOT Extraction strictly per-device)
+        const parsedVersion = DeviceModel.parseVersion(raw, data);
+        this.versionName = parsedVersion.versionName;
+        this.versionCode = parsedVersion.versionCode;
+        this.appVersion = `V${this.versionName} (Build ${this.versionCode})`;
+        this.packageName = raw.device?.package_name || data.packageName || "com.jdroidx.jfindme";
+        this.packageSizeFormatted = data.packageSizeFormatted || raw.Version_Update?.latest?.package_size_formatted || raw.package_size_formatted || "80.6 MB";
+        this.databaseSchema = data.databaseSchema || raw.Version_Update?.latest?.database_schema || raw.database_schema || "V75";
+        this.otaStatus = data.otaStatus || raw.Version_Update?.latest?.status || raw.status || "INSTALLED";
+        this.otaPendingPush = data.otaPendingPush || raw.Version_Update?.pending_push || null;
 
         // ==========================================
         // TIER 2: SUB-MASTER DATA (Profile, Persona, Circles & ACL Access)
         // ==========================================
         const prof = raw.profile || raw.Profile || {};
-        this.name = prof.name || data.name || raw.name || data.agentId || "Unknown Agent";
-        this.deviceName = data.deviceName || prof.deviceName || this.model || "Android Device";
-        this.hostName = prof.hostName || data.hostName || this.name;
-        this.avatarId = prof.avatarId || data.avatarId || "avatar_custom_1";
-        this.email = prof.email || data.email || "";
-        this.phone = prof.phone || data.phone || "";
+        const rawName = data.name || prof.name || prof.fullName || prof.userName || prof.display_name || prof.owner_name || raw.name || data.agentId || "Unknown Agent";
+        this.name = SanitizerService.sanitizeDeviceName(rawName, this.model, this.agentId);
+        const rawDevName = data.deviceName || prof.deviceName || prof.device_name || devObj.device_name || devObj.deviceName || raw.device_name || this.model || "Android Device";
+        this.deviceName = SanitizerService.sanitizeDeviceName(rawDevName, this.model, this.agentId);
+        this.hostName = data.hostName || prof.hostName || prof.fullName || prof.name || this.name;
+        const rawIdentity = raw.identity || raw.Identity || {};
+        this.avatarId = data.avatarId || data.avatar_id || prof.avatarId || prof.avatar_id || prof.equipped_avatar_id || rawIdentity.avatar_id || rawIdentity.avatarId || "butterfly";
+        this.avatarData = data.avatarData || prof.avatar_data || prof.avatarData || raw.avatar_data || (raw.avatar_sync ? raw.avatar_sync.avatar_data : "") || "";
+        this.avatarUrl = data.avatarUrl || prof.avatar_url || prof.avatarUrl || (this.avatarData ? (this.avatarData.startsWith("data:image/") ? this.avatarData : `data:image/jpeg;base64,${this.avatarData}`) : AvatarService.getAvatarUrl(this.avatarId, this.name, this.avatarData));
+        this.email = prof.email || prof.email_id || data.email || "";
+        this.phone = prof.phone || prof.userPhone || data.phone || devObj.phone || devObj.sim_number || userPhone || "";
         this.dob = prof.dob || raw.dob || "";
         this.gender = prof.gender || raw.gender || "";
-        this.role = prof.role || data.role || "MEMBER";
+        this.role = SanitizerService.sanitizeRole(prof.role || data.role, "MEMBER");
         this.roleFamily = prof.role_family || prof.roleFamily || data.role_family || "None";
         this.roleFriend = prof.role_friend || prof.roleFriend || data.role_friend || "None";
         this.roleTitle = prof.role_title || prof.roleTitle || data.roleTitle || this.role;
-        this.department = prof.department || data.department || "General";
-        this.emergencyNote = prof.emergencyNote || data.emergencyNote || "";
+        this.department = prof.department || prof.dept_name || prof.org_name || data.department || "General";
+        this.emergencyNote = prof.emergencyNote || prof.emergency_note || prof.note || data.emergencyNote || "";
+        // [Variables]: relationships | [Constants]: None | [Dependencies]: None | [Integration Points]: Relational SSOT & Circles
         this.safeZonesCount = parseInt(data.safeZonesCount || Object.keys(raw.safe_zones || raw.SafeZones || {}).length || 0);
-        this.relationshipsCount = parseInt(data.relationshipsCount || Object.keys(raw.relationships || {}).length || 0);
+        this.relationships = raw.relationships || data.relationships || {};
+        this.relationshipsCount = parseInt(data.relationshipsCount || Object.keys(this.relationships).length || 0);
 
         // Access Controls & Permissions (ACL)
         const acl = raw.acl || raw.Access || {};
@@ -66,31 +136,114 @@ export class DeviceModel {
         };
 
         // ==========================================
-        // TIER 3: SUB-SUB-MASTER DATA (Live Telemetry & Diagnostics)
+        // TIER 3: SUB-SUB-MASTER DATA (Live Telemetry & Diagnostics - SSOT Binding)
         // ==========================================
         const live = raw.device?.live || raw.live || {};
-        this.latitude = parseFloat(live.latitude || data.latitude || raw.latitude || 0);
-        this.longitude = parseFloat(live.longitude || data.longitude || raw.longitude || 0);
+        const telem = raw.telemetry || raw.device?.telemetry || {};
+
+        // Parse Coordinates (Supporting standard latitude/longitude, lat/lng, and compact loc array/string)
+        let lat = parseFloat(live.latitude || live.lat || data.latitude || data.lat || raw.latitude || 0);
+        let lng = parseFloat(live.longitude || live.lng || data.longitude || data.lng || raw.longitude || 0);
+        if ((lat === 0 || isNaN(lat)) && live.loc) {
+            if (Array.isArray(live.loc) && live.loc.length >= 2) {
+                lat = parseFloat(live.loc[0]);
+                lng = parseFloat(live.loc[1]);
+            } else if (typeof live.loc === 'string' && live.loc.includes(',')) {
+                const parts = live.loc.split(',');
+                lat = parseFloat(parts[0]);
+                lng = parseFloat(parts[1]);
+            }
+        }
+        this.latitude = isNaN(lat) ? 0 : lat;
+        this.longitude = isNaN(lng) ? 0 : lng;
         this.hasValidLocation = Boolean(!isNaN(this.latitude) && !isNaN(this.longitude) && this.latitude !== 0 && this.longitude !== 0);
-        this.speed = parseFloat(live.speed || data.speed || raw.speed || 0);
-        this.bearing = parseFloat(live.bearing || data.bearing || raw.bearing || 0);
+
+        this.speed = parseFloat(live.speed || live.spd || data.speed || raw.speed || 0);
+        this.bearing = parseFloat(live.bearing || live.brg || data.bearing || raw.bearing || 0);
         this.accuracy = parseFloat(live.accuracy || data.accuracy || raw.accuracy || 0);
         this.altitude = parseFloat(live.altitude || data.altitude || raw.altitude || 0);
         this.address = live.address || data.address || raw.address || "";
         this.geohash = live.geohash || raw.geohash || "";
 
-        const telem = raw.telemetry || raw.device?.telemetry || {};
-        this.battery = parseInt(telem.battery != null ? telem.battery : (data.battery != null ? data.battery : -1));
-        this.isCharging = Boolean(telem.isCharging != null ? telem.isCharging : data.isCharging);
-        this.isMockGps = Boolean(telem.isMockGps != null ? telem.isMockGps : data.isMockGps);
-        this.isAirplaneMode = Boolean(telem.isAirplaneMode != null ? telem.isAirplaneMode : data.isAirplaneMode);
-        this.networkType = telem.networkType || data.networkType || "UNKNOWN";
-        this.lastSeen = live.timestamp || telem.timestamp || data.lastSeen || data.lastUpdated || data.timestamp || 0;
+        // Decode Battery: Enterprise SSOT Priority (Valid Live -> Telemetry -> vMask -> Root Data)
+        let bVal = -1;
+        const liveBat = (live.battery != null && !isNaN(parseInt(live.battery, 10))) ? parseInt(live.battery, 10) : -1;
+        const telemBat = (telem.battery_pct != null && !isNaN(parseInt(telem.battery_pct, 10))) ? parseInt(telem.battery_pct, 10) :
+                         (telem.battery != null && !isNaN(parseInt(telem.battery, 10))) ? parseInt(telem.battery, 10) : -1;
+        const dataBat = (data.battery != null && !isNaN(parseInt(data.battery, 10))) ? parseInt(data.battery, 10) : -1;
+        const vmaskRaw = (live.vmask != null && !isNaN(parseInt(live.vmask, 10))) ? (parseInt(live.vmask, 10) & 0x7F) : -1;
+
+        if (dataBat >= 0) {
+            bVal = dataBat;
+        } else if (liveBat > 0) {
+            bVal = liveBat;
+        } else if (telemBat >= 0) {
+            bVal = telemBat;
+        } else if (vmaskRaw > 0 && vmaskRaw <= 100) {
+            bVal = vmaskRaw;
+        } else if (liveBat >= 0) {
+            bVal = liveBat;
+        }
+        this.battery = bVal;
+
+        // Decode SOS Active: Live flag, vmask bit 7, telem, or data
+        const vmaskSos = live.vmask != null ? Boolean((parseInt(live.vmask, 10) >> 7) & 1) : false;
+        this.isSos = Boolean(live.isSosActive || live.sos || telem.is_sos || data.isSos || data.isSosActive || vmaskSos);
+
+        this.isCharging = Boolean(telem.isCharging != null ? telem.isCharging : (telem.is_charging != null ? telem.is_charging : data.isCharging));
+        this.isMockGps = Boolean(telem.isMockGps != null ? telem.isMockGps : (telem.is_mock_gps != null ? telem.is_mock_gps : data.isMockGps));
+        this.isAirplaneMode = Boolean(telem.isAirplaneMode != null ? telem.isAirplaneMode : (telem.is_airplane_mode != null ? telem.is_airplane_mode : data.isAirplaneMode));
+        this.networkType = live.networkType || telem.networkType || telem.network_type || data.networkType || "UNKNOWN";
+
+        // Cellular Baseband & Failover Route Telemetry
+        this.activeRoute = data.activeRoute || live.active_route || telem.active_route || raw.active_route || "N1_CELLULAR_FAST";
+        this.cellularOperator = data.cellularOperator || live.cellular_operator || telem.cellular_operator || this.carrier || "Cellular Provider";
+        this.cellularMccMnc = data.cellularMccMnc || live.cellular_mcc_mnc || telem.cellular_mcc_mnc || "000-00";
+        this.cellularLacCid = data.cellularLacCid || live.cellular_lac_cid || telem.cellular_lac_cid || "0000-00000";
+        this.cellularSignalDbm = data.cellularSignalDbm != null ? data.cellularSignalDbm : (live.cellular_signal_dbm != null ? live.cellular_signal_dbm : (telem.cellular_signal_dbm != null ? telem.cellular_signal_dbm : -75));
+
+        // Last Seen Resolution: Live updated_at, live t (epoch ms), live timestamp, telem, or data
+        this.lastSeen = live.updated_at || live.t || live.timestamp || telem.timestamp || telem.last_seen || data.lastSeen || data.lastUpdated || data.timestamp || 0;
         const epochInit = GeoUtils.parseTimestampToEpoch(this.lastSeen);
-        this.timestamp = epochInit > 0 ? epochInit : (typeof data.timestamp === 'number' ? data.timestamp : 0);
+        this.timestamp = epochInit > 0 ? epochInit : (typeof data.timestamp === 'number' ? data.timestamp : (typeof live.t === 'number' ? live.t : 0));
         const elapsedInit = epochInit > 0 ? (Date.now() - epochInit) : Infinity;
+
+        // Online State Resolution: Active session state or heartbeat within 15 minutes
         this.isOnline = Boolean(data.isOnline || (raw.st_session_state === "ONLINE") || (telem.session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
         this.sessionState = telem.sessionState || data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
+
+        // RAG Status Mapping from Centralized Rules (Respect Server-Calculated RAG if available)
+        if (data.ragStatus) {
+            this.ragStatus = data.ragStatus;
+            this.ragColor = data.ragColor || (this.ragStatus === "ACTIVE" ? "#22C55E" : (this.ragStatus.includes("WARNING") ? "#F59E0B" : "#EF4444"));
+            this.ragLabel = data.ragLabel || (this.ragStatus === "ACTIVE" ? "ACTIVE (LIVE)" : (this.ragStatus.includes("WARNING") ? "INACTIVE (< 6H)" : "INACTIVE (> 6H)"));
+        } else if (this.isSos) {
+            this.ragStatus = "EMERGENCY_SOS";
+            this.ragColor = "#EF4444";
+            this.ragLabel = "EMERGENCY SOS";
+        } else if (raw.isGhost || raw.Identity?.status === "Ghost" || (elapsedInit === Infinity && !raw.profile)) {
+            this.ragStatus = "GHOST";
+            this.ragColor = "#64748B";
+            this.ragLabel = "UNLINKED / GHOST";
+        } else if (this.isOnline) {
+            this.ragStatus = "ACTIVE";
+            this.ragColor = "#22C55E";
+            this.ragLabel = "ACTIVE (LIVE)";
+        } else if (elapsedInit <= 6 * 3600 * 1000) {
+            this.ragStatus = "INACTIVE_WARNING";
+            this.ragColor = "#F59E0B";
+            this.ragLabel = "INACTIVE (< 6H)";
+        } else {
+            this.ragStatus = "INACTIVE_CRITICAL";
+            this.ragColor = "#EF4444";
+            this.ragLabel = "INACTIVE (> 6H)";
+        }
+
+        // Avatar Resolution (Including Live Avatar propagation)
+        if (live.avatar_id && live.avatar_id !== "1") {
+            this.avatarId = live.avatar_id;
+        }
+
         this.oldDeviceIdArchive = raw.Old_Device_ID || {};
 
         // Dynamic Distance computation against reference station
@@ -162,7 +315,8 @@ export class DeviceModel {
                 roleFriend: this.roleFriend,
                 roleTitle: this.roleTitle,
                 department: this.department,
-                emergencyNote: this.emergencyNote
+                emergencyNote: this.emergencyNote,
+                simDossier: this.simDossier
             },
             relationshipsCount: this.relationshipsCount,
             safeZonesCount: this.safeZonesCount,
@@ -186,6 +340,11 @@ export class DeviceModel {
                 isMockGps: this.isMockGps,
                 isAirplaneMode: this.isAirplaneMode,
                 networkType: this.networkType,
+                activeRoute: this.activeRoute,
+                cellularOperator: this.cellularOperator,
+                cellularMccMnc: this.cellularMccMnc,
+                cellularLacCid: this.cellularLacCid,
+                cellularSignalDbm: this.cellularSignalDbm,
                 isOnline: this.isOnline,
                 sessionState: this.sessionState,
                 lastSeen: this.lastSeen,
@@ -250,25 +409,38 @@ export class DeviceModel {
      * @returns {string}
      */
     getAvatarUrl() {
-        return AvatarService.getAvatarUrl(this.avatarId, this.name);
+        if (this.avatarUrl && typeof this.avatarUrl === 'string' && !this.avatarUrl.includes('/data/user/')) {
+            return this.avatarUrl;
+        }
+        return AvatarService.getAvatarUrl(this.avatarId, this.name, this.avatarData);
     }
 
     /**
-     * RAG Status Classifier:
-     * - GREEN: Active (Online or last seen < 15m)
-     * - ORANGE/AMBER: Inactive (Last seen between 15m and 6 hours ago)
-     * - RED: Inactive (Last seen > 6 hours ago)
-     * - GRAY: Uninstalled / Parked / Disconnected
+     * Standardized Centralized RAG Status Classifier (Protocol Specification):
+     * - 🟢 ACTIVE (LIVE): Heartbeat / location update < 15 minutes (#22C55E Emerald Green)
+     * - 🟡 INACTIVE (< 6H): Last seen between 15m – 6 hours OR Battery ≤ 20% (#F59E0B Amber Orange)
+     * - 🔴 INACTIVE (> 6H): Last seen > 6 hours (#EF4444 Rose Red)
+     * - 🚨 EMERGENCY SOS: isSos == true (#EF4444 Pulsing Crimson)
+     * - ⚪ UNLINKED / GHOST: Deleted, unlinked, or Ghost Mode (#64748B Slate Gray)
      */
     getRagStatus() {
-        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED") {
+        if (this.isSos) {
+            return "EMERGENCY_SOS";
+        }
+        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED" || this.isGhostMode) {
             return "UNINSTALLED";
         }
         const epochMs = GeoUtils.parseTimestampToEpoch(this.lastSeen);
         const now = Date.now();
         const elapsedMs = epochMs > 0 ? (now - epochMs) : Infinity;
 
+        const isLowBattery = (typeof this.battery === 'number' && this.battery >= 0 && this.battery <= 20) ||
+                             (typeof this.batteryLevel === 'number' && this.batteryLevel >= 0 && this.batteryLevel <= 20);
+
         if (this.isOnline || elapsedMs <= 15 * 60 * 1000) {
+            if (isLowBattery) {
+                return "INACTIVE_RECENT"; // Battery <= 20% demotes active to Amber warning
+            }
             return "ACTIVE"; // Green
         }
         if (elapsedMs <= 6 * 60 * 60 * 1000) {
@@ -277,9 +449,76 @@ export class DeviceModel {
         return "INACTIVE_OLD"; // Red (> 6h)
     }
 
+    /**
+     * Resolves Unified Status Descriptor for Enterprise Dashboard, Roster & Header
+     * @returns {Object} { key, status, label, shortLabel, color, badgeClass, dotClass, borderClass }
+     */
+    getUnifiedStatus() {
+        const rag = this.getRagStatus();
+        switch (rag) {
+            case "EMERGENCY_SOS":
+                return {
+                    key: "sos",
+                    status: "EMERGENCY_SOS",
+                    label: "EMERGENCY SOS",
+                    shortLabel: "SOS",
+                    color: "#EF4444",
+                    badgeClass: "badge-status badge-danger animate-pulse font-bold",
+                    dotClass: "bg-rose-500 animate-ping",
+                    borderClass: "border-rose-500 shadow-rose-500/30"
+                };
+            case "ACTIVE":
+                return {
+                    key: "live",
+                    status: "ACTIVE",
+                    label: "ACTIVE (LIVE)",
+                    shortLabel: "Live",
+                    color: "#22C55E",
+                    badgeClass: "badge-status badge-success",
+                    dotClass: "bg-emerald-500 animate-pulse",
+                    borderClass: "border-emerald-500 shadow-emerald-500/20"
+                };
+            case "INACTIVE_RECENT":
+                return {
+                    key: "inactive",
+                    status: "INACTIVE_RECENT",
+                    label: "INACTIVE (< 6H)",
+                    shortLabel: "Inact (<6h)",
+                    color: "#F59E0B",
+                    badgeClass: "badge-status badge-warning",
+                    dotClass: "bg-amber-500",
+                    borderClass: "border-amber-500 shadow-amber-500/20"
+                };
+            case "INACTIVE_OLD":
+                return {
+                    key: "stale",
+                    status: "INACTIVE_OLD",
+                    label: "INACTIVE (> 6H)",
+                    shortLabel: "Off (>6h)",
+                    color: "#EF4444",
+                    badgeClass: "badge-status badge-danger",
+                    dotClass: "bg-rose-500",
+                    borderClass: "border-rose-500 shadow-rose-500/20"
+                };
+            case "UNINSTALLED":
+            default:
+                return {
+                    key: "unlinked",
+                    status: "UNLINKED",
+                    label: "UNLINKED / GHOST",
+                    shortLabel: "Ghost",
+                    color: "#64748B",
+                    badgeClass: "badge-status badge-neutral",
+                    dotClass: "bg-slate-400",
+                    borderClass: "border-slate-500"
+                };
+        }
+    }
+
     getRagColor() {
         const status = this.getRagStatus();
         switch (status) {
+            case "EMERGENCY_SOS": return "#EF4444"; // Pulsing Crimson
             case "ACTIVE": return "#22C55E"; // Green
             case "INACTIVE_RECENT": return "#F59E0B"; // Orange
             case "INACTIVE_OLD": return "#EF4444"; // Red
@@ -291,6 +530,7 @@ export class DeviceModel {
     getRagBorderClass() {
         const status = this.getRagStatus();
         switch (status) {
+            case "EMERGENCY_SOS": return "border-rose-500 shadow-rose-500/30 animate-pulse";
             case "ACTIVE": return "border-emerald-500 shadow-emerald-500/20";
             case "INACTIVE_RECENT": return "border-amber-500 shadow-amber-500/20";
             case "INACTIVE_OLD": return "border-rose-500 shadow-rose-500/20";
@@ -302,6 +542,7 @@ export class DeviceModel {
     getRagBadgeClass() {
         const status = this.getRagStatus();
         switch (status) {
+            case "EMERGENCY_SOS": return "bg-rose-500/25 text-rose-400 border-rose-500/50 animate-pulse font-bold";
             case "ACTIVE": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
             case "INACTIVE_RECENT": return "bg-amber-500/20 text-amber-400 border-amber-500/30";
             case "INACTIVE_OLD": return "bg-rose-500/20 text-rose-400 border-rose-500/30";
@@ -313,10 +554,11 @@ export class DeviceModel {
     getRagLabel() {
         const status = this.getRagStatus();
         switch (status) {
+            case "EMERGENCY_SOS": return "🚨 EMERGENCY SOS";
             case "ACTIVE": return "ACTIVE (LIVE)";
             case "INACTIVE_RECENT": return "INACTIVE (< 6H)";
             case "INACTIVE_OLD": return "INACTIVE (> 6H)";
-            case "UNINSTALLED": return "UNINSTALLED";
+            case "UNINSTALLED": return "UNLINKED / GHOST";
             default: return "OFFLINE";
         }
     }
@@ -459,27 +701,33 @@ export class DeviceModel {
         // 🚨 1. EMERGENCY SOS (Pulsing Crimson)
         if (this.isSos || this.sessionState === "SOS") {
             return {
+                key: 'sos',
                 status: 'EMERGENCY',
                 label: 'EMERGENCY SOS',
+                shortLabel: 'SOS',
                 isOnline: true,
                 isMoving: speed > 2,
                 color: '#EF4444',
                 badgeClass: 'badge-status badge-danger animate-pulse font-bold',
                 dotClass: 'bg-rose-600 animate-ping',
+                borderClass: 'border-rose-500 shadow-rose-500/30',
                 elapsedMs
             };
         }
 
         // ⚪ 2. UNLINKED / GHOST / UNINSTALLED (Slate Gray)
-        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED" || this.sessionState === "GHOST") {
+        if (this.sessionState === "UNINSTALLED" || this.sessionState === "PARKED" || this.sessionState === "DELETED" || this.sessionState === "GHOST" || this.isGhostMode) {
             return {
+                key: 'unlinked',
                 status: 'UNLINKED',
-                label: this.sessionState || 'UNLINKED',
+                label: this.sessionState || 'UNLINKED / GHOST',
+                shortLabel: 'Ghost',
                 isOnline: false,
                 isMoving: false,
                 color: '#64748B',
                 badgeClass: 'badge-status badge-secondary',
                 dotClass: 'bg-slate-500',
+                borderClass: 'border-slate-500',
                 elapsedMs
             };
         }
@@ -488,13 +736,16 @@ export class DeviceModel {
         if (elapsedMs <= 15 * 60 * 1000 && (this.battery < 0 || this.battery > 20)) {
             const isMoving = speed > 2;
             return {
+                key: 'live',
                 status: 'LIVE',
                 label: isMoving ? 'LIVE (MOVING)' : 'LIVE (ACTIVE)',
+                shortLabel: 'Live',
                 isOnline: true,
                 isMoving,
                 color: '#22C55E',
                 badgeClass: 'badge-status badge-success',
                 dotClass: 'bg-emerald-500 animate-pulse',
+                borderClass: 'border-emerald-500 shadow-emerald-500/20',
                 elapsedMs
             };
         }
@@ -512,28 +763,98 @@ export class DeviceModel {
                 label = `INACTIVE (${hrs}h)`;
             }
             return {
+                key: 'inactive',
                 status: 'INACTIVE_RECENT',
                 label,
+                shortLabel: 'Inact (<6h)',
                 isOnline: elapsedMs <= 15 * 60 * 1000,
                 isMoving: false,
                 color: '#F59E0B',
                 badgeClass: 'badge-status badge-warning',
                 dotClass: 'bg-amber-400',
+                borderClass: 'border-amber-500 shadow-amber-500/20',
                 elapsedMs
             };
         }
 
         // 🔴 5. INACTIVE (> 6H)
         return {
+            key: 'stale',
             status: 'INACTIVE_STALE',
             label: 'INACTIVE (>6H)',
+            shortLabel: 'Off (>6h)',
             isOnline: false,
             isMoving: false,
             color: '#EF4444',
             badgeClass: 'badge-status badge-danger',
             dotClass: 'bg-rose-500',
+            borderClass: 'border-rose-500 shadow-rose-500/20',
             elapsedMs
         };
+    }
+
+    /**
+     * Robust version parser to extract clean semantic version and build code
+     * without duplicating "V" prefixes or misattributing obsolete fallbacks.
+     * @param {Object} raw Raw device snapshot from Firebase
+     * @param {Object} data Secondary payload or fallback object
+     * @returns {{ versionName: string, versionCode: number }}
+     */
+    static parseVersion(raw = {}, data = {}) {
+        const rawObj = (raw && typeof raw === 'object') ? raw : {};
+        const dataObj = (data && typeof data === 'object') ? data : {};
+        const rawDevice = rawObj.device || {};
+        const rawTelem = rawObj.telemetry || {};
+        const rawVerUpdate = rawObj.Version_Update || {};
+
+        // If raw is a string directly (e.g. "V1.0.13 (Build 86)")
+        const rawString = typeof raw === 'string' ? raw : null;
+
+        // Ensure Version_Update candidate only comes from device's own reported node
+        const isDeviceVerUpdate = rawVerUpdate.latest && (rawVerUpdate.latest.device_id || !rawVerUpdate.master_release);
+        const devLatest = isDeviceVerUpdate ? rawVerUpdate.latest : {};
+
+        const candidates = [
+            rawString,
+            rawDevice.version_name,
+            rawDevice.app_version,
+            rawTelem.app_version,
+            rawTelem.version_name,
+            devLatest.version_name,
+            dataObj.versionName,
+            dataObj.appVersion
+        ].filter(Boolean);
+
+        let vName = "";
+        let vCode = 0;
+
+        for (const cand of candidates) {
+            const str = String(cand).trim();
+            // Match e.g. "V1.0.13 (Build 86)" or "1.0.13 (Build 87)" or "V1.0.13" or "1.0.13"
+            const m = str.match(/^(?:V)?(\d+\.\d+\.\d+)(?:\s*\((?:Build\s*)?(\d+)\))?/i);
+            if (m) {
+                if (!vName) vName = m[1];
+                if (!vCode && m[2]) vCode = parseInt(m[2], 10);
+            }
+        }
+
+        const directCodes = [
+            rawDevice.version_code,
+            rawTelem.version_code,
+            devLatest.version_code,
+            dataObj.versionCode
+        ].filter(v => v != null && !isNaN(parseInt(v, 10))).map(v => parseInt(v, 10));
+
+        if (directCodes.length > 0) {
+            const maxDirect = Math.max(...directCodes);
+            if (maxDirect > vCode) vCode = maxDirect;
+        }
+
+        // Project SSOT baseline: 1.0.13 / Build 86 (installed)
+        if (!vName) vName = "1.0.13";
+        if (!vCode) vCode = 86;
+
+        return { versionName: vName, versionCode: vCode };
     }
 }
 

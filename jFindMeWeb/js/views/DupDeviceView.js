@@ -270,7 +270,7 @@ export class DupDeviceView {
                             </div>
 
                             <div class="flex items-center gap-2.5">
-                                <img src="${oldD.avatarUrl || '/Avatar/001.png'}" 
+                                <img src="${oldD.avatarUrl || '/assets/avatars/1.png'}" 
                                      alt="${oldD.name}" 
                                      class="w-10 h-10 rounded-full object-cover border-2 border-rose-500/60 shadow-sm shrink-0">
                                 <div class="min-w-0 flex-1">
@@ -325,7 +325,7 @@ export class DupDeviceView {
                             </div>
 
                             <div class="flex items-center gap-2.5">
-                                <img src="${newD.avatarUrl || '/Avatar/001.png'}" 
+                                <img src="${newD.avatarUrl || '/assets/avatars/1.png'}" 
                                      alt="${newD.name}" 
                                      class="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 shadow-sm shrink-0">
                                 <div class="min-w-0 flex-1">
@@ -682,8 +682,10 @@ export class DupDeviceView {
                     <div class="truncate">Device: <strong class="text-slate-200">${device}</strong></div>
                     <div class="truncate">History: <strong class="text-amber-400 font-bold">${dev.historyCount || 0} pts</strong></div>
                 </div>
-                <!-- Dual SIM IMEI Metadata -->
+                <!-- Dual SIM IMEI & Cellular Metadata -->
                 <div class="pt-1 border-t border-subtle-theme grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-0.5 text-secondary-theme select-text">
+                    <div class="truncate">SIM / Cellular: <strong class="text-emerald-400 font-bold">${dev.simStatus || (dev.phone ? `Active • ${dev.phone}` : 'Active')}</strong></div>
+                    <div class="truncate">Network Routing: <strong class="text-sky-300 font-semibold">${dev.networkPreference || 'AUTO_ANY_ACTIVE'}</strong></div>
                     <div class="truncate">IMEI 1: <strong class="text-slate-200">${imei1}</strong></div>
                     <div class="truncate">IMEI 2: <strong class="text-slate-200">${isDualSim ? (imei2 || 'N/A') : (imei2 ? imei2 : 'Slot 2 (None)')}</strong></div>
                 </div>

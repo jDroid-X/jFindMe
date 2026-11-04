@@ -37,35 +37,62 @@ export class AvatarService {
     }
 
     /**
-     * Resolves the direct URL to an avatar image file
+     * Resolves the direct URL to an avatar image file (Supporting preset IDs, direct URLs, and Base64 payloads)
      * @param {string} avatarId 
      * @param {string} name 
+     * @param {string} avatarData Optional Base64 JPEG data URI or raw base64 string
      * @returns {string} Image URL or Data URI
      */
-    static getAvatarUrl(avatarId = "", name = "") {
+    static getAvatarUrl(avatarId = "", name = "", avatarData = "") {
+        // 1. Direct Base64 Binary Payload Provided
+        if (avatarData && typeof avatarData === "string") {
+            const trimmedData = avatarData.trim();
+            if (trimmedData.startsWith("data:image/")) {
+                return trimmedData;
+            }
+            if (trimmedData.length > 50) {
+                return `data:image/jpeg;base64,${trimmedData}`;
+            }
+        }
+
         if (!avatarId) {
             return this.generateInitialAvatarSvg(name);
         }
 
         const idStr = String(avatarId).trim();
 
-        // Direct HTTP URL
+        // 2. Direct HTTP URL or Data URI
         if (idStr.startsWith("http://") || idStr.startsWith("https://") || idStr.startsWith("data:image/")) {
             return idStr;
         }
 
-        // Numeric match e.g. "1", "12", "avatar_custom_3" -> "3.png"
+        // 3. Android Internal Path check (e.g. /data/user/0/.../remote_...png) - sanitize to prevent 404
+        if (idStr.includes("/data/user/") || idStr.includes("/files/avatars/")) {
+            return this.generateInitialAvatarSvg(name);
+        }
+
+        // 4. Numeric match e.g. "1", "12", "avatar_custom_3" -> "3.png" (Full 1..37 range matching assets/avatars/)
         let numMatch = idStr.match(/\d+/);
         if (numMatch) {
             let num = parseInt(numMatch[0]);
-            if (num >= 1 && num <= 37) {
-                return `/Avatar/${num}.png`;
-            }
+            let clamped = ((num - 1) % 37) + 1;
+            return `/assets/avatars/${clamped}.png`;
         }
 
-        // Exact filename match
-        if (idStr.endsWith(".png") || idStr.endsWith(".jpg") || idStr.endsWith(".webp")) {
-            return `/Avatar/${idStr}`;
+        // 5. Exact simple filename match (e.g. "1.png", "butterfly.png")
+        if (!idStr.includes("/") && (idStr.endsWith(".png") || idStr.endsWith(".jpg") || idStr.endsWith(".webp"))) {
+            return `/assets/avatars/${idStr}`;
+        }
+
+        // 6. Custom device selfie (AV_{agentId}_{seq}) fallback without Base64 payload -> deterministic fallback in 1..37
+        if (idStr.startsWith("AV_")) {
+            const hashNum = Math.abs(idStr.split("").reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0)) % 37 + 1;
+            return `/assets/avatars/${hashNum}.png`;
+        }
+
+        // 7. Custom photo without Base64 payload fallback
+        if (idStr === "avatar_custom_photo") {
+            return this.generateInitialAvatarSvg(name);
         }
 
         return this.generateInitialAvatarSvg(name);

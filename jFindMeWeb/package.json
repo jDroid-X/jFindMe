@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node js/server.js",
     "dev": "node js/server.js",
-    "test": "node scripts/run-integration-tests.js",
-    "setup": "node scripts/firebase-setup.js"
+    "test": "node scripts/deployment/run-integration-tests.js",
+    "setup": "node scripts/deployment/firebase-setup.js"
   },
   "keywords": ["gps", "telemetry", "firebase", "leaflet"],
   "author": "jButterfly Team",

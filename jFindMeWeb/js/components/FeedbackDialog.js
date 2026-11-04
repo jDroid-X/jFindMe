@@ -641,4 +641,111 @@ export class FeedbackDialog {
         const modal = document.getElementById("jfindme-feedback-modal");
         if (modal) modal.remove();
     }
+
+    /**
+     * Shows an animated slide-in notification from bottom-right with support for actions
+     * @param {Object} options
+     */
+    static showSlideNotification({
+        title = "Notification",
+        message = "",
+        type = "info", // info, success, warning, error
+        icon = "ℹ️",
+        actions = [],
+        onAction = null,
+        duration = 5000
+    } = {}) {
+        // Remove existing notifications to prevent clutter (max 5)
+        const stack = document.querySelector('.slide-notification-container');
+        if (stack && stack.children.length >= 5) {
+            const first = stack.firstChild;
+            first.classList.remove('slide-in');
+            first.classList.add('slide-out');
+            setTimeout(() => first.remove(), 300);
+        }
+
+        const colors = {
+            info: 'border-sky-500',
+            success: 'border-emerald-500',
+            warning: 'border-amber-500',
+            error: 'border-rose-500'
+        };
+
+        const notification = document.createElement('div');
+        notification.className = `slide-notification-item border ${colors[type] || colors.info}`;
+        notification.innerHTML = `
+            <div class="p-3">
+                <div class="flex items-start gap-2">
+                    <span class="text-base shrink-0">${icon}</span>
+                    <div class="min-w-0 flex-1">
+                        <h4 class="text-xs font-bold truncate">${title}</h4>
+                        ${message ? `<p class="text-[10px] text-secondary-theme mt-0.5 line-clamp-2">${message}</p>` : ''}
+                    </div>
+                    <button class="close-btn text-muted-theme hover:text-primary-theme text-xs font-bold shrink-0 ml-1">×</button>
+                </div>
+                ${actions.length > 0 ? `
+                    <div class="flex gap-2 mt-2 pt-2 border-t border-subtle-theme">
+                        ${actions.map(act => `
+                            <button class="btn-action-${act.variant === 'primary' ? 'primary' : 'secondary'} text-[10px] px-2 py-1" data-action="${act.id}">${act.label}</button>
+                        `).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        // Action handlers
+        notification.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const actionId = btn.getAttribute('data-action');
+                notification.classList.remove('slide-in');
+                notification.classList.add('slide-out');
+                setTimeout(() => notification.remove(), 300);
+                if (onAction) onAction(actionId);
+            });
+        });
+
+        // Close handler
+        notification.querySelector('.close-btn').addEventListener('click', () => {
+            notification.classList.remove('slide-in');
+            notification.classList.add('slide-out');
+            setTimeout(() => notification.remove(), 300);
+        });
+
+        // Append to stack
+        if (!stack) {
+            const container = document.createElement('div');
+            container.className = 'slide-notification-container';
+            document.body.appendChild(container);
+            container.appendChild(notification);
+        } else {
+            stack.appendChild(notification);
+        }
+
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.classList.add('slide-in');
+        });
+
+        // Auto-remove after duration
+        const timer = setTimeout(() => {
+            if (notification.parentNode) {
+                notification.classList.remove('slide-in');
+                notification.classList.add('slide-out');
+                setTimeout(() => notification.remove(), 300);
+            }
+        }, duration);
+
+        // Pause auto-close on hover
+        notification.addEventListener('mouseenter', () => clearTimeout(timer));
+        notification.addEventListener('mouseleave', () => {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.classList.remove('slide-in');
+                    notification.classList.add('slide-out');
+                    setTimeout(() => notification.remove(), 300);
+                }
+            }, duration);
+        });
+    }
 }

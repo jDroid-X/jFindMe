@@ -33,12 +33,13 @@ export class SafeZoneCreateModalView {
 
         const modal = document.createElement('div');
         modal.id = 'safezone-create-modal';
-        modal.className = 'fixed inset-0 z-[1100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in font-sans';
+        // Agent 3 Mandate: Right-Side Slide-Out Drawer with full viewport height & backdrop dismissal
+        modal.className = 'fixed inset-0 z-[1100] flex justify-end bg-black/80 backdrop-blur-sm animate-fade-in font-sans overflow-hidden';
 
         modal.innerHTML = `
-            <div class="card-theme border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-primary-theme flex flex-col max-h-[90vh]">
+            <div class="card-theme border-l border-subtle-theme w-full max-w-xl h-full shadow-2xl overflow-hidden text-primary-theme flex flex-col transform transition-transform duration-300 translate-x-0">
                 <!-- Header -->
-                <div class="p-4 border-b border-subtle-theme flex items-center justify-between surface-theme">
+                <div class="p-4 border-b border-subtle-theme flex items-center justify-between surface-theme shrink-0">
                     <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500 text-base font-bold">
                             🛡️
@@ -154,6 +155,11 @@ export class SafeZoneCreateModalView {
         const errorBox = modal.querySelector('#sz-error-box');
 
         const handleClose = () => this.close();
+        this._escapeHandler = (e) => {
+            if (e.key === 'Escape') handleClose();
+        };
+        window.addEventListener('keydown', this._escapeHandler);
+
         closeBtn.addEventListener('click', handleClose);
         cancelBtn.addEventListener('click', handleClose);
         modal.addEventListener('click', (e) => {
@@ -238,6 +244,10 @@ export class SafeZoneCreateModalView {
     }
 
     close() {
+        if (this._escapeHandler) {
+            window.removeEventListener('keydown', this._escapeHandler);
+            this._escapeHandler = null;
+        }
         if (this.modalElement) {
             this.modalElement.remove();
             this.modalElement = null;

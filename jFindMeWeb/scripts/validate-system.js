@@ -8,6 +8,10 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// [Variables]: WEB_ROOT, resolveWeb | [Constants]: WEB_ROOT | [Dependencies]: fs, path | [Integration Points]: System Validation Harness
+const WEB_ROOT = path.resolve(__dirname, '..');
+const resolveWeb = (rel) => path.resolve(WEB_ROOT, rel);
+
 class ValidationSuite {
     constructor() {
         this.results = [];
@@ -58,17 +62,18 @@ class ValidationSuite {
             // Views with fixes
             { path: 'js/views/GeofencingView.js', desc: 'Geofencing (debounce fix)' },
             
-            // Documentation
-            { path: '.github/DEPLOYMENT_READY.md', desc: 'Deployment guide' },
-            { path: '.github/FINAL_VALIDATION_REPORT.md', desc: 'Validation report' },
-            { path: '.github/QUICK_START.md', desc: 'Quick start guide' }
+            // Documentation (check docs/ directory)
+            { path: fs.existsSync(resolveWeb('docs/DEPLOYMENT_READY.md')) ? 'docs/DEPLOYMENT_READY.md' : '.github/DEPLOYMENT_READY.md', desc: 'Deployment guide' },
+            { path: fs.existsSync(resolveWeb('docs/FINAL_VALIDATION_REPORT.md')) ? 'docs/FINAL_VALIDATION_REPORT.md' : '.github/FINAL_VALIDATION_REPORT.md', desc: 'Validation report' },
+            { path: fs.existsSync(resolveWeb('docs/QUICK_START.md')) ? 'docs/QUICK_START.md' : '.github/QUICK_START.md', desc: 'Quick start guide' }
         ];
 
         let passed = 0;
         let failed = 0;
 
         for (const file of requiredFiles) {
-            const exists = fs.existsSync(file.path);
+            const absPath = resolveWeb(file.path);
+            const exists = fs.existsSync(absPath);
             if (exists) {
                 passed++;
                 console.log(`  ✅ ${file.desc}`);
@@ -86,7 +91,7 @@ class ValidationSuite {
         console.log('🔍 TEST 2: Code Quality Checks\n');
         
         // Check Auth.js for hardcoded credentials
-        const authContent = fs.readFileSync('js/core/Auth.js', 'utf8');
+        const authContent = fs.readFileSync(resolveWeb('js/core/Auth.js'), 'utf8');
         const hasHardcodedKey = authContent.includes("'Jeet@123Meet'");
         const hasConfigurableKey = authContent.includes('window.ENV?.MASTER_KEY_ID');
         
@@ -103,7 +108,7 @@ class ValidationSuite {
         console.log(`  ${hasConfigurableKey ? '✅' : '❌'} Environment variable support added`);
         
         // Check SettingsModel for server sync
-        const settingsContent = fs.readFileSync('js/models/SettingsModel.js', 'utf8');
+        const settingsContent = fs.readFileSync(resolveWeb('js/models/SettingsModel.js'), 'utf8');
         const hasServerSync = settingsContent.includes('loadFromServer') && 
                              settingsContent.includes('_syncToServer');
         
@@ -114,7 +119,7 @@ class ValidationSuite {
         console.log(`  ${hasServerSync ? '✅' : '❌'} Server-side persistence implemented`);
         
         // Check GeofencingView for debounce
-        const geoContent = fs.readFileSync('js/views/GeofencingView.js', 'utf8');
+        const geoContent = fs.readFileSync(resolveWeb('js/views/GeofencingView.js'), 'utf8');
         const hasDebounce = geoContent.includes('_debounce') && 
                            geoContent.includes('150');
         
@@ -127,21 +132,27 @@ class ValidationSuite {
         console.log('');
     }
 
+    // [Variables]: endpoints | [Constants]: expectedStatus | [Dependencies]: http, fs, path | [Integration Points]: Express Proxy & Test Harness
     async testAPIEndpoints() {
-        console.log('🔌 TEST 3: API Endpoints\n');
+        console.log('🔌 TEST 3: API Endpoints (Reconciled Suite)\n');
         
         const endpoints = [
+            { path: '/api/ping', method: 'GET', expectedStatus: 200 },
             { path: '/api/discovery', method: 'GET', expectedStatus: 200 },
             { path: '/api/devices-live', method: 'GET', expectedStatus: 200 },
             { path: '/api/safe-zones', method: 'GET', expectedStatus: 200 },
             { path: '/api/settings', method: 'GET', expectedStatus: 200 },
             { path: '/api/circles', method: 'GET', expectedStatus: 200 },
-            { path: '/api/save-settings', method: 'POST', expectedStatus: 200 }
+            { path: '/api/stats', method: 'GET', expectedStatus: 200 },
+            { path: '/api/system-release', method: 'GET', expectedStatus: 200 },
+            { path: '/api/archived-devices', method: 'GET', expectedStatus: 200 },
+            { path: '/api/duplicate-devices', method: 'GET', expectedStatus: 200 },
+            { path: '/api/save-settings', method: 'POST', body: { path: 'config/operator/settings', data: { lastValidated: Date.now() } }, expectedStatus: 200 }
         ];
 
         for (const endpoint of endpoints) {
             try {
-                const response = await this.fetchEndpoint(endpoint.path, endpoint.method);
+                const response = await this.fetchEndpoint(endpoint.path, endpoint.method, endpoint.body);
                 const pass = response.status === endpoint.expectedStatus;
                 
                 this.results.push({ 
@@ -177,7 +188,7 @@ class ValidationSuite {
         console.log('📱 TEST 4: Mobile Integration\n');
         
         // Check index.html for mobile elements
-        const htmlContent = fs.readFileSync('index.html', 'utf8');
+        const htmlContent = fs.readFileSync(resolveWeb('index.html'), 'utf8');
         const hasMobileCSS = htmlContent.includes('mobile-responsive.css');
         const hasMobileButton = htmlContent.includes('mobile-menu-toggle');
         const hasMobileOverlay = htmlContent.includes('sidebar-overlay');
@@ -191,8 +202,9 @@ class ValidationSuite {
         console.log(`  ${hasMobileOverlay ? '✅' : '❌'} Sidebar overlay element present`);
         
         // Check CSS content
-        if (fs.existsSync('css/mobile-responsive.css')) {
-            const cssContent = fs.readFileSync('css/mobile-responsive.css', 'utf8');
+        const mobileCssPath = resolveWeb('css/mobile-responsive.css');
+        if (fs.existsSync(mobileCssPath)) {
+            const cssContent = fs.readFileSync(mobileCssPath, 'utf8');
             const hasBreakpoint = cssContent.includes('@media (max-width: 575.98px)');
             const hasTouchTarget = cssContent.includes('44px');
             
@@ -210,7 +222,7 @@ class ValidationSuite {
         console.log('🔐 TEST 5: Security Checks\n');
         
         // Check for hardcoded credentials in Auth.js
-        const authContent = fs.readFileSync('js/core/Auth.js', 'utf8');
+        const authContent = fs.readFileSync(resolveWeb('js/core/Auth.js'), 'utf8');
         const noHardcodedPassword = !authContent.includes("'Jeet@123Meet'");
         const hasEnvSupport = authContent.includes('window.ENV');
         const hasValidationError = authContent.includes('INVALID_CREDENTIALS');
@@ -224,8 +236,8 @@ class ValidationSuite {
         console.log(`  ${hasValidationError ? '✅' : '❌'} Input validation present`);
         
         // Check CORS configuration
-        const serverContent = fs.readFileSync('js/server.js', 'utf8');
-        const hasCORS = serverContent.includes('cors()');
+        const serverContent = fs.readFileSync(resolveWeb('js/server.js'), 'utf8');
+        const hasCORS = serverContent.includes('cors(') || serverContent.includes('cors()');
         
         this.results.push({ test: 'Server: CORS enabled', pass: hasCORS });
         console.log(`  ${hasCORS ? '✅' : '❌'} CORS middleware configured`);
@@ -236,18 +248,23 @@ class ValidationSuite {
     async testDocumentation() {
         console.log('📚 TEST 6: Documentation completeness\n');
         
-        const docs = [
-            { path: '.github/DEPLOYMENT_READY.md', desc: 'Deployment guide' },
-            { path: '.github/FINAL_VALIDATION_REPORT.md', desc: 'Validation report' },
-            { path: '.github/WORKFLOW_GUIDE.md', desc: 'Workflow guide' },
-            { path: '.github/QUICK_START.md', desc: 'Quick start' },
-            { path: '.github/ERROR_RECOVERY_GUIDE.md', desc: 'Error recovery' },
-            { path: '.github/KNOWN_ISSUES.md', desc: 'Known issues' }
+        const docNames = [
+            { name: 'DEPLOYMENT_READY.md', desc: 'Deployment guide' },
+            { name: 'FINAL_VALIDATION_REPORT.md', desc: 'Validation report' },
+            { name: 'WORKFLOW_GUIDE.md', desc: 'Workflow guide' },
+            { name: 'QUICK_START.md', desc: 'Quick start' },
+            { name: 'ERROR_RECOVERY_GUIDE.md', desc: 'Error recovery' },
+            { name: 'KNOWN_ISSUES.md', desc: 'Known issues' }
         ];
+
+        const docs = docNames.map(d => ({
+            path: fs.existsSync(resolveWeb(`docs/${d.name}`)) ? `docs/${d.name}` : `.github/${d.name}`,
+            desc: d.desc
+        }));
 
         let passed = 0;
         for (const doc of docs) {
-            const exists = fs.existsSync(doc.path);
+            const exists = fs.existsSync(resolveWeb(doc.path));
             if (exists) {
                 passed++;
                 console.log(`  ✅ ${doc.desc}`);
@@ -270,6 +287,7 @@ class ValidationSuite {
                 headers: { 'Content-Type': 'application/json' }
             };
 
+            options.timeout = 30000;
             const req = http.request(options, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
@@ -278,6 +296,9 @@ class ValidationSuite {
                 });
             });
 
+            req.on('timeout', () => {
+                req.destroy(new Error('Request timed out after 10000ms'));
+            });
             req.on('error', reject);
             if (body) req.write(JSON.stringify(body));
             req.end();
