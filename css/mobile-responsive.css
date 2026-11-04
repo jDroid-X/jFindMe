@@ -1,0 +1,143 @@
+/**
+ * MobileResponsive.css - Mobile-First Responsive Styles
+ * Breakpoints: Desktop (1920x1080), Laptop (1366x768), Tablet (768x1024), Mobile (375x667)
+ */
+
+/* ============================================
+   DESKTOP (1920x1080 and above)
+   ============================================ */
+@media (min-width: 1920px) {
+    .sidebar { width: 260px; }
+    .matrix-selection-panel { width: 240px !important; }
+    .leaflet-device-card { width: 260px !important; }
+    .leaflet-device-card-container { right: 20px !important; margin-left: 260px !important; }
+}
+
+/* ============================================
+   LARGE LAPTOP (1440px - 1919px)
+   ============================================ */
+@media (min-width: 1440px) and (max-width: 1919px) {
+    .sidebar { width: 240px; }
+    .matrix-selection-panel { width: 220px !important; }
+    .leaflet-device-card { width: 240px !important; }
+    .leaflet-device-card-container { margin-left: 240px !important; }
+}
+
+/* ============================================
+   STANDARD LAPTOP (1366x768)
+   ============================================ */
+@media (min-width: 1024px) and (max-width: 1439px) {
+    .sidebar { width: 220px; }
+    .matrix-selection-panel { width: 200px !important; }
+    .leaflet-device-card { width: 220px !important; }
+    .leaflet-device-card-container { right: 16px !important; top: 55px !important; margin-left: 220px !important; }
+}
+
+/* ============================================
+   SMALL LAPTOP / LARGE TABLET (1024px - 1279px)
+   ============================================ */
+@media (min-width: 1024px) and (max-width: 1279px) {
+    .sidebar { width: 200px; }
+    .matrix-selection-panel { width: 180px !important; }
+    .leaflet-device-card { width: 200px !important; }
+    .leaflet-device-card-container { margin-left: 200px !important; }
+}
+
+/* ============================================
+   TABLET LANDSCAPE (768px - 1023px)
+   ============================================ */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .sidebar { width: 180px; }
+    .matrix-selection-panel { width: 160px !important; }
+    .leaflet-device-card { width: 180px !important; }
+    .leaflet-device-card-container { right: 12px !important; top: 50px !important; margin-left: 180px !important; }
+    .map-floating-toolbar { top: 50px !important; }
+}
+
+/* ============================================
+   TABLET PORTRAIT (768x1024)
+   ============================================ */
+@media (min-width: 768px) and (max-height: 1024px) and (orientation: portrait) {
+    .matrix-selection-panel { max-height: calc(100vh - 120px) !important; }
+    .leaflet-device-card { position: relative !important; bottom: auto !important; right: auto !important; max-height: 450px !important; }
+    .leaflet-device-card-container { position: absolute !important; top: 50px !important; right: 10px !important; margin-left: 180px !important; }
+}
+
+/* ============================================
+   MOBILE (< 576px)
+   ============================================ */
+@media (max-width: 575.98px) {
+    /* Sidebar overlay */
+    .sidebar { position: fixed !important; left: -280px !important; top: 0 !important; height: 100vh !important; z-index: 999 !important; transition: left 0.3s ease; width: 280px !important; }
+    .sidebar.open { left: 0 !important; }
+    
+    /* Mobile menu toggle */
+    .mobile-menu-toggle { display: flex !important; position: fixed !important; top: 12px !important; left: 12px !important; z-index: 1000 !important; }
+    
+    /* Selection matrix - Top overlay */
+    .matrix-selection-panel { width: 100% !important; position: absolute !important; top: 50px !important; left: 0 !important; right: 0 !important; z-index: 950 !important; border-radius: 0 0 var(--radius-lg) var(--radius-lg) !important; max-height: 30vh !important; box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important; }
+    
+    /* Device card - Bottom sheet */
+    .leaflet-device-card { width: 100% !important; position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; z-index: 960 !important; border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important; max-height: 45vh !important; box-shadow: 0 -4px 20px rgba(0,0,0,0.3) !important; }
+    .leaflet-device-card-container { position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; margin: 0 !important; }
+    
+    /* Hide zoom controls */
+    .leaflet-control-zoom { display: none !important; }
+    
+    /* Touch-friendly targets */
+    button, .action-btn, .toggle-btn, .nav-item { min-height: 48px !important; min-width: 48px !important; padding: 12px 16px !important; font-size: 14px !important; }
+    
+    /* Full screen map */
+    #map-canvas { height: calc(100vh - 50px) !important; }
+}
+
+/* ============================================
+   EXTRA SMALL MOBILE (< 375px) & TERMINAL COMPACT
+   ============================================ */
+@media (max-width: 575.98px) {
+    #terminal { height: 120px !important; }
+    #terminal.expanded { height: 280px !important; }
+    header { padding: 6px 10px !important; }
+    #cloud-path-link { display: none !important; }
+}
+
+@media (max-width: 374px) {
+    .matrix-selection-panel { font-size: 11px !important; width: 100% !important; }
+    .leaflet-device-card { font-size: 11px !important; width: 100% !important; }
+    .matrix-selection-panel > div { padding: 6px !important; }
+    .leaflet-device-card > div { padding: 8px !important; }
+    #terminal { height: 85px !important; }
+    #terminal-body { font-size: 9px !important; }
+    #project-id-label { display: none !important; }
+    header h1 { font-size: 11px !important; }
+}
+
+/* ============================================
+   LANDSCAPE ORIENTATION FIXES
+   ============================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+    .matrix-selection-panel { max-height: 50vh !important; overflow-y: auto !important; }
+    .leaflet-device-card { max-height: 40vh !important; overflow-y: auto !important; }
+    header { height: 48px !important; }
+    .sidebar { height: calc(100vh - 48px) !important; }
+}
+
+/* ============================================
+   TOUCH DEVICE OPTIMIZATIONS
+   ============================================ */
+@media (hover: none) and (pointer: coarse) {
+    button, a, .clickable { min-height: 44px !important; min-width: 44px !important; }
+    .text-[9px], .text-[10px], .text-[11px] { font-size: 12px !important; }
+    .p-1, .px-1, .py-1 { padding: 10px !important; }
+}
+
+/* ============================================
+   ACCESSIBILITY
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@media (forced-colors: active) {
+    .badge-status, .btn-action-primary, .btn-action-secondary { border: 1px solid currentColor !important; }
+}

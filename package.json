@@ -1,0 +1,20 @@
+{
+  "name": "jfindme-web",
+  "version": "3.1.0",
+  "description": "jButterfly GPS Telemetry Web Dashboard",
+  "main": "js/server.js",
+  "scripts": {
+    "start": "node js/server.js",
+    "dev": "node js/server.js",
+    "test": "node scripts/deployment/run-integration-tests.js",
+    "setup": "node scripts/deployment/firebase-setup.js"
+  },
+  "keywords": ["gps", "telemetry", "firebase", "leaflet"],
+  "author": "jButterfly Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.8.0"
+  }
+}

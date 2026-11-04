@@ -1,0 +1,479 @@
+{
+  "timestamp": "2026-11-04T05:26:54.654Z",
+  "total": 31,
+  "passed": 31,
+  "failed": 0,
+  "passPercent": 100,
+  "duration": "40.26",
+  "results": [
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/ping",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-01: Heartbeat responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "ALIVE",
+        "keys": [
+          "status",
+          "timestamp",
+          "service",
+          "version"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/discovery",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-02: Cloud topology discovery responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "rtdb",
+          "firestore",
+          "projectId",
+          "databaseURL",
+          "status"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/devices-live",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-03: Real-time aggregated fleet roster responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "count": 2,
+        "keys": [
+          "status",
+          "source",
+          "total",
+          "count",
+          "withGps",
+          "devices"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/fleet/compact-live",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-04: Compact lightweight radar telemetry responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "count": 2,
+        "keys": [
+          "status",
+          "source",
+          "total",
+          "count",
+          "withGps",
+          "devices"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/safe-zones",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-05: Geofence perimeters responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "status",
+          "total",
+          "zones",
+          "cachedAt"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/settings",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-06: Operator configuration settings responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "status",
+          "settings"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/circles",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-07: MLM circle taxonomy responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "circles"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/stats",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-08: Macro-to-micro drilldown stats responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "node",
+          "total_records",
+          "rtdbNodes"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/system-release",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-09: SSOT OTA release metadata responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": 87,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "status",
+          "release"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/archived-devices",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-10: Cold-storage decommissioned devices responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "count": 1,
+        "keys": [
+          "status",
+          "count",
+          "archivedDevices"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/duplicate-devices",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-11: Silicon SHA-256 duplicate candidate scan responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "duplicates",
+          "totalCount",
+          "scannedAt"
+        ]
+      }
+    },
+    {
+      "suite": "GET_ENDPOINTS",
+      "scenarioName": "/api/avatars",
+      "condition": "Valid authenticated operator request",
+      "validationRule": "BFR-12: High-DPI avatar asset catalog responds 200",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "count": 50,
+        "keys": [
+          "status",
+          "count",
+          "avatars"
+        ]
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject SafeZone creation with missing coordinates",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-SZ-01: Name, latitude, and longitude mandatory",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "INVALID_PARAMETERS",
+        "message": "Zone name, latitude and longitude are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject SafeZone toggle with missing zone_id",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-SZ-02: Target zone_id mandatory for state toggle",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_ZONE_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject SafeZone update targets with missing zone_id",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-SZ-03: Target zone_id mandatory for target mapping",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_ZONE_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject SafeZone delete with missing zone_id",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-SZ-04: Target zone_id mandatory for purge",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_ZONE_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Device Poke with missing agentId",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DEV-01: Target agentId mandatory for live nudge",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_AGENT_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Decommission delete-everywhere with missing agentId",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DEV-02: Target agentId mandatory for decommissioning",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_AGENT_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Restore Archive with missing agentId",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DEV-03: Target agentId mandatory for restoration",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_AGENT_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Toggle ACL with missing target parameters",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-MLM-01: Both agentId and flag required for ACL toggle",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_PARAMETERS",
+        "message": "Both agentId and flag are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Add Relationship with missing peer parameters",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-MLM-02: Symmetrical pairing requires both unit identities",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_PARAMS",
+        "message": "Both agentId and targetAgentId are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Delete Relationship with missing peer parameters",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-MLM-03: Symmetrical unlinking requires both unit identities",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_AGENT_IDS",
+        "message": "Both agentId and targetAgentId are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject OTA Push Update with missing agentId",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-OTA-01: Target unit identity required for OTA command",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_AGENT_ID"
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Duplicate Pair Verify with missing IDs",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DUP-01: Both oldAgentId and newAgentId required for pre-flight",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_PARAMS",
+        "message": "Both oldAgentId and newAgentId are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Duplicate Merge with missing IDs",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DUP-02: Both oldAgentId and newAgentId required for migration",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_PARAMS",
+        "message": "Both oldAgentId and newAgentId are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Heading Sync with missing required keys",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-DUP-03: Required heading synchronization parameters mandatory",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "MISSING_PARAMS",
+        "message": "oldAgentId, newAgentId, and headingKey are required."
+      }
+    },
+    {
+      "suite": "INPUT_VALIDATIONS",
+      "scenarioName": "Reject Settings Save with empty payload",
+      "condition": "Malformed or incomplete payload",
+      "validationRule": "BFR-CFG-01: Non-empty settings payload required",
+      "expectedStatus": 400,
+      "actualStatus": 400,
+      "pass": true,
+      "details": {
+        "error": "INVALID_PAYLOAD",
+        "message": "Path and non-empty data required"
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 1: Fleet Live Interrogation & Nudge Burst",
+      "condition": "Admin triggers mass FCM wake broadcast",
+      "validationRule": "BFR-SEQ-01: Dispatches high-priority data messages",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "status",
+          "totalTargeted",
+          "fcmPushesDispatched",
+          "timestamp"
+        ]
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 2: SafeZone Closed-Loop Lifecycle (Create -> Toggle -> Delete)",
+      "condition": "Operator manages geofence perimeter",
+      "validationRule": "BFR-SEQ-02: Atomic RTDB CRUD and cache invalidation",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "createPass",
+          "togglePass",
+          "deletePass"
+        ]
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 3: Operator Settings Write-Read Round-Trip",
+      "condition": "Operator modifies UI theme and radar preferences",
+      "validationRule": "BFR-SEQ-03: Realtime sync across multi-admin instances",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "savePass",
+          "getPass"
+        ]
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 4: SSOT Master Release OTA Management",
+      "condition": "Release engineer registers binary update",
+      "validationRule": "BFR-SEQ-04: Instantaneous fleet version-gap calculation",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "relPostPass",
+          "relGetPass"
+        ]
+      }
+    }
+  ]
+}

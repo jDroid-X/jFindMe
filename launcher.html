@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jButterFly MLM Mission Control | System Launcher</title>
+    <link rel="icon" href="assets/avatars/ButterFly.png">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(circle at top right, #1e1b4b 0%, #0b0f19 50%, #030712 100%);
+            color: #f1f5f9;
+            min-height: 100vh;
+            padding: 32px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            max-width: 800px;
+            margin-bottom: 28px;
+        }
+        .logo-wrap {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            font-size: 2.4rem;
+            margin-bottom: 12px;
+            box-shadow: 0 10px 30px rgba(56, 189, 248, 0.2);
+        }
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1rem;
+            margin-bottom: 16px;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 9999px;
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            color: #4ade80;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 10px #22c55e;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        .primary-action {
+            margin: 20px 0 32px 0;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn-launch-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, #0284c7 0%, #6366f1 100%);
+            color: #ffffff;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 14px;
+            font-size: 1.05rem;
+            font-weight: 700;
+            box-shadow: 0 10px 25px rgba(2, 132, 199, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.2s ease;
+        }
+        .btn-launch-main:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 35px rgba(99, 102, 241, 0.5);
+        }
+        .btn-launch-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #cbd5e1;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: 14px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s ease;
+        }
+        .btn-launch-secondary:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            transform: translateY(-2px);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 18px;
+            max-width: 1100px;
+            width: 100%;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 22px;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(8px);
+            position: relative;
+            overflow: hidden;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+            background: rgba(30, 41, 59, 0.8);
+        }
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .card-icon {
+            font-size: 1.8rem;
+            padding: 8px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .card-badge {
+            font-size: 0.72rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 6px;
+        }
+        .card-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            line-height: 1.45;
+            margin-bottom: 16px;
+        }
+        .card-action {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #38bdf8;
+        }
+        .card-action svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.2s;
+        }
+        .card:hover .card-action svg {
+            transform: translateX(4px);
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #64748b;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            max-width: 1100px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .footer a {
+            color: #94a3b8;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo-wrap">🦋</div>
+        <h1>jButterFly Mission Control</h1>
+        <p class="subtitle">Enterprise MLM GPS Telemetry, Geofence Radar & Cloud Administration Hub</p>
+        
+        <div class="status-pill" id="healthPill">
+            <span class="status-dot"></span>
+            <span id="healthText">Node API Online (Port 3000) • Live Cloud RTDB Bridge</span>
+        </div>
+
+        <div class="primary-action">
+            <a href="index.html" class="btn-launch-main">
+                <span>🚀 Launch Flagship Radar (Full App)</span>
+            </a>
+            <a href="database-sync-settings.html" class="btn-launch-secondary">
+                <span>⚙️ Database Sync Console</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- 1. Live Map -->
+        <a href="index.html#map" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🗺️</span>
+                    <span class="card-badge">Real-Time</span>
+                </div>
+                <div class="card-title">Live Map Radar</div>
+                <div class="card-desc">Google Maps & Leaflet GIS tracking with road smoothing, directional heading, and real-time fleet pinging.</div>
+            </div>
+            <div class="card-action">Launch Radar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 2. Dashboard -->
+        <a href="index.html#dashboard" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">📊</span>
+                    <span class="card-badge">Analytics</span>
+                </div>
+                <div class="card-title">Fleet Dashboard</div>
+                <div class="card-desc">Comprehensive fleet overview: online/offline breakdown, SOS incident alerts, and battery vitals.</div>
+            </div>
+            <div class="card-action">View Dashboard <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 3. Users & Devices -->
+        <a href="index.html#users" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">👥</span>
+                    <span class="card-badge">Roster</span>
+                </div>
+                <div class="card-title">Users & Device Roster</div>
+                <div class="card-desc">Full device identity manager, hardware ID pairings, ACL permissions, and role delegations.</div>
+            </div>
+            <div class="card-action">Manage Roster <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 4. Geofencing -->
+        <a href="index.html#geofencing" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🛡️</span>
+                    <span class="card-badge">Security</span>
+                </div>
+                <div class="card-title">Safe Zones & Geofencing</div>
+                <div class="card-desc">Architect circular and polygon geofences, set transition triggers, and link boundary alerts to members.</div>
+            </div>
+            <div class="card-action">Open Geofencer <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 5. Duplicate Resolution -->
+        <a href="index.html#dup" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🔍</span>
+                    <span class="card-badge">SSOT</span>
+                </div>
+                <div class="card-title">Duplicate Hardware Resolver</div>
+                <div class="card-desc">Automated detection of multi-registered MACs/IMEIs with one-click historical record consolidation.</div>
+            </div>
+            <div class="card-action">Resolve Duplicates <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 6. Coordinate Tree MindMap -->
+        <a href="index.html#mindmap" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🌳</span>
+                    <span class="card-badge">Architecture</span>
+                </div>
+                <div class="card-title">Coordinate Tree MindMap</div>
+                <div class="card-desc">Interactive D3 hierarchical visualization of ROOT⊃BR⊃EL⊃FE⊃BE⊃DB architecture with live metrics.</div>
+            </div>
+            <div class="card-action">Explore MindMap <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 7. Eagle Eye Analytics -->
+        <a href="index.html#analytics" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🦅</span>
+                    <span class="card-badge">Telemetry</span>
+                </div>
+                <div class="card-title">Eagle Eye GIS Analytics</div>
+                <div class="card-desc">Spatial speed distributions, high-velocity anomaly detection, and movement density heatmaps.</div>
+            </div>
+            <div class="card-action">Open Analytics <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 8. Forensic Audit -->
+        <a href="index.html#audit" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">📜</span>
+                    <span class="card-badge">Compliance</span>
+                </div>
+                <div class="card-title">Forensic Security & Audit</div>
+                <div class="card-desc">Real-time audit log stream, credential event verification, and system tamper monitoring.</div>
+            </div>
+            <div class="card-action">Audit Trails <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 9. Schema Architect -->
+        <a href="index.html#schema" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🗄️</span>
+                    <span class="card-badge">Database</span>
+                </div>
+                <div class="card-title">Database Schema Architect</div>
+                <div class="card-desc">Live JSON node explorer for Firebase RTDB roots, version metadata, and indexing topologies.</div>
+            </div>
+            <div class="card-action">Inspect Schema <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 10. Database Sync Console -->
+        <a href="database-sync-settings.html" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🔄</span>
+                    <span class="card-badge">Multi-Cloud</span>
+                </div>
+                <div class="card-title">Database Sync Settings</div>
+                <div class="card-desc">Control RTDB and Firestore live replication streams, credential paths, and synchronization intervals.</div>
+            </div>
+            <div class="card-action">Sync Settings <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+    </div>
+
+    <div class="footer">
+        <div>Operator Session: <strong>JEET</strong> • Master Key: <code>Jeet@123Meet</code></div>
+        <div>
+            <a href="/api/fleet/compact-live" target="_blank">Radar API</a> • 
+            <a href="/api/ping" target="_blank">Health Ping</a> • 
+            <a href="/api/discovery" target="_blank">Cloud Nodes</a>
+        </div>
+    </div>
+
+    <script>
+        // Real-time server health polling
+        async function updateHealth() {
+            try {
+                const res = await fetch('/api/ping');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('healthText').textContent = 
+                        `Node API Online (Port 3000) • ${data.service || 'jButterfly'} • v${data.version || '3.1.0'}`;
+                }
+            } catch (e) {
+                const pill = document.getElementById('healthPill');
+                pill.style.background = 'rgba(239, 68, 68, 0.15)';
+                pill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                pill.style.color = '#f87171';
+                document.getElementById('healthText').textContent = 'Server Offline - Verify Node Process on Port 3000';
+            }
+        }
+        updateHealth();
+        setInterval(updateHealth, 5000);
+    </script>
+</body>
+</html>
