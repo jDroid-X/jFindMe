@@ -3,394 +3,405 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>jFindMeWeb | GPS Telemetry System</title>
+    <title>jButterFly MLM Mission Control | System Launcher</title>
+    <link rel="icon" href="assets/avatars/ButterFly.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: linear-gradient(135deg, #0a0f1d 0%, #111827 50%, #1e1b4b 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(circle at top right, #1e1b4b 0%, #0b0f19 50%, #030712 100%);
+            color: #f1f5f9;
             min-height: 100vh;
+            padding: 32px 20px;
             display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            max-width: 800px;
+            margin-bottom: 28px;
+        }
+        .logo-wrap {
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            color: #e2e8f0;
-        }
-        .container {
-            max-width: 640px;
-            width: 90%;
-            padding: 40px;
-            text-align: center;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            width: 72px;
+            height: 72px;
             border-radius: 20px;
-            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(12px);
-        }
-        .logo {
-            font-size: 3.8rem;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            font-size: 2.4rem;
             margin-bottom: 12px;
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
+            box-shadow: 0 10px 30px rgba(56, 189, 248, 0.2);
         }
         h1 {
-            font-size: 2.4rem;
-            margin-bottom: 6px;
-            background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc);
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            font-weight: 800;
             letter-spacing: -0.5px;
+            margin-bottom: 6px;
         }
         .subtitle {
             color: #94a3b8;
-            font-size: 1.05rem;
-            margin-bottom: 28px;
+            font-size: 1rem;
+            margin-bottom: 16px;
         }
-        .project-info {
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 14px;
-            padding: 20px 24px;
-            margin-bottom: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            text-align: left;
-        }
-        .project-info h3 {
-            color: #38bdf8;
-            margin-bottom: 12px;
-            font-size: 0.95rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            display: flex;
+        .status-pill {
+            display: inline-flex;
             align-items: center;
             gap: 8px;
+            padding: 8px 18px;
+            border-radius: 9999px;
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            color: #4ade80;
+            font-size: 0.85rem;
+            font-weight: 600;
         }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            font-size: 0.9rem;
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 10px #22c55e;
+            animation: pulse 2s infinite;
         }
-        .info-row:last-child { border-bottom: none; }
-        .info-label { color: #94a3b8; }
-        .info-value { color: #e2e8f0; font-weight: 600; font-family: Consolas, monospace; }
-        
-        .action-row {
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+        .primary-action {
+            margin: 20px 0 32px 0;
             display: flex;
             gap: 12px;
             justify-content: center;
-            margin-bottom: 20px;
             flex-wrap: wrap;
         }
-        .launch-btn {
+        .btn-launch-main {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #0284c7, #6366f1);
-            color: white;
-            padding: 14px 28px;
-            border-radius: 12px;
+            gap: 10px;
+            background: linear-gradient(135deg, #0284c7 0%, #6366f1 100%);
+            color: #ffffff;
             text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 14px;
             font-size: 1.05rem;
-            font-weight: 600;
-            transition: all 0.25s ease;
-            box-shadow: 0 4px 20px rgba(2, 132, 199, 0.3);
-            border: 1px solid rgba(255,255,255,0.15);
-            cursor: pointer;
-        }
-        .launch-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
-            color: #fff;
-        }
-        .launch-btn.secondary {
-            background: linear-gradient(135deg, #1e293b, #334155);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        }
-        .start-server-btn {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 10px;
-            font-size: 0.95rem;
             font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+            box-shadow: 0 10px 25px rgba(2, 132, 199, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             transition: all 0.2s ease;
+        }
+        .btn-launch-main:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 35px rgba(99, 102, 241, 0.5);
+        }
+        .btn-launch-secondary {
             display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #cbd5e1;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: 14px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            transition: all 0.2s ease;
+        }
+        .btn-launch-secondary:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            transform: translateY(-2px);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 18px;
+            max-width: 1100px;
+            width: 100%;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 22px;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(8px);
+            position: relative;
+            overflow: hidden;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+            background: rgba(30, 41, 59, 0.8);
+        }
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .card-icon {
+            font-size: 1.8rem;
+            padding: 8px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .card-badge {
+            font-size: 0.72rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 6px;
+        }
+        .card-desc {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            line-height: 1.45;
+            margin-bottom: 16px;
+        }
+        .card-action {
+            display: flex;
             align-items: center;
             gap: 6px;
-        }
-        .start-server-btn:hover {
-            transform: scale(1.03);
-            box-shadow: 0 6px 22px rgba(16, 185, 129, 0.5);
-        }
-
-        .status {
-            margin-top: 20px;
-            padding: 18px;
-            background: rgba(34, 197, 94, 0.08);
-            border: 1px solid rgba(34, 197, 94, 0.3);
-            border-radius: 12px;
-            color: #4ade80;
-            transition: all 0.3s;
-        }
-        .status.starting {
-            background: rgba(56, 189, 248, 0.1);
-            border-color: rgba(56, 189, 248, 0.4);
+            font-size: 0.85rem;
+            font-weight: 600;
             color: #38bdf8;
         }
-        .status.warning {
-            background: rgba(234, 179, 8, 0.1);
-            border-color: rgba(234, 179, 8, 0.4);
-            color: #facc15;
+        .card-action svg {
+            width: 16px;
+            height: 16px;
+            transition: transform 0.2s;
         }
-        .status.error {
-            background: rgba(239, 68, 68, 0.1);
-            border-color: rgba(239, 68, 68, 0.3);
-            color: #f87171;
+        .card:hover .card-action svg {
+            transform: translateX(4px);
         }
-
-        .pulse-loader {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: currentColor;
-            margin-right: 6px;
-            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-        }
-        @keyframes pulse-ring {
-            0% { transform: scale(0.8); opacity: 0.5; }
-            50% { transform: scale(1.3); opacity: 1; }
-            100% { transform: scale(0.8); opacity: 0.5; }
-        }
-
-        .countdown-badge {
-            margin-top: 10px;
-            display: inline-block;
-            background: rgba(255,255,255,0.1);
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.82rem;
-            color: #f1f5f9;
-        }
-
-        .note {
-            margin-top: 22px;
-            font-size: 0.82rem;
+        .footer {
+            text-align: center;
+            font-size: 0.85rem;
             color: #64748b;
-            line-height: 1.5;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            max-width: 1100px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .footer a {
+            color: #94a3b8;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            color: #38bdf8;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">🦋</div>
-        <h1>jFindMe Web</h1>
-        <p class="subtitle">GPS Telemetry, Geofence Radar & Cloud Bridge</p>
+
+    <div class="header">
+        <div class="logo-wrap">🦋</div>
+        <h1>jButterFly Mission Control</h1>
+        <p class="subtitle">Enterprise MLM GPS Telemetry, Geofence Radar & Cloud Administration Hub</p>
         
-        <div class="project-info">
-            <h3>📍 Environment Identity</h3>
-            <div class="info-row">
-                <span class="info-label">Project Root:</span>
-                <span class="info-value">C:\Users\jiten\jAnitGravity\jFindMe\jFindMeWeb\</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Node Server:</span>
-                <span class="info-value">js/server.js (Port 3000)</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Reverse Proxy UI:</span>
-                <span class="info-value">Port 8080 (Optional)</span>
-            </div>
-            <div class="info-row">
-                <span class="info-label">Firebase Project:</span>
-                <span class="info-value">jfindme-3b15c</span>
-            </div>
+        <div class="status-pill" id="healthPill">
+            <span class="status-dot"></span>
+            <span id="healthText">Node API Online (Port 3000) • Live Cloud RTDB Bridge</span>
         </div>
 
-        <div class="action-row">
-            <a href="http://127.0.0.1:3000/" class="launch-btn" id="launchBtn3000" style="flex: 1; min-width: 200px;">
-                ⚡ Direct Live UI (Port 3000)
+        <div class="primary-action">
+            <a href="index.html" class="btn-launch-main">
+                <span>🚀 Launch Flagship Radar (Full App)</span>
             </a>
-            <a href="http://127.0.0.1:8080/" class="launch-btn secondary" id="launchBtn8080" style="flex: 1; min-width: 200px;">
-                🚀 Web UI (Port 8080)
+            <a href="database-sync-settings.html" class="btn-launch-secondary">
+                <span>⚙️ Database Sync Console</span>
             </a>
         </div>
-
-        <div class="status starting" id="statusBox">
-            <div id="statusText">
-                <span class="pulse-loader"></span>Checking Node server status...
-            </div>
-            <div id="statusDetails" style="font-size: 0.85rem; margin-top: 8px; opacity: 0.95;"></div>
-            <div id="countdownArea" style="display: none;"></div>
-        </div>
-
-        <div style="margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-            <button onclick="triggerNodeServer(true)" class="start-server-btn" id="forceStartBtn">
-                ⚡ Auto-Run Node Server
-            </button>
-            <button onclick="checkServer(true)" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: #cbd5e1; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-size: 0.88rem; transition: background 0.2s;">
-                🔄 Re-check Status
-            </button>
-        </div>
-
-        <p class="note">
-            💡 <strong>Auto-Boot Active:</strong> When launched, this file automatically signals the Node.js server to run and bridges directly into the live tracking dashboard.
-        </p>
     </div>
 
-    <!-- Hidden iframe for Windows protocol invocation -->
-    <iframe id="protocolIframe" style="display: none; width: 0; height: 0;"></iframe>
+    <div class="grid">
+        <!-- 1. Live Map -->
+        <a href="index.html#map" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🗺️</span>
+                    <span class="card-badge">Real-Time</span>
+                </div>
+                <div class="card-title">Live Map Radar</div>
+                <div class="card-desc">Google Maps & Leaflet GIS tracking with road smoothing, directional heading, and real-time fleet pinging.</div>
+            </div>
+            <div class="card-action">Launch Radar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 2. Dashboard -->
+        <a href="index.html#dashboard" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">📊</span>
+                    <span class="card-badge">Analytics</span>
+                </div>
+                <div class="card-title">Fleet Dashboard</div>
+                <div class="card-desc">Comprehensive fleet overview: online/offline breakdown, SOS incident alerts, and battery vitals.</div>
+            </div>
+            <div class="card-action">View Dashboard <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 3. Users & Devices -->
+        <a href="index.html#users" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">👥</span>
+                    <span class="card-badge">Roster</span>
+                </div>
+                <div class="card-title">Users & Device Roster</div>
+                <div class="card-desc">Full device identity manager, hardware ID pairings, ACL permissions, and role delegations.</div>
+            </div>
+            <div class="card-action">Manage Roster <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 4. Geofencing -->
+        <a href="index.html#geofencing" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🛡️</span>
+                    <span class="card-badge">Security</span>
+                </div>
+                <div class="card-title">Safe Zones & Geofencing</div>
+                <div class="card-desc">Architect circular and polygon geofences, set transition triggers, and link boundary alerts to members.</div>
+            </div>
+            <div class="card-action">Open Geofencer <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 5. Duplicate Resolution -->
+        <a href="index.html#dup" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🔍</span>
+                    <span class="card-badge">SSOT</span>
+                </div>
+                <div class="card-title">Duplicate Hardware Resolver</div>
+                <div class="card-desc">Automated detection of multi-registered MACs/IMEIs with one-click historical record consolidation.</div>
+            </div>
+            <div class="card-action">Resolve Duplicates <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 6. Coordinate Tree MindMap -->
+        <a href="index.html#mindmap" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🌳</span>
+                    <span class="card-badge">Architecture</span>
+                </div>
+                <div class="card-title">Coordinate Tree MindMap</div>
+                <div class="card-desc">Interactive D3 hierarchical visualization of ROOT⊃BR⊃EL⊃FE⊃BE⊃DB architecture with live metrics.</div>
+            </div>
+            <div class="card-action">Explore MindMap <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 7. Eagle Eye Analytics -->
+        <a href="index.html#analytics" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🦅</span>
+                    <span class="card-badge">Telemetry</span>
+                </div>
+                <div class="card-title">Eagle Eye GIS Analytics</div>
+                <div class="card-desc">Spatial speed distributions, high-velocity anomaly detection, and movement density heatmaps.</div>
+            </div>
+            <div class="card-action">Open Analytics <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 8. Forensic Audit -->
+        <a href="index.html#audit" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">📜</span>
+                    <span class="card-badge">Compliance</span>
+                </div>
+                <div class="card-title">Forensic Security & Audit</div>
+                <div class="card-desc">Real-time audit log stream, credential event verification, and system tamper monitoring.</div>
+            </div>
+            <div class="card-action">Audit Trails <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 9. Schema Architect -->
+        <a href="index.html#schema" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🗄️</span>
+                    <span class="card-badge">Database</span>
+                </div>
+                <div class="card-title">Database Schema Architect</div>
+                <div class="card-desc">Live JSON node explorer for Firebase RTDB roots, version metadata, and indexing topologies.</div>
+            </div>
+            <div class="card-action">Inspect Schema <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+
+        <!-- 10. Database Sync Console -->
+        <a href="database-sync-settings.html" class="card">
+            <div>
+                <div class="card-top">
+                    <span class="card-icon">🔄</span>
+                    <span class="card-badge">Multi-Cloud</span>
+                </div>
+                <div class="card-title">Database Sync Settings</div>
+                <div class="card-desc">Control RTDB and Firestore live replication streams, credential paths, and synchronization intervals.</div>
+            </div>
+            <div class="card-action">Sync Settings <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
+        </a>
+    </div>
+
+    <div class="footer">
+        <div>Operator Session: <strong>JEET</strong> • Master Key: <code>Jeet@123Meet</code></div>
+        <div>
+            <a href="/api/fleet/compact-live" target="_blank">Radar API</a> • 
+            <a href="/api/ping" target="_blank">Health Ping</a> • 
+            <a href="/api/discovery" target="_blank">Cloud Nodes</a>
+        </div>
+    </div>
 
     <script>
-        let autoStartTriggered = false;
-        let countdownTimer = null;
-        let countdownRemaining = 3;
-        let isRedirecting = false;
-
-        // Auto-run node server execution engine
-        function triggerNodeServer(manualClick) {
-            console.log("[SYSTEM] Invoking Node Server Auto-Boot Sequence...");
-            
-            // Method 1: Native Windows WScript.Shell (HTA or IE-Mode)
+        // Real-time server health polling
+        async function updateHealth() {
             try {
-                if (typeof ActiveXObject !== "undefined") {
-                    const shell = new ActiveXObject("WScript.Shell");
-                    shell.Run('cmd.exe /c "C:\\Users\\jiten\\jAnitGravity\\jFindMe\\jFindMeWeb\\scripts\\launch_server.bat"', 0, false);
-                    console.log("[LAUNCHER] WScript.Shell executed launch_server.bat");
-                    return;
+                const res = await fetch('/api/ping');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('healthText').textContent = 
+                        `Node API Online (Port 3000) • ${data.service || 'jButterfly'} • v${data.version || '3.1.0'}`;
                 }
             } catch (e) {
-                console.warn("[LAUNCHER] ActiveX not available in current browser sandbox.");
-            }
-
-            // Method 2: Custom URI Scheme jfindme://run
-            try {
-                const iframe = document.getElementById('protocolIframe');
-                if (iframe) {
-                    iframe.src = "jfindme://run";
-                } else {
-                    window.location.href = "jfindme://run";
-                }
-                console.log("[LAUNCHER] Dispatched jfindme://run protocol handler");
-            } catch (err) {
-                console.warn("[LAUNCHER] Protocol dispatch error:", err);
+                const pill = document.getElementById('healthPill');
+                pill.style.background = 'rgba(239, 68, 68, 0.15)';
+                pill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                pill.style.color = '#f87171';
+                document.getElementById('healthText').textContent = 'Server Offline - Verify Node Process on Port 3000';
             }
         }
-
-        async function checkServer(userInitiated) {
-            const statusBox = document.getElementById('statusBox');
-            const statusText = document.getElementById('statusText');
-            const statusDetails = document.getElementById('statusDetails');
-            const countdownArea = document.getElementById('countdownArea');
-            const btn8080 = document.getElementById('launchBtn8080');
-            const btn3000 = document.getElementById('launchBtn3000');
-            const forceStartBtn = document.getElementById('forceStartBtn');
-            
-            let apiOk = false;
-            let webOk = false;
-            let apiProject = 'jfindme-3b15c';
-
-            // Check Port 3000 (API & Direct Express)
-            try {
-                const res3000 = await fetch('http://127.0.0.1:3000/api/ping', { 
-                    method: 'GET',
-                    signal: AbortSignal.timeout(1800)
-                });
-                if (res3000.ok) {
-                    const data = await res3000.json().catch(() => ({}));
-                    apiOk = true;
-                    if (data.project) apiProject = data.project;
-                }
-            } catch (e) {
-                // Secondary fallback check on /api/discovery
-                try {
-                    const resDisc = await fetch('http://127.0.0.1:3000/api/discovery', { 
-                        signal: AbortSignal.timeout(1500) 
-                    });
-                    if (resDisc.ok) apiOk = true;
-                } catch (e2) {}
-            }
-
-            // Check Port 8080 (Static Proxy)
-            try {
-                await fetch('http://127.0.0.1:8080/index.html', { 
-                    method: 'HEAD',
-                    mode: 'no-cors',
-                    signal: AbortSignal.timeout(1500)
-                });
-                webOk = true;
-            } catch (e) {}
-
-            // State Handling
-            if (apiOk) {
-                statusBox.className = 'status';
-                statusText.innerHTML = '🟢 Node Server Running Active';
-                statusDetails.innerHTML = `API Bridge Online • Project: <strong>${apiProject}</strong> • Live Port: 3000`;
-                btn3000.style.opacity = '1';
-                btn8080.style.opacity = webOk ? '1' : '0.6';
-                forceStartBtn.style.display = 'none';
-
-                // Automatically redirect to live dashboard
-                if (!isRedirecting && !countdownTimer) {
-                    countdownArea.style.display = 'block';
-                    countdownRemaining = 2;
-                    countdownArea.innerHTML = `<span class="countdown-badge">⚡ Auto-redirecting to live dashboard in ${countdownRemaining}s... <a href="#" onclick="cancelRedirect(event)" style="color: #cbd5e1; text-decoration: underline; margin-left: 6px;">Stay here</a></span>`;
-                    
-                    countdownTimer = setInterval(() => {
-                        countdownRemaining--;
-                        if (countdownRemaining <= 0) {
-                            clearInterval(countdownTimer);
-                            isRedirecting = true;
-                            countdownArea.innerHTML = `<span class="countdown-badge">🚀 Launching Dashboard...</span>`;
-                            window.location.href = "http://127.0.0.1:3000/";
-                        } else {
-                            countdownArea.innerHTML = `<span class="countdown-badge">⚡ Auto-redirecting to live dashboard in ${countdownRemaining}s... <a href="#" onclick="cancelRedirect(event)" style="color: #cbd5e1; text-decoration: underline; margin-left: 6px;">Stay here</a></span>`;
-                        }
-                    }, 1000);
-                }
-            } else {
-                // Server is Offline - Trigger Auto Start!
-                btn3000.style.opacity = '0.5';
-                btn8080.style.opacity = '0.5';
-                forceStartBtn.style.display = 'inline-flex';
-
-                if (!autoStartTriggered) {
-                    autoStartTriggered = true;
-                    statusBox.className = 'status starting';
-                    statusText.innerHTML = '<span class="pulse-loader"></span>Starting Node Server Automatically...';
-                    statusDetails.innerHTML = 'Dispatched boot command to <code>js/server.js</code>. Detecting telemetry lifesigns...';
-                    triggerNodeServer(false);
-                } else {
-                    statusBox.className = 'status starting';
-                    statusText.innerHTML = '<span class="pulse-loader"></span>Waiting for Node Server to initialize...';
-                    statusDetails.innerHTML = 'Initializing Firebase Admin & GPS Telemetry Bridge on Port 3000. Hang tight...';
-                }
-            }
-        }
-
-        function cancelRedirect(e) {
-            if (e) e.preventDefault();
-            if (countdownTimer) {
-                clearInterval(countdownTimer);
-                countdownTimer = null;
-            }
-            document.getElementById('countdownArea').innerHTML = '<span class="countdown-badge" style="background: rgba(255,255,255,0.06);">Auto-redirect paused. Click buttons above to open.</span>';
-        }
-
-        // Initialize immediately on page load
-        window.addEventListener('DOMContentLoaded', () => {
-            checkServer(false);
-            // Poll rapidly every 1.5 seconds during boot
-            setInterval(checkServer, 1500);
-        });
+        updateHealth();
+        setInterval(updateHealth, 5000);
     </script>
 </body>
 </html>

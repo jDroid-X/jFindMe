@@ -409,8 +409,18 @@ class App {
             
             this.renderSidebar(collections);
 
-            // Default Route: Launch Flagship Live Map Radar
-            window.showLiveMap();
+            // Dynamic Route Dispatcher: check hash routing or default to Live Map Radar
+            const hash = (window.location.hash || '').replace('#', '').toLowerCase();
+            if (hash === 'dashboard') window.showDashboard();
+            else if (hash === 'users' || hash === 'device-user') window.showUsers();
+            else if (hash === 'geofencing' || hash === 'safezones') window.showGeofencing();
+            else if (hash === 'dup' || hash === 'duplicate') window.showDupDevice();
+            else if (hash === 'mindmap' || hash === 'tree') window.showMindMap();
+            else if (hash === 'analytics' || hash === 'eagle') window.showEagleAnalytics();
+            else if (hash === 'audit') window.showAudit();
+            else if (hash === 'schema') window.showSchema();
+            else if (hash === 'architect') window.showArchitectV2();
+            else window.showLiveMap();
             
             this.startHeartbeat();
             this.startTelemetryStream();
