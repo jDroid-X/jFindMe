@@ -3,6 +3,7 @@ package com.jdroidx.jfindme.engine.location
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -13,7 +14,7 @@ import com.jdroidx.jfindme.utils.SystemLogger
  * GeofenceHelper: Orchestrates Google Geofencing API registrations.
  * Level 4: Spatial Interaction Engine.
  */
-class GeofenceHelper(context: Context) {
+class GeofenceHelper(private val context: Context) {
     private val TAG = "GeofenceHelper"
     private val geofencingClient = LocationServices.getGeofencingClient(context)
 
@@ -24,7 +25,7 @@ class GeofenceHelper(context: Context) {
 
     fun addGeofence(id: String, lat: Double, lng: Double, radius: Float) {
         // Permission check before registration — show feedback to user
-        val hasFineLocation = android.content.ContextCompat.checkSelfPermission(
+        val hasFineLocation = ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.ACCESS_FINE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!hasFineLocation) {

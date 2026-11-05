@@ -120,7 +120,10 @@ class LocationRepository(internal val context: Context) {
         }
 
         latestLocations[canonicalStoreId] = loc
-        _userLocations.postValue(latestLocations.values.toList())
+        _userLocations.postValue(latestLocations.values.sortedWith(
+            compareByDescending<UserLocation> { it.isSosActive }
+                .thenByDescending { it.getLongTimestamp() }
+        ))
     }
 
     private fun updateTargetListeners() {
@@ -222,11 +225,26 @@ class LocationRepository(internal val context: Context) {
                             } catch (e: Exception) {}
                         }
 
+                        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                        // Multi-field timestamp & telemetry normalization from primary cloud snapshot
+                        val snapTs = snapshot.child("timestamp").getValue()
+                        val snapHb = snapshot.child("last_heartbeat").getValue()
+                        val snapUpAt = snapshot.child("updated_at").getValue()
+                        val effectiveTs = snapTs ?: snapHb ?: snapUpAt ?: rawLoc.timestamp
+                        val effectiveUpAt = snapUpAt ?: snapTs ?: snapHb ?: rawLoc.updated_at
+                        val snapBattery = snapshot.child("battery").getValue(Long::class.java)?.toInt()
+                            ?: snapshot.child("batteryLevel").getValue(Long::class.java)?.toInt()
+                            ?: rawLoc.batteryLevel
+
                         val loc = rawLoc.copy(
                             userId = uid,
                             avatar_id = explicitAvatar ?: rawLoc.avatar_id,
-                            userName = explicitName ?: rawLoc.userName
-                        )
+                            userName = explicitName ?: rawLoc.userName,
+                            timestamp = effectiveTs,
+                            batteryLevel = snapBattery
+                        ).apply {
+                            this.updated_at = effectiveUpAt
+                        }
                         processIncomingLocation(uid, loc)
                     }
                     override fun onCancelled(error: DatabaseError) {
@@ -259,7 +277,10 @@ class LocationRepository(internal val context: Context) {
                                     val cur = latestLocations[uid]!!
                                     cur.avatar_id = profAvatar
                                     if (!profName.isNullOrEmpty()) cur.userName = profName
-                                    _userLocations.postValue(latestLocations.values.toList())
+                                    _userLocations.postValue(latestLocations.values.sortedWith(
+                                        compareByDescending<UserLocation> { it.isSosActive }
+                                            .thenByDescending { it.getLongTimestamp() }
+                                    ))
                                 }
                             } catch (e: Exception) {
                                 SystemLogger.e("LocationRepository", "Profile Avatar Sync Failed for $uid", e)
@@ -273,10 +294,71 @@ class LocationRepository(internal val context: Context) {
                 activeListeners[profRef] = profListener
             }
         }
-        _userLocations.postValue(latestLocations.values.toList())
+        _userLocations.postValue(latestLocations.values.sortedWith(
+            compareByDescending<UserLocation> { it.isSosActive }
+                .thenByDescending { it.getLongTimestamp() }
+        ))
+    }
+
+    private fun loadCachedOfflineLocations() {
+        try {
+            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            val lastLat = prefs.getFloat("last_known_lat", 0f).toDouble()
+            val lastLng = prefs.getFloat("last_known_lng", 0f).toDouble()
+            val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val selfId = if (!myUid.isNullOrEmpty()) myUid else myAgentId
+
+            if (lastLat != 0.0 && lastLng != 0.0) {
+                val selfLoc = UserLocation(
+                    userId = selfId,
+                    userName = "You",
+                    latitude = lastLat,
+                    longitude = lastLng,
+                    timestamp = System.currentTimeMillis()
+                )
+                latestLocations[selfId] = selfLoc
+            }
+
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val roster = db.getOfflineRoster()
+            for (node in roster) {
+                val peerId = (node["uid_1"] ?: node["uid_2"] ?: node["connected_id"])?.toString() ?: continue
+                if (peerId == selfId || peerId.isEmpty()) continue
+                val hist = db.getLatestHistoricalLocation(peerId)
+                if (hist != null) {
+                    val lat = hist["lat"] as? Double ?: 0.0
+                    val lng = hist["lng"] as? Double ?: 0.0
+                    val ts = hist["timestamp"] as? Long ?: 0L
+                    if (lat != 0.0 && lng != 0.0 && !latestLocations.containsKey(peerId)) {
+                        val peerName = db.getDeviceCentricName(peerId)
+                        val peerAvatar = db.getDeviceCentricAvatar(peerId)
+                        latestLocations[peerId] = UserLocation(
+                            userId = peerId,
+                            userName = if (peerName.isNotBlank() && !peerName.startsWith("Agent_")) peerName else "Peer Node",
+                            avatar_id = peerAvatar,
+                            latitude = lat,
+                            longitude = lng,
+                            timestamp = ts
+                        )
+                    }
+                }
+            }
+
+            if (latestLocations.isNotEmpty()) {
+                _userLocations.postValue(latestLocations.values.sortedWith(
+                    compareByDescending<UserLocation> { it.isSosActive }
+                        .thenByDescending { it.getLongTimestamp() }
+                ))
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("LocationRepository", "Error loading cached offline locations", e)
+        }
     }
 
     fun startListening() {
+        // 🚀 INSTANT STASH PAINT: Dispatch cached SQLite & registry fixes in <50ms
+        loadCachedOfflineLocations()
         // 🚀 SYNCHRONOUS BOOTSTRAP: Listen immediately for local SQLite verified devices without waiting for cloud auth
         updateTargetListeners()
 
@@ -441,13 +523,10 @@ class LocationRepository(internal val context: Context) {
         val localPoints = db.getRawHistoryPoints(userId, startTs, endTs)
 
         if (!FirebaseComm.isAuthenticated()) {
-            // 🛡️ Offline / Zero-Trust Sentinel: Provide instant local SQLite ledger history
+            // 🛡️ Offline / Zero-Trust Sentinel: Provide instant local SQLite ledger history (Latest first)
+            val sortedLocal = localPoints.sortedByDescending { it.getLongTimestamp() }
             Handler(Looper.getMainLooper()).post {
-                if (callback != null) {
-                    callback(localPoints)
-                } else {
-                    SystemLogger.w("LocationRepository", "Callback is null, skipping history response")
-                }
+                callback?.invoke(sortedLocal)
             }
             return
         }
@@ -487,21 +566,18 @@ class LocationRepository(internal val context: Context) {
                                 )
                             }
                         }
-                        val finalResult = if (points.isNotEmpty()) points else localPoints
+                        val finalResult = (if (points.isNotEmpty()) points else localPoints).sortedByDescending { it.getLongTimestamp() }
                         Handler(Looper.getMainLooper()).post {
-                            if (callback != null) {
-                                callback(finalResult)
-                            }
+                            callback?.invoke(finalResult)
                         }
                     }
                 }
 
                 override fun onCancelled(error: DatabaseError) {
-                    // 🛡️ Closed-Loop Fault Tolerance: Return local SQLite points on cloud abort
+                    // 🛡️ Closed-Loop Fault Tolerance: Return local SQLite points on cloud abort (Latest first)
+                    val sortedLocal = localPoints.sortedByDescending { it.getLongTimestamp() }
                     Handler(Looper.getMainLooper()).post {
-                        if (callback != null) {
-                            callback(localPoints)
-                        }
+                        callback?.invoke(sortedLocal)
                     }
                 }
             })

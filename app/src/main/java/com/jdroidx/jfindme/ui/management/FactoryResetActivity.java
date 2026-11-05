@@ -334,17 +334,18 @@ public class FactoryResetActivity extends BaseActivityJava {
         applyDialogTheme(dialog);
     }
 
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Cryptographic Factory Purge Verification: Verifies user input against salted SHA-256 hash
     private void showMasterPurgeDialog() {
-        String phrase = RegistryManager.getPurgeSafetyPhrase(this);
         UiArchitect.showInputPromptDialog(this, 
             "⚠️ MASTER FACTORY PURGE", 
-            "Type '" + phrase + "' to confirm irrevocable wipe...", 
+            "Enter master security password to confirm irrevocable wipe...", 
             "", 
             value -> {
-                if (phrase.equalsIgnoreCase(value)) {
+                if (RegistryManager.verifyAndUpgradePurgePhrase(this, value != null ? value.trim() : "")) {
                     viewModel.executeMasterPurge();
                 } else {
-                    UiArchitect.showValidationDialog(this, "Purge Aborted", "Incorrect confirmation phrase. System ledger preserved.");
+                    UiArchitect.showValidationDialog(this, "Purge Aborted", "Incorrect confirmation password. System ledger preserved.");
                 }
             });
     }

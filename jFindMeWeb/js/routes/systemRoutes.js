@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const ACTIVE_SESSIONS = new Map();
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 Hours
 
-function createSystemRouter({ db, fs_db, queryNodeWithTimeout, writeWithTimeout, PROJECT_ID, DATABASE_URL, LOCAL_MOCK_DATA }) {
+function createSystemRouter({ db, fs_db, queryNodeWithTimeout, writeWithTimeout, PROJECT_ID, DATABASE_URL, LOCAL_MOCK_DATA, setLiveDevicesCache }) {
     const router = express.Router();
     const VALID_KEYS = [
         process.env.MASTER_KEY_ID,
@@ -236,6 +236,9 @@ function createSystemRouter({ db, fs_db, queryNodeWithTimeout, writeWithTimeout,
 
             const isUpdate = (typeof data === "object" && !Array.isArray(data));
             await writeWithTimeout(settingsPath, data, 3500, isUpdate);
+            if (typeof setLiveDevicesCache === 'function') {
+                setLiveDevicesCache({ data: null, timestamp: 0 });
+            }
             res.json({ status: "SUCCESS", message: "Settings saved to server", timestamp: Date.now() });
         } catch (err) {
             res.status(500).json({ error: "SAVE_FAILED", message: err.message });

@@ -1,30 +1,78 @@
 *.iml
-.gradle
+.gradle/
+**/.gradle/
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
 local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
 
-# Custom Ignores
-/.kotlin/
-/.agents/
-/.kit/
-/NetworkGateway_Restored*.txt
-/watchdog_dog.png
-/app/release/
+# Build outputs
+build/
+**/build/
+app/build/
+jButterFly/build/
+app/release/
+jButterFly/release/
+apk/
+keystore/
+.kotlin/
+.kit/
+
+# Logs & crash data
+logs/
 *.log
 crash_*.txt
+crash_buffer.txt
 build_errors.txt
-/tmp/
-/apk/
-/jFindMeWeb/node_modules/
+all_logs.txt
+
+# IDE caches & local configs
+.idea/
+*.iws
+.gitignore.local
+
+# Firebase secrets & credentials
+/firebase/google-services.json
+**/google-services.json
+*-adminsdk-*.json
+service-account.json
+*.jks
+*.keystore
+
+# Temporary extracted files & binary dumps
+**/error_log_extracted/
+*.xlsx
+tmp/
+**/tmp/
+
+
+# Legacy & local runtime folders
+legacy/
+jbr_local/
+
+# Scripts, scratch & test dumps
+scripts/
 scratch/
+settings_at_*.java
+settings_restored_*.java
+registry_found.txt
+test_*.txt
+*.pyc
+**/__pycache__/
+keystore.properties
+
+# Third-party / generated
+node_modules/
+**/node_modules/
+watchdog_dog.png
+
+
+
+# External Reference Repositories
+Github Location tracker/
+
+# MS Office lock files
+~$*.docx
+~$*.xlsx

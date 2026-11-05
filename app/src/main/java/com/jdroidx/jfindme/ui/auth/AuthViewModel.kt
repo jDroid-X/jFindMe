@@ -107,6 +107,50 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                                 FirebaseComm.devicesRef.child(agentId).child("profile").child("active_group").setValue(activeGroup)
                                 FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(agentId).child("role").setValue("OWNER")
                             }
+
+                            // 🧬 REHYDRATE MASTER PROFILE DOSSIER (Avatar, Phone, Address, Org, DOB, Gender)
+                            val cloudAvatar = snap.child("avatar_id").getValue(String::class.java)
+                            val cloudEquippedId = snap.child("equipped_avatar_id").getValue(Int::class.java) ?: -1
+                            val cloudPhone = snap.child("phone").getValue(String::class.java) ?: ""
+                            val cloudDob = snap.child("dob").getValue(String::class.java) ?: ""
+                            val cloudGender = snap.child("gender").getValue(String::class.java) ?: ""
+                            val cloudAddress = snap.child("address").getValue(String::class.java) ?: ""
+                            val cloudOrg = snap.child("org_name").getValue(String::class.java) ?: ""
+                            val cloudDept = snap.child("dept_name").getValue(String::class.java) ?: ""
+                            val cloudCity = snap.child("city").getValue(String::class.java) ?: ""
+                            val cloudState = snap.child("state").getValue(String::class.java) ?: ""
+                            val cloudCountry = snap.child("country").getValue(String::class.java) ?: ""
+                            val cloudPincode = snap.child("pincode").getValue(String::class.java) ?: ""
+                            val cloudNote = snap.child("emergency_note").getValue(String::class.java) ?: ""
+
+                            val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                            prefs.edit().apply {
+                                if (!cloudAvatar.isNullOrEmpty()) putString("avatar_id", cloudAvatar)
+                                putInt("equipped_avatar_id", cloudEquippedId)
+                                if (cloudPhone.isNotEmpty()) putString("user_phone", cloudPhone)
+                                if (cloudAddress.isNotEmpty()) putString("user_address", cloudAddress)
+                                apply()
+                            }
+
+                            // Commit entire rehydrated analytical dossier to local SQLite
+                            val fullCloudDossier = mutableMapOf<String, String>()
+                            if (!cloudAvatar.isNullOrEmpty()) fullCloudDossier["avatar_id"] = cloudAvatar
+                            if (cloudPhone.isNotEmpty()) fullCloudDossier["phone"] = cloudPhone
+                            if (cloudDob.isNotEmpty()) fullCloudDossier["dob"] = cloudDob
+                            if (cloudGender.isNotEmpty()) fullCloudDossier["gender"] = cloudGender
+                            if (cloudAddress.isNotEmpty()) fullCloudDossier["address"] = cloudAddress
+                            if (cloudOrg.isNotEmpty()) fullCloudDossier["org_name"] = cloudOrg
+                            if (cloudDept.isNotEmpty()) fullCloudDossier["dept_name"] = cloudDept
+                            if (cloudCity.isNotEmpty()) fullCloudDossier["city"] = cloudCity
+                            if (cloudState.isNotEmpty()) fullCloudDossier["state"] = cloudState
+                            if (cloudCountry.isNotEmpty()) fullCloudDossier["country"] = cloudCountry
+                            if (cloudPincode.isNotEmpty()) fullCloudDossier["pincode"] = cloudPincode
+                            if (cloudNote.isNotEmpty()) fullCloudDossier["emergency_note"] = cloudNote
+                            if (fullCloudDossier.isNotEmpty()) {
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    dbHelper.commitAnalyticalDossier(agentId, fullCloudDossier, name = finalName)
+                                }
+                            }
                         } else {
                             // First time cloud registration or legacy profile recovery
                             FirebaseComm.devicesRef.child(agentId).child("profile").child("active_group").setValue(activeGroup)

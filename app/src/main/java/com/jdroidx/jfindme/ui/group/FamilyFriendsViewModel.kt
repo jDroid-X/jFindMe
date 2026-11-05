@@ -30,7 +30,8 @@ data class RosterNode(
     val lastSeenTimestamp: Long = 0L,
     val safeZoneName: String? = null,
     val safeZoneAddress: String? = null,
-    val safeZoneId: String? = null
+    val safeZoneId: String? = null,
+    val permissionsMask: Int = 0xFF
 )
 
 class FamilyFriendsViewModel : ViewModel() {
@@ -72,6 +73,11 @@ class FamilyFriendsViewModel : ViewModel() {
                     is String -> adm == "1" || adm.equals("true", ignoreCase = true)
                     else -> false
                 }
+                val pMaskStr = item["permissions_mask"]?.toString() ?: "0xFF"
+                val pMask = try {
+                    if (pMaskStr.startsWith("0x", ignoreCase = true)) pMaskStr.substring(2).toInt(16)
+                    else pMaskStr.toInt()
+                } catch (e: Exception) { 0xFF }
                 RosterNode(
                     uid = item["uid_1"] as? String ?: "",
                     displayName = item["fullName"] as? String ?: "Unknown",
@@ -80,7 +86,8 @@ class FamilyFriendsViewModel : ViewModel() {
                     isAdministrator = isAdmin,
                     isFriend = isFriend,
                     avatarId = item["avatar_id"] as? String,
-                    category = classifyCategory(role, isAdmin, isFriend)
+                    category = classifyCategory(role, isAdmin, isFriend),
+                    permissionsMask = pMask
                 ) 
             }
             _rosterLiveData.postValue(cached) // Zero-Latency Boot
@@ -95,15 +102,21 @@ class FamilyFriendsViewModel : ViewModel() {
         val finalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
         val defaultGroup = "GRP_" + finalAgentId
         
-        // Check profiles for active_group (Standard Hub path)
-        com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
-            val groupId = grpSnap.getValue(String::class.java)
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Dual-Path Active Group Resolver: Reads /profile/active_group with fallback to /Identity/active_group & SharedPreferences
+        com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).get().addOnSuccessListener { devSnap ->
+            val pSnap = devSnap.child("profile")
+            val idSnap = devSnap.child("Identity")
+            val groupId = pSnap.child("active_group").getValue(String::class.java)
+                ?: idSnap.child("active_group").getValue(String::class.java)
+                ?: context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
             val effectiveGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") groupId else defaultGroup
             activeGroupId = effectiveGroup
             bindLiveRosterSocket(effectiveGroup, context)
         }.addOnFailureListener {
-            activeGroupId = defaultGroup
-            bindLiveRosterSocket(defaultGroup, context)
+            val cachedGroup = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", defaultGroup) ?: defaultGroup
+            activeGroupId = cachedGroup
+            bindLiveRosterSocket(cachedGroup, context)
         }
     }
 
@@ -136,31 +149,26 @@ class FamilyFriendsViewModel : ViewModel() {
                                     resolveRosterIdentities(snapshot, context)
                                     callback(true)
                                 } else {
-                                    // Stage 2: Scan all relationships groups for any circle containing this agent
-                                    db.child(com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS)
+                                    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                                    // Stage 2: Targeted Inverse Index Scan (/users/{id}/joined_circles) avoiding global /relationships scan
+                                    db.child("users").child(finalAgentId).child("joined_circles")
                                         .addListenerForSingleValueEvent(object : ValueEventListener {
-                                            override fun onDataChange(allGroupsSnap: DataSnapshot) {
-                                                var foundGroupSnap: DataSnapshot? = null
-                                                for (grpChild in allGroupsSnap.children) {
-                                                    val devNode = grpChild.child("devices")
-                                                    val memNode = grpChild.child("members")
-                                                    if (devNode.hasChild(finalAgentId) && devNode.childrenCount > 1) {
-                                                        foundGroupSnap = devNode
-                                                    } else if (memNode.hasChild(finalAgentId) && memNode.childrenCount > 1) {
-                                                        foundGroupSnap = memNode
-                                                    }
-                                                    if (foundGroupSnap != null) {
-                                                        val matchedGrpId = grpChild.key
-                                                        if (matchedGrpId != null) {
-                                                            com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).child("profile").child("active_group").setValue(matchedGrpId)
-                                                            context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).edit().putString("active_group", matchedGrpId).apply()
-                                                        }
+                                            override fun onDataChange(circlesSnap: DataSnapshot) {
+                                                var candidateGroup: String? = null
+                                                for (cSnap in circlesSnap.children) {
+                                                    val gId = cSnap.key
+                                                    if (!gId.isNullOrBlank() && gId != "DEFAULT_GROUP") {
+                                                        candidateGroup = gId
                                                         break
                                                     }
                                                 }
 
-                                                if (foundGroupSnap != null) {
-                                                    resolveRosterIdentities(foundGroupSnap, context)
+                                                if (candidateGroup != null) {
+                                                    com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).child("profile").child("active_group").setValue(candidateGroup)
+                                                    com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).child("Identity").child("active_group").setValue(candidateGroup)
+                                                    context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).edit().putString("active_group", candidateGroup).apply()
+                                                    activeGroupId = candidateGroup
+                                                    bindLiveRosterSocket(candidateGroup, context)
                                                     callback(true)
                                                 } else {
                                                     // Stage 3: Scan /devices to discover paired fleet nodes
@@ -200,6 +208,7 @@ class FamilyFriendsViewModel : ViewModel() {
 
     private var signalListener: ValueEventListener? = null
     private var devicesSocketListener: ValueEventListener? = null
+    private val peerLiveListeners = mutableMapOf<String, ValueEventListener>()
 
     private fun bindLiveRosterSocket(groupId: String, context: android.content.Context) {
         if (rosterListener != null) return // Already socketed
@@ -299,6 +308,8 @@ class FamilyFriendsViewModel : ViewModel() {
             val cloudName = profileSnap.child("full_name").getValue(String::class.java)
                 ?: profileSnap.child("display_name").getValue(String::class.java)
                 ?: profileSnap.child("name").getValue(String::class.java)
+                ?: nodeSnap.child("identity").child("name").getValue(String::class.java)
+                ?: nodeSnap.child("identity").child("full_name").getValue(String::class.java)
                 ?: nodeSnap.child("name").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("userName").getValue(String::class.java)
                 
@@ -307,12 +318,14 @@ class FamilyFriendsViewModel : ViewModel() {
                 ?: cloudName?.takeIf { it.isNotEmpty() }
                 ?: "Agent_$canonicalAgentId"
                 
-            val roleTitle = nodeSnap.child("role").getValue(String::class.java)
+            val roleTitle = nodeSnap.child("membership").child("role").getValue(String::class.java)
+                ?: nodeSnap.child("role").getValue(String::class.java)
                 ?: profileSnap.child("role_title").getValue(String::class.java)
                 ?: "Member"
 
             val avatarId = profileSnap.child("avatar_id").getValue(String::class.java)
                 ?: profileSnap.child("equipped_avatar_id").getValue(String::class.java)
+                ?: nodeSnap.child("identity").child("avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("avatar_id").getValue(String::class.java)
                 ?: ssotAvatar.takeIf { it.isNotEmpty() }
@@ -322,13 +335,26 @@ class FamilyFriendsViewModel : ViewModel() {
                 localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName ?: name, avatarId)
             }
 
-            val lastHeartbeat = telemetrySnap?.child("last_heartbeat")?.getValue(Long::class.java)
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Direct Multi-Path Heartbeat Resolution (Unified Cloud Fan-Out)
+            val directHb = nodeSnap.child("last_heartbeat").getValue(Long::class.java)
+                ?: nodeSnap.child("last_seen").getValue(Long::class.java)
+                ?: nodeSnap.child("timestamp").getValue(Long::class.java)
+            val directBattery = nodeSnap.child("battery").getValue(Long::class.java)?.toInt()
+                ?: nodeSnap.child("battery_pct").getValue(Long::class.java)?.toInt()
+                ?: telemetrySnap?.child("battery_pct")?.getValue(Long::class.java)?.toInt()
+                ?: 100
+
+            val lastHeartbeat = directHb
+                ?: telemetrySnap?.child("last_heartbeat")?.getValue(Long::class.java)
                 ?: telemetrySnap?.child("last_seen")?.getValue(Long::class.java)
                 ?: nodeSnap.child("ts_updated")?.getValue(Long::class.java)
                 ?: 0L
 
-            val batteryPct = telemetrySnap?.child("battery_pct")?.getValue(Long::class.java)?.toInt() ?: 100
-            val isSos = telemetrySnap?.child("is_sos")?.getValue(Boolean::class.java) ?: false
+            val batteryPct = directBattery
+            val isSos = telemetrySnap?.child("is_sos")?.getValue(Boolean::class.java)
+                ?: nodeSnap.child("is_sos").getValue(Boolean::class.java)
+                ?: false
             val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastHeartbeat, batteryPct, isSos)
             val isDeviceOnline = rag.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN
             val statusLabel = rag.statusText
@@ -346,6 +372,20 @@ class FamilyFriendsViewModel : ViewModel() {
                 ?: nodeSnap.child("device").child("live").child("current_safe_zone_address").getValue(String::class.java)
             val szId = assignedZone?.get("zone_id")
 
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Role-Aware ACL Default: Family gets 0xFF (Full Protection); Friends get 0x01 (Mutual GPS View Only)
+            val cloudMaskStr = nodeSnap.child("membership").child("permissions_mask").getValue(String::class.java)
+                ?: nodeSnap.child("permissions_mask").getValue(String::class.java)
+            val pMask = try {
+                if (cloudMaskStr != null) {
+                    if (cloudMaskStr.startsWith("0x", true)) cloudMaskStr.substring(2).toInt(16) else cloudMaskStr.toInt()
+                } else {
+                    if (category == "FRIEND") 0x01 else 0xFF
+                }
+            } catch (e: Exception) {
+                if (category == "FRIEND") 0x01 else 0xFF
+            }
+
             resolvedNodes.add(RosterNode(
                 uid = canonicalAgentId,
                 displayName = name,
@@ -360,10 +400,65 @@ class FamilyFriendsViewModel : ViewModel() {
                 lastSeenTimestamp = lastHeartbeat,
                 safeZoneName = szName,
                 safeZoneAddress = szAddr,
-                safeZoneId = szId
+                safeZoneId = szId,
+                permissionsMask = pMask
             ))
 
-            // 🚀 REAL-TIME PROFILE SYNC: Query master device profile node to ensure 100% Avatar parity with Live Map
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Real-Time Live Cursor Sentinel: Binds O(1) live listener directly to peer device live node
+            if (!peerLiveListeners.containsKey(canonicalAgentId)) {
+                val liveQuery = com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(canonicalAgentId).child("device").child("live")
+                val liveListener = object : ValueEventListener {
+                    override fun onDataChange(liveSnap: DataSnapshot) {
+                        if (!liveSnap.exists()) return
+                        var liveTs = liveSnap.child("last_heartbeat").getValue(Long::class.java)
+                            ?: liveSnap.child("timestamp").getValue(Long::class.java)
+                        if (liveTs == null || liveTs == 0L) {
+                            val upAtObj = liveSnap.child("updated_at").getValue()
+                            if (upAtObj is Number) liveTs = upAtObj.toLong()
+                            else if (upAtObj is String) {
+                                val ul = com.jdroidx.jfindme.data.model.UserLocation(timestamp = upAtObj).apply { this.updated_at = upAtObj }
+                                liveTs = ul.getLongTimestamp()
+                            }
+                        }
+                        val liveBattery = liveSnap.child("battery").getValue(Long::class.java)?.toInt() ?: batteryPct
+                        val liveSos = liveSnap.child("isSosActive").getValue(Boolean::class.java)
+                            ?: liveSnap.child("sos").getValue(Boolean::class.java)
+                            ?: false
+                        val liveAvatar = liveSnap.child("avatar_id").getValue(String::class.java)
+                        val liveName = liveSnap.child("userName").getValue(String::class.java)
+                            ?: liveSnap.child("name").getValue(String::class.java)
+
+                        val effectiveTs = liveTs ?: 0L
+                        val ragEval = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(effectiveTs, liveBattery, liveSos)
+
+                        val currentList = _rosterLiveData.value?.toMutableList() ?: return
+                        val idx = currentList.indexOfFirst { it.uid == canonicalAgentId }
+                        if (idx != -1) {
+                            val old = currentList[idx]
+                            val updated = old.copy(
+                                displayName = liveName?.takeIf { it.isNotEmpty() && !it.startsWith("Agent_") } ?: old.displayName,
+                                avatarId = liveAvatar?.takeIf { it.isNotEmpty() } ?: old.avatarId,
+                                batteryPercent = liveBattery,
+                                lastSeenTimestamp = effectiveTs,
+                                isOnline = ragEval.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN,
+                                statusText = ragEval.statusText
+                            )
+                            currentList[idx] = updated
+                            _rosterLiveData.postValue(currentList)
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+                liveQuery.addValueEventListener(liveListener)
+                peerLiveListeners[canonicalAgentId] = liveListener
+            }
+
+            // 🚀 REAL-TIME PROFILE SYNC: High-Performance Cache Check
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // O(1) Scalability Gate: Only execute individual cloud .get() if profile or avatar is missing from the parent group snapshot!
+            val hasCompleteIdentity = !cloudName.isNullOrBlank() && !avatarId.isNullOrBlank() && avatarId != "butterfly" && avatarId != "1"
+            if (!hasCompleteIdentity) {
             com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(canonicalAgentId).get().addOnSuccessListener { devSnap ->
                 if (devSnap.exists()) {
                     val pSnap = devSnap.child("profile")
@@ -400,6 +495,7 @@ class FamilyFriendsViewModel : ViewModel() {
                     }
                 }
             }
+            }
 
             // 🚀 PRIME DIRECTIVE: Backup explicitly verified Firebase Target locally with active group!
             localDb.saveRosterNode(
@@ -435,6 +531,11 @@ class FamilyFriendsViewModel : ViewModel() {
                     is String -> adm == "1" || adm.equals("true", ignoreCase = true)
                     else -> false
                 }
+                val pMaskStr2 = item["permissions_mask"]?.toString() ?: "0xFF"
+                val pMask2 = try {
+                    if (pMaskStr2.startsWith("0x", ignoreCase = true)) pMaskStr2.substring(2).toInt(16)
+                    else pMaskStr2.toInt()
+                } catch (e: Exception) { 0xFF }
 
                 resolvedNodes.add(RosterNode(
                     uid = u1,
@@ -446,7 +547,8 @@ class FamilyFriendsViewModel : ViewModel() {
                     avatarId = item["avatar_id"] as? String,
                     category = classifyCategory(role, isAdmin, isFriend),
                     isOnline = false,
-                    batteryPercent = 100
+                    batteryPercent = 100,
+                    permissionsMask = pMask2
                 ))
             }
         }
@@ -458,16 +560,19 @@ class FamilyFriendsViewModel : ViewModel() {
      * 🚀 Closed-Loop Device Unlink: Removes target from local SQLite ledger and Firebase Group Hub.
      */
     fun unlinkDevice(context: android.content.Context, targetUid: String, callback: ((Boolean) -> Unit)? = null) {
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        localDb.deleteRosterNode(targetUid)
-
         val grpId = activeGroupId ?: context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Group-Scoped Unlink: Purges group_members row for active group while preserving global user_identities
+        localDb.deleteRosterNode(targetUid, grpId)
         if (!grpId.isNullOrEmpty()) {
             val relRef = db.child(com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS).child(grpId)
             relRef.child("devices").child(targetUid).removeValue()
             relRef.child("members").child(targetUid).removeValue()
             relRef.child("citizen_dossiers").child(targetUid).removeValue()
             relRef.child("direct_pairs").child(targetUid).removeValue()
+            db.child("users").child(targetUid).child("joined_circles").child(grpId).removeValue()
+            relRef.child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
         }
 
         // 🧬 V68.0 Clean up direct device relationships sub-nodes
@@ -508,6 +613,10 @@ class FamilyFriendsViewModel : ViewModel() {
                 db.child(com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS).child(it).child("signals").child("refresh_roster").removeEventListener(listener)
             }
         }
+        peerLiveListeners.forEach { (agentId, listener) ->
+            com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(agentId).child("device").child("live").removeEventListener(listener)
+        }
+        peerLiveListeners.clear()
     }
 }
 

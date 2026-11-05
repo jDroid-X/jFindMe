@@ -100,10 +100,10 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     }
 
     private fun auditHardwareSignature(context: Context) {
-        val authUid = FirebaseAuth.getInstance().uid ?: return
-        
-        // 🧬 Hardware Root Anchor: Unified Forensic Audit anchored to local device
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Non-blocking hardware audit: ensures local SQLite analytical record is always synced
         val finalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val authUid = FirebaseAuth.getInstance().uid ?: finalAgentId
         
         viewModelScope.launch(Dispatchers.IO) {
                 val db = DatabaseHelper.getInstance(context)
@@ -134,10 +134,10 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 fullPayload.putAll(hardwareMetadata)
 
                 // TIER 2: Hardware Matrix Alignment (Waterfall Heartbeat)
-                val authUid = FirebaseAuth.getInstance().uid ?: return@launch
                 val hardwareId = fullPayload["uid_2"]?.toString()?.takeIf { it.isNotBlank() } ?: com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
-                
-                FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
+                if (FirebaseAuth.getInstance().uid != null) {
+                    FirebaseComm.syncForensicHeartbeat(authUid, finalAgentId, hardwareId, fullPayload)
+                }
                 db.syncDeviceAnalytical(
                     uid1 = finalAgentId,
                     deviceId = hardwareId,
@@ -177,10 +177,11 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         if (cityVal.isEmpty() || cityVal == "Select City") missingFields.add("City")
         if (pincodeVal.isEmpty()) missingFields.add("Pincode / ZipCode")
 
-        val authUid = FirebaseAuth.getInstance().uid ?: return
-        _isLoading.value = true
-        
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Fallback to local safeUid so offline profile edits save to SQLite and SharedPreferences
         val safeUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val authUid = FirebaseAuth.getInstance().uid ?: safeUid
+        _isLoading.value = true
         if (safeUid.isEmpty()) {
              _isLoading.postValue(false)
              return
@@ -191,7 +192,9 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 val existingTruth = withContext(Dispatchers.IO) { db.getForensicDossierComplete(safeUid) }
                 val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
                 val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
-                val avatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
+                val photoSeq = prefs.getInt("custom_avatar_seq", 1)
+                val customAvatarTag = String.format(java.util.Locale.US, "AV_%s_%02d", safeUid, photoSeq)
+                val avatarId = if (dynIdx == -1) customAvatarTag else "avatar_custom_$dynIdx"
                 val hardwareId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
                 
                 val profilePayload = existingTruth.toMutableMap()
@@ -236,6 +239,13 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     
                     FirebaseComm.logChange(safeUid, FirebaseComm.LOG_ITEM_PROFILE, "PROFILE_SAVE", safeUid, profilePayload)
                     com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.propagateAvatarUpdate(safeUid, avatarId, nameVal)
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                        context,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_PROFILE,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                        safeUid,
+                        profilePayload
+                    )
                 }
                     
                 launch(Dispatchers.Main) {
@@ -328,11 +338,13 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         if (vrmPath != null) editor.putString("equipped_vrm_string", vrmPath)
         editor.apply()
         
-        val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(id)
-        val resolvedAvatarId = if (dynIdx == -1) "avatar_custom_photo" else "avatar_custom_$dynIdx"
-        
-        val authUid = FirebaseAuth.getInstance().uid ?: return
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Non-blocking avatar equip: updates local SharedPreferences and SQLite immediately
         val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+        val photoSeq = prefs.getInt("custom_avatar_seq", 1)
+        val customAvatarTag = String.format(java.util.Locale.US, "AV_%s_%02d", finalId, photoSeq)
+        val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(id)
+        val resolvedAvatarId = if (dynIdx == -1) customAvatarTag else "avatar_custom_$dynIdx"
         val updates = mutableMapOf<String, Any>(
                 "equipped_avatar_id" to id,
                 "avatar_id" to resolvedAvatarId,

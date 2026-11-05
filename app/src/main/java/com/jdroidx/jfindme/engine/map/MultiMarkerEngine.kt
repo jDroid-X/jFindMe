@@ -101,6 +101,7 @@ object MultiMarkerEngine {
 
         // 🚀 WATERFALL PRIORITY SORTING: SOS emergency first, then Newest Timestamp to Oldest
         val db = DatabaseHelper.getInstance(context)
+        val cachedOfflineRoster = db.getOfflineRoster()
         val sortedLocations = locations.filter { loc ->
             val dId = loc.getResolvedUserId()
             !db.isDeviceDeleted(dId)
@@ -132,6 +133,19 @@ object MultiMarkerEngine {
                 if (seenDeviceIds.contains(deviceId)) continue // Reject duplicate Peer node!
                 seenDeviceIds.add(deviceId)
             }
+
+            // 🚀 Spatial Viewport Culling: Exclude distant off-screen nodes (>16km buffer) when managing dense networks
+            val visibleBounds = try { mapCore.projection?.visibleRegion?.latLngBounds } catch (e: Exception) { null }
+            val isFarOffScreen = if (visibleBounds != null && sortedLocations.size > 20 && !isMe && !ul.isSosActive) {
+                val paddedSouth = visibleBounds.southwest.latitude - 0.15
+                val paddedNorth = visibleBounds.northeast.latitude + 0.15
+                val paddedWest = visibleBounds.southwest.longitude - 0.15
+                val paddedEast = visibleBounds.northeast.longitude + 0.15
+                ul.latitude < paddedSouth || ul.latitude > paddedNorth || ul.longitude < paddedWest || ul.longitude > paddedEast
+            } else {
+                false
+            }
+            if (isFarOffScreen) continue
 
             allowedUUIDs.add(deviceId)
             if (candidates.size >= 100) break // Stress limit: 100 concurrent nodes
@@ -165,6 +179,13 @@ object MultiMarkerEngine {
                                    !ssotName.equals("Target Node", true) &&
                                    !ssotName.equals("Active Tracker", true)
 
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Roster Match Resolution: Scoped at device-level for name resolution and ACL permission evaluation
+            val rosterMatch = cachedOfflineRoster.find { 
+                (it["uid_1"]?.toString() == deviceId) || (it["uid"]?.toString() == deviceId) || 
+                (it["uid_2"]?.toString() == deviceId) || (it["connected_id"]?.toString() == deviceId)
+            }
+
             val cleanName = if (isMe) {
                 "You"
             } else if (hasValidSsotName) {
@@ -177,10 +198,6 @@ object MultiMarkerEngine {
                 if (!dossierName.isNullOrBlank() && !dossierName.startsWith("Agent_", ignoreCase = true) && !dossierName.equals("Target Node", true)) {
                     dossierName.trim()
                 } else {
-                    val rosterMatch = db.getOfflineRoster().find { 
-                        (it["uid_1"]?.toString() == deviceId) || (it["uid"]?.toString() == deviceId) || 
-                        (it["uid_2"]?.toString() == deviceId) || (it["connected_id"]?.toString() == deviceId)
-                    }
                     val rName = rosterMatch?.get("fullName")?.toString() ?: rosterMatch?.get("display_name")?.toString()
                     if (!rName.isNullOrBlank() && !rName.startsWith("Agent_", true) && !rName.equals("Target Node", true)) {
                         rName.trim()
@@ -193,6 +210,23 @@ object MultiMarkerEngine {
                         }
                     }
                 }
+            }
+
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Enterprise ACL Gate: Verify Live Tracking permission (0x01). SOS emergencies override privacy locks.
+            val permMaskStr = rosterMatch?.get("permissions_mask")?.toString() ?: "0xFF"
+            val permMask = try {
+                if (permMaskStr.startsWith("0x", ignoreCase = true)) {
+                    permMaskStr.substring(2).toInt(16)
+                } else {
+                    permMaskStr.toInt()
+                }
+            } catch (e: Exception) { 0xFF }
+
+            val isLiveTrackingAllowed = (permMask and 0x01) != 0
+            if (!isMe && !ul.isSosActive && !isLiveTrackingAllowed) {
+                // Tracking is explicitly paused via Person Details ACL for this node
+                continue
             }
 
             val modelIcon = if (!ul.avatar_id.isNullOrBlank()) {
@@ -348,12 +382,18 @@ object MultiMarkerEngine {
                 node.centroidLatLng = trueCentroid
 
                 val angle = baseAngle + (2.0 * PI * idx / count)
-                val offsetX = (centroidX + dispersionRadiusPx * cos(angle)).toInt()
-                val offsetY = (centroidY + dispersionRadiusPx * sin(angle)).toInt()
+                val rawOffsetX = (centroidX + dispersionRadiusPx * cos(angle)).toInt()
+                val rawOffsetY = (centroidY + dispersionRadiusPx * sin(angle)).toInt()
+
+                // 🛡️ Edge Bezel Clamping: Prevent dispersion off-screen when centroid is near bezel
+                val displayMetrics = context.resources.displayMetrics
+                val marginInsetPx = (28f * density).toInt()
+                val clampedX = rawOffsetX.coerceIn(marginInsetPx, displayMetrics.widthPixels - marginInsetPx)
+                val clampedY = rawOffsetY.coerceIn(marginInsetPx, displayMetrics.heightPixels - marginInsetPx)
 
                 if (projection != null) {
                     try {
-                        val dispersedLatLng = projection.fromScreenLocation(Point(offsetX, offsetY))
+                        val dispersedLatLng = projection.fromScreenLocation(Point(clampedX, clampedY))
                         node.dispersedLatLng = dispersedLatLng ?: node.rawLatLng
                     } catch (e: Exception) {
                         node.dispersedLatLng = applyGeoOffsetFallback(trueCentroid, angle, dispersionRadiusPx, density)
@@ -554,7 +594,9 @@ object MultiMarkerEngine {
         }
 
         val speedKmh = (candidate.speedMps * 3.6f).toInt()
-        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|${candidate.isSos}"
+        val batBucket = if (candidate.batteryLevel >= 0) (candidate.batteryLevel / 10) * 10 else -1
+        val spdBucket = if (candidate.speedMps > 1.5f) (candidate.speedMps * 3.6f / 5).toInt() * 5 else 0
+        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|${candidate.isSos}|$batBucket|$spdBucket"
         var customIconConfig = iconCache[deviceId]
         var iconChanged = false
 

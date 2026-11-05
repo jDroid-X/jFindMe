@@ -1,6 +1,7 @@
 package com.jdroidx.jfindme.ui.base;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -36,7 +37,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     protected long currentUiHash;
     protected boolean isLandscape;
     protected boolean isUiRebuilding = false; // 🚀 Lifecycle Guard
-    private boolean isInForeground = false;    // 🚀 Lifecycle Guard: prevents background activity recreation
+    protected boolean isInForeground = false;    // 🚀 Lifecycle Guard: prevents background activity recreation
     private static long lastRecreateTime = 0;
     private static final Handler registryHandler = new Handler(Looper.getMainLooper());
     private Runnable registryCheckRunnable;
@@ -55,9 +56,11 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         super.onCreate(savedInstanceState);
         
         // Initialize Python Analytics Engine
-        new Thread(() -> {
-            try { SpatialProcessor.init(getApplicationContext()); } catch (Exception ignored) {}
-        }).start();
+        if (!SpatialProcessor.isStartedSafe()) {
+            new Thread(() -> {
+                try { SpatialProcessor.init(getApplicationContext()); } catch (Exception ignored) {}
+            }).start();
+        }
         
         View originalRoot = createLayout();
         
@@ -188,6 +191,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         }
         registerNetworkMonitor();
         updateNetworkBorderState();
+        registerMasterDataSyncReceiver();
     }
 
     @Override
@@ -195,6 +199,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         super.onPause();
         isInForeground = false;
         unregisterNetworkMonitor();
+        unregisterMasterDataSyncReceiver();
     }
 
     @Override
@@ -334,6 +339,9 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
 
             try {
                 android.content.Intent hardwareMirror = new android.content.Intent(this, this.getClass());
+                if (getIntent() != null && getIntent().getExtras() != null) { hardwareMirror.putExtras(getIntent().getExtras()); }
+                if (getIntent() != null && getIntent().getAction() != null) { hardwareMirror.setAction(getIntent().getAction()); }
+                if (getIntent() != null && getIntent().getData() != null) { hardwareMirror.setData(getIntent().getData()); }
                 hardwareMirror.addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION);
                 // Mark the new instance so its first onResume() skips the mismatch check
                 hardwareMirror.putExtra(EXTRA_SUPPRESS_RECREATE, true);
@@ -563,6 +571,47 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
                 networkCallback = null;
             }
         } catch (Exception ignored) {}
+    }
+
+    private android.content.BroadcastReceiver masterDataSyncReceiver;
+
+    private void registerMasterDataSyncReceiver() {
+        if (masterDataSyncReceiver == null) {
+            masterDataSyncReceiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (intent != null && "com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED".equals(intent.getAction())) {
+                        String category = intent.getStringExtra("EXTRA_CATEGORY");
+                        String changeType = intent.getStringExtra("EXTRA_CHANGE_TYPE");
+                        String entityId = intent.getStringExtra("EXTRA_ENTITY_ID");
+                        String senderId = intent.getStringExtra("EXTRA_SENDER_ID");
+                        onMasterDataUpdated(category, changeType, entityId, senderId);
+                    }
+                }
+            };
+            android.content.IntentFilter filter = new android.content.IntentFilter("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED");
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(masterDataSyncReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(masterDataSyncReceiver, filter);
+            }
+        }
+    }
+
+    private void unregisterMasterDataSyncReceiver() {
+        if (masterDataSyncReceiver != null) {
+            try {
+                unregisterReceiver(masterDataSyncReceiver);
+            } catch (Exception ignored) {}
+            masterDataSyncReceiver = null;
+        }
+    }
+
+    /**
+     * Open OOPS-based MVC/MVVM hook for Activity controllers to react to master data mutations.
+     */
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        SystemLogger.i("BaseActivityJava", "MasterDataSync notification received: " + category + " [" + changeType + "] -> " + entityId + " from " + senderId);
     }
 
     /**

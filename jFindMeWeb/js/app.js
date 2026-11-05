@@ -55,7 +55,7 @@ class App {
             if (navigator.onLine) {
                 OfflineQueue.syncAll().then(res => {
                     if (res && res.synced > 0 && window.log) {
-                        window.log([OFFLINE_SYNC] Auto-flushed ${res.synced} queued telemetry points., "success");
+                        window.log(`[OFFLINE_SYNC] Auto-flushed ${res.synced} queued telemetry points.`, "success");
                     }
                 }).catch(e => console.warn("[OFFLINE_QUEUE] Initial flush skipped:", e.message));
             }
@@ -68,13 +68,13 @@ class App {
             const syncEl = document.getElementById('sync-indicator');
             if (syncEl) {
                 syncEl.className = 'flex items-center gap-2 text-xs font-bold text-emerald-400 tracking-wider';
-                syncEl.innerHTML = <div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_ACTIVE</span>;
+                syncEl.innerHTML = `<div class="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div><span class="hidden md:inline">SYNC_ACTIVE</span>`;
             }
             if (window.log) window.log("Network connectivity re-established. Draining offline queue...", "success");
             try {
                 const res = await OfflineQueue.syncAll();
                 if (res && res.synced > 0 && window.log) {
-                    window.log([OFFLINE_SYNC] Reconnected: ${res.synced} pending updates synchronized., "success");
+                    window.log(`[OFFLINE_SYNC] Reconnected: ${res.synced} pending updates synchronized.`, "success");
                 }
             } catch (syncErr) {
                 console.warn("[OFFLINE_QUEUE] Reconnect drain failed:", syncErr);
@@ -85,7 +85,7 @@ class App {
             const syncEl = document.getElementById('sync-indicator');
             if (syncEl) {
                 syncEl.className = 'flex items-center gap-2 text-xs font-bold text-rose-500 tracking-wider';
-                syncEl.innerHTML = <div class="w-2 h-2 bg-rose-500 rounded-full"></div><span class="hidden md:inline">OFFLINE</span>;
+                syncEl.innerHTML = `<div class="w-2 h-2 bg-rose-500 rounded-full"></div><span class="hidden md:inline">OFFLINE</span>`;
             }
             if (window.log) window.log("Network dropped. Mutations will be stored in persistent offline queue.", "warning");
         });
@@ -236,8 +236,15 @@ class App {
                     if (dev) this.mapController?.handleDeviceSelected(dev);
                 }, 400);
             },
-            onMergeSuccess: () => {
-                if (window.showDeviceUser) window.showDeviceUser();
+            onMergeSuccess: async (oldId, newId) => {
+                try {
+                    if (this.mapController?.deviceController) {
+                        await this.mapController.deviceController.fetchDevices();
+                    }
+                } catch (e) {
+                    console.warn("[APP] Device refresh after merge caught:", e);
+                }
+                if (window.showDeviceUser) window.showDeviceUser(newId);
             }
         });
 
@@ -309,12 +316,12 @@ class App {
         window.toggleTerminalExpand = () => {
             const term = document.getElementById('terminal');
             if (!term) return;
-            if (term.classList.contains('h-[250px]')) {
-                term.classList.remove('h-[250px]');
-                term.classList.add('h-[450px]');
+            if (term.classList.contains('h-[450px]')) {
+                term.classList.remove('h-[450px]', 'h-[250px]');
+                term.classList.add('h-[200px]');
             } else {
-                term.classList.remove('h-[450px]');
-                term.classList.add('h-[250px]');
+                term.classList.remove('h-[200px]', 'h-[250px]');
+                term.classList.add('h-[450px]');
             }
         };
     }
@@ -542,6 +549,8 @@ class App {
                         this.deviceUserView.updateData(this.cachedDevices, this.cachedSafeZones);
                     } else if (this.currentView === 'geofencing') {
                         this.geofencingView.updateData(this.cachedDevices, this.cachedSafeZones);
+                    } else if (this.currentView === 'eagle' && this.eagleAnalyticsView) {
+                        this.eagleAnalyticsView.updateData(this.cachedDevices, this.cachedSafeZones);
                     }
                 } else if (this.cachedDevices && this.cachedDevices.length > 0) {
                     this.updateSyncUI('SYNCED', this.cachedDevices);

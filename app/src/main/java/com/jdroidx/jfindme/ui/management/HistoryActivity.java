@@ -150,8 +150,9 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         int hPIll = scale(30);
         pillBox.setPadding(hPIll, vPIll, hPIll, vPIll);
         
+        int savedRetention = com.jdroidx.jfindme.utils.RegistryManager.getStorageRetentionDays(this);
         EditText etSeven = new EditText(this);
-        etSeven.setText("7");
+        etSeven.setText(String.valueOf(savedRetention));
         etSeven.setTextColor(getGradientStart());
         etSeven.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, etSeven, "TEXT_LABEL"); // Re-aligned to Gallery Standard
@@ -162,6 +163,21 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         etSeven.setFocusable(true);
         etSeven.setFocusableInTouchMode(true);
         etSeven.setCursorVisible(true);
+        etSeven.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                try {
+                    String str = s.toString().trim();
+                    if (!str.isEmpty()) {
+                        int days = Integer.parseInt(str);
+                        if (days >= 1 && days <= 90) {
+                            com.jdroidx.jfindme.utils.RegistryManager.setStorageRetentionDays(HistoryActivity.this, days);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        });
         pillBox.addView(etSeven);
         
         TextView tvDays = new TextView(this);
@@ -845,13 +861,15 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             currentTargetName = getIntent().getStringExtra("target_name");
         }
         
-        if (currentTargetUid != null && !currentTargetUid.isEmpty()) {
-            loadHistoryData(DURATIONS[0]); 
-            updateTimeTileStyles(0);
-        } else {
-            updateTrackLabel();
-            if (tvStatus != null) tvStatus.setText("READY FOR SYNC • SELECT TARGET");
+        if (currentTargetUid == null || currentTargetUid.isEmpty()) {
+            // 🛡️ Human-In-The-Loop Fallback: Default to Self device when launched directly from main drawer
+            currentTargetUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+            currentTargetName = getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("user_nickname", "My Device");
         }
+
+        loadHistoryData(DURATIONS[0]); 
+        updateTimeTileStyles(0);
+        updateTrackLabel();
 
         // Clean up stale map fragment to support robust landscape/portrait rotation
         SupportMapFragment oldFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
@@ -1175,8 +1193,10 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
                         logs = db.getHistoryLogsFiltered(myUid, 0L);
                     }
                     if (!logs.isEmpty()) {
-                        double lat = (double) logs.get(0).get("lat");
-                        double lng = (double) logs.get(0).get("lng");
+                        Object rawLat = logs.get(0).get("lat");
+                        Object rawLng = logs.get(0).get("lng");
+                        double lat = rawLat instanceof Number ? ((Number) rawLat).doubleValue() : (rawLat != null ? Double.parseDouble(rawLat.toString()) : 0.0);
+                        double lng = rawLng instanceof Number ? ((Number) rawLng).doubleValue() : (rawLng != null ? Double.parseDouble(rawLng.toString()) : 0.0);
                         runOnUiThread(() -> {
                             this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 15f));
                         });

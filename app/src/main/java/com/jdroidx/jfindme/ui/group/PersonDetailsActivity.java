@@ -412,6 +412,16 @@ public class PersonDetailsActivity extends BaseActivityJava {
             });
             formBox.addView(healthBtn, btnLp);
 
+            View historyBtn = createIconButton("⏱️ VIEW LOCATION LOGS", android.R.drawable.ic_menu_recent_history, v -> {
+                Intent historyIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
+                String sendId = (targetAgentId != null && !targetAgentId.isEmpty()) ? targetAgentId : targetUid;
+                String sendName = (etFullName != null && etFullName.getText() != null) ? etFullName.getText().toString() : "Member";
+                historyIntent.putExtra("TARGET_UID", sendId);
+                historyIntent.putExtra("TARGET_NAME", sendName);
+                startActivity(historyIntent);
+            });
+            formBox.addView(historyBtn, btnLp);
+
             View unlinkBtn = createIconButton("❌ UNLINK / DELETE DEVICE", android.R.drawable.ic_menu_delete, v -> {
                 showUnlinkDeviceDialog();
             });
@@ -1277,10 +1287,15 @@ public class PersonDetailsActivity extends BaseActivityJava {
             if (idx == 0) {
                 // Standard Unlink
                 com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                db.deleteRosterNode(targetAgentId);
                 String myGrp = prefs.getString("active_group", null);
+                db.deleteRosterNode(targetAgentId, myGrp);
                 if (myGrp != null) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetAgentId).removeValue();
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetAgentId).removeValue();
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetAgentId).child("joined_circles").child(myGrp).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                 }
                 String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
@@ -1295,15 +1310,17 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     "Enter master security password to force purge '" + peerName + "' (" + targetAgentId + "):",
                     "",
                     inputPass -> {
-                        if (requiredPass.equals(inputPass != null ? inputPass.trim() : "")) {
+                        if (RegistryManager.verifyAndUpgradePurgePhrase(this, inputPass != null ? inputPass.trim() : "")) {
                             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                            db.deleteRosterNode(targetAgentId);
                             String myGrp = prefs.getString("active_group", null);
+                            db.deleteRosterNode(targetAgentId, myGrp);
                             if (myGrp != null) {
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetAgentId).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetAgentId).removeValue();
+                                com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetAgentId).child("joined_circles").child(myGrp).removeValue();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                             }
                             String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();

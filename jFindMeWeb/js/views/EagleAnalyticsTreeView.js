@@ -33,7 +33,15 @@ export class EagleAnalyticsTreeView {
         this.safeZones = Array.isArray(zones) ? zones : [];
     }
 
-    render() {
+    updateData(devices = [], safeZones = []) {
+        this.setDevices(devices);
+        this.setSafeZones(safeZones);
+        this.render();
+    }
+
+    render(devices = null, safeZones = null) {
+        if (devices !== null) this.setDevices(devices);
+        if (safeZones !== null) this.setSafeZones(safeZones);
         const container = document.getElementById(this.containerId) || this.container || document.getElementById('workspace-root');
         if (!container) return;
         this.container = container;

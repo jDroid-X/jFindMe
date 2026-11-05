@@ -228,11 +228,15 @@ function buildHeadingsComparison(oldId, newId, oldNode = {}, newNode = {}, rawHi
  */
 router.get(["/duplicate-devices", "/api/duplicate-devices"], async (req, res) => {
     try {
-        const [devSnap, histSnap, geofenceSnap] = await Promise.all([
+        const [devSnap, histSnap, geofenceSnap, settingsSnap] = await Promise.all([
             queryNodeWithTimeout("devices", 3500),
             queryNodeWithTimeout("History", 3500),
-            queryNodeWithTimeout("Geofencing", 3500)
+            queryNodeWithTimeout("Geofencing", 3500),
+            queryNodeWithTimeout("config/operator/settings", 3500)
         ]);
+
+        const settingsData = (settingsSnap && typeof settingsSnap.val === 'function' && settingsSnap.val()) || {};
+        const recencyLimitMs = Math.max(1, parseInt(settingsData.recencyThresholdMinutes || 15, 10)) * 60 * 1000;
 
         if (!devSnap || typeof devSnap.val !== 'function' || !devSnap.exists()) {
             return res.json({ duplicates: [], totalCount: 0, scannedAt: Date.now() });
@@ -335,7 +339,7 @@ router.get(["/duplicate-devices", "/api/duplicate-devices"], async (req, res) =>
                 avatarUrl: profile.avatar_id ? `/assets/avatars/${profile.avatar_id}.png` : '/assets/avatars/1.png',
                 lastSeenEpoch: epoch,
                 lastSeenFormatted: epoch > 0 ? new Date(epoch).toLocaleString() : 'Never Recorded',
-                isLive: (Date.now() - epoch) < (15 * 60 * 1000),
+                isLive: (Date.now() - epoch) < recencyLimitMs,
                 batteryPct: telemetry.battery_pct ?? 100,
                 location: dev.live ? {
                     lat: dev.live.latitude,
@@ -663,7 +667,7 @@ router.post(["/verify-duplicate-pair", "/api/verify-duplicate-pair"], async (req
                 avatarUrl: profile.avatar_id ? `/assets/avatars/${profile.avatar_id}.png` : '/assets/avatars/1.png',
                 lastSeenEpoch: epoch,
                 lastSeenFormatted: epoch > 0 ? new Date(epoch).toLocaleString() : 'Never Recorded',
-                isLive: (Date.now() - epoch) < (15 * 60 * 1000),
+                isLive: (Date.now() - epoch) < recencyLimitMs,
                 batteryPct: telemetry.battery_pct ?? 100,
                 location: dev.live ? {
                     lat: dev.live.latitude,

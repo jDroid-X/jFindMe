@@ -30,6 +30,7 @@ class ValidationSuite {
         await this.testMobileIntegration();
         await this.testSecurity();
         await this.testDocumentation();
+        await this.testZeroHardcodingSentinel();
 
         this.printSummary();
     }
@@ -277,6 +278,18 @@ class ValidationSuite {
         console.log(`\n  Result: ${passed}/${docs.length} documentation files\n`);
     }
 
+        async testZeroHardcodingSentinel() {
+        console.log('🛡️  TEST 7: Zero-Hardcoding & Program Mapping SSOT Compliance\n');
+        try {
+            const { runLint } = require('./lint_hardcoded_devices.js');
+            runLint();
+            this.results.push({ test: 'Zero hardcoded hardware device IDs (Prime Directive 5)', pass: true });
+            this.results.push({ test: 'Dynamic fleet size & SSOT compliance (Program Mapping)', pass: true });
+        } catch (e) {
+            this.results.push({ test: 'Zero hardcoded hardware device IDs (Prime Directive 5)', pass: false, error: e.message });
+            this.results.push({ test: 'Dynamic fleet size & SSOT compliance (Program Mapping)', pass: false, error: e.message });
+        }
+    }
     async fetchEndpoint(path, method = 'GET', body = null) {
         return new Promise((resolve, reject) => {
             const options = {

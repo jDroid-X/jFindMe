@@ -80,12 +80,14 @@ export class DeviceController {
         const now = Date.now();
 
         switch (windowType) {
-            case 'live':
+            case 'live': {
+                const recencyLimitMs = Math.max(1, parseInt(window.app?.settingsModel?.recencyThresholdMinutes || 15, 10)) * 60 * 1000;
                 return devicesList.filter(d => {
                     if (d.isOnline) return true;
                     const epoch = typeof d.getEpochTimestamp === 'function' ? d.getEpochTimestamp() : 0;
-                    return epoch > 0 && (now - epoch) <= 15 * 60 * 1000;
+                    return epoch > 0 && (now - epoch) <= recencyLimitMs;
                 });
+            }
             case 'today': {
                 const startOfToday = new Date().setHours(0, 0, 0, 0);
                 return devicesList.filter(d => {

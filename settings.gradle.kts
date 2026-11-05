@@ -23,3 +23,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "jFindMe"
 include(":app")
+include(":jButterFly")

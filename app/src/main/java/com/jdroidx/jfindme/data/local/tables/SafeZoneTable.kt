@@ -4,8 +4,11 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 
 /**
- * Tier 4: Event & Tracking Layer
- * 🛡️ safe_zone: Master Safe Zone definitions with Polygon and Dwell support
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: zoneId, name, lat, lng, radius, createdBy, target, alerts, active, archived, polygonPoints, dwellMinutes, radiusMeters, isDwellAlertEnabled, now
+ * Constants: TABLE_NAME = "safe_zone", COL_ZONE_ID, COL_NAME, COL_ZONE_NAME, COL_LAT, COL_LNG, COL_RADIUS, COL_RADIUS_METERS, COL_IS_DWELL_ALERT_ENABLED, COL_CREATED_BY, COL_TARGET_UID, COL_ICON_TYPE, COL_ACTIVE_SCHEDULE_JSON, COL_ASSIGNED_AGENT_ID, COL_IS_ALERTS_ENABLED, COL_IS_ACTIVE, COL_IS_ARCHIVED, COL_POLYGON_POINTS, COL_DWELL_MINUTES, COL_CREATED_ON
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, MapViewModel.kt, GeofenceViewModel.kt
  */
 object SafeZoneTable {
     const val TABLE_NAME = "safe_zone"
@@ -16,8 +19,16 @@ object SafeZoneTable {
     const val COL_LAT = "lat"
     const val COL_LNG = "lng"
     const val COL_RADIUS = "radius"
+
+    // 🛡️ V79 REA Refabrication Columns: Explicit Metric Radius & Dwell Alert Enabler
+    const val COL_RADIUS_METERS = "radius_meters"
+    const val COL_IS_DWELL_ALERT_ENABLED = "is_dwell_alert_enabled"
+
     const val COL_CREATED_BY = "created_by" // 🧬 V65.0: Internal Identity Handle (FK)
-    const val COL_TARGET_UID = "target_uid" // Group/Target link
+    const val COL_TARGET_UID = "target_uid"
+    const val COL_ICON_TYPE = "icon_type"
+    const val COL_ACTIVE_SCHEDULE_JSON = "active_schedule_json"
+    const val COL_ASSIGNED_AGENT_ID = "assigned_agent_id" // Group/Target link
     const val COL_IS_ALERTS_ENABLED = "is_alerts_enabled"
     const val COL_IS_ACTIVE = "is_active"
     const val COL_IS_ARCHIVED = "is_archived"
@@ -32,8 +43,13 @@ object SafeZoneTable {
             $COL_LAT REAL,
             $COL_LNG REAL,
             $COL_RADIUS REAL,
+            $COL_RADIUS_METERS REAL DEFAULT 0.0,
+            $COL_IS_DWELL_ALERT_ENABLED INTEGER DEFAULT 1,
             $COL_CREATED_BY INTEGER,
             $COL_TARGET_UID TEXT,
+            $COL_ICON_TYPE TEXT,
+            $COL_ACTIVE_SCHEDULE_JSON TEXT,
+            $COL_ASSIGNED_AGENT_ID TEXT,
             $COL_IS_ALERTS_ENABLED INTEGER DEFAULT 1,
             $COL_IS_ACTIVE INTEGER DEFAULT 1,
             $COL_IS_ARCHIVED INTEGER DEFAULT 0,
@@ -58,7 +74,8 @@ object SafeZoneTable {
         active: Boolean,
         archived: Boolean = false,
         polygonPoints: String? = null,
-        dwellMinutes: Int = 0
+        dwellMinutes: Int = 0,
+        isDwellAlertEnabled: Boolean = true
     ) {
         val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
         try {
@@ -68,6 +85,8 @@ object SafeZoneTable {
                 put(COL_LAT, lat)
                 put(COL_LNG, lng)
                 put(COL_RADIUS, radius)
+                put(COL_RADIUS_METERS, radius)
+                put(COL_IS_DWELL_ALERT_ENABLED, if (isDwellAlertEnabled) 1 else 0)
                 put(COL_CREATED_BY, createdBy)
                 put(COL_TARGET_UID, target)
                 put(COL_IS_ALERTS_ENABLED, if (alerts) 1 else 0)
@@ -90,6 +109,8 @@ object SafeZoneTable {
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_TARGET_UID TEXT") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_POLYGON_POINTS TEXT") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_DWELL_MINUTES INTEGER DEFAULT 0") } catch (ex: Exception) {}
+            try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_RADIUS_METERS REAL DEFAULT 0.0") } catch (ex: Exception) {}
+            try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_IS_DWELL_ALERT_ENABLED INTEGER DEFAULT 1") } catch (ex: Exception) {}
             try { db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_CREATED_ON TEXT") } catch (ex: Exception) {}
 
             try {
@@ -99,6 +120,8 @@ object SafeZoneTable {
                     put(COL_LAT, lat)
                     put(COL_LNG, lng)
                     put(COL_RADIUS, radius)
+                    put(COL_RADIUS_METERS, radius)
+                    put(COL_IS_DWELL_ALERT_ENABLED, if (isDwellAlertEnabled) 1 else 0)
                     put(COL_CREATED_BY, createdBy)
                     put(COL_TARGET_UID, target)
                     put(COL_IS_ALERTS_ENABLED, if (alerts) 1 else 0)

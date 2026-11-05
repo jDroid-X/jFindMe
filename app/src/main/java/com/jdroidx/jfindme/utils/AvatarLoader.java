@@ -199,7 +199,31 @@ public class AvatarLoader {
             boolean isVrm = avatarIdStr.contains(".vrm");
             if (avatarIdStr.equals("butterfly") || avatarIdStr.equalsIgnoreCase("butterfly_angel") || avatarIdStr.equalsIgnoreCase("AngleButterfly")) {
                 resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
-            } else if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo")) {
+            } else if (avatarIdStr.startsWith("data:image/") || avatarIdStr.length() > 200) {
+                // Direct Base64 data payload
+                try {
+                    String cleanB64 = avatarIdStr.contains(",") ? avatarIdStr.substring(avatarIdStr.indexOf(",") + 1) : avatarIdStr;
+                    byte[] decoded = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT);
+                    Bitmap b64Bmp = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+                    if (b64Bmp != null) {
+                        Bitmap customRes = Bitmap.createScaledBitmap(b64Bmp, doubleSize, doubleSize, true);
+                        bitmapCache.put(cacheKey, customRes);
+                        return customRes;
+                    }
+                } catch (Exception ignored) {}
+            } else if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.startsWith("AV_")) {
+                // If it's a local custom photo and exists on this device
+                File localCustom = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
+                if (localCustom.exists()) {
+                    try {
+                        Bitmap b = BitmapFactory.decodeFile(localCustom.getAbsolutePath());
+                        if (b != null) {
+                            Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
+                            bitmapCache.put(cacheKey, customRes);
+                            return customRes;
+                        }
+                    } catch (Exception ignored) {}
+                }
                 int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             } else if (avatarIdStr.matches("^\\d+$")) {
@@ -282,7 +306,7 @@ public class AvatarLoader {
             if (dynamicIdx > 0) {
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             }
-        } else if (avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.contains(".vrm")) {
+        } else if (avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.contains(".vrm") || avatarIdStr.startsWith("AV_")) {
             int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
             resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
         } else {
@@ -293,6 +317,53 @@ public class AvatarLoader {
             resId = defaultRes;
         }
         targetView.setImageResource(resId != 0 ? resId : android.R.drawable.ic_menu_myplaces);
+    }
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Pre-Composited Map Marker Cache: Generates pre-composited circular avatars with RAG halo rings for 60fps map rendering
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Circular Avatar Resolution: Combines getRemoteAvatarBitmap and createCircularBitmap with caching
+    public static Bitmap getCircularAvatarBitmap(Context context, String avatarIdStr, int targetSize) {
+        if (context == null) return null;
+        String cacheKey = "CIRCULAR_HQ_" + avatarIdStr + "_S_" + targetSize;
+        Bitmap cached = bitmapCache.get(cacheKey);
+        if (cached != null && !cached.isRecycled()) {
+            return cached;
+        }
+        Bitmap raw = getRemoteAvatarBitmap(context, avatarIdStr, targetSize);
+        if (raw == null) return null;
+        Bitmap circular = createCircularBitmap(raw, targetSize);
+        if (circular != null) {
+            bitmapCache.put(cacheKey, circular);
+        }
+        return circular;
+    }
+
+    public static Bitmap getCompositeMarkerBitmap(Context context, String avatarId, int strokeColor, int sizePx) {
+        if (context == null) return null;
+        String cacheKey = "marker_" + avatarId + "_" + strokeColor + "_" + sizePx;
+        Bitmap cached = bitmapCache.get(cacheKey);
+        if (cached != null && !cached.isRecycled()) {
+            return cached;
+        }
+
+        Bitmap base = getCircularAvatarBitmap(context, avatarId, sizePx);
+        if (base == null) return null;
+
+        Bitmap composited = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(composited);
+
+        Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        ringPaint.setStyle(Paint.Style.STROKE);
+        ringPaint.setColor(strokeColor);
+        float strokeWidth = sizePx * 0.08f;
+        ringPaint.setStrokeWidth(strokeWidth);
+
+        canvas.drawBitmap(base, 0, 0, null);
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, (sizePx - strokeWidth) / 2f, ringPaint);
+
+        bitmapCache.put(cacheKey, composited);
+        return composited;
     }
 
     public static void clearCache() {

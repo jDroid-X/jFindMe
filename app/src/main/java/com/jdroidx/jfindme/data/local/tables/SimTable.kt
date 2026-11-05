@@ -5,8 +5,11 @@ import android.database.sqlite.SQLiteDatabase
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
- * Tier 2: Device & Trust Layer
- * 📶 sim: SIM Verification Hub
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: simId, deviceId, serial, operator, mcc, mnc, isActive, servingCid, carrierName, now
+ * Constants: TABLE_NAME = "sim", COL_SIM_ID, COL_DEVICE_ID, COL_SIM_SERIAL, COL_OPERATOR, COL_MCC, COL_MNC, COL_IS_ACTIVE, COL_SERVING_CID, COL_CARRIER_NAME, COL_CREATED_ON, COL_UPDATED_AT
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, HardwareIdentitySentinel.kt, NetworkGatewayActivity.java
  */
 object SimTable {
     const val TABLE_NAME = "sim"
@@ -18,6 +21,11 @@ object SimTable {
     const val COL_MCC = "mcc"
     const val COL_MNC = "mnc"
     const val COL_IS_ACTIVE = "is_active"
+
+    // 🛡️ V79 REA Refabrication Columns: Serving Cell Tower & Carrier Identity
+    const val COL_SERVING_CID = "serving_cid"
+    const val COL_CARRIER_NAME = "carrier_name"
+
     const val COL_CREATED_ON = "created_on"
     const val COL_UPDATED_AT = "updated_at"
 
@@ -30,13 +38,26 @@ object SimTable {
             $COL_MCC TEXT,
             $COL_MNC TEXT,
             $COL_IS_ACTIVE INTEGER DEFAULT 1,
+            $COL_SERVING_CID TEXT DEFAULT '',
+            $COL_CARRIER_NAME TEXT DEFAULT '',
             $COL_CREATED_ON TEXT,
             $COL_UPDATED_AT TEXT,
             FOREIGN KEY ($COL_DEVICE_ID) REFERENCES ${DeviceTable.TABLE_NAME}(${DeviceTable.COL_DEVICE_ID}) ON DELETE CASCADE
         )
     """.trimIndent()
 
-    fun logSim(db: SQLiteDatabase, deviceId: String, serial: String?, operator: String?, mcc: String?, mnc: String?, isActive: Boolean) {
+    @JvmOverloads
+    fun logSim(
+        db: SQLiteDatabase,
+        deviceId: String,
+        serial: String?,
+        operator: String?,
+        mcc: String?,
+        mnc: String?,
+        isActive: Boolean,
+        servingCid: String? = null,
+        carrierName: String? = null
+    ) {
         val now = FirebaseComm.getForensicTimestamp()
         val v = ContentValues().apply {
             put(COL_DEVICE_ID, deviceId)
@@ -45,6 +66,8 @@ object SimTable {
             put(COL_MCC, mcc)
             put(COL_MNC, mnc)
             put(COL_IS_ACTIVE, if(isActive) 1 else 0)
+            if (!servingCid.isNullOrEmpty()) put(COL_SERVING_CID, servingCid)
+            if (!carrierName.isNullOrEmpty()) put(COL_CARRIER_NAME, carrierName)
             put(COL_UPDATED_AT, now)
         }
         val rows = db.update(TABLE_NAME, v, "$COL_SIM_SERIAL = ?", arrayOf(serial))

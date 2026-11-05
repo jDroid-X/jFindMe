@@ -223,11 +223,43 @@ public class AvatarCropActivity extends BaseActivityJava {
                 String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getContext());
                 String nickname = prefs.getString("user_nickname", "Active Tracker");
                 
+                // 🎨 Institutionalized Naming Standard: AV_{DeviceID}_01 (increment for new photo)
+                int currentSeq = prefs.getInt("custom_avatar_seq", 0) + 1;
+                prefs.edit().putInt("custom_avatar_seq", currentSeq).apply();
+                String customAvatarId = String.format(java.util.Locale.US, "AV_%s_%02d", agentId, currentSeq);
+
                 com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getContext())
-                    .updateDeviceIdentityAndAvatar(agentId, nickname, "avatar_custom_photo");
+                    .updateDeviceIdentityAndAvatar(agentId, nickname, customAvatarId);
                 
+                // 🎨 Upload compact Base64 thumbnail to Cloud so peer devices can render the exact photo
+                try {
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    Bitmap thumbBmp = Bitmap.createScaledBitmap(scaledFinal, 180, 180, true);
+                    thumbBmp.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+                    byte[] bBytes = baos.toByteArray();
+                    String base64Avatar = android.util.Base64.encodeToString(bBytes, android.util.Base64.NO_WRAP);
+                    
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("devices")
+                        .child(agentId).child("profile").child("avatar_data").setValue(base64Avatar);
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("devices")
+                        .child(agentId).child("device").child("live").child("avatar_data").setValue(base64Avatar);
+                } catch (Exception eB64) {
+                    com.jdroidx.jfindme.utils.SystemLogger.w("AvatarCrop", "Avatar cloud thumbnail sync skipped: " + eB64.getMessage());
+                }
+
                 com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE
-                    .propagateAvatarUpdate(agentId, "avatar_custom_photo", nickname);
+                    .propagateAvatarUpdate(agentId, customAvatarId, nickname);
+
+                java.util.Map<String, Object> syncPayload = new java.util.HashMap<>();
+                syncPayload.put("avatar_id", customAvatarId);
+                syncPayload.put("name", nickname);
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                    getContext(),
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_PROFILE,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                    agentId,
+                    syncPayload
+                );
 
                 com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
                 

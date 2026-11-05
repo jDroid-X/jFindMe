@@ -420,6 +420,30 @@ export class DeviceUserView {
                                     <span>🏢 Hardware & Identity</span>
                                     <span class="copyable-badge badge-status badge-accent text-[7.5px] px-1.5 py-0.2 select-text font-mono cursor-pointer" data-copy="${selectedDev.agentId}" title="Click to copy Agent ID">${selectedDev.agentId} 📋</span>
                                 </div>
+                                ${(() => {
+                                    const twins = this.devices.filter(d => (d.agentId !== selectedDev.agentId) && ((d.siliconHash && d.siliconHash === selectedDev.siliconHash) || (d.name && selectedDev.name && d.name.toLowerCase() === selectedDev.name.toLowerCase())));
+                                    if (twins.length === 0) return '';
+                                    const allCopies = [selectedDev, ...twins];
+                                    const newestCopy = allCopies.reduce((prev, curr) => (curr.lastSeen > prev.lastSeen ? curr : prev), allCopies[0]);
+                                    const isActive = (selectedDev.agentId === newestCopy.agentId);
+                                    if (isActive) {
+                                        return `
+                                            <div class="p-1 px-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[8.5px] font-mono text-emerald-300 flex items-center justify-between">
+                                                <span>🟢 <strong>CURRENT ACTIVE NODE</strong> (Live GPS)</span>
+                                                <span class="text-[8px] text-muted-theme">Twin Stale: ${twins.map(t => t.agentId).join(', ')}</span>
+                                            </div>
+                                        `;
+                                    } else {
+                                        return `
+                                            <div class="p-1 px-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-[8.5px] font-mono text-amber-300 flex items-center justify-between">
+                                                <span>⚠️ <strong>STALE DUPLICATE NODE</strong></span>
+                                                <button class="du-switch-to-active text-sky-300 underline font-bold cursor-pointer hover:text-sky-200" data-target-id="${newestCopy.agentId}">
+                                                    Switch to Active (${newestCopy.agentId}) ➔
+                                                </button>
+                                            </div>
+                                        `;
+                                    }
+                                })()}
 
                                 <div class="flex items-center gap-2 pb-1.5 border-b border-subtle-theme">
                                     <img src="${selectedDev.getAvatarUrl()}" alt="${selectedDev.name}" class="w-8 h-8 rounded-full object-cover border-2 shadow-sm shrink-0" style="border-color: ${selectedDev.getThemeColor ? selectedDev.getThemeColor() : '#38bdf8'};">
@@ -509,6 +533,37 @@ export class DeviceUserView {
                                             <span class="text-emerald-300 font-mono font-semibold text-[8px] text-right truncate select-text">${selectedDev.simDossier.slot_0.phone} ${selectedDev.simDossier.slot_0.is_guardian_bound ? '(Bound)' : ''}</span>
                                         </div>` : ''}
                                     </div>` : ''}
+
+                                    <!-- [Variables]: oldArchives, oldKeys | [Constants]: None | [Dependencies]: DeviceUserView | [Integration Points]: Old_Device_ID Evolution SSOT -->
+                                    ${(() => {
+                                        const oldArchives = selectedDev.oldDeviceIdArchive || (rawNode && rawNode.Old_Device_ID) || {};
+                                        const oldKeys = Object.keys(oldArchives);
+                                        if (oldKeys.length === 0) return '';
+                                        return `
+                                            <div class="border-t border-amber-500/40 pt-1 mt-1 space-y-1">
+                                                <div class="text-[8.5px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
+                                                    <span class="flex items-center gap-1">📦 Merged Predecessors (Old_Device_ID)</span>
+                                                    <span class="badge-status badge-warning text-[7px] px-1 py-0.2">${oldKeys.length} Archived</span>
+                                                </div>
+                                                <div class="space-y-1">
+                                                    ${oldKeys.map(oldId => {
+                                                        const arch = oldArchives[oldId] || {};
+                                                        const meta = arch._merge_metadata || {};
+                                                        const oldIso = meta.merged_at_iso ? new Date(meta.merged_at_iso).toLocaleString() : '';
+                                                        return `
+                                                            <div class="p-1 px-1.5 rounded bg-amber-500/10 border border-amber-500/30 text-[8px] font-mono flex items-center justify-between">
+                                                                <div>
+                                                                    <span class="text-amber-300 font-bold">ID: ${oldId}</span>
+                                                                    ${oldIso ? `<span class="text-muted-theme text-[7px] block">${oldIso}</span>` : ''}
+                                                                </div>
+                                                                <span class="badge-status badge-success text-[7px] px-1 py-0.2 font-bold">[✔] Preserved</span>
+                                                            </div>
+                                                        `;
+                                                    }).join('')}
+                                                </div>
+                                            </div>
+                                        `;
+                                    })()}
 
                                     <!-- MASTER DATA FOOTER: INSTALLED VERSION & REMOTE OTA PUSH (STRICT DEVICE-DEPENDENT SSOT) -->
                                     <div class="border-t border-subtle-theme pt-1.5 mt-1.5 space-y-1">
@@ -777,7 +832,19 @@ export class DeviceUserView {
             const ragColor = dev.getRagColor();
             const isSel = dev.agentId === this.selectedAgentId;
             const recency = typeof dev.getRecencyTier === 'function' ? dev.getRecencyTier() : { badgeClass: 'badge-status badge-accent', label: 'TELEMETRY' };
-            const primaryDeviceName = dev.deviceName || dev.model || 'Android Device';
+            const primaryDeviceName = (dev.brand && dev.model && dev.model !== 'Device') ? `${dev.brand} ${dev.model}` : (dev.deviceName || dev.model || 'Android Device');
+
+            // Detect Duplicate Twin (same persona name or same silicon hash)
+            const twins = this.devices.filter(d => (d.agentId !== dev.agentId) && ((d.siliconHash && d.siliconHash === dev.siliconHash) || (d.name && dev.name && d.name.toLowerCase() === dev.name.toLowerCase())));
+            let twinBadge = '';
+            if (twins.length > 0) {
+                const allCopies = [dev, ...twins];
+                const newestCopy = allCopies.reduce((prev, curr) => (curr.lastSeen > prev.lastSeen ? curr : prev), allCopies[0]);
+                const isActive = (dev.agentId === newestCopy.agentId);
+                twinBadge = isActive
+                    ? `<span class="badge-status badge-success text-[7px] px-1 py-0.2 font-bold shrink-0">ACTIVE</span>`
+                    : `<span class="badge-status badge-warning text-[7px] px-1 py-0.2 font-bold shrink-0">STALE (DUP)</span>`;
+            }
 
             return `
                 <div class="du-device-item cursor-pointer p-1.5 rounded-lg border ${isSel ? 'border-sky-500 bg-sky-500/10 shadow-sm' : 'border-subtle-theme bg-card-subtle hover:bg-card-hover'} transition-all flex items-center gap-2 select-text"
@@ -790,9 +857,12 @@ export class DeviceUserView {
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center justify-between gap-1">
-                            <h4 class="text-[11.5px] font-bold truncate text-primary-theme min-w-0" title="${dev.name}">
-                                ${dev.name}
-                            </h4>
+                            <div class="flex items-center gap-1 min-w-0">
+                                <h4 class="text-[11.5px] font-bold truncate text-primary-theme min-w-0" title="${dev.name}">
+                                    ${dev.name}
+                                </h4>
+                                ${twinBadge}
+                            </div>
                             <span class="${recency.badgeClass} text-[7.5px] px-1 py-0.2 font-bold shrink-0">${recency.label}</span>
                         </div>
                         <div class="text-[9px] text-secondary-theme truncate font-mono flex items-center justify-between mt-0.5 select-text">
@@ -927,7 +997,7 @@ export class DeviceUserView {
      */
     renderTreeMembers(device, type) {
         const rawNode = device.raw || {};
-        const relsMap = rawNode.relationships || {};
+        const relsMap = device.relationships || rawNode.relationships || {};
         const relEntries = Object.entries(relsMap);
 
         const matchedNodes = relEntries.filter(([k, v]) => {
@@ -1152,12 +1222,12 @@ export class DeviceUserView {
                             <option value="evening" ${this.selectedTimeWindow === 'evening' ? 'selected' : ''}>18-24h</option>
                         </select>
 
-                        <div class="flex items-center gap-1 shrink-0" title="Stationary noise deadband (<15m)">
+                        <div class="flex items-center gap-1 shrink-0" title="Stationary noise deadband">
                             <label class="switch-toggle switch-sm">
                                 <input type="checkbox" id="switch-deadband-filter" ${this.deadbandEnabled ? 'checked' : ''}>
                                 <span class="switch-slider"></span>
                             </label>
-                            <span class="text-[7.5px] font-mono font-bold text-sky-400">15m</span>
+                            <span class="text-[7.5px] font-mono font-bold text-sky-400">${Math.round(window.app?.settingsModel?.deadbandNoiseMeters ?? 15)}m</span>
                         </div>
 
                         <button id="btn-apply-date-filter" class="btn-action-primary text-[8px] py-0.5 px-2 shrink-0">
@@ -1254,7 +1324,8 @@ export class DeviceUserView {
             });
         }
 
-        // Apply Deadband Noise Filter (Suppress stationary points < 15m)
+        // Apply Deadband Noise Filter (Suppress stationary points < deadbandThresholdM)
+        const deadbandThresholdM = Math.max(0, parseFloat(window.app?.settingsModel?.deadbandNoiseMeters ?? 15));
         if (this.deadbandEnabled && points.length > 1) {
             const chron = [...points].sort((a, b) => a.timestamp - b.timestamp);
             const deadbanded = [chron[0]];
@@ -1264,8 +1335,8 @@ export class DeviceUserView {
                 const distM = TelemetryValidator.calculateDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
                 const speedKmh = curr.speed > 50 ? curr.speed : curr.speed * 3.6;
 
-                // Keep point only if user moved > 15m or moving speed > 1.5 km/h, or if it is the latest live point
-                if (distM >= 15 || speedKmh >= 1.5 || curr.isLive) {
+                // Keep point only if user moved > deadbandThresholdM or moving speed > 1.5 km/h, or if it is the latest live point
+                if (distM >= deadbandThresholdM || speedKmh >= 1.5 || curr.isLive) {
                     curr.distDeltaMeters = distM;
                     deadbanded.push(curr);
                 }
@@ -1817,6 +1888,25 @@ export class DeviceUserView {
         });
 
         // 1. Roster Click Handler (With Complete State Isolation)
+        // Switch to Active Twin Device Action
+        document.querySelectorAll('.du-switch-to-active').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetId = btn.getAttribute('data-target-id');
+                if (targetId && targetId !== this.selectedAgentId) {
+                    this.selectedAgentId = targetId;
+                    this.historyBreadcrumbs = [];
+                    this.availableHistoryDates = [];
+                    this.flipperIndex = 0;
+                    this.expandedFixIds.clear();
+                    this.render(this.devices, targetId, this.safeZones);
+                    if (this.streamMode === 'history') {
+                        this.loadHistoricalTelemetry(targetId);
+                    }
+                }
+            });
+        });
+
         document.querySelectorAll('.du-device-item').forEach(el => {
             el.addEventListener('click', (e) => {
                 const agentId = el.getAttribute('data-agent-id');

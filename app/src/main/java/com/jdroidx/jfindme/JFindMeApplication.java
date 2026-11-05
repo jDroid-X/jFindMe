@@ -30,14 +30,19 @@ public class JFindMeApplication extends Application {
             }
         });
 
-        // 🚀 Step 2: Global Enterprise Database Persistence
+        // 🚀 Step 2: Global Enterprise Database Persistence (10MB bounded cache to prevent CursorWindow overflow)
         try {
-            com.google.firebase.database.FirebaseDatabase.getInstance().setPersistenceEnabled(true);
+            com.google.firebase.database.FirebaseDatabase fb = com.google.firebase.database.FirebaseDatabase.getInstance();
+            fb.setPersistenceEnabled(true);
+            fb.setPersistenceCacheSizeBytes(10 * 1024 * 1024L);
         } catch (Exception e) {}
         
         // 🚀 Step 3: Global System Logger Initialization
         SystemLogger.init(this);
         SystemLogger.i("AppLifecycle", "JFindMeApplication onCreate - App Started with Secure Offline Sync");
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Proactive SHA-256 Migration: Ensures master purge safety phrase is cryptographically encrypted
+        com.jdroidx.jfindme.utils.RegistryManager.ensurePurgePhraseEncrypted(this);
         
         // 🚀 Step 4: Synchronous Notification Channel Registration (Pre-requisite for all Services & Alerts)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -68,6 +73,14 @@ public class JFindMeApplication extends Application {
 
         // 🚀 Step 6: Silent Update Check
         com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleCheck(this);
+
+        // 🚀 Step 6.5: Initialize Stealth Alarm Sentinel Engine (AlarmClock RTC Wakeup)
+        try {
+            com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(this, 0L);
+            SystemLogger.i("AppLifecycle", "StealthAlarmSentinelEngine scheduled on application launch.");
+        } catch (Exception e) {
+            SystemLogger.e("AppLifecycle", "Failed to initialize StealthAlarmSentinelEngine", e);
+        }
 
         // 🚀 Step 7: Safe Persistent Tracking Service Auto-Start (Only if permissions are verified)
         try {

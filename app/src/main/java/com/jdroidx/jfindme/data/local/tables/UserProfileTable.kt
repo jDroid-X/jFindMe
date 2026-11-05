@@ -9,8 +9,11 @@ import android.database.sqlite.SQLiteDatabase
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
- * Tier 1: Identity Core
- * 👤 user_profile: Detailed user metadata
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: identityId, name, email, phone, dob, gender, country, state, city, pincode, address, orgName, deptName, avatarId, avatarLocalUri, avatarColorHex, note, nickname, displayName, avatarUrl, masterPinHash, salt
+ * Constants: TABLE_NAME = "user_profile", COL_ID, COL_IDENTITY_ID, COL_NAME, COL_EMAIL, COL_PHONE, COL_DOB, COL_GENDER, COL_COUNTRY, COL_STATE, COL_CITY, COL_PINCODE, COL_ADDRESS, COL_ORG_NAME, COL_DEPT_NAME, COL_AVATAR_ID, COL_AVATAR_LOCAL_URI, COL_AVATAR_COLOR_HEX, COL_NOTE, COL_NICKNAME, COL_DISPLAY_NAME, COL_AVATAR_URL, COL_MASTER_PIN_HASH, COL_SALT, COL_CREATED_ON, COL_UPDATED_AT
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, ProfileViewModel.kt, PersonDetailsViewModel.kt
  */
 object UserProfileTable {
     const val TABLE_NAME = "user_profile"
@@ -30,7 +33,17 @@ object UserProfileTable {
     const val COL_ORG_NAME = "org_name"
     const val COL_DEPT_NAME = "dept_name"
     const val COL_AVATAR_ID = "avatar_id"
+    const val COL_AVATAR_LOCAL_URI = "avatar_local_uri"
+    const val COL_AVATAR_COLOR_HEX = "avatar_color_hex"
     const val COL_NOTE = "note"
+
+    // 🛡️ V79 REA Refabrication Columns: SSOT Cross-Screen Bindings & Parental Pin
+    const val COL_NICKNAME = "nickname"
+    const val COL_DISPLAY_NAME = "display_name"
+    const val COL_AVATAR_URL = "avatar_url"
+    const val COL_MASTER_PIN_HASH = "master_pin_hash"
+    const val COL_SALT = "salt"
+
     const val COL_CREATED_ON = "created_on" // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_UPDATED_AT = "updated_at" // 🧬 Forensic String: YYYYMMDDHHMMSSSS
 
@@ -51,7 +64,14 @@ object UserProfileTable {
             ${COL_ORG_NAME} TEXT,
             ${COL_DEPT_NAME} TEXT,
             ${COL_AVATAR_ID} TEXT,
+            ${COL_AVATAR_LOCAL_URI} TEXT,
+            ${COL_AVATAR_COLOR_HEX} TEXT,
             ${COL_NOTE} TEXT,
+            ${COL_NICKNAME} TEXT,
+            ${COL_DISPLAY_NAME} TEXT,
+            ${COL_AVATAR_URL} TEXT,
+            ${COL_MASTER_PIN_HASH} TEXT,
+            ${COL_SALT} TEXT,
             ${COL_CREATED_ON} TEXT,
             ${COL_UPDATED_AT} TEXT,
             FOREIGN KEY (${COL_IDENTITY_ID}) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
@@ -112,6 +132,27 @@ object UserProfileTable {
             
         if (data.containsKey("avatar_id")) 
             v.put(COL_AVATAR_ID, data["avatar_id"])
+
+        if (data.containsKey("avatar_local_uri"))
+            v.put(COL_AVATAR_LOCAL_URI, data["avatar_local_uri"])
+
+        if (data.containsKey("avatar_color_hex"))
+            v.put(COL_AVATAR_COLOR_HEX, data["avatar_color_hex"])
+
+        if (data.containsKey("avatarUrl") || data.containsKey("avatar_url"))
+            v.put(COL_AVATAR_URL, data["avatarUrl"] ?: data["avatar_url"])
+
+        if (data.containsKey("nickname") || data.containsKey("userNickname"))
+            v.put(COL_NICKNAME, data["nickname"] ?: data["userNickname"])
+
+        if (data.containsKey("displayName") || data.containsKey("display_name"))
+            v.put(COL_DISPLAY_NAME, data["displayName"] ?: data["display_name"])
+
+        if (data.containsKey("masterPinHash") || data.containsKey("master_pin_hash"))
+            v.put(COL_MASTER_PIN_HASH, data["masterPinHash"] ?: data["master_pin_hash"])
+
+        if (data.containsKey("salt"))
+            v.put(COL_SALT, data["salt"])
             
         if (data.containsKey("emergencyNote") || data.containsKey("note")) 
             v.put(COL_NOTE, data["emergencyNote"] ?: data["note"])

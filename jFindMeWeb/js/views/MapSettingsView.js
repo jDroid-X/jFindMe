@@ -224,6 +224,43 @@ export class MapSettingsView {
                                    class="input-theme w-full p-1.5 text-xs font-mono truncate" placeholder="https://...">
                         </div>
                     </div>
+
+                    <!-- SECTION 6: FLEET RECONCILIATION & TELEMETRY THRESHOLDS (DYNAMIC SSOT) -->
+                    <div class="space-y-2.5 surface-theme p-3 rounded-xl border">
+                        <div class="flex items-center justify-between border-b border-subtle-theme pb-1">
+                            <label class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                                <span>⏱️ Fleet Reconciliation & Thresholds</span>
+                            </label>
+                            <span class="badge-status badge-accent text-[8px] font-mono">DYNAMIC VARIABLES</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Live Grace (Mins)</label>
+                                <input type="number" id="setting-recency-threshold" min="1" max="120" value="${settings.recencyThresholdMinutes || 15}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="15">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">Dormant Ceiling (Hours)</label>
+                                <input type="number" id="setting-dormant-threshold" min="1" max="72" value="${settings.dormantThresholdHours || 6}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="6">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-muted-theme uppercase font-mono block mb-1">GPS Deadband (Meters)</label>
+                                <input type="number" id="setting-deadband-noise" min="0" max="100" value="${settings.deadbandNoiseMeters || 15}" 
+                                       class="input-theme w-full p-1.5 text-xs font-mono" placeholder="15">
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between pt-1 border-t border-subtle-theme text-xs">
+                            <div>
+                                <div class="text-[11px] text-primary-theme font-bold">Auto-Center Fleet Centroid</div>
+                                <div class="text-[9.5px] text-muted-theme">Pan and fit map viewport to active device cluster</div>
+                            </div>
+                            <label class="switch-toggle switch-sm" title="Toggle Auto-Center Centroid">
+                                <input type="checkbox" id="setting-autocenter-centroid" ${settings.autoCenterCentroid !== false ? 'checked' : ''}>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Modal Footer -->
@@ -335,6 +372,13 @@ export class MapSettingsView {
             const otaSize = modal.querySelector('#setting-ota-size')?.value?.trim() || settings.targetPackageSizeFormatted || "80.6 MB";
             const otaUrl = modal.querySelector('#setting-ota-url')?.value?.trim() || settings.targetDownloadUrl || "";
 
+            // [Variables]: recencyThresh, dormantThresh, deadbandThresh, autoCenter
+            // [Constants]: None | [Dependencies]: MapSettingsView | [Integration Points]: Dynamic Fleet Reconciliation SSOT
+            const recencyThresh = Math.max(1, parseInt(modal.querySelector('#setting-recency-threshold')?.value, 10) || 15);
+            const dormantThresh = Math.max(1, parseInt(modal.querySelector('#setting-dormant-threshold')?.value, 10) || 6);
+            const deadbandThresh = Math.max(0, parseFloat(modal.querySelector('#setting-deadband-noise')?.value) || 15);
+            const autoCenter = modal.querySelector('#setting-autocenter-centroid')?.checked ?? true;
+
             if (isNaN(lat) || isNaN(lng)) {
                 FeedbackDialog.showToast("Invalid coordinates. Please enter valid Latitude and Longitude.", "error");
                 return;
@@ -354,7 +398,11 @@ export class MapSettingsView {
                 targetVersionCode: otaCode,
                 targetDatabaseSchema: otaSchema,
                 targetPackageSizeFormatted: otaSize,
-                targetDownloadUrl: otaUrl
+                targetDownloadUrl: otaUrl,
+                recencyThresholdMinutes: recencyThresh,
+                dormantThresholdHours: dormantThresh,
+                deadbandNoiseMeters: deadbandThresh,
+                autoCenterCentroid: autoCenter
             });
 
             this.close();

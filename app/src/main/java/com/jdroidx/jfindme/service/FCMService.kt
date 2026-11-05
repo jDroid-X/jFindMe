@@ -154,17 +154,6 @@ class FCMService : FirebaseMessagingService() {
                         )
 
                         FirebaseComm.devicesRef.child(agentId).child("device").child("live").updateChildren(liveMap)
-                        FirebaseComm.historyArchiveRef.child(agentId).child("history").push().setValue(
-                            mapOf(
-                                "latitude" to loc.latitude,
-                                "longitude" to loc.longitude,
-                                "timestamp" to FirebaseComm.getForensicTimestamp(),
-                                "userId" to agentId,
-                                "speed" to loc.speed,
-                                "battery" to -1,
-                                "sos" to false
-                            )
-                        )
                     }
                     if (wakeLock.isHeld) wakeLock.release()
                 }

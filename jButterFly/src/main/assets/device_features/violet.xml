@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<features>
+    <!-- Dummy Feature Map for Xiaomi Violet Hardware Node -->
+    <bool name="is_full_screen_device">true</bool>
+    <bool name="support_round_corner">true</bool>
+</features>

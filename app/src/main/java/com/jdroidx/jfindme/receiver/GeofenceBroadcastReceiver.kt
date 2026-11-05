@@ -76,8 +76,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     // 🛑 ZERO-DUPLICATE DORMANCY STATE LATCH: 
                     // Once an 'IN' or 'OUT' notification is emitted for a given zone, it enters a dormant state.
                     // No further notifications will be emitted until the device transitions to the opposite state.
-                    val stateKey = "GEOFENCE_LATCH_STATE_${rawZoneId}_${myUid}"
-                    val stateTimeKey = "GEOFENCE_LATCH_TIME_${rawZoneId}_${myUid}"
+                    // 🧬 SSOT Latch Key: Bound to permanent hardware Agent ID rather than transient Firebase Auth token
+                    val stateKey = "GEOFENCE_LATCH_STATE_${rawZoneId}_${myAgentId}"
+                    val stateTimeKey = "GEOFENCE_LATCH_TIME_${rawZoneId}_${myAgentId}"
                     val lastState = prefs.getString(stateKey, null)
                     val lastTime = prefs.getLong(stateTimeKey, 0L)
                     val now = System.currentTimeMillis()

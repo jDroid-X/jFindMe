@@ -1,0 +1,49 @@
+# JFINDME ENTERPRISE CHAT REQUEST LOG
+
+* **[2026-08-25 17:46:39 IST / 12:16:39 UTC]**
+  - lets give a fresh start nothing in memmory other than globes rules, agents, skills, workflows and prime directives.
+  - find the bugs and fix from the Frontend, backend, and database points.
+
+* **[2026-08-25 18:16:59 IST / 12:46:59 UTC]**
+  - In todays date what ever changes done for this project
+  - Create, add or Update a text file "Chat Request" for all the chat request sent. save them in path <current project path> with bullets point and datetime stamp. (avoid adding updating the chat starts with "Do you think" or "redo this activity" or duplicate chats).
+  - since the beginning of this project how many implementation plan and tasks has been added. list them and save them in requirement folder with name <imp_plan_##> and <Task_##> next number (##) from the existing one or already have.
+
+* **[2026-08-25 18:22:25 IST / 12:52:25 UTC]**
+  - find the gap and bugs in profile page or screen including sub-page or screen.
+
+* **[2026-08-29 23:40:07 IST / 18:10:07 UTC]**
+  - lests start from the start what are the highlights of this products
+
+* **[2026-08-29 23:41:20 IST / 18:11:20 UTC]**
+  - what is missing in these features. Add them.
+  - find the gaps and bugs fix it
+
+* **[2026-08-29 23:57:23 IST / 18:27:23 UTC]**
+  - for all the changes done till now .... Run AI Agents to Sync, Frontend, Backend, Database Connectivity + other Responsible agentic AIs. find critical bugs, silly mistakes, missing links, dependencies, integrations with do's and don'ts.
+
+* **[2026-08-30 09:45:38 IST / 04:15:38 UTC]**
+  - syn the <C:\Users\jiten\jAnitGravity\jFindMe\apk\GitHub\jbutterfly> to github relevent path and folder
+
+* **[2026-11-04 08:58:18 IST / 03:28:18 UTC]**
+  - Fresh start audit: exhaustive Coordinate Tree (ROOT ⊃ BR ⊃ EL ⊃ FE ⊃ BE ⊃ DB) structured plan for all existing screens one-by-one.
+  - Deep-dive due diligence, reverse engineering analysis (REA), validation of dependencies, integrations, chronological sequence, mindmapview, and graphify links.
+  - Identification and remediation of screen crashes, ANRs, hanging, and state wipes across the entire app.
+  - Generate enterprise RAG critical status report (Pass/Fail test scenarios with conditions, validations, root causes, impacts, and solutions).
+
+
+* **[2026-11-04 09:03:32 IST / 03:33:32 UTC]**
+  - Deep-dive due diligence and redo, validate all activities done and update by fixing bugs in code.
+  - Human-in-the-loop audit: address UX/UI issues, missing links, integrations, dependencies (OOPS MVC/MVVM).
+  - Deep dive for Database, Backend, and Frontend integration across all screens and sub-screens.
+  - Eliminate hardcoded items using dynamic settings/variables with editable/save values grouped by device/relationship.
+  - Reverse engineering to fix critical bugs, silly mistakes, broken code, integrations, and missing dependencies permanently.
+
+* **[2026-11-04 09:04:10 IST / 03:34:10 UTC]**
+  - Deep-dive due diligence and redo, validate all activities done, complete pending tasks, find gaps and bugs due to recent changes.
+  - Reverse engineering to check feedback loop is correctly closed, iterate until all related bugs are fixed.
+
+* **[2026-11-04 10:22:19 IST / 04:52:19 UTC]**
+  - Verify exhaustive coverage of all 32 screens one by one in Coordinate Tree (ROOT ⊃ BR ⊃ EL ⊃ FE ⊃ BE ⊃ DB).
+  - Deep-dive due diligence and redo, validate integrations/dependencies/conditions/validations/chronological sequence.
+  - Reverse engineering feedback loop closure to fix all gaps, bugs, and performance bottlenecks to ensure zero crashing or hanging.

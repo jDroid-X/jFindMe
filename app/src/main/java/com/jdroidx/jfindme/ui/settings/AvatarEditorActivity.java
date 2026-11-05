@@ -691,6 +691,17 @@ public class AvatarEditorActivity extends BaseActivityJava {
                             com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE
                                 .propagateAvatarUpdate(agentId, "avatar_custom_" + baseId, currentNick);
                             
+                            java.util.Map<String, Object> syncPayload = new java.util.HashMap<>();
+                            syncPayload.put("avatar_id", "avatar_custom_" + baseId);
+                            syncPayload.put("name", currentNick);
+                            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                this,
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_PROFILE,
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                                agentId,
+                                syncPayload
+                            );
+                            
                             com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
                             
                             if (profileViewModel != null) {

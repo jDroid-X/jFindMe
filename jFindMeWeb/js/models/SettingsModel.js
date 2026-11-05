@@ -37,6 +37,14 @@ export class SettingsModel {
         this.disableViewportCulling = false; // Show all markers regardless of viewport
         this.adaptivePolling = true; // Automatically adjust poll rate based on activity
 
+        // [Variables]: recencyThresholdMinutes, dormantThresholdHours, deadbandNoiseMeters, autoCenterCentroid
+        // [Constants]: None | [Dependencies]: SettingsModel | [Integration Points]: Dynamic Fleet Reconciliation SSOT
+        this.recencyThresholdMinutes = 15; // Grace window in minutes for live active device status
+        this.dormantThresholdHours = 6; // Ceiling in hours before device transitions to critical inactive
+        this.deadbandNoiseMeters = 15; // Noise threshold in meters for deadband stationary filter
+        this.autoCenterCentroid = true; // Auto-center map viewport on active fleet centroid
+
+
         // Enterprise Target Master Release Settings (Dynamic Operator SSOT)
         this.targetVersionName = "1.0.13";
         this.targetVersionCode = 87;
@@ -80,6 +88,14 @@ export class SettingsModel {
         if (parsed.batterySaverMode != null) this.batterySaverMode = Boolean(parsed.batterySaverMode);
         if (parsed.disableViewportCulling != null) this.disableViewportCulling = Boolean(parsed.disableViewportCulling);
         if (parsed.adaptivePolling != null) this.adaptivePolling = Boolean(parsed.adaptivePolling);
+
+        // [Variables]: recencyThresholdMinutes, dormantThresholdHours, deadbandNoiseMeters, autoCenterCentroid
+        // [Constants]: None | [Dependencies]: SettingsModel | [Integration Points]: Dynamic Fleet Reconciliation SSOT
+        if (parsed.recencyThresholdMinutes != null) this.recencyThresholdMinutes = parseInt(parsed.recencyThresholdMinutes, 10);
+        if (parsed.dormantThresholdHours != null) this.dormantThresholdHours = parseInt(parsed.dormantThresholdHours, 10);
+        if (parsed.deadbandNoiseMeters != null) this.deadbandNoiseMeters = parseFloat(parsed.deadbandNoiseMeters);
+        if (parsed.autoCenterCentroid != null) this.autoCenterCentroid = Boolean(parsed.autoCenterCentroid);
+
 
         // Enterprise Target Master Release Settings
         if (parsed.targetVersionName != null) this.targetVersionName = String(parsed.targetVersionName);
@@ -141,6 +157,12 @@ export class SettingsModel {
             batterySaverMode: this.batterySaverMode,
             disableViewportCulling: this.disableViewportCulling,
             adaptivePolling: this.adaptivePolling,
+            // [Variables]: recencyThresholdMinutes, dormantThresholdHours, deadbandNoiseMeters, autoCenterCentroid
+            // [Constants]: None | [Dependencies]: SettingsModel | [Integration Points]: Dynamic Fleet Reconciliation SSOT
+            recencyThresholdMinutes: this.recencyThresholdMinutes,
+            dormantThresholdHours: this.dormantThresholdHours,
+            deadbandNoiseMeters: this.deadbandNoiseMeters,
+            autoCenterCentroid: this.autoCenterCentroid,
             targetVersionName: this.targetVersionName,
             targetVersionCode: this.targetVersionCode,
             targetPackageSizeFormatted: this.targetPackageSizeFormatted,

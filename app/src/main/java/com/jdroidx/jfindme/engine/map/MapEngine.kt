@@ -10,6 +10,7 @@ import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.jdroidx.jfindme.data.model.UserLocation
+import com.jdroidx.jfindme.utils.SystemLogger
 
 /**
  * MapEngine handles Google Maps rendering, marker clustering, and avatar interpolation.

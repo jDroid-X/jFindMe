@@ -208,15 +208,22 @@ export class DeviceModel {
         this.timestamp = epochInit > 0 ? epochInit : (typeof data.timestamp === 'number' ? data.timestamp : (typeof live.t === 'number' ? live.t : 0));
         const elapsedInit = epochInit > 0 ? (Date.now() - epochInit) : Infinity;
 
-        // Online State Resolution: Active session state or heartbeat within 15 minutes
-        this.isOnline = Boolean(data.isOnline || (raw.st_session_state === "ONLINE") || (telem.session_state === "ONLINE") || (elapsedInit <= 15 * 60 * 1000));
-        this.sessionState = telem.sessionState || data.sessionState || (this.isOnline ? "ONLINE" : "OFFLINE");
+        // [Variables]: recencyLimitMs, dormantLimitMs | [Constants]: None | [Dependencies]: DeviceModel | [Integration Points]: SettingsModel SSOT
+        const recencyLimitMs = DeviceModel.getRecencyThresholdMs();
+        const dormantLimitMs = DeviceModel.getDormantThresholdMs();
+        const dormantHours = Math.max(1, Math.round(dormantLimitMs / 3600000));
+
+        // Online State Resolution: Strictly governed by dynamic recency window and active session
+        const isRecentInit = elapsedInit <= recencyLimitMs;
+        const isExplicitlyOfflineInit = (raw.st_session_state === "OFFLINE") || (rawIdentity.st_session_state === "OFFLINE") || (telem.session_state === "OFFLINE") || (data.sessionState === "OFFLINE");
+        this.isOnline = Boolean(isRecentInit && !isExplicitlyOfflineInit && (data.isOnline !== false));
+        this.sessionState = this.isOnline ? "ONLINE" : (data.sessionState && data.sessionState !== "ONLINE" ? data.sessionState : "OFFLINE");
 
         // RAG Status Mapping from Centralized Rules (Respect Server-Calculated RAG if available)
         if (data.ragStatus) {
             this.ragStatus = data.ragStatus;
             this.ragColor = data.ragColor || (this.ragStatus === "ACTIVE" ? "#22C55E" : (this.ragStatus.includes("WARNING") ? "#F59E0B" : "#EF4444"));
-            this.ragLabel = data.ragLabel || (this.ragStatus === "ACTIVE" ? "ACTIVE (LIVE)" : (this.ragStatus.includes("WARNING") ? "INACTIVE (< 6H)" : "INACTIVE (> 6H)"));
+            this.ragLabel = data.ragLabel || (this.ragStatus === "ACTIVE" ? "ACTIVE (LIVE)" : (this.ragStatus.includes("WARNING") ? `INACTIVE (< ${dormantHours}H)` : `INACTIVE (> ${dormantHours}H)`));
         } else if (this.isSos) {
             this.ragStatus = "EMERGENCY_SOS";
             this.ragColor = "#EF4444";
@@ -229,14 +236,14 @@ export class DeviceModel {
             this.ragStatus = "ACTIVE";
             this.ragColor = "#22C55E";
             this.ragLabel = "ACTIVE (LIVE)";
-        } else if (elapsedInit <= 6 * 3600 * 1000) {
+        } else if (elapsedInit <= dormantLimitMs) {
             this.ragStatus = "INACTIVE_WARNING";
             this.ragColor = "#F59E0B";
-            this.ragLabel = "INACTIVE (< 6H)";
+            this.ragLabel = `INACTIVE (< ${dormantHours}H)`;
         } else {
             this.ragStatus = "INACTIVE_CRITICAL";
             this.ragColor = "#EF4444";
-            this.ragLabel = "INACTIVE (> 6H)";
+            this.ragLabel = `INACTIVE (> ${dormantHours}H)`;
         }
 
         // Avatar Resolution (Including Live Avatar propagation)
@@ -437,16 +444,19 @@ export class DeviceModel {
         const isLowBattery = (typeof this.battery === 'number' && this.battery >= 0 && this.battery <= 20) ||
                              (typeof this.batteryLevel === 'number' && this.batteryLevel >= 0 && this.batteryLevel <= 20);
 
-        if (this.isOnline || elapsedMs <= 15 * 60 * 1000) {
+        const recencyLimitMs = DeviceModel.getRecencyThresholdMs();
+        const dormantLimitMs = DeviceModel.getDormantThresholdMs();
+
+        if (this.isOnline || elapsedMs <= recencyLimitMs) {
             if (isLowBattery) {
                 return "INACTIVE_RECENT"; // Battery <= 20% demotes active to Amber warning
             }
             return "ACTIVE"; // Green
         }
-        if (elapsedMs <= 6 * 60 * 60 * 1000) {
-            return "INACTIVE_RECENT"; // Orange (< 6h)
+        if (elapsedMs <= dormantLimitMs) {
+            return "INACTIVE_RECENT"; // Orange (< dormantLimitMs)
         }
-        return "INACTIVE_OLD"; // Red (> 6h)
+        return "INACTIVE_OLD"; // Red (> dormantLimitMs)
     }
 
     /**
@@ -655,7 +665,7 @@ export class DeviceModel {
         const now = Date.now();
         const elapsedMs = epoch > 0 ? Math.max(0, now - epoch) : Infinity;
 
-        if (this.isOnline || elapsedMs < 60 * 1000) {
+        if (this.isOnline && elapsedMs < 60 * 1000) {
             return {
                 tier: 'LIVE',
                 label: '🟢 LIVE (Now)',
@@ -664,7 +674,7 @@ export class DeviceModel {
                 elapsedMs
             };
         }
-        if (elapsedMs <= 15 * 60 * 1000) {
+        if (elapsedMs <= DeviceModel.getRecencyThresholdMs()) {
             const mins = Math.max(1, Math.floor(elapsedMs / 60000));
             return {
                 tier: 'IDLE',
@@ -732,8 +742,12 @@ export class DeviceModel {
             };
         }
 
-        // 🟢 3. ACTIVE (LIVE) < 15 minutes & Battery > 20%
-        if (elapsedMs <= 15 * 60 * 1000 && (this.battery < 0 || this.battery > 20)) {
+        const recencyLimitMs = DeviceModel.getRecencyThresholdMs();
+        const dormantLimitMs = DeviceModel.getDormantThresholdMs();
+        const dormantHours = Math.max(1, Math.round(dormantLimitMs / 3600000));
+
+        // 🟢 3. ACTIVE (LIVE) < recencyLimitMs & Battery > 20%
+        if (elapsedMs <= recencyLimitMs && (this.battery < 0 || this.battery > 20)) {
             const isMoving = speed > 2;
             return {
                 key: 'live',
@@ -750,10 +764,10 @@ export class DeviceModel {
             };
         }
 
-        // 🟡 4. INACTIVE (< 6H) or Low Battery <= 20%
-        if (elapsedMs <= 6 * 60 * 60 * 1000 || (this.battery >= 0 && this.battery <= 20)) {
-            let label = 'INACTIVE (<6H)';
-            if (this.battery >= 0 && this.battery <= 20 && elapsedMs <= 15 * 60 * 1000) {
+        // 🟡 4. INACTIVE (< dormantLimitMs) or Low Battery <= 20%
+        if (elapsedMs <= dormantLimitMs || (this.battery >= 0 && this.battery <= 20)) {
+            let label = `INACTIVE (<${dormantHours}H)`;
+            if (this.battery >= 0 && this.battery <= 20 && elapsedMs <= recencyLimitMs) {
                 label = `LOW BATT (${this.battery}%)`;
             } else if (elapsedMs <= 60 * 60 * 1000) {
                 const mins = Math.max(1, Math.floor(elapsedMs / 60000));
@@ -766,8 +780,8 @@ export class DeviceModel {
                 key: 'inactive',
                 status: 'INACTIVE_RECENT',
                 label,
-                shortLabel: 'Inact (<6h)',
-                isOnline: elapsedMs <= 15 * 60 * 1000,
+                shortLabel: `Inact (<${dormantHours}h)`,
+                isOnline: elapsedMs <= recencyLimitMs,
                 isMoving: false,
                 color: '#F59E0B',
                 badgeClass: 'badge-status badge-warning',
@@ -791,6 +805,24 @@ export class DeviceModel {
             borderClass: 'border-rose-500 shadow-rose-500/20',
             elapsedMs
         };
+    }
+
+    /**
+     * Dynamic threshold for live active device status (resolved from SettingsModel SSOT)
+     * @returns {number} Threshold in milliseconds
+     */
+    static getRecencyThresholdMs() {
+        const mins = (typeof window !== 'undefined' && window.app?.settingsModel?.recencyThresholdMinutes) || 15;
+        return Math.max(1, parseInt(mins, 10)) * 60 * 1000;
+    }
+
+    /**
+     * Dynamic threshold for dormant / inactive ceiling (resolved from SettingsModel SSOT)
+     * @returns {number} Threshold in milliseconds
+     */
+    static getDormantThresholdMs() {
+        const hrs = (typeof window !== 'undefined' && window.app?.settingsModel?.dormantThresholdHours) || 6;
+        return Math.max(1, parseInt(hrs, 10)) * 60 * 60 * 1000;
     }
 
     /**

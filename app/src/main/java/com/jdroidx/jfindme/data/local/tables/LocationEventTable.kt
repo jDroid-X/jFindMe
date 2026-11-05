@@ -6,9 +6,11 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Tier 4: Event & Tracking Layer (Time-Series)
- * 📍 location_event: Append-only stream of pings
- * V57: Hardened for Day-wise forensic grouping.
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: id, identityId, timestamp, dayKey, lat, lng, speed, battery, sosFlag, geoAddress, accuracy, bearing, altitude, motionState, createdOn
+ * Constants: TABLE_NAME = "location_event", COL_EVENT_ID, COL_ID, COL_IDENTITY_ID, COL_TIMESTAMP, COL_DAY_KEY, COL_LAT, COL_LNG, COL_SPEED, COL_BATTERY, COL_SOS_FLAG, COL_ADDRESS, COL_ACCURACY, COL_BEARING, COL_ALTITUDE, COL_MOTION_STATE, COL_CREATED_ON
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, TrackingService.kt, LocationRepository.kt, HistoryActivity.java
  */
 object LocationEventTable {
     const val TABLE_NAME = "location_event"
@@ -24,6 +26,13 @@ object LocationEventTable {
     const val COL_BATTERY = "battery"
     const val COL_SOS_FLAG = "sos_flag"
     const val COL_ADDRESS = "geo_address"
+
+    // 🛡️ V79 REA Refabrication Columns: Enhanced GIS Spatial Geometry & Motion
+    const val COL_ACCURACY = "accuracy"
+    const val COL_BEARING = "bearing"
+    const val COL_ALTITUDE = "altitude"
+    const val COL_MOTION_STATE = "motion_state"
+
     const val COL_CREATED_ON = "created_on"
 
     val CREATE_TABLE = """
@@ -38,12 +47,31 @@ object LocationEventTable {
             $COL_BATTERY INTEGER,
             $COL_SOS_FLAG INTEGER DEFAULT 0,
             $COL_ADDRESS TEXT,
+            $COL_ACCURACY REAL DEFAULT 0.0,
+            $COL_BEARING REAL DEFAULT 0.0,
+            $COL_ALTITUDE REAL DEFAULT 0.0,
+            $COL_MOTION_STATE TEXT DEFAULT 'UNKNOWN',
             $COL_CREATED_ON TEXT,
             FOREIGN KEY ($COL_IDENTITY_ID) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
         )
     """.trimIndent()
 
-    fun logLocation(db: SQLiteDatabase, identityId: Long, lat: Double, lng: Double, speed: Float, battery: Int, sos: Boolean, ts: String? = null, addr: String? = null) {
+    @JvmOverloads
+    fun logLocation(
+        db: SQLiteDatabase,
+        identityId: Long,
+        lat: Double,
+        lng: Double,
+        speed: Float,
+        battery: Int,
+        sos: Boolean,
+        ts: String? = null,
+        addr: String? = null,
+        accuracy: Float = 0f,
+        bearing: Float = 0f,
+        altitude: Double = 0.0,
+        motionState: String? = null
+    ) {
         val now = ts ?: com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
         
         // Extract yyyyMMdd from the forensic string for grouping
@@ -71,6 +99,10 @@ object LocationEventTable {
             put(COL_BATTERY, battery)
             put(COL_SOS_FLAG, if(sos) 1 else 0)
             put(COL_ADDRESS, addr)
+            put(COL_ACCURACY, accuracy)
+            put(COL_BEARING, bearing)
+            put(COL_ALTITUDE, altitude)
+            if (!motionState.isNullOrEmpty()) put(COL_MOTION_STATE, motionState)
             put(COL_CREATED_ON, now)
         }
         try {

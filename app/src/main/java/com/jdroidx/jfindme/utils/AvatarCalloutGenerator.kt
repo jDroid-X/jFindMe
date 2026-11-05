@@ -252,8 +252,12 @@ object AvatarCalloutGenerator {
         }
         canvas.drawCircle(dotCx, dotCy, dotRadius, dotFillPaint)
 
-        // 4. Render Directional Heading Chevron when in motion (>0.8 m/s)
-        if (speedMps > 0.8f) {
+        // 4. Directional Heading Chevron: Removed per UX mandate (arrow above avatar eliminated)
+        val hideAzimuth = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            .getBoolean("filter_hide_azimuth", true)
+        val showChevronPref = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            .getBoolean("show_heading_chevron", false)
+        if (!hideAzimuth && showChevronPref && speedMps > 1.2f) {
             arrowPaint.color = roleColor
             val rad = Math.toRadians((bearing - 90.0))
             val arrowDist = halfAv + (6f * density)

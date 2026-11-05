@@ -1,116 +1,79 @@
 {
   "rules": {
-    ".read": false,
-    ".write": false,
+    ".read": "auth != null",
+    ".write": "auth != null",
+    "devices": {
+      ".indexOn": ["Identity/auth_uid"],
+      "$agentId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "device": {
+          "live": {
+            ".validate": "newData.hasChildren(['updated_at']) || newData.hasChildren(['t']) || newData.hasChildren(['latitude'])"
+          }
+        },
+        "Identity": {
+          "lineage": {
+            ".validate": "newData.hasChildren(['path', 'root_id']) || true"
+          }
+        }
+      }
+    },
+    "History": {
+      "$agentId": {
+        "history": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".indexOn": [".key", "timestamp", "t"]
+        }
+      }
+    },
+    "History_Archive": {
+      "$agentId": {
+        "history": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".indexOn": [".key", "timestamp", "t"]
+        }
+      }
+    },
+    "Geofencing": {
+      "$creatorId": {
+        "safe_zones": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
     "lookup_indices": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "auth_to_device": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "hw_mapping": {
       ".read": "auth != null",
       ".write": "auth != null"
     },
     "pairing_requests": {
       ".read": "auth != null",
       ".write": "auth != null",
-      ".indexOn": ["invite_code", "hostDeviceId", "targetDeviceId", "status", "childDeviceId"]
+      ".indexOn": ["parentDeviceId", "invite_code", "pairCode", "creator_device_id", "status"]
     },
-    "devices": {
-      ".indexOn": ["Identity/auth_uid", "profile/active_group"],
-      "$agentId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
-        "Identity": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "profile": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "telemetry": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "device": {
-          "live": {
-            ".read": "auth != null",
-            ".write": "auth != null"
-          },
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "history": {
-          ".read": "auth != null",
-          ".write": "auth != null",
-          ".indexOn": [".key", "timestamp"]
-        },
-        "relationships": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "alerts": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "safe_zones": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "Access": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        "Change_Log": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        }
-      }
+    "relationships": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     },
-    "History": {
-      "$agentId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
-        ".indexOn": [".key", "timestamp"]
-      }
-    },
-    "Geofencing": {
+    "locations": {
       ".read": "auth != null",
       ".write": "auth != null",
-      "$creatorDeviceId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
-        "safe_zones": {
-          ".indexOn": ["zone_id", "is_active", "updated_at"]
-        }
-      }
-    },
-    "safe_zones": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "geofences": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "system_audit": {
-      ".read": "auth != null",
-      ".write": "auth != null"
-    },
-    "system_settings": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".indexOn": ["geohash", "timestamp"]
     },
     "Version_Update": {
       ".read": "auth != null",
       ".write": "auth != null"
-    },
-    "relationships": {
-      "$groupId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-    "groups": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["invite_code"]
     }
   }
 }

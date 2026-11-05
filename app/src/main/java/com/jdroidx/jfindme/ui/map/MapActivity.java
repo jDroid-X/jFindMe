@@ -80,6 +80,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private MarkerClusterer markerClusterer;
     private FusedLocationProviderClient fusedLocationClient;
     private DrawerLayout drawerLayout;
+    private androidx.activity.OnBackPressedCallback backPressedCallback;
+    private double restoredCamLat = 0.0;
+    private double restoredCamLng = 0.0;
+    private float restoredCamZoom = 0f;
+    private float restoredCamTilt = 0f;
+    private float restoredCamBearing = 0f;
     
     private Marker userAvatar;
     private Circle interactionRadius;
@@ -102,7 +108,22 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private boolean isMapExpanded = true; // 🚀 Default Full-Screen Tactical Map Mode
     private static final int ID_MAP_CONTAINER = com.jdroidx.jfindme.R.id.map_container;
     private static final int LOCATION_PERMISSION_CODE = 101;
+    @Deprecated
     private static final int RADIUS_METERS = 100;
+
+    // 🛰️ Remote Locate State Machine Tracking (Human-in-the-Loop Closed-Loop)
+    private String activeLocateTargetUid = null;
+    private String activeLocateTargetName = null;
+    private long initialTargetTs = 0L;
+    private final android.os.Handler locateStateMachineHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable locateStage2Runnable = null;
+    private Runnable locateStage3Runnable = null;
+    private Runnable locateTimeoutRunnable = null;
+    // 🛰️ Delayed GPS Fix Tracking (Post-Timeout Window)
+    private String lastTimedOutTargetUid = null;
+    private String lastTimedOutTargetName = null;
+    private long lastTimedOutInitialTs = 0L;
+    private long lastTimedOutEpoch = 0L;
     private final String TAG = "MapActivity_Enterprise";
 
     private kotlin.jvm.functions.Function2<String, java.util.Map<String, Object>, kotlin.Unit> closedLoopAvatarCallback;
@@ -174,6 +195,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (isFinishing()) {
+            clearLocateStateMachine();
+        }
         com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
         if (closedLoopAvatarCallback != null) {
             com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.unregisterClosedLoopCallback(closedLoopAvatarCallback);
@@ -200,6 +224,29 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         extractIntentTarget(intent);
         if (selectedUserId != null && googleMap != null) {
             locateTargetWithHistoryFallback(selectedUserId);
+        }
+    }
+
+    @Override
+    protected void onSaveCurrentState(Bundle outState) {
+        super.onSaveCurrentState(outState);
+        if (googleMap != null) {
+            try {
+                com.google.android.gms.maps.model.CameraPosition pos = googleMap.getCameraPosition();
+                outState.putDouble("saved_cam_lat", pos.target.latitude);
+                outState.putDouble("saved_cam_lng", pos.target.longitude);
+                outState.putFloat("saved_cam_zoom", pos.zoom);
+                outState.putFloat("saved_cam_tilt", pos.tilt);
+                outState.putFloat("saved_cam_bearing", pos.bearing);
+            } catch (Exception ignored) {}
+        }
+        if (selectedUserId != null) {
+            outState.putString("saved_selected_user_id", selectedUserId);
+        }
+        if (activeLocateTargetUid != null) {
+            outState.putString("saved_active_locate_uid", activeLocateTargetUid);
+            outState.putString("saved_active_locate_name", activeLocateTargetName);
+            outState.putLong("saved_active_locate_initial_ts", initialTargetTs);
         }
     }
 
@@ -391,9 +438,29 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     protected void onUiRebuilt(android.os.Bundle savedState) {
         SystemLogger.i(TAG, "L7 Lifecycle: Map Dashboard Re-Synchronizing after Rotation.");
         
-        // 1. Re-Target and Re-Sync Map Fragment
+        if (savedState != null) {
+            restoredCamLat = savedState.getDouble("saved_cam_lat", 0.0);
+            restoredCamLng = savedState.getDouble("saved_cam_lng", 0.0);
+            restoredCamZoom = savedState.getFloat("saved_cam_zoom", 0f);
+            restoredCamTilt = savedState.getFloat("saved_cam_tilt", 0f);
+            restoredCamBearing = savedState.getFloat("saved_cam_bearing", 0f);
+            String selId = savedState.getString("saved_selected_user_id", null);
+            if (selId != null) selectedUserId = selId;
+        }
+            String restoredLocateUid = savedState.getString("saved_active_locate_uid", null);
+            if (restoredLocateUid != null) {
+                activeLocateTargetUid = restoredLocateUid;
+                activeLocateTargetName = savedState.getString("saved_active_locate_name", null);
+                initialTargetTs = savedState.getLong("saved_active_locate_initial_ts", 0L);
+                if (tvAddressMarquee != null && activeLocateTargetName != null) {
+                    tvAddressMarquee.setText("🛰️ [LOCATE: PING SENT] Awaiting remote GNSS handshake from " + activeLocateTargetName + "... ");
+                    tvAddressMarquee.setSelected(true);
+                }
+            }
+
+        // 1. Re-Target and Re-Sync Map Fragment only if uninitialized
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(com.jdroidx.jfindme.R.id.map_container);
-        if (mapFragment != null) {
+        if (mapFragment != null && googleMap == null) {
             mapFragment.getMapAsync(this);
         }
 
@@ -818,14 +885,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             }
 
             float spd = u.getSpeed();
-            String motionBadge = "⏱️ Resting";
-            if (spd > 25f) {
-                motionBadge = "🚗 " + Math.round(spd) + " km/h";
-            } else if (spd > 7f) {
-                motionBadge = "🏃 " + Math.round(spd) + " km/h";
-            } else if (spd > 1.5f) {
-                motionBadge = "🚶 Walking";
-            }
+            String motionBadge = com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.getMotionBadge(spd);
 
             com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
                 com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(u.getLongTimestamp(), u.getBatteryLevel(), u.isSosActive());
@@ -885,12 +945,14 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         String role = !target.getRole_family().equals("None") ? target.getRole_family() : target.getRole_friend();
         String roleTag = (!role.equals("None") && !role.isEmpty()) ? " [" + role + "]" : "";
 
+        final int sirenDuration = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
+
         UiArchitect.OptionItem[] targetActions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("📍 Find Current Location (Center & Track Live)", "Lock camera directly on target's live coordinate stream", android.R.drawable.ic_menu_mylocation),
             new UiArchitect.OptionItem("🧭 Turn-by-Turn Navigation", "Launch Google Maps directions to target", android.R.drawable.ic_dialog_map),
             new UiArchitect.OptionItem("⏱️ View Location History", "Inspect chronological path timeline and telemetry logs", com.jdroidx.jfindme.R.drawable.ic_location_history),
             new UiArchitect.OptionItem("🛡️ Assign / Create Safe Zone", "Configure geofence boundary perimeter for this member", com.jdroidx.jfindme.R.drawable.ic_safe_zone),
-            new UiArchitect.OptionItem("🔊 Ring Device (Acoustic Siren)", "Trigger high-volume emergency siren (30s) on target device", android.R.drawable.ic_lock_idle_alarm),
+            new UiArchitect.OptionItem("🔊 Ring Device (Acoustic Siren)", "Trigger high-volume emergency siren (" + sirenDuration + "s) on target device", android.R.drawable.ic_lock_idle_alarm),
             new UiArchitect.OptionItem("👤 View Member Details & Roles", "Open dossier, ACL permissions, and contact details", com.jdroidx.jfindme.R.drawable.ic_user_profile),
             new UiArchitect.OptionItem("📋 Copy GPS Coordinates", "Copy exact latitude and longitude to clipboard", android.R.drawable.ic_menu_save),
             new UiArchitect.OptionItem("❌ Unlink / Remove Device", "Uncouple this device from your active tracking network", android.R.drawable.ic_menu_delete)
@@ -899,37 +961,43 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         UiArchitect.showRichOptionsDialog(this, "🎯 TARGET: " + finalTargetName.toUpperCase() + roleTag, targetActions, (actIdx, actLabel) -> {
             switch (actIdx) {
                 case 0: // Find Current Location (Center & Track Live + Remote GPS Wakeup)
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteLocateDevice(targetUid);
-                    LatLng finalPos = new LatLng(target.getLatitude(), target.getLongitude());
-                    if (googleMap != null) {
-                        googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(finalPos, 17f));
-                    }
-                    updateAddressMarquee(target);
-                    UiArchitect.showSlideNotificationBanner(this, "🛰️ GPS Locate Ping Sent", "Sent high-accuracy location request to " + finalTargetName + ". Awaiting fresh fix...", false, 3500, null, null);
+                    initiateRemoteLocateStateMachine(target, finalTargetName);
                     break;
                 case 1: // Navigate
-                    navigateToTarget(target.getLatitude(), target.getLongitude(), target.getUserName());
+                    navigateToTarget(target.getLatitude(), target.getLongitude(), finalTargetName);
                     break;
                 case 2: // History
                     Intent hIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
                     hIntent.putExtra("target_uid", targetUid);
+                    hIntent.putExtra("TARGET_UID", targetUid);
+                    hIntent.putExtra("target_name", finalTargetName);
+                    hIntent.putExtra("TARGET_NAME", finalTargetName);
                     startActivity(hIntent);
                     break;
                 case 3: // Safe Zone
                     Intent zIntent = new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
                     zIntent.putExtra("target_uid", targetUid);
+                    zIntent.putExtra("TARGET_UID", targetUid);
+                    zIntent.putExtra("target_name", finalTargetName);
+                    zIntent.putExtra("TARGET_NAME", finalTargetName);
                     zIntent.putExtra("TARGET_LAT", target.getLatitude());
                     zIntent.putExtra("TARGET_LNG", target.getLongitude());
-                    zIntent.putExtra("TARGET_NAME", target.getUserName());
                     startActivity(zIntent);
                     break;
                 case 4: // Acoustic Ring Siren
                     sendAcousticPing(targetUid, finalTargetName);
-                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", "30-second emergency siren sent to " + finalTargetName + ".", false, 4000, null, null);
+                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", sirenDuration + "-second emergency siren sent to " + finalTargetName + ".", false, 4000, null, null);
                     break;
                 case 5: // Person Details
                     Intent pIntent = new Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
                     pIntent.putExtra("TARGET_UID", targetUid);
+                    pIntent.putExtra("target_uid", targetUid);
+                    pIntent.putExtra("TARGET_NAME", finalTargetName);
+                    pIntent.putExtra("target_name", finalTargetName);
+                    pIntent.putExtra("TARGET_ROLE_FAMILY", target.getRole_family());
+                    pIntent.putExtra("TARGET_ROLE_FRIEND", target.getRole_friend());
+                    pIntent.putExtra("TARGET_ROLE", role);
+                    pIntent.putExtra("target_role", role);
                     startActivity(pIntent);
                     break;
                 case 6: // Copy Coordinates
@@ -945,6 +1013,90 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
     }
 
+    private void clearLocateStateMachine() {
+        if (locateStage2Runnable != null) {
+            locateStateMachineHandler.removeCallbacks(locateStage2Runnable);
+            locateStage2Runnable = null;
+        }
+        if (locateStage3Runnable != null) {
+            locateStateMachineHandler.removeCallbacks(locateStage3Runnable);
+            locateStage3Runnable = null;
+        }
+        if (locateTimeoutRunnable != null) {
+            locateStateMachineHandler.removeCallbacks(locateTimeoutRunnable);
+            locateTimeoutRunnable = null;
+        }
+        activeLocateTargetUid = null;
+        activeLocateTargetName = null;
+        initialTargetTs = 0L;
+    }
+
+    private void initiateRemoteLocateStateMachine(UserLocation target, String targetName) {
+        if (target == null) return;
+        clearLocateStateMachine();
+
+        final String targetUid = target.getResolvedUserId();
+        activeLocateTargetUid = targetUid;
+        activeLocateTargetName = targetName;
+        initialTargetTs = target.getLongTimestamp();
+
+        // 1. Dispatch remote wakeup command
+        com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteLocateDevice(targetUid);
+
+        // 2. Animate camera to last known fix
+        if (googleMap != null && (target.getLatitude() != 0.0 || target.getLongitude() != 0.0)) {
+            LatLng pos = new LatLng(target.getLatitude(), target.getLongitude());
+            googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(pos, 17f));
+        }
+
+        // Stage 1: DISPATCHED
+        if (tvAddressMarquee != null) {
+            tvAddressMarquee.setText("🛰️ [LOCATE: DISPATCHED] Wakeup ping sent to " + targetName + "... (Handshake Pending)");
+            tvAddressMarquee.setSelected(true);
+        }
+        UiArchitect.showSlideNotificationBanner(this, "🛰️ Locate Dispatched", "High-accuracy GNSS request transmitted to " + targetName + ".", false, 2500, null, null);
+
+        // Stage 2: PING_SENT (after 1800ms)
+        locateStage2Runnable = () -> {
+            if (activeLocateTargetUid != null && activeLocateTargetUid.equals(targetUid)) {
+                if (tvAddressMarquee != null) {
+                    tvAddressMarquee.setText("🛰️ [LOCATE: PING SENT] Awaiting remote GNSS handshake from " + targetName + "... ");
+                    tvAddressMarquee.setSelected(true);
+                }
+            }
+        };
+        locateStateMachineHandler.postDelayed(locateStage2Runnable, 1800);
+
+        // Stage 3: REMOTE_GPS_WAKING (after 4500ms)
+        locateStage3Runnable = () -> {
+            if (activeLocateTargetUid != null && activeLocateTargetUid.equals(targetUid)) {
+                if (tvAddressMarquee != null) {
+                    tvAddressMarquee.setText("🛰️ [LOCATE: REMOTE GPS WAKING] Satellite acquisition in progress for " + targetName + "... ");
+                    tvAddressMarquee.setSelected(true);
+                }
+            }
+        };
+        locateStateMachineHandler.postDelayed(locateStage3Runnable, 4500);
+
+        // Stage 4: REQUEST_TIMED_OUT (dynamic timeout from RegistryManager)
+        long timeoutMs = com.jdroidx.jfindme.utils.RegistryManager.getRemoteLocateTimeoutMs(this);
+        locateTimeoutRunnable = () -> {
+            if (activeLocateTargetUid != null && activeLocateTargetUid.equals(targetUid)) {
+                if (tvAddressMarquee != null) {
+                    tvAddressMarquee.setText("⚠️ [LOCATE TIMEOUT] " + targetName + " did not respond within " + (timeoutMs / 1000) + "s. Showing cached position.");
+                    tvAddressMarquee.setSelected(true);
+                }
+                UiArchitect.showSlideNotificationBanner(this, "🛰️ Locate Timeout", targetName + " did not respond within " + (timeoutMs / 1000) + "s. Showing cached telemetry.", true, 4000, null, null);
+                lastTimedOutTargetUid = targetUid;
+                lastTimedOutTargetName = targetName;
+                lastTimedOutInitialTs = initialTargetTs;
+                lastTimedOutEpoch = System.currentTimeMillis();
+                clearLocateStateMachine();
+            }
+        };
+        locateStateMachineHandler.postDelayed(locateTimeoutRunnable, timeoutMs);
+    }
+
     private void showUnlinkDeviceDialog(String targetUid, String targetName) {
         String safetyPhrase = RegistryManager.getPurgeSafetyPhrase(this);
         UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
@@ -956,13 +1108,15 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (idx == 0) {
                 // Standard Unlink
                 com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                db.deleteRosterNode(targetUid);
                 String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+                db.deleteRosterNode(targetUid, myGrp);
                 if (myGrp != null) {
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetUid).removeValue();
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetUid).removeValue();
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetUid).removeValue();
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetUid).removeValue();
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetUid).child("joined_circles").child(myGrp).removeValue();
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                 }
                 String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetUid).removeValue();
@@ -975,16 +1129,17 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     "Enter master security password to force purge '" + targetName + "' (" + targetUid + "):",
                     "",
                     inputPass -> {
-                        String currentPhrase = RegistryManager.getPurgeSafetyPhrase(this);
-                        if (currentPhrase.equals(inputPass != null ? inputPass.trim() : "")) {
+                        if (RegistryManager.verifyAndUpgradePurgePhrase(this, inputPass != null ? inputPass.trim() : "")) {
                             com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                            db.deleteRosterNode(targetUid);
                             String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+                            db.deleteRosterNode(targetUid, myGrp);
                             if (myGrp != null) {
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetUid).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetUid).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetUid).removeValue();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetUid).removeValue();
+                                com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetUid).child("joined_circles").child(myGrp).removeValue();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
                             }
                             String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                             com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetUid).removeValue();
@@ -1132,6 +1287,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     private void processMarqueeAddress(java.util.List<android.location.Address> addresses, double lat, double lng, String targetName, String timeStr, float speedMps, int batteryLevel, boolean isSos, String role) {
         if (tvAddressMarquee == null) return;
+        if (activeLocateTargetUid != null) return; // 🛡️ Prevent background geocoder from overwriting active locate state machine
         String addressStr;
         if (addresses != null && !addresses.isEmpty()) {
             addressStr = addresses.get(0).getAddressLine(0);
@@ -1151,12 +1307,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         sb.append(" • 📍 ").append(addressStr);
         
         // Speed conversion
-        float speedKmh = speedMps * 3.6f;
-        if (speedKmh > 1.5f) {
-            sb.append(String.format(java.util.Locale.US, " • 🚗 %.1f km/h", speedKmh));
-        } else {
-            sb.append(" • 🛑 Static (0.0 km/h)");
-        }
+        sb.append(com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.getMarqueeSpeedTag(speedMps));
         
         // Battery status
         if (batteryLevel >= 0) {
@@ -1204,31 +1355,35 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // ≡ƒº▒ UX Override: Architectural lifecycle fix -> Safely init after views configure
         viewModel = new ViewModelProvider(this).get(MapViewModel.class);
         
-        // ≡ƒöÆ Back-Stack Protocol: Double-Tap Exit on Live Dashboard
-        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
-            private long backPressedTime = 0;
-            @Override
-            public void handleOnBackPressed() {
-                // If Drawer Slider is active, Close the UI instead of tracking quit state
-                if (drawerLayout != null && drawerLayout.isDrawerOpen(Gravity.START)) {
-                    drawerLayout.closeDrawer(Gravity.START);
-                    return;
+        // 🔒 Back-Stack Protocol: Double-Tap Exit on Live Dashboard (Guarded against duplicate registration)
+        if (backPressedCallback == null) {
+            backPressedCallback = new androidx.activity.OnBackPressedCallback(true) {
+                private long backPressedTime = 0;
+                @Override
+                public void handleOnBackPressed() {
+                    // If Drawer Slider is active, Close the UI instead of tracking quit state
+                    if (drawerLayout != null && drawerLayout.isDrawerOpen(Gravity.START)) {
+                        drawerLayout.closeDrawer(Gravity.START);
+                        return;
+                    }
+                    
+                    // Final 2-Click Native Android Exit Loop (2000ms grace period)
+                    if (backPressedTime + 2000 > System.currentTimeMillis()) {
+                        finishAffinity(); // Liquidates UI task safely while preserving background sentinel
+                    } else {
+                        Toast.makeText(MapActivity.this, "Press BACK again to exit Map Dashboard", Toast.LENGTH_SHORT).show();
+                        backPressedTime = System.currentTimeMillis();
+                    }
                 }
-                
-                // Final 2-Click Native Android Exit Loop (2000ms grace period)
-                if (backPressedTime + 2000 > System.currentTimeMillis()) {
-                    finishAffinity(); // Liquidates entire application matrix from RAM natively
-                    System.exit(0);
-                } else {
-                    Toast.makeText(MapActivity.this, "Press BACK again to exit Map Dashboard", Toast.LENGTH_SHORT).show();
-                    backPressedTime = System.currentTimeMillis();
-                }
-            }
-        });
+            };
+            getOnBackPressedDispatcher().addCallback(this, backPressedCallback);
+        }
         
+        // 🗺️ Re-attach SupportMapFragment cleanly to fresh container
         SupportMapFragment oldFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_CONTAINER);
         if (oldFragment != null) {
             getSupportFragmentManager().beginTransaction().remove(oldFragment).commitNowAllowingStateLoss();
+            try { getSupportFragmentManager().executePendingTransactions(); } catch (Exception ignored) {}
         }
         SupportMapFragment mapFragment = SupportMapFragment.newInstance();
         getSupportFragmentManager().beginTransaction()
@@ -1255,6 +1410,51 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             // 🚀 Tactical Zoom Lock for Friend / Peer Locate
             if (selectedUserId != null && !hasZoomedToTarget && googleMap != null) {
                 locateTargetWithHistoryFallback(selectedUserId);
+            }
+
+            // 🛰️ Remote Locate State Machine Closed-Loop Resolution
+            if (activeLocateTargetUid != null && locations != null) {
+                for (UserLocation ul : locations) {
+                    if (ul != null && activeLocateTargetUid.equals(ul.getResolvedUserId())) {
+                        if (ul.getLongTimestamp() > initialTargetTs) {
+                            String lockedName = activeLocateTargetName != null ? activeLocateTargetName : ul.getUserName();
+                            clearLocateStateMachine();
+
+                            if (googleMap != null) {
+                                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(ul.getLatitude(), ul.getLongitude()), 17.5f));
+                            }
+                            if (tvAddressMarquee != null) {
+                                tvAddressMarquee.setText("✅ [LOCATION LOCKED] Live GNSS fix acquired for " + lockedName + " (" + com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.formatSpeed(ul.getSpeed()) + ")");
+                                tvAddressMarquee.setSelected(true);
+                            }
+                            UiArchitect.showSlideNotificationBanner(this, "🎯 GPS Locked", "Fresh coordinates acquired for " + lockedName + " (" + com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.formatSpeed(ul.getSpeed()) + ")", false, 3500, null, null);
+                            updateAddressMarquee(ul);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 🛰️ Late GPS Fix Catch: Detect delayed satellite fix for recently timed-out device
+            if (lastTimedOutTargetUid != null && locations != null && (System.currentTimeMillis() - lastTimedOutEpoch < 90000L)) {
+                for (UserLocation ul : locations) {
+                    if (ul != null && lastTimedOutTargetUid.equals(ul.getResolvedUserId())) {
+                        if (ul.getLongTimestamp() > lastTimedOutInitialTs) {
+                            String lateName = lastTimedOutTargetName != null ? lastTimedOutTargetName : ul.getUserName();
+                            lastTimedOutTargetUid = null;
+                            if (tvAddressMarquee != null) {
+                                tvAddressMarquee.setText("✅ [DELAYED FIX RECEIVED] Satellite lock acquired for " + lateName + " (" + com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.formatSpeed(ul.getSpeed()) + ")");
+                                tvAddressMarquee.setSelected(true);
+                            }
+                            UiArchitect.showSlideNotificationBanner(this, "🛰️ Delayed GPS Arrived", "Late satellite fix acquired for " + lateName + " (" + com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.formatSpeed(ul.getSpeed()) + ")", false, 4000, null, null);
+                            if (googleMap != null) {
+                                googleMap.animateCamera(CameraUpdateFactory.newLatLng(new LatLng(ul.getLatitude(), ul.getLongitude())));
+                            }
+                            updateAddressMarquee(ul);
+                            break;
+                        }
+                    }
+                }
             }
 
             updateRadarScanner(locations);
@@ -1464,14 +1664,27 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         
         checkLocationPermission();
         
-        // Initial Zoom Fix - Dynamically resolve from Registry / Last Known Location
+        // Initial Zoom Fix: Restore camera seamlessly if recovering from orientation change
         double defLat = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLatitude(this);
         double defLng = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLongitude(this);
         float defZoom = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultZoom(this);
-        LatLng defaultLocation = new LatLng(defLat, defLng);
-        com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
-            .target(defaultLocation).zoom(defZoom).tilt(45f).build();
-        googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(pos));
+        
+        if (restoredCamLat != 0.0 && restoredCamLng != 0.0) {
+            com.google.android.gms.maps.model.CameraPosition restoredPos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+                .target(new LatLng(restoredCamLat, restoredCamLng))
+                .zoom(restoredCamZoom > 0f ? restoredCamZoom : defZoom)
+                .tilt(restoredCamTilt)
+                .bearing(restoredCamBearing)
+                .build();
+            googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(restoredPos));
+            restoredCamLat = 0.0;
+            restoredCamLng = 0.0;
+        } else {
+            LatLng defaultLocation = new LatLng(defLat, defLng);
+            com.google.android.gms.maps.model.CameraPosition pos = new com.google.android.gms.maps.model.CameraPosition.Builder()
+                .target(defaultLocation).zoom(defZoom).tilt(45f).build();
+            googleMap.moveCamera(CameraUpdateFactory.newCameraPosition(pos));
+        }
 
         if (selectedUserId != null && !selectedUserId.isEmpty()) {
             locateTargetWithHistoryFallback(selectedUserId);
@@ -1832,6 +2045,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     );
                 }
             }
+            if (viewModel.getUserLocations().getValue() != null) {
+                updateRadarScanner(viewModel.getUserLocations().getValue());
+            }
         }
     }
 
@@ -1905,21 +2121,15 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                                             ul.getLatitude(), ul.getLongitude(), results);
                     float distance = results[0];
                     distText = distance >= 1000f ? String.format(java.util.Locale.US, "%.1f km away", distance / 1000f) : String.format(java.util.Locale.US, "%.0f m away", distance);
-                    if (distance > RADIUS_METERS) {
+                    int radarProximityRadius = com.jdroidx.jfindme.utils.RegistryManager.getRadarProximityRadiusMeters(this);
+                    if (distance > radarProximityRadius) {
                         row1Color = Color.parseColor("#38BDF8"); // Vibrant Sky Blue for external nodes
                     }
                 }
 
                 // Speed / Motion telemetry
                 float spd = ul.getSpeed();
-                String motionStr = "";
-                if (spd > 25f) {
-                    motionStr = " • 🚗 " + Math.round(spd) + " km/h";
-                } else if (spd > 7f) {
-                    motionStr = " • 🏃 " + Math.round(spd) + " km/h";
-                } else if (spd > 1.5f) {
-                    motionStr = " • 🚶 Walk";
-                }
+                String motionStr = com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.getRadarMotionTag(spd);
 
                 long ts = ul.getLongTimestamp();
                 String timeStr = new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(ts));
@@ -2392,9 +2602,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         java.util.Map<String, Object> latestHist = localDb.getLatestHistoricalLocation(targetUid);
         if (latestHist != null) {
             hasZoomedToTarget = true;
-            double lat = (Double) latestHist.get("lat");
-            double lng = (Double) latestHist.get("lng");
-            long ts = (Long) latestHist.get("timestamp");
+            double lat = latestHist.get("lat") instanceof Number ? ((Number) latestHist.get("lat")).doubleValue() : 0.0;
+            double lng = latestHist.get("lng") instanceof Number ? ((Number) latestHist.get("lng")).doubleValue() : 0.0;
+            long ts = latestHist.get("timestamp") instanceof Number ? ((Number) latestHist.get("timestamp")).longValue() : System.currentTimeMillis();
             String timeStr = new java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(new java.util.Date(ts));
             
             LatLng histPos = new LatLng(lat, lng);
@@ -2414,5 +2624,21 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         } else {
             Toast.makeText(this, "Target " + targetUid + " is currently offline. No location history recorded.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        runOnUiThread(() -> {
+            if ("SAFE_ZONE".equalsIgnoreCase(category)) {
+                if (viewModel != null) {
+                    renderSafeZonesOnMap(viewModel.getSafeZones().getValue());
+                }
+            } else if ("ROSTER".equalsIgnoreCase(category) || "PROFILE".equalsIgnoreCase(category)) {
+                if (viewModel != null) {
+                    viewModel.refreshLocations();
+                }
+            }
+        });
     }
 }

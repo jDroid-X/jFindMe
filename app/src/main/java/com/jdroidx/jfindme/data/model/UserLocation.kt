@@ -3,6 +3,12 @@ package com.jdroidx.jfindme.data.model
 import com.google.firebase.database.IgnoreExtraProperties
 
 /**
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: userId, deviceId, latitude, longitude, geohash, timestamp, bearing, speed, accuracy, altitude, motion_state, isSosActive, batteryLevel, isPoked, pokedBy, allowDependents, active_group, isForensicAudit, address, userName, avatar_id, role_family, role_friend
+ * Constants: Firebase PropertyNames ("timestamp", "sos", "battery", "timestamp_raw", "updated_at")
+ * Dependencies: com.google.firebase.database.IgnoreExtraProperties, com.google.firebase.database.PropertyName, com.google.firebase.database.Exclude
+ * Integration Points: FirebaseComm.kt, TrackingService.kt, DatabaseHelper.kt, MapActivity.java, LiveMapDashboardActivity.java
+ *
  * UserLocation POJO for Firebase Realtime Database updates.
  * geohash is used for spatial queries.
  * timestamp ensures event-driven update ordering.
@@ -21,6 +27,9 @@ data class UserLocation(
 
     val bearing: Float = 0f,
     val speed: Float = 0f,
+    val accuracy: Float = 0f,             // 🛡️ V79 REA Sensor Granularity
+    val altitude: Double = 0.0,           // 🛡️ V79 REA Barometric/GNSS Altitude
+    val motion_state: String = "UNKNOWN", // 🛡️ V79 REA Motion Classifier State
 
     @get:com.google.firebase.database.PropertyName("sos")
     @set:com.google.firebase.database.PropertyName("sos")
@@ -57,6 +66,12 @@ data class UserLocation(
             }
         }
 
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Firebase RTDB multi-alias mapping: supports both 'timestamp' and 'updated_at' seamlessly
+    @get:com.google.firebase.database.PropertyName("updated_at")
+    @set:com.google.firebase.database.PropertyName("updated_at")
+    var updated_at: Any? = ""
+
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var isSos: Boolean
         get() = isSosActive
@@ -72,26 +87,35 @@ data class UserLocation(
     @com.google.firebase.database.Exclude
     fun getResolvedTimestamp(): String {
         // Use FirebaseComm's forensic normalization if available
-        return com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(timestamp)
+        val candidate = if (timestamp != null && timestamp != "") timestamp else updated_at
+        return com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(candidate)
     }
 
     @com.google.firebase.database.Exclude
     fun getLongTimestamp(): Long {
-        val t = timestamp
-        if (t is Number) {
-            val num = t.toLong()
+        val candidate = when {
+            timestamp != null && timestamp != "" && timestamp != 0L -> timestamp
+            updated_at != null && updated_at != "" && updated_at != 0L -> updated_at
+            else -> null
+        }
+        if (candidate is Number) {
+            val num = candidate.toLong()
             if (num in 1_000_000_000_000L..4_102_444_800_000L) return num
             if (num in 1_000_000_000L..4_102_444_800L) return num * 1000L
             return parseForensicStringToMillis(num.toString())
         }
-        if (t is String) {
-            return parseForensicStringToMillis(t)
+        if (candidate is String) {
+            return parseForensicStringToMillis(candidate)
         }
-        return System.currentTimeMillis()
+        val uid = getResolvedUserId()
+        if (uid.equals("You", ignoreCase = true) || uid == "SELF_USER") {
+            return System.currentTimeMillis()
+        }
+        return 0L
     }
 
     private fun parseForensicStringToMillis(str: String?): Long {
-        if (str.isNullOrBlank() || str == "0") return System.currentTimeMillis()
+        if (str.isNullOrBlank() || str == "0") return 0L
         val s = str.trim()
         val num = s.toLongOrNull()
         if (num != null && num in 1_000_000_000_000L..4_102_444_800_000L) return num
@@ -105,7 +129,7 @@ data class UserLocation(
                 if (d != null) return d.time
             } catch (e: Exception) {}
         }
-        return System.currentTimeMillis()
+        return 0L
     }
 
     @com.google.firebase.database.Exclude
@@ -119,6 +143,9 @@ data class UserLocation(
             "timestamp" to timestamp,
             "bearing" to bearing,
             "speed" to speed,
+            "accuracy" to accuracy,
+            "altitude" to altitude,
+            "motion_state" to motion_state,
             "sos" to isSosActive,
             "battery" to batteryLevel,
             "address" to address,
@@ -138,6 +165,9 @@ data class UserLocation(
             "longitude" to longitude,
             "speed" to speed,
             "bearing" to bearing,
+            "accuracy" to accuracy,
+            "altitude" to altitude,
+            "motion_state" to motion_state,
             "battery" to batteryLevel,
             "sos" to isSosActive,
             "geohash" to geohash,

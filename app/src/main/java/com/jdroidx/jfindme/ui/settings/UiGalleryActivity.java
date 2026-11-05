@@ -715,6 +715,11 @@ public class UiGalleryActivity extends BaseActivityJava {
         ulp.setMargins(0, 20, 0, 0);
         row.addView(updateBtn, ulp);
 
+        View mindmapBtn = createIconButton("INSPECT COORDINATE TREE (ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)", android.R.drawable.ic_menu_info_details, true, v -> UiArchitect.showCoordinateTreeInspectorDialog(this, "UiGalleryActivity"));
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mlp.setMargins(0, 10, 0, 0);
+        row.addView(mindmapBtn, mlp);
+
         container.addView(row, getCardParams());
     }
 

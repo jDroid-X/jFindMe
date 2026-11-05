@@ -9,7 +9,6 @@ echo ===================================================
 
 call scripts\launch_server.bat
 
-echo [OPENING] Directing browser to http://127.0.0.1:3000...
-timeout /t 2 /nobreak >nul
-start "" "http://127.0.0.1:3000"
+echo [OPENING] Launching Matrix Heartbeat Splash Screen...
+start "" "splash.html"
 exit /b 0

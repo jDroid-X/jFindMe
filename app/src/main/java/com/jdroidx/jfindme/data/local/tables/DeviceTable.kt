@@ -5,8 +5,11 @@ import android.database.sqlite.SQLiteDatabase
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
- * Tier 2: Device & Trust Layer
- * 📱 device: Master Hardware Hub
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: deviceId, identityId, model, brand, board, hardware, deviceName, imei, imei_1, imei_2, is_dual_sim, is_rooted, build_fingerprint, latitude, longitude, address, battery_optimization_exempt, os_version, app_version
+ * Constants: TABLE_NAME = "device", COL_DEVICE_ID, COL_IDENTITY_ID, COL_DEVICE_MODEL, COL_BRAND, COL_BOARD, COL_HARDWARE, COL_DEVICE_NAME, COL_IMEI, COL_IMEI_1, COL_IMEI_2, COL_IS_DUAL_SIM, COL_IS_ROOTED, COL_BUILD_FINGERPRINT, COL_LATITUDE, COL_LONGITUDE, COL_ADDRESS, COL_BATTERY_OPTIMIZATION_EXEMPT, COL_OS_VERSION, COL_APP_VERSION, COL_CREATED_ON, COL_UPDATED_AT
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, TrackingService.kt, NetworkGatewayActivity.java
  */
 object DeviceTable {
     const val TABLE_NAME = "device"
@@ -27,6 +30,12 @@ object DeviceTable {
     const val COL_LATITUDE = "latitude"
     const val COL_LONGITUDE = "longitude"
     const val COL_ADDRESS = "address"
+
+    // 🛡️ V79 REA Refabrication Columns: Doze Exemption & Platform Version Trace
+    const val COL_BATTERY_OPTIMIZATION_EXEMPT = "battery_optimization_exempt"
+    const val COL_OS_VERSION = "os_version"
+    const val COL_APP_VERSION = "app_version"
+
     const val COL_CREATED_ON = "created_on"
     const val COL_UPDATED_AT = "updated_at"
 
@@ -48,6 +57,9 @@ object DeviceTable {
             $COL_LATITUDE REAL,
             $COL_LONGITUDE REAL,
             $COL_ADDRESS TEXT,
+            $COL_BATTERY_OPTIMIZATION_EXEMPT INTEGER DEFAULT 0,
+            $COL_OS_VERSION TEXT,
+            $COL_APP_VERSION TEXT,
             $COL_CREATED_ON TEXT,
             $COL_UPDATED_AT TEXT,
             FOREIGN KEY ($COL_IDENTITY_ID) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
@@ -72,7 +84,10 @@ object DeviceTable {
         deviceName: String? = null,
         imei1: String? = null,
         imei2: String? = null,
-        isDualSim: Boolean? = null
+        isDualSim: Boolean? = null,
+        batteryOptExempt: Boolean? = null,
+        osVersion: String? = null,
+        appVersion: String? = null
     ) {
         val now = FirebaseComm.getForensicTimestamp()
         val v = ContentValues()
@@ -95,6 +110,11 @@ object DeviceTable {
 
         if (rooted != null) v.put(COL_IS_ROOTED, if (rooted) 1 else 0)
         if (fingerprint != null) v.put(COL_BUILD_FINGERPRINT, fingerprint)
+
+        if (batteryOptExempt != null) v.put(COL_BATTERY_OPTIMIZATION_EXEMPT, if (batteryOptExempt) 1 else 0)
+        if (osVersion != null) v.put(COL_OS_VERSION, osVersion)
+        if (appVersion != null) v.put(COL_APP_VERSION, appVersion)
+
         v.put(COL_UPDATED_AT, now)
 
         // 🧬 Registration Baseline Lock: Only update location if it's currently empty (0.0)

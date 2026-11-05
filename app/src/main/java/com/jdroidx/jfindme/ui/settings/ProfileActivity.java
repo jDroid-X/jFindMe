@@ -46,6 +46,7 @@ public class ProfileActivity extends BaseActivityJava {
     private android.widget.EditText addressField;
     private android.widget.EditText emergencyNoteField;
     private android.widget.EditText orgField, deptField; // 🚀 QA Fix: Master Corporate Bridge
+    private android.content.BroadcastReceiver profileSyncReceiver = null;
 
     protected int dpToPx(int dp) {
         return (int) android.util.TypedValue.applyDimension(
@@ -55,6 +56,28 @@ public class ProfileActivity extends BaseActivityJava {
     @Override
     protected void onResume() {
         super.onResume();
+
+        // 📡 Instant Closed-Loop Sync Receiver: listen for background cloud sync completions
+        if (profileSyncReceiver == null) {
+            profileSyncReceiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(android.content.Context context, android.content.Intent intent) {
+                    if (intent != null && "com.jdroidx.jfindme.ACTION_PROFILE_SYNCED".equals(intent.getAction())) {
+                        if (profileViewModel != null) {
+                            profileViewModel.fetchProfile(ProfileActivity.this);
+                        }
+                    }
+                }
+            };
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(profileSyncReceiver, new android.content.IntentFilter("com.jdroidx.jfindme.ACTION_PROFILE_SYNCED"), android.content.Context.RECEIVER_NOT_EXPORTED);
+                } else {
+                    registerReceiver(profileSyncReceiver, new android.content.IntentFilter("com.jdroidx.jfindme.ACTION_PROFILE_SYNCED"));
+                }
+            } catch (Exception ignored) {}
+        }
+
         // 🚀 QA Fix: Force-fetch profile data to ensure visual parity after returning from sub-screens (Identity Handshake)
         if (profileViewModel != null) {
             profileViewModel.fetchProfile(this);
@@ -81,6 +104,17 @@ public class ProfileActivity extends BaseActivityJava {
             } else {
                 activeProfileImgView.evaluateJavascript("if(typeof currentVrm !== 'undefined' && currentVrm) { scene.remove(currentVrm.scene); currentVrm=null; }", null);
             }
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (profileSyncReceiver != null) {
+            try {
+                unregisterReceiver(profileSyncReceiver);
+            } catch (Exception ignored) {}
+            profileSyncReceiver = null;
         }
     }
 
@@ -115,6 +149,20 @@ public class ProfileActivity extends BaseActivityJava {
         com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, titleView, "TEXT_HEADER");
         titleView.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         topRow.addView(titleView);
+
+        // 🔄 Human-in-the-Loop Direct Cloud Sync Trigger Button
+        ImageView syncBtn = new ImageView(this);
+        syncBtn.setImageResource(android.R.drawable.ic_popup_sync);
+        syncBtn.setColorFilter(getGradientOverlayText());
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(bS, bS);
+        syncBtn.setLayoutParams(sLp);
+        syncBtn.setContentDescription("Sync with Cloud");
+        syncBtn.setOnClickListener(v -> {
+            com.jdroidx.jfindme.ui.base.UiArchitect.showSlideNotificationBanner(this, "Cloud Sync Triggered", "Reconciling profile dossier with Cloud SSOT...", false, 2500, null, null);
+            if (profileViewModel != null) profileViewModel.fetchProfile(this);
+        });
+        topRow.addView(syncBtn);
+
         header.addView(topRow);
         
         TextView subtitle = new TextView(this);

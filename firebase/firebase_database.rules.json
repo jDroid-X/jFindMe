@@ -1,0 +1,116 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "lookup_indices": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "pairing_requests": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["invite_code", "hostDeviceId", "targetDeviceId", "status", "childDeviceId"]
+    },
+    "devices": {
+      ".indexOn": ["Identity/auth_uid", "profile/active_group"],
+      "$agentId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "Identity": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "profile": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "telemetry": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "device": {
+          "live": {
+            ".read": "auth != null",
+            ".write": "auth != null"
+          },
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "history": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".indexOn": [".key", "timestamp"]
+        },
+        "relationships": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "alerts": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "safe_zones": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "Access": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "Change_Log": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "History": {
+      "$agentId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": [".key", "timestamp"]
+      }
+    },
+    "Geofencing": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$creatorDeviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "safe_zones": {
+          ".indexOn": ["zone_id", "is_active", "updated_at"]
+        }
+      }
+    },
+    "safe_zones": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "geofences": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "system_audit": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "system_settings": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "Version_Update": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "relationships": {
+      "$groupId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "groups": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["invite_code"]
+    }
+  }
+}

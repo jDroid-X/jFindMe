@@ -10,15 +10,19 @@ import android.database.sqlite.SQLiteDatabase
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
- * Tier 1: Identity Core (Single Source of Truth)
- *🧬 user_identity: The absolute forensic anchor for all nodes.
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: id, uid_1, uid_2, hardware_serial, auth_uid, node_index, id_full_name, st_session_state, is_admin, owner_name, connected_id, qr_code_ref, status, install_epoch_id, is_current_session, token_hash, auth_token, tracking_status
+ * Constants: TABLE_NAME = "user_identity", COL_ID, COL_UID_1, COL_UID_2, COL_HARDWARE_SERIAL, COL_AUTH_UID, COL_NODE_INDEX, COL_FULL_NAME, COL_SESSION_STATE, COL_IS_ADMIN, COL_OWNER_NAME, COL_CONNECTED_ID, COL_QR_REF, COL_STATUS, COL_INSTALL_EPOCH, COL_IS_CURRENT_SESSION, COL_TOKEN_HASH, COL_AUTH_TOKEN, COL_TRACKING_STATUS, COL_CREATED_ON, COL_CREATED_AT, COL_UPDATED_AT
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, AuthViewModel.kt, TrackingService.kt
  */
 object UserIdentityTable {
     const val TABLE_NAME = "user_identity"
 
     const val COL_ID = "id"                          // PK (Internal)
     const val COL_UID_1 = "uid_1"                    // Forensic Agent ID (Locked)
-    const val COL_UID_2 = "uid_2"                    // Hardware ID (ANDROID_ID)
+    const val COL_UID_2 = "uid_2"
+    const val COL_HARDWARE_SERIAL = "hardware_serial"                    // Hardware ID (ANDROID_ID)
     const val COL_AUTH_UID = "auth_uid"              // Cloud Identity (Firebase)
     const val COL_NODE_INDEX = "node_index"          // 🧬 L7: 1, 2, 3... per UID_1
     
@@ -34,6 +38,12 @@ object UserIdentityTable {
     const val COL_STATUS = "status"
     const val COL_INSTALL_EPOCH = "install_epoch_id"         // 🧬 Installation/Session Epoch UUID
     const val COL_IS_CURRENT_SESSION = "is_current_session" // 🧬 1 = Active Session, 0 = Archived Trace
+
+    // 🛡️ V79 REA Refabrication Columns: Security Token Hash & Ghost Mode SSOT
+    const val COL_TOKEN_HASH = "token_hash"
+    const val COL_AUTH_TOKEN = "auth_token"
+    const val COL_TRACKING_STATUS = "tracking_status" // ACTIVE, GHOST, PAUSED
+
     const val COL_CREATED_ON = "created_on"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_CREATED_AT = "created_at"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_UPDATED_AT = "updated_at"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
@@ -43,6 +53,7 @@ object UserIdentityTable {
             $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
             $COL_UID_1 TEXT NOT NULL UNIQUE,
             $COL_UID_2 TEXT UNIQUE,
+            $COL_HARDWARE_SERIAL TEXT DEFAULT '',
             $COL_AUTH_UID TEXT DEFAULT '',
             $COL_NODE_INDEX INTEGER DEFAULT 1,
             $COL_FULL_NAME TEXT DEFAULT '',
@@ -54,15 +65,30 @@ object UserIdentityTable {
             $COL_STATUS TEXT DEFAULT 'Active',
             $COL_INSTALL_EPOCH TEXT DEFAULT '',
             $COL_IS_CURRENT_SESSION INTEGER DEFAULT 1,
+            $COL_TOKEN_HASH TEXT DEFAULT '',
+            $COL_AUTH_TOKEN TEXT DEFAULT '',
+            $COL_TRACKING_STATUS TEXT DEFAULT 'ACTIVE',
             $COL_CREATED_ON TEXT,
             $COL_CREATED_AT TEXT,
             $COL_UPDATED_AT TEXT
         )
     """.trimIndent()
 
-    fun insertOrUpdate(db: SQLiteDatabase, uid1: String, uid2: String?, authUid: String? = "", 
-                       fullName: String? = "", isAdmin: String? = "", owner: String? = "",
-                       connectedId: String? = "", qrRef: String? = "", nodeIndex: Int = 1): Long {
+    @JvmOverloads
+    fun insertOrUpdate(
+        db: SQLiteDatabase,
+        uid1: String,
+        uid2: String?,
+        authUid: String? = "",
+        fullName: String? = "",
+        isAdmin: String? = "",
+        owner: String? = "",
+        connectedId: String? = "",
+        qrRef: String? = "",
+        nodeIndex: Int = 1,
+        tokenHash: String? = "",
+        trackingStatus: String? = "ACTIVE"
+    ): Long {
         val now = FirebaseComm.getForensicTimestamp() // 🧬 V60.2: Use 16-char precise string
         val v = ContentValues().apply {
             put(COL_UID_1, uid1)
@@ -74,6 +100,8 @@ object UserIdentityTable {
             put(COL_CONNECTED_ID, connectedId ?: "")
             put(COL_QR_REF, qrRef ?: "")
             put(COL_NODE_INDEX, nodeIndex)
+            if (!tokenHash.isNullOrEmpty()) put(COL_TOKEN_HASH, tokenHash)
+            if (!trackingStatus.isNullOrEmpty()) put(COL_TRACKING_STATUS, trackingStatus)
             put(COL_UPDATED_AT, now)
         }
         

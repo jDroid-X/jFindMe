@@ -10,13 +10,34 @@ import com.jdroidx.jfindme.utils.SystemLogger
  * Level 4: AnalyticsEngine integration via Chaquopy.
  */
 object SpatialProcessor {
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Concurrency shield and initialization guard for Chaquopy runtime
     private const val TAG = "SpatialProcessor"
+    @Volatile
+    private var isInitializing = false
 
     @JvmStatic
+    fun isStartedSafe(): Boolean {
+        return try {
+            Python.isStarted()
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    @JvmStatic
+    @Synchronized
     fun init(context: Context) {
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(context))
-            SystemLogger.i(TAG, "Python Data Engine Initialized.")
+        if (!isStartedSafe() && !isInitializing) {
+            isInitializing = true
+            try {
+                Python.start(AndroidPlatform(context.applicationContext))
+                SystemLogger.i(TAG, "Python Data Engine Initialized.")
+            } catch (e: Throwable) {
+                SystemLogger.e(TAG, "Python Data Engine initialization deferred or failed", e)
+            } finally {
+                isInitializing = false
+            }
         }
     }
 
@@ -26,6 +47,7 @@ object SpatialProcessor {
     @JvmStatic
     fun getDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         return try {
+            if (!isStartedSafe()) return 0.0
             val py = Python.getInstance()
             val module = py.getModule("data_processor")
             module.callAttr("calculate_distance", lat1, lon1, lat2, lon2).toDouble()
@@ -41,6 +63,7 @@ object SpatialProcessor {
     @JvmStatic
     fun predictPath(path: List<Map<String, Any>>): Map<String, Double>? {
         return try {
+            if (!isStartedSafe()) return null
             val py = Python.getInstance()
             val module = py.getModule("data_processor")
             val pyResult = module.callAttr("predict_next_point", path)

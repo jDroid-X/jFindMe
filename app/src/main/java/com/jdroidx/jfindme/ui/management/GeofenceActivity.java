@@ -1365,8 +1365,16 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             }
         });
         
-        // 🚀 L7 MISSION ACCELERATOR: Prioritize Live GPS Telemetry for Initial Centering
-        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        // 🚀 L7 MISSION ACCELERATOR: Prioritize Target Node Coordinates (Intent extras) before Local Device Fallback
+        if (pendingLat != null && pendingLng != null && (pendingLat != 0.0 || pendingLng != 0.0)) {
+            LatLng targetCoord = new LatLng(pendingLat, pendingLng);
+            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(targetCoord, 16f));
+            viewModel.setDraftPin(targetCoord);
+            renderMapDraftRings(targetCoord);
+            if (targetName != null && !targetName.isEmpty()) {
+                UiArchitect.showSlideNotificationBanner(this, "🎯 Target Centered", "Centered on " + targetName + "'s coordinates for Safe Zone configuration.", false, 3000, null, null);
+            }
+        } else if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             googleMap.setMyLocationEnabled(true);
             LocationServices.getFusedLocationProviderClient(this).getLastLocation().addOnSuccessListener(this, location -> {
                 if (location != null) {
@@ -1391,8 +1399,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             if (addr != null && !addr.equals("Unknown Location") && !addr.isEmpty()) {
                 viewModel.executeOSGeocodingQuery(addr);
             } else {
-                double defLat = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLatitude(this);
-                double defLng = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getDefaultLongitude(this);
+                double defLat = com.jdroidx.jfindme.utils.RegistryManager.getDefaultLatitude(this);
+                double defLng = com.jdroidx.jfindme.utils.RegistryManager.getDefaultLongitude(this);
                 LatLng defaultPos = new LatLng(defLat, defLng);
                 if (googleMap != null) googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultPos, 12f));
             }
@@ -2701,7 +2709,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         
         // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)
         String agentId = (myUid != null) ? db.resolveAgentIdLocally(myUid) : null;
-        String fallbackOwner = com.jdroidx.jfindme.utils.RegistryManager.INSTANCE.getOwnerAgentId(this);
+        String fallbackOwner = com.jdroidx.jfindme.utils.RegistryManager.getOwnerAgentId(this);
         java.util.Map<String, String> myDos = db.getLocalDossier(agentId != null ? agentId : fallbackOwner);
         
         String nameStr = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(this);
@@ -2819,6 +2827,18 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             } else {
                 txtPolygonStatus.setText("✅ " + count + " Vertices Sealed. Ready to Deploy.");
             }
+        }
+    }
+
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        if ("SAFE_ZONE".equalsIgnoreCase(category) || "ROSTER".equalsIgnoreCase(category)) {
+            runOnUiThread(() -> {
+                if (viewModel != null) {
+                    viewModel.loadInitialData();
+                }
+            });
         }
     }
 }

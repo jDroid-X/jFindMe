@@ -477,6 +477,21 @@ export class MapController {
         this.deviceController.recalculateProximities();
         this.deviceController.notify();
 
+        // [Variables]: activeCoords, avgLat, avgLng | [Constants]: None | [Dependencies]: MapController, MapView | [Integration Points]: SettingsModel SSOT
+        // Auto-Center Fleet Centroid if enabled in Settings
+        if (settings.autoCenterCentroid !== false && this.deviceController.devices && this.deviceController.devices.length > 0) {
+            const activeCoords = this.deviceController.devices
+                .filter(d => d.hasValidLocation && d.latitude !== 0 && d.longitude !== 0)
+                .map(d => ({ lat: d.latitude, lng: d.longitude }));
+            if (activeCoords.length > 0) {
+                const avgLat = activeCoords.reduce((acc, c) => acc + c.lat, 0) / activeCoords.length;
+                const avgLng = activeCoords.reduce((acc, c) => acc + c.lng, 0) / activeCoords.length;
+                if (typeof this.mapView.flyToReference === 'function') {
+                    this.mapView.flyToReference(avgLat, avgLng, 14);
+                }
+            }
+        }
+
         // Restart polling with new interval
         this.startPolling();
 

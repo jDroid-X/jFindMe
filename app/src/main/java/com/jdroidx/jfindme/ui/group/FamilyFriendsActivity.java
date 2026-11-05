@@ -16,6 +16,7 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -79,6 +80,11 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     private LinearLayout tabFamily, tabFriends;
     private EditText etSearchInput;
     private ImageView ivClearSearch;
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // 300ms Search Debounce Pipeline: Eliminates main-thread view rebuild stutter on rapid typing
+    private final android.os.Handler searchDebounceHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable searchDebounceRunnable;
 
     // Architectural MVVM
     private FamilyFriendsViewModel viewModel;
@@ -571,8 +577,15 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 searchFilter = s.toString().trim();
                 ivClearSearch.setVisibility(searchFilter.isEmpty() ? View.GONE : View.VISIBLE);
-                if (activeTab == TAB_FAMILY) renderFamilyTab();
-                else renderFriendsTab();
+                if (searchDebounceRunnable != null) {
+                    searchDebounceHandler.removeCallbacks(searchDebounceRunnable);
+                }
+                searchDebounceRunnable = () -> {
+                    if (activeTab == TAB_FAMILY) renderFamilyTab(); else renderFriendsTab();
+    
+                };
+                searchDebounceHandler.postDelayed(searchDebounceRunnable, 300);
+
             }
             @Override public void afterTextChanged(Editable s) {}
         });
@@ -806,7 +819,11 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
         TextView tvDetail = new TextView(this);
         String roleText = node.getRoleTitle();
-        tvDetail.setText(roleText + "  •  " + rag.getStatusText());
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Telemetry Privacy Gate: Visual indicator if node has tracking paused via ACL
+        boolean isTrackingActive = (node.getPermissionsMask() & 0x01) != 0;
+        String permStatus = isTrackingActive ? "" : "  \u2022  \uD83D\uDEAB GPS Paused";
+        tvDetail.setText(roleText + permStatus + "  •  " + rag.getStatusText());
         tvDetail.setTextColor(rag.getStatusColor());
         tvDetail.setTextSize(11);
         textBlock.addView(tvDetail);
@@ -841,6 +858,26 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         locateBtn.setClickable(true);
         locateBtn.setFocusable(true);
         locateBtn.setOnClickListener(v -> {
+            boolean isLiveActive = (node.getPermissionsMask() & 0x01) != 0;
+            if (!isLiveActive) {
+                new AlertDialog.Builder(this)
+                    .setTitle("\uD83D\uDEAB Live Tracking Paused")
+                    .setMessage("Live GPS tracking is currently paused for " + node.getDisplayName() + " in Person Details privacy settings.\n\nEnable tracking in Person Details to view live markers on the map.")
+                    .setPositiveButton("Manage Profile", (d, w) -> {
+                        Intent pIntent = new Intent(this, PersonDetailsActivity.class);
+                        pIntent.putExtra("TARGET_UID", node.getUid());
+                        pIntent.putExtra("TARGET_ROLE", node.getRoleTitle());
+                        startActivity(pIntent);
+                    })
+                    .setNegativeButton("Open Map Anyway", (d, w) -> {
+                        Intent mapIntent = new Intent(this, MapActivity.class);
+                        mapIntent.putExtra("TARGET_UID", node.getUid());
+                        mapIntent.putExtra("target_uid", node.getUid());
+                        startActivity(mapIntent);
+                    })
+                    .show();
+                return;
+            }
             Intent mapIntent = new Intent(this, MapActivity.class);
             mapIntent.putExtra("TARGET_UID", node.getUid());
             mapIntent.putExtra("target_uid", node.getUid());
@@ -865,6 +902,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     private void showNodeQuickActionsDialog(RosterNode node) {
         UiArchitect.OptionItem[] actions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("📍 Track on Live Map", "Open real-time GPS tracking stream", android.R.drawable.ic_dialog_map),
+            new UiArchitect.OptionItem("⏱️ View Location History", "View past telemetry logs and timeline", android.R.drawable.ic_menu_recent_history),
             new UiArchitect.OptionItem("🔊 Ring Device (30s Acoustic Alarm)", "Override DND and trigger high-volume siren", android.R.drawable.ic_lock_idle_alarm),
             new UiArchitect.OptionItem("✏️ Rename Device (Custom Callsign)", "Assign an identifiable custom name or nickname to this node", android.R.drawable.ic_menu_edit),
             new UiArchitect.OptionItem("📝 View / Edit Dossier & Role", "Inspect full profile, permissions, and contacts", com.jdroidx.jfindme.R.drawable.ic_user_profile),
@@ -882,7 +920,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                     mapIntent.putExtra("target_uid", node.getUid());
                     startActivity(mapIntent);
                     break;
-                case 1: // Ring
+                case 1: // History
+                    Intent historyIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
+                    historyIntent.putExtra("TARGET_UID", node.getUid());
+                    historyIntent.putExtra("TARGET_NAME", node.getDisplayName());
+                    startActivity(historyIntent);
+                    break;
+                case 2: // Ring
                     if (!node.isOnline()) {
                         Toast.makeText(this, "⚠️ Device is currently offline — siren may not reach it", Toast.LENGTH_LONG).show();
                     }
@@ -890,25 +934,25 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                     FirebaseComm.triggerRemoteRingDevice(node.getUid(), sirenDur);
                     Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (" + sirenDur + "s)", Toast.LENGTH_LONG).show();
                     break;
-                case 2: // Rename
+                case 3: // Rename
                     showRenameNodeDialog(node);
                     break;
-                case 3: // Dossier
+                case 4: // Dossier
                     Intent intent = new Intent(this, PersonDetailsActivity.class);
                     intent.putExtra("TARGET_UID", node.getUid());
                     intent.putExtra("TARGET_ROLE", node.getRoleTitle());
                     startActivity(intent);
                     break;
-                case 4: // Safe Zone
+                case 5: // Safe Zone
                     Intent safeZoneIntent = new Intent(this, GeofenceActivity.class);
                     safeZoneIntent.putExtra("TARGET_UID", node.getUid());
                     safeZoneIntent.putExtra("TARGET_NAME", node.getDisplayName());
                     startActivity(safeZoneIntent);
                     break;
-                case 5: // Role Change
+                case 6: // Role Change
                     showRoleChangeDialog(node);
                     break;
-                case 6: // Unlink
+                case 7: // Unlink
                     confirmUnlinkDevice(node);
                     break;
             }
@@ -1068,7 +1112,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                     "Enter master security password to force purge '" + node.getDisplayName() + "' (" + node.getUid() + "):",
                     "",
                     inputPass -> {
-                        if (requiredPass.equals(inputPass != null ? inputPass.trim() : "")) {
+                        if (RegistryManager.verifyAndUpgradePurgePhrase(this, inputPass != null ? inputPass.trim() : "")) {
                             viewModel.unlinkDevice(this, node.getUid(), success -> {
                                 Toast.makeText(this, "🛡️ Force Administrative Purge Completed for " + node.getDisplayName(), Toast.LENGTH_LONG).show();
                                 return null;
@@ -1203,6 +1247,28 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             renderFriendsTab();
         } else {
             renderFamilyTab();
+        }
+    }
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Lifecycle Guard: Purges debouncer queue on activity destruction / orientation change
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (searchDebounceHandler != null && searchDebounceRunnable != null) {
+            searchDebounceHandler.removeCallbacks(searchDebounceRunnable);
+        }
+    }
+
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        if ("ROSTER".equalsIgnoreCase(category) || "PROFILE".equalsIgnoreCase(category)) {
+            runOnUiThread(() -> {
+                if (viewModel != null) {
+                    viewModel.initializeCloudSync(this);
+                }
+            });
         }
     }
 }

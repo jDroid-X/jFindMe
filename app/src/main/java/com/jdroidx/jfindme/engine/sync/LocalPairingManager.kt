@@ -29,6 +29,23 @@ object LocalPairingManager {
     var onLocalMergeCompletedCallback: (() -> Unit)? = null
 
     /**
+     * 🛡️ Pre-flight Radio Check: Verifies Bluetooth radio availability on Android 12+
+     */
+    fun isRadioReady(context: Context): Boolean {
+        return try {
+            val bt = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
+            } else {
+                @Suppress("DEPRECATION")
+                android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            }
+            bt != null && bt.isEnabled
+        } catch (e: Exception) {
+            true // Non-fatal fallback
+        }
+    }
+
+    /**
      * Parent Device: Spins up the Advertiser beacon using a localized 8-Digit identifier locking P2P requests.
      */
     fun startLocalHostSession(context: Context, onLocalTokenReady: (String) -> Unit) {
@@ -37,11 +54,24 @@ object LocalPairingManager {
         val allowedChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         val localToken = (1..8).map { allowedChars.random() }.joinToString("")
         
+        if (!isRadioReady(context)) {
+            SystemLogger.w(TAG, "Bluetooth radio disabled before hosting Nearby session.")
+            try {
+                android.widget.Toast.makeText(context, "⚠️ Turn ON Bluetooth & Wi-Fi for Nearby P2P", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (ignored: Exception) {}
+        }
+
         SystemLogger.i(TAG, "Spinning up Physical P2P Nearby Advertiser: $localToken")
 
         val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
-                SystemLogger.i(TAG, "Incoming P2P Connection from: ${info.endpointName}")
+                val sasToken = info.authenticationDigits
+                SystemLogger.i(TAG, "Incoming P2P Connection from: ${info.endpointName} [SAS Token: $sasToken]")
+                // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                // Surface 4-digit Short Authentication String (SAS) to Human-in-the-Loop for MITM verification
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, "\uD83D\uDCE1 P2P Security Code: $sasToken (Verify on peer device)", android.widget.Toast.LENGTH_LONG).show()
+                }
                 Nearby.getConnectionsClient(context).acceptConnection(endpointId, payloadCallback)
             }
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
@@ -104,6 +134,13 @@ object LocalPairingManager {
                     
                     val lifecycleCallback = object : ConnectionLifecycleCallback() {
                         override fun onConnectionInitiated(epId: String, connectionInfo: ConnectionInfo) {
+                            val sasToken = connectionInfo.authenticationDigits
+                            SystemLogger.i(TAG, "P2P Initiated with Host: $epId [SAS Token: $sasToken]")
+                            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                            // Surface 4-digit Short Authentication String (SAS) to Human-in-the-Loop for MITM verification
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                android.widget.Toast.makeText(context, "\uD83D\uDCE1 P2P Security Code: $sasToken (Matching with Host)", android.widget.Toast.LENGTH_LONG).show()
+                            }
                             Nearby.getConnectionsClient(context).acceptConnection(epId, payloadCallback)
                         }
                         override fun onConnectionResult(epId: String, result: ConnectionResolution) {

@@ -27,6 +27,10 @@ public class HealthActivity extends BaseActivityJava {
 
     private final String TAG = "HealthActivity";
     private TextView tvBattery, tvGps, tvNetwork, tvStorage, tvVitalsBody, tvHwBody;
+    private TextView tvCellTower, tvClosedLoopRoute, tvClosedLoopAck;
+    private LinearLayout containerActionableFix;
+    private TextView tvActionableFixMessage;
+    private View btnActionableFix;
     private String targetAgentId;
     private String targetMemberName;
     private boolean isRemoteMember = false;
@@ -97,6 +101,28 @@ public class HealthActivity extends BaseActivityJava {
         content.setPadding(cp, cp, cp, scale(100));
 
         // --- LAYER 1: SYSTEM HARDWARE METRICS ---
+        // --- HUMAN-IN-THE-LOOP ACTIONABLE DIAGNOSTIC BANNER ---
+        containerActionableFix = new LinearLayout(this);
+        containerActionableFix.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, containerActionableFix, "CARD_STANDARD");
+        containerActionableFix.setPadding(scale(24), scale(20), scale(24), scale(20));
+        containerActionableFix.setVisibility(View.GONE);
+
+        tvActionableFixMessage = new TextView(this);
+        tvActionableFixMessage.setTextColor(Color.parseColor("#FFCDD2"));
+        tvActionableFixMessage.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_SMALL"));
+        tvActionableFixMessage.setTypeface(null, android.graphics.Typeface.BOLD);
+        containerActionableFix.addView(tvActionableFixMessage);
+
+        btnActionableFix = UiArchitect.createPrimaryButton(this, "RESOLVE BLOCKER IN SETTINGS", android.R.drawable.ic_menu_preferences, null);
+        LinearLayout.LayoutParams btnFixLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnFixLp.setMargins(0, scale(12), 0, 0);
+        containerActionableFix.addView(btnActionableFix, btnFixLp);
+
+        LinearLayout.LayoutParams fixLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        fixLp.setMargins(0, 0, 0, scale(20));
+        content.addView(containerActionableFix, fixLp);
+
         content.addView(createSectionHeader("SYSTEM STATUS"));
         
         LinearLayout sysCard = new LinearLayout(this);
@@ -113,6 +139,19 @@ public class HealthActivity extends BaseActivityJava {
         sysCard.addView(createMetricRow("Secure Cache", getTextColor(), v -> tvStorage = v)); 
         
         content.addView(sysCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        // --- LAYER 1.5: CELLULAR BASEBAND & CLOSED-LOOP ROUTING ---
+        content.addView(createSectionHeader("CELLULAR TOWER & FAILOVER ROUTING"));
+        LinearLayout routeCard = new LinearLayout(this);
+        routeCard.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, routeCard, "CARD_STANDARD");
+        routeCard.setPadding(sp, vp, sp, vp);
+
+        routeCard.addView(createMetricRow("Serving Tower", Color.parseColor("#00E5FF"), v -> tvCellTower = v));
+        routeCard.addView(createMetricRow("Active Failover Route", Color.parseColor("#4CAF50"), v -> tvClosedLoopRoute = v));
+        routeCard.addView(createMetricRow("Closed-Loop Server ACK", Color.parseColor("#FFC107"), v -> tvClosedLoopAck = v));
+
+        content.addView(routeCard, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // --- LAYER 2: OPERATIONAL CHECKS ---
         content.addView(createSectionHeader("OPERATIONAL STATUS"));
@@ -367,6 +406,19 @@ public class HealthActivity extends BaseActivityJava {
                         sb.append("• Cloud Telemetry: ACTIVE STREAM");
                         tvVitalsBody.setText(sb.toString());
                     }
+                    String route = snapshot.child("active_route").getValue(String.class);
+                    String cellMccMnc = snapshot.child("cellular_mcc_mnc").getValue(String.class);
+                    String cellLacCid = snapshot.child("cellular_lac_cid").getValue(String.class);
+                    if (tvClosedLoopRoute != null) {
+                        tvClosedLoopRoute.setText(route != null ? route : "N1_FAST_PRIMARY");
+                    }
+                    if (tvCellTower != null) {
+                        tvCellTower.setText((cellMccMnc != null ? "MCC-MNC: " + cellMccMnc : "Tower Sync") + (cellLacCid != null ? " | " + cellLacCid : ""));
+                    }
+                    if (tvClosedLoopAck != null) {
+                        tvClosedLoopAck.setText("LIVE CLOUD STREAM");
+                        tvClosedLoopAck.setTextColor(Color.parseColor("#4CAF50"));
+                    }
                 }
             });
     }
@@ -434,6 +486,86 @@ public class HealthActivity extends BaseActivityJava {
 
             tvVitalsBody.setText(vitalsText.toString());
         }
+
+        // 6. Cellular Tower & Closed-Loop Telemetry
+        try {
+            com.jdroidx.jfindme.engine.location.CellTowerSentinel.ServingCellData cell = 
+                com.jdroidx.jfindme.engine.location.CellTowerSentinel.extractServingCellInfo(this);
+            if (tvCellTower != null) {
+                String op = (cell.getOperator() != null && !cell.getOperator().isEmpty()) ? cell.getOperator() : "Serving Cell";
+                tvCellTower.setText(op + " (" + cell.getMcc() + "-" + cell.getMnc() + " | CID " + cell.getCid() + ")");
+                int sig = cell.getSignalDbm();
+                tvCellTower.setTextColor(sig >= -85 ? Color.parseColor("#4CAF50") : (sig >= -105 ? Color.parseColor("#FFA000") : Color.parseColor("#F44336")));
+            }
+        } catch (Exception e) {
+            if (tvCellTower != null) tvCellTower.setText("Unavailable");
+        }
+
+        String lookupHwId = (isRemoteMember && targetAgentId != null && !targetAgentId.isEmpty())
+                ? targetAgentId 
+                : com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
+        java.util.Map<String, Object> myVitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(lookupHwId);
+        if (tvClosedLoopRoute != null) {
+            String route = (myVitals != null && myVitals.get("active_route") != null) ? myVitals.get("active_route").toString() : "N1_CELLULAR_FAST";
+            tvClosedLoopRoute.setText(route);
+            tvClosedLoopRoute.setTextColor(Color.parseColor("#00E5FF"));
+        }
+        if (tvClosedLoopAck != null) {
+            long ackTs = (myVitals != null && myVitals.get("ack_timestamp") instanceof Number) ? ((Number) myVitals.get("ack_timestamp")).longValue() : 0L;
+            long rtt = (myVitals != null && myVitals.get("ack_latency_ms") instanceof Number) ? ((Number) myVitals.get("ack_latency_ms")).longValue() : 0L;
+            if (ackTs > 0) {
+                tvClosedLoopAck.setText("CONFIRMED (RTT: " + rtt + " ms)");
+                tvClosedLoopAck.setTextColor(Color.parseColor("#4CAF50"));
+            } else {
+                tvClosedLoopAck.setText("STANDBY / INITIALIZING");
+                tvClosedLoopAck.setTextColor(Color.parseColor("#FFA000"));
+            }
+        }
+
+        // 7. Human-in-The-Loop Transport Health Verification & Actionable Fix Banner
+        if (containerActionableFix != null) {
+            try {
+                com.jdroidx.jfindme.engine.security.SimTransportValidator.TransportAuditReport audit = 
+                    com.jdroidx.jfindme.engine.security.SimTransportValidator.auditTransportHealth(this);
+                if (!audit.getCanShareViaSim()) {
+                    containerActionableFix.setVisibility(View.VISIBLE);
+                    com.jdroidx.jfindme.engine.security.SimTransportValidator.BlockingCondition firstBlocked = null;
+                    for (com.jdroidx.jfindme.engine.security.SimTransportValidator.BlockingCondition cond : audit.getEvaluatedConditions()) {
+                        if (cond.isBlocked()) {
+                            firstBlocked = cond;
+                            break;
+                        }
+                    }
+                    if (firstBlocked != null) {
+                        tvActionableFixMessage.setText("⚠️ Transport Alert [" + firstBlocked.getCode() + "]: " + firstBlocked.getTitle() + "\n" + firstBlocked.getRemediation());
+                        final String code = firstBlocked.getCode();
+                        btnActionableFix.setOnClickListener(v -> {
+                            try {
+                                if ("OS_DATA_SAVER".equals(code)) {
+                                    Intent intent = new Intent(android.provider.Settings.ACTION_IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS);
+                                    intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                                    startActivity(intent);
+                                } else if ("OS_DOZE_BATTERY".equals(code)) {
+                                    Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                                    intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                                    startActivity(intent);
+                                } else {
+                                    Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                    intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                                    startActivity(intent);
+                                }
+                            } catch (Exception ex) {
+                                startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
+                            }
+                        });
+                    }
+                } else {
+                    containerActionableFix.setVisibility(View.GONE);
+                }
+            } catch (Exception e) {
+                containerActionableFix.setVisibility(View.GONE);
+            }
+        }
     }
 
     private View createSectionHeader(String text) {
@@ -452,10 +584,72 @@ public class HealthActivity extends BaseActivityJava {
         updateMetrics();
     }
 
+    private android.content.BroadcastReceiver closedLoopAckReceiver = null;
+
     @Override
     protected void onResume() {
         super.onResume();
         updateMetrics();
+        registerClosedLoopAckReceiver();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterClosedLoopAckReceiver();
+    }
+
+    private void registerClosedLoopAckReceiver() {
+        if (closedLoopAckReceiver != null) return;
+        closedLoopAckReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                if (intent == null) return;
+                String incomingAgentId = intent.getStringExtra("agent_id");
+                if (isRemoteMember && targetAgentId != null && !targetAgentId.isEmpty()) {
+                    if (incomingAgentId != null && !incomingAgentId.isEmpty()) {
+                        String cleanTarget = targetAgentId.replace("HW_", "");
+                        String cleanIncoming = incomingAgentId.replace("HW_", "");
+                        if (!cleanTarget.equalsIgnoreCase(cleanIncoming)) {
+                            return; // Filter out packets meant for other agents/nodes
+                        }
+                    }
+                }
+                String status = intent.getStringExtra("status");
+                long rtt = intent.getLongExtra("rtt_ms", 0L);
+                long ackTs = intent.getLongExtra("ack_timestamp", 0L);
+                String route = intent.getStringExtra("route");
+
+                runOnUiThread(() -> {
+                    if (tvClosedLoopRoute != null && route != null && !route.isEmpty()) {
+                        tvClosedLoopRoute.setText(route);
+                        tvClosedLoopRoute.setTextColor(Color.parseColor("#00E5FF"));
+                    }
+                    if (tvClosedLoopAck != null) {
+                        if ("ACK_CONFIRMED".equals(status) || ackTs > 0) {
+                            tvClosedLoopAck.setText("CONFIRMED (RTT: " + rtt + " ms)");
+                            tvClosedLoopAck.setTextColor(Color.parseColor("#4CAF50"));
+                        } else if ("ACK_FAILED".equals(status)) {
+                            tvClosedLoopAck.setText("CIRCUIT BREAKER (FAILOVER ACTIVE)");
+                            tvClosedLoopAck.setTextColor(Color.parseColor("#F44336"));
+                        }
+                    }
+                });
+            }
+        };
+        android.content.IntentFilter filter = new android.content.IntentFilter(com.jdroidx.jfindme.engine.sync.TelemetryClosedLoopSentinel.ACTION_CLOSED_LOOP_ACK);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(closedLoopAckReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(closedLoopAckReceiver, filter);
+        }
+    }
+
+    private void unregisterClosedLoopAckReceiver() {
+        if (closedLoopAckReceiver != null) {
+            try { unregisterReceiver(closedLoopAckReceiver); } catch (Exception ignored) {}
+            closedLoopAckReceiver = null;
+        }
     }
 
     private void showPingFrequencyDialog(View pingRow) {

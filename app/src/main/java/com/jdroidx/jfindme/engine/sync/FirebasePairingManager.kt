@@ -32,6 +32,52 @@ object FirebasePairingManager {
     private var activeHostListener: ValueEventListener? = null
     var activePairingCode: String? = null
 
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Persistent SharedPreferences Brute-Force Lockout (survives process kills and app restarts)
+    private const val PREFS_PIN_LOCKOUT = "pin_lockout_registry"
+    private const val MAX_PIN_FAILURES = 5
+    private const val PIN_LOCKOUT_MS = 15 * 60 * 1000L // 15 minutes lockout
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Dual Monotonic + Wall Clock Protection against Local Date/Time Tampering
+    private fun getLockoutRecord(context: android.content.Context, code: String): Pair<Int, Long> {
+        val prefs = context.getSharedPreferences(PREFS_PIN_LOCKOUT, android.content.Context.MODE_PRIVATE)
+        val count = prefs.getInt("fail_count_$code", 0)
+        val ts = prefs.getLong("fail_ts_$code", 0L)
+        val mono = prefs.getLong("fail_mono_$code", 0L)
+        val now = System.currentTimeMillis()
+        val nowMono = android.os.SystemClock.elapsedRealtime()
+
+        if (count >= MAX_PIN_FAILURES) {
+            if (mono > 0 && nowMono >= mono && (nowMono - mono < PIN_LOCKOUT_MS)) {
+                return Pair(count, ts)
+            }
+        }
+
+        if (count > 0 && ts > 0 && (now - ts >= PIN_LOCKOUT_MS)) {
+            clearPinFailure(context, code)
+            return Pair(0, 0L)
+        }
+        return Pair(count, ts)
+    }
+
+    private fun recordPinFailure(context: android.content.Context, code: String) {
+        val prefs = context.getSharedPreferences(PREFS_PIN_LOCKOUT, android.content.Context.MODE_PRIVATE)
+        val current = getLockoutRecord(context, code)
+        prefs.edit()
+            .putInt("fail_count_$code", current.first + 1)
+            .putLong("fail_ts_$code", System.currentTimeMillis())
+            .putLong("fail_mono_$code", android.os.SystemClock.elapsedRealtime())
+            .apply()
+    }
+
+    private fun clearPinFailure(context: android.content.Context, code: String) {
+        val prefs = context.getSharedPreferences(PREFS_PIN_LOCKOUT, android.content.Context.MODE_PRIVATE)
+        prefs.edit().remove("fail_count_$code").remove("fail_ts_$code").remove("fail_mono_$code").apply()
+    }
+
+
+
     /**
      * 🔗 FIX #1: Removed 'assignedRoles' parameter — the role is negotiated AFTER the child knocks,
      * not at token-generation time. The old "AWAITING_ROLE" dead-write has been eliminated.
@@ -91,6 +137,14 @@ object FirebasePairingManager {
     }
 
     fun requestJoinGroup(context: android.content.Context, inviteCode: String, selectedRole: String, onStatusUpdate: (Boolean, String) -> Unit) {
+        val now = System.currentTimeMillis()
+        val failureRecord = getLockoutRecord(context, inviteCode)
+        if (failureRecord.first >= MAX_PIN_FAILURES && (now - failureRecord.second) < PIN_LOCKOUT_MS) {
+            val remainingMins = ((PIN_LOCKOUT_MS - (now - failureRecord.second)) / 60000L).coerceAtLeast(1)
+            onStatusUpdate(false, "PIN temporarily locked due to failed attempts. Retry in $remainingMins mins.")
+            return
+        }
+
         val finalChildId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
         val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
         val myDos = dbHelper.getLocalDossier(finalChildId)
@@ -98,6 +152,7 @@ object FirebasePairingManager {
 
         pairingRequestsEndpoint.child(inviteCode).get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
+                clearPinFailure(context, inviteCode) // 🛡️ Reset attempt counter on authentic PIN entry
                 val status = snapshot.child("status").getValue(String::class.java)
                 val assignedChild = snapshot.child("childDeviceId").getValue(String::class.java) ?: ""
 
@@ -118,7 +173,13 @@ object FirebasePairingManager {
 
                 listenForAcceptance(context, inviteCode, finalChildId, onStatusUpdate)
             } else {
-                onStatusUpdate(false, "Invalid Code.")
+                recordPinFailure(context, inviteCode)
+                val (curCount, _) = getLockoutRecord(context, inviteCode)
+                if (curCount >= MAX_PIN_FAILURES) {
+                    onStatusUpdate(false, "Too many failed attempts ($curCount/$MAX_PIN_FAILURES). PIN locked for 15 mins.")
+                } else {
+                    onStatusUpdate(false, "Invalid Code ($curCount/$MAX_PIN_FAILURES attempts).")
+                }
             }
         }.addOnFailureListener {
             onStatusUpdate(false, "Network Frame Error.")
@@ -203,6 +264,9 @@ object FirebasePairingManager {
                 updates["${FirebaseComm.NODE_DEVICES}/$cleanChildId/Identity/active_group"] = cleanHostGroup
                 updates["${FirebaseComm.NODE_DEVICES}/$cleanHostId/profile/active_group"] = cleanHostGroup
                 updates["${FirebaseComm.NODE_DEVICES}/$cleanChildId/profile/active_group"] = cleanHostGroup
+                // Rapid Inverse Index Alignment for multi-circle recovery
+                updates["users/$cleanHostId/joined_circles/$cleanHostGroup"] = true
+                updates["users/$cleanChildId/joined_circles/$cleanHostGroup"] = true
 
                 // 4. Release Handshake Lock
                 updates["${FirebaseComm.NODE_PAIRING}/$cleanInviteCode/status"] = "approved"

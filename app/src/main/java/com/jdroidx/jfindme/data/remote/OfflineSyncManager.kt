@@ -98,6 +98,7 @@ class OfflineSyncManager private constructor(context: Context) {
                     listeners.forEach { it.onNetworkStatusChanged(true) }
                     processQueue()
                     reconcileMetadataWithCloud()
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.flushPendingMasterSyncQueue(context)
                 }
 
                 override fun onLost(network: Network) {
@@ -205,9 +206,77 @@ class OfflineSyncManager private constructor(context: Context) {
         return true
     }
 
+    
+    /**
+     * ⚖️ Reconciles all pending balance data accumulated between yesterday (T - 24h) and today (T_0).
+     * Synchronously extracts pending records from DatabaseHelper, pushes to Firebase, and marks as synced.
+     */
+    fun reconcileYesterdayTodayBalance(): Int {
+        val now = System.currentTimeMillis()
+        val yesterday = now - (24 * 60 * 60 * 1000L)
+        var itemsProcessed = 0
+
+        try {
+            val db = DatabaseHelper.getInstance(context)
+            val deltaList = db.getBalanceDeltaQueue(yesterday, now, limit = 200)
+            if (deltaList.isEmpty()) {
+                SystemLogger.i(TAG, "Balance delta reconciliation: Zero pending records between yesterday and today.")
+                return 0
+            }
+
+            SystemLogger.i(TAG, "Balance delta reconciliation starting for ${deltaList.size} records.")
+            val syncedIds = mutableListOf<Long>()
+
+            for (item in deltaList) {
+                val id = (item["id"] as? Long) ?: continue
+                val targetUid = (item["target_uid"] as? String) ?: ""
+                val lat = (item["lat"] as? Double) ?: 0.0
+                val lng = (item["lng"] as? Double) ?: 0.0
+                val bearing = (item["bearing"] as? Double)?.toFloat() ?: 0f
+                val speed = (item["speed"] as? Double)?.toFloat() ?: 0f
+                val battery = (item["battery"] as? Long)?.toInt() ?: 100
+                val isSos = (item["is_sos"] as? Long) == 1L
+                val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
+
+                if (targetUid.isNotBlank() && (lat != 0.0 || lng != 0.0)) {
+                    val ul = UserLocation(
+                        userId = targetUid,
+                        latitude = lat,
+                        longitude = lng,
+                        bearing = bearing,
+                        speed = speed,
+                        batteryLevel = battery,
+                        isSosActive = isSos,
+                        timestamp = FirebaseComm.getForensicTimestamp(ts)
+                    )
+                    FirebaseComm.syncAnalyticalEvent(targetUid, ul) { success ->
+                        if (success) {
+                            syncedIds.add(id)
+                            itemsProcessed++
+                        }
+                    }
+                }
+            }
+
+            if (syncedIds.isNotEmpty()) {
+                db.markBalanceDeltaSynced(syncedIds)
+            }
+
+            val totalRemaining = syncQueue.size + db.getPendingSyncCount()
+            pendingQueueCountLiveData.postValue(totalRemaining)
+            RegistryManager.putString(context, "balance_delta_last_synced_ts", FirebaseComm.getForensicTimestamp(now))
+            RegistryManager.putInt(context, "balance_delta_last_synced_count", itemsProcessed)
+            SystemLogger.i(TAG, "Balance delta reconciliation finished. Synced $itemsProcessed records.")
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Error in reconcileYesterdayTodayBalance: ${e.message}")
+        }
+        return itemsProcessed
+    }
+
     fun triggerBackgroundSync() {
         processQueue()
         reconcileMetadataWithCloud()
+        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.flushPendingMasterSyncQueue(context)
     }
 
     private fun processQueue() {
@@ -247,9 +316,9 @@ class OfflineSyncManager private constructor(context: Context) {
                             isSosActive = isSos,
                             timestamp = FirebaseComm.getForensicTimestamp(ts)
                         )
-                        FirebaseComm.syncAnalyticalEvent(targetUid, ul)
-                        db.deletePendingSyncItem(id)
-                        itemsProcessed++
+                        FirebaseComm.syncAnalyticalEvent(targetUid, ul) { success -> if (success) { db.deletePendingSyncItem(id); itemsProcessed++ } }
+                        // db.deletePendingSyncItem handled above upon verified ACK
+                        // itemsProcessed incremented upon verified ACK
                     }
                 }
             } catch (e: Exception) {
@@ -291,6 +360,9 @@ class OfflineSyncManager private constructor(context: Context) {
                     if (internalId != -1L) {
                         com.jdroidx.jfindme.data.local.tables.UserProfileTable.upsert(db.writableDatabase, internalId, map)
                     }
+                    try {
+                        context.sendBroadcast(android.content.Intent("com.jdroidx.jfindme.ACTION_PROFILE_SYNCED").putExtra("agent_id", finalId))
+                    } catch (e: Exception) { }
                     SystemLogger.d(TAG, "Reconciled Profile metadata for: $finalId")
                 }
             }

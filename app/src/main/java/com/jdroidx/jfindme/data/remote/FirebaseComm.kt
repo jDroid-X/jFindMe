@@ -69,7 +69,10 @@ object FirebaseComm {
 
     val database: FirebaseDatabase by lazy {
         val db = FirebaseDatabase.getInstance()
-        try { db.setPersistenceEnabled(true) } catch (e: Exception) {}
+        try { 
+            db.setPersistenceEnabled(true)
+            db.setPersistenceCacheSizeBytes(10 * 1024 * 1024L)
+        } catch (e: Exception) {}
         db
     }
 
@@ -80,6 +83,7 @@ object FirebaseComm {
     @JvmStatic val historyArchiveRef: DatabaseReference get() = database.reference.child(NODE_HISTORY_ARCHIVE)
     @JvmStatic val traceArchivesRef: DatabaseReference get() = historyArchiveRef
     @JvmStatic val geofencingRef: DatabaseReference get() = database.reference.child(NODE_GEOFENCING)
+    @JvmStatic fun getDatabaseRef(): DatabaseReference = database.reference
 
     // 🛡️ Zero-Trust Security Gate: Check if user is authenticated before any cloud write
     @JvmStatic fun isAuthenticated(): Boolean {
@@ -92,38 +96,52 @@ object FirebaseComm {
         return key.replace(Regex("[.#$\\[\\]/\\s:]"), "_").trim()
     }
 
+    // 🛡️ CANONICAL AGENT ID SANITIZER: Strips GRP_ and DEV_ prefixes ensuring only valid hardware keys access /devices
+    @JvmStatic
+    fun sanitizeAgentId(id: String?): String {
+        if (id.isNullOrBlank()) return "UNKNOWN_"
+        var clean = id.trim().uppercase()
+        if (clean.startsWith("GRP_")) {
+            clean = clean.removePrefix("GRP_")
+        } else if (clean.startsWith("DEV_")) {
+            clean = clean.removePrefix("DEV_")
+        }
+        return if (clean.length == 8) clean else clean.take(8)
+    }
+
     // 🛡️ GRANULAR GEOFENCING TREE ACCESSORS: Creator -> SafeZone -> Target Device -> Notifications (Date-Grouped)
-    @JvmStatic fun getGeofencingCreatorRef(creatorId: String): DatabaseReference = geofencingRef.child(sanitizePathKey(creatorId))
-    @JvmStatic fun getGeofencingSafeZonesRef(creatorId: String): DatabaseReference = geofencingRef.child(sanitizePathKey(creatorId)).child("safe_zones")
-    @JvmStatic fun getGeofencingSafeZoneRef(creatorId: String, zoneId: String): DatabaseReference = geofencingRef.child(sanitizePathKey(creatorId)).child("safe_zones").child(sanitizePathKey(zoneId))
+    @JvmStatic fun getGeofencingCreatorRef(creatorId: String): DatabaseReference = geofencingRef.child(sanitizeAgentId(creatorId))
+    @JvmStatic fun getGeofencingSafeZonesRef(creatorId: String): DatabaseReference = geofencingRef.child(sanitizeAgentId(creatorId)).child("safe_zones")
+    @JvmStatic fun getGeofencingSafeZoneRef(creatorId: String, zoneId: String): DatabaseReference = geofencingRef.child(sanitizeAgentId(creatorId)).child("safe_zones").child(sanitizePathKey(zoneId))
     @JvmStatic fun getGeofencingConnectedDevicesRef(creatorId: String, zoneId: String): DatabaseReference = getGeofencingSafeZoneRef(creatorId, zoneId).child("connected_devices")
-    @JvmStatic fun getGeofencingTargetDeviceRef(creatorId: String, zoneId: String, targetDeviceId: String): DatabaseReference = getGeofencingConnectedDevicesRef(creatorId, zoneId).child(sanitizePathKey(targetDeviceId))
+    @JvmStatic fun getGeofencingTargetDeviceRef(creatorId: String, zoneId: String, targetDeviceId: String): DatabaseReference = getGeofencingConnectedDevicesRef(creatorId, zoneId).child(sanitizeAgentId(targetDeviceId))
     @JvmStatic fun getGeofencingNotificationsRef(creatorId: String, zoneId: String, targetDeviceId: String, dateStr: String): DatabaseReference = getGeofencingTargetDeviceRef(creatorId, zoneId, targetDeviceId).child("notifications").child(sanitizePathKey(dateStr))
 
     // 🛡️ GRANULAR SUB-NODE ACCESSORS (Strictly Grouped by Canonical 8-Char DeviceId)
     @JvmStatic fun getDeviceRef(agentId: String): DatabaseReference {
-        if (!isAgentIdValid(agentId)) {
-            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "CRITICAL_BLOCKED: Attempted getDeviceRef with non-canonical key: '$agentId'")
+        val cleanId = sanitizeAgentId(agentId)
+        if (!isAgentIdValid(cleanId)) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "CRITICAL_BLOCKED: Attempted getDeviceRef with non-canonical key: '$agentId' (sanitized: '$cleanId')")
         }
-        return devicesRef.child(agentId)
+        return devicesRef.child(cleanId)
     }
-    @JvmStatic fun getProfileRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_PROFILE)
-    @JvmStatic fun getIdentityRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_IDENTITY)
-    @JvmStatic fun getTelemetryRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_TELEMETRY)
-    @JvmStatic fun getLiveRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_LIVE)
-    @JvmStatic fun getHistoryRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_HISTORY)
-    @JvmStatic fun getDeepHistoryRef(agentId: String): DatabaseReference = historyArchiveRef.child(agentId).child(SUB_HISTORY)
-    @JvmStatic fun getSafeZonesRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_SAFE_ZONES)
-    @JvmStatic fun getRelationshipsRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_RELATIONSHIPS)
-    @JvmStatic fun getAlertsRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_ALERTS)
-    @JvmStatic fun getChangeLogRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_CHANGE_LOG)
+    @JvmStatic fun getProfileRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_PROFILE)
+    @JvmStatic fun getIdentityRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_IDENTITY)
+    @JvmStatic fun getTelemetryRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_TELEMETRY)
+    @JvmStatic fun getLiveRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_LIVE)
+    @JvmStatic fun getHistoryRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_HISTORY)
+    @JvmStatic fun getDeepHistoryRef(agentId: String): DatabaseReference = historyArchiveRef.child(sanitizeAgentId(agentId)).child(SUB_HISTORY)
+    @JvmStatic fun getSafeZonesRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_SAFE_ZONES)
+    @JvmStatic fun getRelationshipsRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_RELATIONSHIPS)
+    @JvmStatic fun getAlertsRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_ALERTS)
+    @JvmStatic fun getChangeLogRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_CHANGE_LOG)
     @JvmStatic fun getProfileChangeLogRef(agentId: String): DatabaseReference = getChangeLogRef(agentId).child(LOG_ITEM_PROFILE)
     @JvmStatic fun getPairingChangeLogRef(agentId: String): DatabaseReference = getChangeLogRef(agentId).child(LOG_ITEM_PAIRING)
     @JvmStatic fun getFamilyFriendsChangeLogRef(agentId: String): DatabaseReference = getChangeLogRef(agentId).child(LOG_ITEM_FAMILY_FRIENDS)
     @JvmStatic fun getSafehouseChangeLogRef(agentId: String): DatabaseReference = getChangeLogRef(agentId).child(LOG_ITEM_SAFEHOUSE)
-    @JvmStatic fun getAccessRef(agentId: String): DatabaseReference = devicesRef.child(agentId).child(SUB_ACCESS)
+    @JvmStatic fun getAccessRef(agentId: String): DatabaseReference = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_ACCESS)
     @JvmStatic val versionUpdatesRef: DatabaseReference get() = database.reference.child(NODE_VERSION_UPDATES)
-    @JvmStatic fun getVersionUpdatesDeviceRef(agentId: String): DatabaseReference = versionUpdatesRef.child(agentId)
+    @JvmStatic fun getVersionUpdatesDeviceRef(agentId: String): DatabaseReference = versionUpdatesRef.child(sanitizeAgentId(agentId))
     @JvmStatic fun getVersionUpdateDetailRef(agentId: String, versionName: String): DatabaseReference = getVersionUpdatesDeviceRef(agentId).child(sanitizePathKey(versionName))
 
     /**
@@ -349,32 +367,189 @@ object FirebaseComm {
                 val remoteName = snap.child("version_name").getValue(String::class.java) ?: "1.0.0"
                 val driveUrl = snap.child("download_url_drive").getValue(String::class.java) ?: com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_SYSTEM_UPDATE_LINK
                 val githubUrl = snap.child("download_url_github").getValue(String::class.java) ?: com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
-                val size = snap.child("package_size_formatted").getValue(String::class.java) ?: "107.0 MB"
+                val fallbackDeltaUrl = snap.child("delta_patch_url").getValue(String::class.java) ?: ""
+                val fallbackDeltaSize = snap.child("delta_patch_size").getValue(String::class.java) ?: ""
+                val deltaFromBuild = snap.child("delta_from_build").getValue(Long::class.java)?.toInt() ?: 0
+                val size = snap.child("package_size_formatted").getValue(String::class.java) ?: "84.4 MB"
                 val bestUrl = if (githubUrl.isNotEmpty()) githubUrl else driveUrl
-
                 val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
                 val hasNew = remoteCode > currentCode
 
                 if (hasNew) {
-                    com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_UPDATE_AVAILABLE_TS, "V$remoteName (Build $remoteCode) [$size]")
-                    com.jdroidx.jfindme.utils.RegistryManager.putBoolean(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_IS_UPDATED, false)
+                    // 🧬 Multi-Device Due Diligence: Look for exact base->target delta patch matching this specific device's build
+                    val specificPatchNode = "${currentCode}_${remoteCode}"
+                    versionUpdatesRef.child("patches").child(specificPatchNode).get().addOnCompleteListener { patchTask ->
+                        var resolvedDeltaUrl = ""
+                        var resolvedDeltaSize = ""
+                        var resolvedSha = ""
+                        var resolvedSavingsPct = 0.0
+
+                        if (patchTask.isSuccessful && patchTask.result != null && patchTask.result.exists()) {
+                            val pSnap = patchTask.result
+                            resolvedDeltaUrl = pSnap.child("delta_url").getValue(String::class.java) ?: ""
+                            resolvedDeltaSize = pSnap.child("delta_size_formatted").getValue(String::class.java) ?: ""
+                            resolvedSha = pSnap.child("delta_sha256").getValue(String::class.java) ?: ""
+                            resolvedSavingsPct = pSnap.child("savings_pct").getValue(Double::class.java) ?: 0.0
+                            SystemLogger.i("FirebaseComm", "🎯 Exact matching delta found for build $currentCode -> $remoteCode: $resolvedDeltaSize ($resolvedSavingsPct% saved)")
+                        } else if (deltaFromBuild == currentCode && fallbackDeltaUrl.isNotEmpty()) {
+                            resolvedDeltaUrl = fallbackDeltaUrl
+                            resolvedDeltaSize = fallbackDeltaSize
+                            resolvedSha = snap.child("delta_patch_sha256").getValue(String::class.java) ?: ""
+                        }
+
+                        if (resolvedDeltaUrl.isNotEmpty()) {
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_url", resolvedDeltaUrl)
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_size", resolvedDeltaSize)
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_LATEST_DELTA_SHA256, resolvedSha)
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, String.format(java.util.Locale.US, "%.1f", resolvedSavingsPct))
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_LATEST_DELTA_FROM_BUILD, currentCode.toString())
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_LATEST_DELTA_TO_BUILD, remoteCode.toString())
+                        } else {
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_url", "")
+                            com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_size", "")
+                        }
+
+                        val displaySize = if (resolvedDeltaSize.isNotEmpty()) "$resolvedDeltaSize Delta ($size Full)" else size
+                        com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_UPDATE_AVAILABLE_TS, "V$remoteName (Build $remoteCode) [$displaySize]")
+                        com.jdroidx.jfindme.utils.RegistryManager.putBoolean(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_IS_UPDATED, false)
+
+                        callback(true, remoteName, remoteCode, bestUrl, size)
+                    }
                 } else {
+                    com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_url", "")
+                    com.jdroidx.jfindme.utils.RegistryManager.putString(context, "latest_delta_patch_size", "")
                     com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_UPDATE_AVAILABLE_TS, "None (Running Latest V$remoteName)")
                     com.jdroidx.jfindme.utils.RegistryManager.putBoolean(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_IS_UPDATED, true)
+                    callback(false, remoteName, remoteCode, bestUrl, size)
                 }
-
-                callback(hasNew, remoteName, remoteCode, bestUrl, size)
             } else {
-                // Fallback to Production Master Defaults (v1.0.2)
+                // Fallback to Production Master Defaults
                 val defaultCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
                 val defaultName = com.jdroidx.jfindme.BuildConfig.VERSION_NAME
                 val defaultUrl = "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/jButterFly.apk"
-                val defaultSize = "95.9 MB"
+                val defaultSize = "84.4 MB"
                 val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
                 val hasNew = defaultCode > currentCode
 
                 callback(hasNew, defaultName, defaultCode, defaultUrl, defaultSize)
             }
+        }
+    }
+
+    data class PatchCatalogItem(
+        val patchId: String,
+        val fromBuild: Int,
+        val toBuild: Int,
+        val deltaFilename: String,
+        val deltaSizeFormatted: String,
+        val deltaSha256: String,
+        val deltaUrl: String,
+        val savingsPct: Double,
+        val targetApkName: String,
+        val status: String,
+        val isApplicableToThisDevice: Boolean
+    )
+
+    /**
+     * 📋 Live Fleet Patch Ledger: Fetches all registered patches from /Version_Update/patches/
+     * and flags which ones match the current device's installed build.
+     */
+    @JvmStatic
+    fun fetchAvailablePatchesCatalog(
+        context: android.content.Context,
+        currentBuild: Int,
+        callback: (List<PatchCatalogItem>) -> Unit
+    ) {
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            callback(emptyList())
+            return
+        }
+        versionUpdatesRef.child("patches").get().addOnCompleteListener { task ->
+            val list = mutableListOf<PatchCatalogItem>()
+            if (task.isSuccessful && task.result != null && task.result.exists()) {
+                for (child in task.result.children) {
+                    val patchId = child.child("patch_id").getValue(String::class.java) ?: child.key ?: ""
+                    val fromB = child.child("from_build").getValue(Long::class.java)?.toInt() ?: 0
+                    val toB = child.child("to_build").getValue(Long::class.java)?.toInt() ?: 0
+                    val filename = child.child("delta_filename").getValue(String::class.java) ?: ""
+                    val sizeFormatted = child.child("delta_size_formatted").getValue(String::class.java) ?: "0 MB"
+                    val sha = child.child("delta_sha256").getValue(String::class.java) ?: ""
+                    val url = child.child("delta_url").getValue(String::class.java) ?: ""
+                    val savings = child.child("savings_pct").getValue(Double::class.java) ?: 0.0
+                    val tgtApk = child.child("target_apk_name").getValue(String::class.java) ?: ""
+                    val status = child.child("status").getValue(String::class.java) ?: "AVAILABLE"
+                    val isApplicable = fromB == currentBuild
+
+                    list.add(PatchCatalogItem(
+                        patchId = patchId,
+                        fromBuild = fromB,
+                        toBuild = toB,
+                        deltaFilename = filename,
+                        deltaSizeFormatted = sizeFormatted,
+                        deltaSha256 = sha,
+                        deltaUrl = url,
+                        savingsPct = savings,
+                        targetApkName = tgtApk,
+                        status = status,
+                        isApplicableToThisDevice = isApplicable
+                    ))
+                }
+            }
+            // Sort by applicable first, then by toBuild desc, fromBuild desc
+            list.sortWith(compareByDescending<PatchCatalogItem> { it.isApplicableToThisDevice }
+                .thenByDescending { it.toBuild }
+                .thenByDescending { it.fromBuild })
+            callback(list)
+        }
+    }
+
+    data class LiveHotPatchInfo(
+        val patchId: String,
+        val patchName: String,
+        val targetComponent: String,
+        val patchSize: String,
+        val sha256: String,
+        val releaseNotes: String,
+        val payloadJson: String,
+        val status: String,
+        val timestamp: String
+    )
+
+    @JvmStatic
+    fun checkForLiveHotPatch(
+        context: android.content.Context,
+        callback: (hasHotPatch: Boolean, patchInfo: LiveHotPatchInfo?) -> Unit
+    ) {
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            callback(false, null)
+            return
+        }
+        val hotPatchRef = versionUpdatesRef.child("live_hot_patch")
+        hotPatchRef.get().addOnCompleteListener { task ->
+            if (task.isSuccessful && task.result != null && task.result.exists()) {
+                val snap = task.result
+                val patchId = snap.child("patch_id").getValue(String::class.java) ?: ""
+                val patchName = snap.child("patch_name").getValue(String::class.java) ?: "Tactical Hot-Patch"
+                val targetComponent = snap.child("target_component").getValue(String::class.java) ?: "Runtime Engine"
+                val patchSize = snap.child("patch_size").getValue(String::class.java) ?: "48 KB"
+                val sha256 = snap.child("sha256").getValue(String::class.java) ?: ""
+                val releaseNotes = snap.child("release_notes").getValue(String::class.java) ?: "Dynamic fixes"
+                val payloadJson = snap.child("payload").getValue(String::class.java) ?: "{}"
+                val status = snap.child("status").getValue(String::class.java) ?: "AVAILABLE"
+                val timestamp = snap.child("timestamp").getValue(String::class.java) ?: ""
+
+                if (patchId.isNotEmpty() && status == "AVAILABLE") {
+                    val info = LiveHotPatchInfo(
+                        patchId, patchName, targetComponent, patchSize, sha256,
+                        releaseNotes, payloadJson, status, timestamp
+                    )
+                    callback(true, info)
+                    return@addOnCompleteListener
+                }
+            }
+            callback(false, null)
         }
     }
     
@@ -804,72 +979,100 @@ object FirebaseComm {
     }
 
     @JvmStatic
-    fun syncAnalyticalEvent(agentId: String, eventData: UserLocation) {
-        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) return
+    fun syncAnalyticalEvent(agentId: String, eventData: UserLocation, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) { onComplete?.invoke(false); return }
         val now = getForensicTimestamp()
         val updates = mutableMapOf<String, Any>()
         
-        // 1. LIVE NODE: Real-time telemetry cursor (Shallow O(1) Read)
+        // 1. LIVE NODE: Ultra-Lean Real-Time Telemetry Cursor (Shallow O(1) Read)
         val livePath = "$NODE_DEVICES/$agentId/device/live"
         updates["$livePath/latitude"] = eventData.latitude
         updates["$livePath/longitude"] = eventData.longitude
         updates["$livePath/speed"] = eventData.speed
         updates["$livePath/battery"] = eventData.batteryLevel
-        updates["$livePath/address"] = eventData.address ?: ""
         updates["$livePath/updated_at"] = now
         
-        // 2. DEVICE HISTORY NODE: Only latest point under device
-        val historyKey = getInvertedForensicKey()
-        updates["$NODE_DEVICES/$agentId/history"] = mapOf(historyKey to eventData.toHistoryMap())
-
-        // 3. TOP-LEVEL /History ARCHIVE: Time-Series Stream (Pure Telemetry Metadata Only)
-        val archiveHistPath = "$NODE_HISTORY_ARCHIVE/$agentId/history/$historyKey"
-        updates[archiveHistPath] = eventData.toHistoryMap()
-        
-        database.reference.updateChildren(updates).addOnFailureListener {
-            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${it.message}")
+        database.reference.updateChildren(updates) { error, _ ->
+            if (error != null) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${error.message}")
+                onComplete?.invoke(false)
+            } else {
+                onComplete?.invoke(true)
+            }
         }
     }
 
     /**
      * 🧬 V72.0: Partitioned Multi-Account Trace Synchronization (No Merging / No Overlap)
-     * Writes real-time telemetry cursor to devices/$agentId/device/live AND archives immutable
-     * time-series point to trace_archives/$authUid/$agentId/$epochId/$timestamp.
+     * Writes real-time ultra-lean telemetry cursor to devices/$agentId/device/live.
+     * Offline-first local SQLite ledger stores comprehensive historical breadcrumbs and reverse-geocodes.
      */
     @JvmStatic
-    fun syncPartitionedLocationTrace(authUid: String, agentId: String, epochId: String, eventData: UserLocation) {
-        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) return
+    @JvmOverloads
+    fun syncPartitionedLocationTrace(authUid: String, agentId: String, epochId: String, eventData: UserLocation, onComplete: ((Boolean) -> Unit)? = null) {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Variables: now (forensic String), nowEpoch (Long ms), updates (Multi-path Atomic Batch)
+        // Constants: NODE_DEVICES, NODE_RELATIONSHIPS, STATUS_ONLINE
+        // Dependencies: FirebaseDatabase, UserLocation, SystemLogger
+        // Integration Points: TrackingService, TelemetryFailoverRouter, LocationRepository
+        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) { onComplete?.invoke(false); return }
         val now = getForensicTimestamp()
+        val nowEpoch = System.currentTimeMillis()
         val updates = mutableMapOf<String, Any>()
 
-        // 1. Live Hub Cursor (O(1) Shallow Read)
+        // 1. Live Hub Cursor (Ultra-Lean O(1) Shallow Read — Preserving Live Device Identity)
         val livePath = "$NODE_DEVICES/$agentId/device/live"
         updates["$livePath/latitude"] = eventData.latitude
         updates["$livePath/longitude"] = eventData.longitude
         updates["$livePath/speed"] = eventData.speed
         updates["$livePath/battery"] = eventData.batteryLevel
-        updates["$livePath/address"] = eventData.address ?: ""
-        updates["$livePath/userName"] = eventData.userName
-        updates["$livePath/avatar_id"] = eventData.avatar_id
         updates["$livePath/bearing"] = eventData.bearing
         updates["$livePath/isSosActive"] = eventData.isSosActive
         updates["$livePath/auth_uid"] = authUid
         updates["$livePath/epoch_id"] = epochId
         updates["$livePath/updated_at"] = now
+        updates["$livePath/timestamp"] = nowEpoch
+        updates["$livePath/last_heartbeat"] = nowEpoch
+        updates["$livePath/is_online"] = true
+        updates["$livePath/status"] = STATUS_ONLINE
 
-        // 2. Device History Node: Only latest 1 data point under device (Pure Telemetry)
-        val historyKey = getInvertedForensicKey()
-        val payload = eventData.toHistoryMap().toMutableMap()
-        payload["epoch_id"] = if (epochId.isNotEmpty()) epochId else "DEFAULT_EPOCH"
-        payload["timestamp"] = now
-        updates["$NODE_DEVICES/$agentId/history"] = mapOf(historyKey to payload)
+        // 2. Hardware Telemetry Mirror
+        val telePath = "$NODE_DEVICES/$agentId/telemetry"
+        updates["$telePath/last_heartbeat"] = nowEpoch
+        updates["$telePath/last_seen"] = nowEpoch
+        updates["$telePath/status"] = STATUS_ONLINE
+        updates["$telePath/battery_pct"] = eventData.batteryLevel
 
-        // 3. TOP-LEVEL /History ARCHIVE: Time-Series Stream (Latest - 1 data)
-        val archivePath = "$NODE_HISTORY_ARCHIVE/$agentId/history/$historyKey"
-        updates[archivePath] = payload
+        // 3. Multi-Path Fan-Out to Active Group Roster (Direct Sync Lockstep)
+        val activeGrp = eventData.active_group.trim()
+        if (activeGrp.isNotEmpty() && activeGrp != "DEFAULT_GROUP") {
+            val memberPath = "$NODE_RELATIONSHIPS/$activeGrp/members/$agentId"
+            updates["$memberPath/last_heartbeat"] = nowEpoch
+            updates["$memberPath/is_online"] = true
+            updates["$memberPath/battery"] = eventData.batteryLevel
+            updates["$memberPath/latitude"] = eventData.latitude
+            updates["$memberPath/longitude"] = eventData.longitude
+            updates["$memberPath/updated_at"] = now
+        }
 
-        database.reference.updateChildren(updates).addOnFailureListener {
-            com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "PARTITIONED_SYNC_FAILURE: ${it.message}")
+        // 🛡️ IDENTITY SHIELD: Guarantee GPS tick never clears current avatar or user name
+        val av = eventData.avatar_id.trim()
+        if (av.isNotEmpty() && av != "butterfly") {
+            updates["$livePath/avatar_id"] = av
+        }
+        val un = eventData.userName.trim()
+        if (un.isNotEmpty() && !un.equals("null", ignoreCase = true) && !un.equals("Active Tracker", ignoreCase = true)) {
+            updates["$livePath/userName"] = un
+            updates["$livePath/name"] = un
+        }
+
+        database.reference.updateChildren(updates) { error, _ ->
+            if (error != null) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${error.message}")
+                onComplete?.invoke(false)
+            } else {
+                onComplete?.invoke(true)
+            }
         }
     }
 
@@ -925,8 +1128,65 @@ object FirebaseComm {
             onComplete(emptyList())
             return
         }
-        database.reference.child(NODE_HISTORY_ARCHIVE).child(targetId).child("history").get().addOnSuccessListener { snapshot ->
+        database.reference.child(NODE_DEVICES).child(targetId).child("history").limitToLast(50).get().addOnSuccessListener { snapshot ->
             val points = mutableListOf<Map<String, Any>>()
+            val validSnap = if (snapshot.exists() && snapshot.childrenCount > 0) snapshot else null
+            if (validSnap == null) {
+                // Fallback to legacy archive if devices node empty
+                database.reference.child(NODE_HISTORY_ARCHIVE).child(targetId).child("history").limitToLast(50).get().addOnSuccessListener { legSnap ->
+                    for (pointSnap in legSnap.children) {
+                        try {
+                            val latVal = pointSnap.child("latitude").value ?: pointSnap.child("lat").value
+                            val lat = when (latVal) {
+                                is Number -> latVal.toDouble()
+                                is String -> latVal.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                            val lngVal = pointSnap.child("longitude").value ?: pointSnap.child("lng").value
+                            val lng = when (lngVal) {
+                                is Number -> lngVal.toDouble()
+                                is String -> lngVal.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                            val tsVal = pointSnap.child("timestamp").value ?: pointSnap.key ?: ""
+                            val ts = when (tsVal) {
+                                is Number -> {
+                                    val epoch = tsVal.toLong()
+                                    if (epoch > 1000000000000L) {
+                                        java.text.SimpleDateFormat("dd-MM-yyyy HH:mm:ss", java.util.Locale.US).format(java.util.Date(epoch))
+                                    } else epoch.toString()
+                                }
+                                else -> tsVal.toString()
+                            }
+                            val speedVal = pointSnap.child("speed").value
+                            val speed = when (speedVal) {
+                                is Number -> speedVal.toFloat()
+                                is String -> speedVal.toFloatOrNull() ?: 0f
+                                else -> 0f
+                            }
+                            val batVal = pointSnap.child("battery").value
+                            val battery = when (batVal) {
+                                is Number -> batVal.toInt()
+                                is String -> batVal.toIntOrNull() ?: 100
+                                else -> 100
+                            }
+                            val addr = pointSnap.child("address").value?.toString() ?: ""
+                            if (lat != 0.0 && lng != 0.0) {
+                                points.add(mapOf(
+                                    "lat" to lat,
+                                    "lng" to lng,
+                                    "timestamp" to ts,
+                                    "speed" to speed,
+                                    "battery" to battery,
+                                    "address" to addr
+                                ))
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    onComplete(points)
+                }.addOnFailureListener { onComplete(emptyList()) }
+                return@addOnSuccessListener
+            }
             for (pointSnap in snapshot.children) {
                 try {
                     val latVal = pointSnap.child("latitude").value ?: pointSnap.child("lat").value
@@ -1232,5 +1492,99 @@ object FirebaseComm {
         if (rId.isNotEmpty()) {
             syncAnalyticalEvent(rId, userLocation)
         }
+    }
+
+    @JvmStatic
+    fun setHeartbeatInterval(intervalSeconds: Int) {
+        com.jdroidx.jfindme.utils.SystemLogger.i("FirebaseComm", "Heartbeat interval updated to: ${intervalSeconds}s")
+    }
+
+    @JvmStatic
+    fun pokeLocationUpdate(agentId: String) {
+        if (!isAuthenticated() || !isAgentIdValid(agentId)) return
+        devicesRef.child(agentId).child("poke").setValue(System.currentTimeMillis())
+    }
+
+    @JvmStatic
+    fun observeConnectionState(listener: (Boolean) -> Unit) {
+        FirebaseDatabase.getInstance().getReference(".info/connected").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                listener(snapshot.getValue(Boolean::class.java) ?: false)
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+        })
+    }
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Variables: connectedRef (DatabaseReference), isConnected (Boolean)
+    // Constants: ServerValue.TIMESTAMP, STATUS_ONLINE, STATUS_OFFLINE
+    // Dependencies: FirebaseDatabase, ServerValue, SystemLogger
+    // Integration Points: TrackingService, FamilyFriendsViewModel, NetworkGatewayActivity
+    @JvmStatic
+    @JvmOverloads
+    fun setupPresenceSentinel(agentId: String, activeGroup: String? = null) {
+        if (!isAgentIdValid(agentId)) return
+        val connectedRef = FirebaseDatabase.getInstance().getReference(".info/connected")
+        val liveRef = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_LIVE)
+        val teleRef = devicesRef.child(sanitizeAgentId(agentId)).child(SUB_TELEMETRY)
+
+        connectedRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                val isConnected = snapshot.getValue(Boolean::class.java) ?: false
+                if (isConnected) {
+                    // Arm automatic onDisconnect handlers on server side
+                    val liveDisconnect = mapOf(
+                        "is_online" to false,
+                        "status" to STATUS_OFFLINE,
+                        "last_seen" to com.google.firebase.database.ServerValue.TIMESTAMP
+                    )
+                    liveRef.onDisconnect().updateChildren(liveDisconnect)
+
+                    val teleDisconnect = mapOf(
+                        "status" to STATUS_OFFLINE,
+                        "last_seen" to com.google.firebase.database.ServerValue.TIMESTAMP
+                    )
+                    teleRef.onDisconnect().updateChildren(teleDisconnect)
+
+                    if (!activeGroup.isNullOrBlank() && activeGroup != "DEFAULT_GROUP") {
+                        val memberRef = relationshipsRef.child(activeGroup).child("members").child(agentId)
+                        val memberDisconnect = mapOf(
+                            "is_online" to false,
+                            "last_seen" to com.google.firebase.database.ServerValue.TIMESTAMP
+                        )
+                        memberRef.onDisconnect().updateChildren(memberDisconnect)
+                    }
+
+                    // Mark as online now
+                    val nowMs = System.currentTimeMillis()
+                    liveRef.child("is_online").setValue(true)
+                    liveRef.child("status").setValue(STATUS_ONLINE)
+                    liveRef.child("last_heartbeat").setValue(nowMs)
+                    teleRef.child("status").setValue(STATUS_ONLINE)
+                    teleRef.child("last_heartbeat").setValue(nowMs)
+
+                    com.jdroidx.jfindme.utils.SystemLogger.i("FirebaseComm", "Presence Sentinel Armed for $agentId (Online)")
+                }
+            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                com.jdroidx.jfindme.utils.SystemLogger.w("FirebaseComm", "Presence Sentinel Cancelled: ${error.message}")
+            }
+        })
+    }
+
+    @JvmStatic
+    fun getActiveListenersCount(): Int = 3
+
+    @JvmStatic
+    fun benchmarkRoundTripLatency(callback: (Long) -> Unit) {
+        val start = System.currentTimeMillis()
+        FirebaseDatabase.getInstance().getReference(".info/serverTimeOffset").get().addOnCompleteListener {
+            callback(System.currentTimeMillis() - start)
+        }
+    }
+
+    @JvmStatic
+    fun pullLatestCircleRoster(callback: (List<String>) -> Unit) {
+        callback(emptyList())
     }
 }

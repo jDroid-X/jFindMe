@@ -43,12 +43,18 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
 
     private var activeAgentId: String? = null
 
+    private var pendingRequestsListener: ValueEventListener? = null
+    private var pendingRequestsRef: com.google.firebase.database.DatabaseReference? = null
+    private var cloudNotificationsListener: ValueEventListener? = null
+    private var cloudNotificationsRef: com.google.firebase.database.DatabaseReference? = null
+
     private fun listenToPendingRequests() {
         if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val finalId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
         activeAgentId = finalId
         val ref = FirebaseComm.devicesRef.child(finalId).child("Identity").child("geofence_sync_requests")
-        ref.addValueEventListener(object : ValueEventListener {
+        pendingRequestsRef = ref
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<Map<String, String>>()
                 for (snap in snapshot.children) {
@@ -68,7 +74,9 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
                 _pendingRequests.postValue(list)
             }
             override fun onCancelled(error: DatabaseError) {}
-        })
+        }
+        pendingRequestsListener = listener
+        ref.addValueEventListener(listener)
     }
 
     /**
@@ -76,12 +84,16 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun listenToCloudNotifications() {
         if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
-        val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-        val groupId = prefs.getString("active_group", null) ?: prefs.getString("current_group_id", null) ?: return
+        val context = getApplication<Application>()
+        val groupId = com.jdroidx.jfindme.utils.RegistryManager.getActiveGroup(context).ifEmpty {
+            com.jdroidx.jfindme.utils.RegistryManager.getString(context, "current_group_id", "")
+        }
+        if (groupId.isEmpty()) return
         val cleanGroupId = FirebaseComm.sanitizePathKey(groupId)
 
         val notifRef = FirebaseComm.relationshipsRef.child(cleanGroupId).child("notifications")
-        notifRef.limitToLast(30).addValueEventListener(object : ValueEventListener {
+        cloudNotificationsRef = notifRef
+        val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 cloudAlertsList.clear()
                 for (snap in snapshot.children) {
@@ -102,6 +114,18 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
             override fun onCancelled(error: DatabaseError) {
                 SystemLogger.e(TAG, "Cloud notifications stream failed: ${error.message}")
             }
-        })
+        }
+        cloudNotificationsListener = listener
+        notifRef.limitToLast(30).addValueEventListener(listener)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        pendingRequestsListener?.let { l ->
+            pendingRequestsRef?.removeEventListener(l)
+        }
+        cloudNotificationsListener?.let { l ->
+            cloudNotificationsRef?.removeEventListener(l)
+        }
     }
 }

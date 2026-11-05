@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>jFindMe Matrix | System Boot & Telemetry Sync</title>
+    <link rel="icon" type="image/x-icon" href="assets/jfindme.ico">
+    <link rel="icon" type="image/png" href="assets/avatars/ButterFly.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", monospace;
+            background: #030712;
+            color: #f1f5f9;
+            min-height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* Matrix Cyber Background Canvas */
+        #matrix-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        /* Ambient Glow & Radial Grid */
+        .ambient-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            background: 
+                radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.15) 0%, rgba(139, 92, 246, 0.08) 40%, rgba(3, 7, 18, 0.95) 80%),
+                linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 32px 32px, 32px 32px;
+            pointer-events: none;
+        }
+
+        /* Main Container */
+        .splash-card {
+            position: relative;
+            z-index: 10;
+            width: 92%;
+            max-width: 620px;
+            padding: 40px 36px 32px 36px;
+            background: rgba(11, 15, 25, 0.84);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 28px;
+            border: 1px solid rgba(56, 189, 248, 0.28);
+            box-shadow: 
+                0 25px 60px rgba(0, 0, 0, 0.75),
+                0 0 50px rgba(56, 189, 248, 0.18),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* Flying Butterfly Container */
+        .butterfly-stage {
+            position: relative;
+            width: 170px;
+            height: 140px;
+            margin-bottom: 20px;
+            perspective: 800px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .butterfly-orb {
+            position: absolute;
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, rgba(139, 92, 246, 0.15) 50%, transparent 70%);
+            filter: blur(12px);
+            animation: orbPulse 2.8s ease-in-out infinite alternate;
+        }
+
+        .butterfly-wrapper {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            animation: butterflyHover 3.2s ease-in-out infinite;
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .butterfly-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.85)) drop-shadow(0 0 35px rgba(139, 92, 246, 0.65));
+            animation: wingFlap 1.4s ease-in-out infinite alternate;
+            transform-origin: center center;
+        }
+
+        /* Flying Takeoff Class when ready */
+        .butterfly-takeoff {
+            transform: scale(2.2) translateY(-60px) translateZ(100px);
+            opacity: 0;
+            filter: blur(4px);
+        }
+
+        @keyframes butterflyHover {
+            0% { transform: translateY(0px) rotate(0deg); }
+            30% { transform: translateY(-12px) rotate(3deg); }
+            70% { transform: translateY(8px) rotate(-3deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+
+        @keyframes wingFlap {
+            0% { transform: scaleX(1) scaleY(1); }
+            50% { transform: scaleX(0.72) scaleY(1.08) rotateY(25deg); }
+            100% { transform: scaleX(1) scaleY(1); }
+        }
+
+        @keyframes orbPulse {
+            0% { transform: scale(0.85); opacity: 0.5; }
+            100% { transform: scale(1.25); opacity: 0.95; }
+        }
+
+        /* Branding Titles */
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 14px;
+            border-radius: 9999px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            color: #38bdf8;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #38bdf8;
+            box-shadow: 0 0 10px #38bdf8;
+            animation: blink 1.2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        h1.title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #f8fafc 0%, #38bdf8 50%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 20px;
+            letter-spacing: 0.2px;
+        }
+
+        /* Realtime ECG Heartbeat Wave SVG Container */
+        .heartbeat-section {
+            width: 100%;
+            background: rgba(3, 7, 18, 0.65);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-radius: 16px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .heartbeat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #64748b;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .bpm-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #10b981;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .heart-icon {
+            color: #ef4444;
+            animation: heartThump 0.75s ease-in-out infinite;
+            display: inline-block;
+        }
+
+        @keyframes heartThump {
+            0%, 100% { transform: scale(1); }
+            15% { transform: scale(1.4); }
+            30% { transform: scale(1.08); }
+            45% { transform: scale(1.3); }
+        }
+
+        /* SVG Heartbeat ECG Polyline */
+        .ecg-svg {
+            width: 100%;
+            height: 48px;
+        }
+
+        .ecg-path {
+            stroke: #10b981;
+            stroke-width: 2.2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.8));
+            stroke-dasharray: 600;
+            stroke-dashoffset: 600;
+            animation: ecgDraw 2.2s linear infinite;
+        }
+
+        @keyframes ecgDraw {
+            0% { stroke-dashoffset: 600; }
+            100% { stroke-dashoffset: 0; }
+        }
+
+        /* Progression Bar Container */
+        .progress-container {
+            width: 100%;
+            margin-bottom: 18px;
+        }
+
+        .progress-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .progress-label {
+            color: #cbd5e1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .progress-percent {
+            color: #38bdf8;
+            font-family: monospace;
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 12px;
+            background: rgba(30, 41, 59, 0.7);
+            border-radius: 9999px;
+            overflow: hidden;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            position: relative;
+        }
+
+        /* Division markers inside progress track */
+        .track-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.15);
+            z-index: 2;
+        }
+        .marker-1 { left: 33.33%; }
+        .marker-2 { left: 66.66%; }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #10b981 100%);
+            border-radius: 9999px;
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.8);
+            transition: width 0.35s ease-out, filter 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-bar.pulsing {
+            box-shadow: 0 0 28px rgba(16, 185, 129, 0.95), 0 0 45px rgba(56, 189, 248, 0.85);
+            filter: brightness(1.3);
+        }
+
+        .progress-bar::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 14px;
+            background: #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 14px #ffffff;
+            animation: leadGlow 1.2s infinite alternate;
+        }
+
+        @keyframes leadGlow {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        /* 3-Stage Heartbeat Pulse Indicator Nodes */
+        .pulse-nodes-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-top: 10px;
+            padding: 0 6px;
+        }
+
+        .pulse-node {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #64748b;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            transition: all 0.35s ease;
+        }
+
+        .pulse-node-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #334155;
+            transition: all 0.35s ease;
+            position: relative;
+        }
+
+        .pulse-node.active .pulse-node-dot {
+            background: #38bdf8;
+            box-shadow: 0 0 12px #38bdf8;
+            animation: pulseRing 1.1s infinite;
+        }
+
+        .pulse-node.active {
+            color: #38bdf8;
+        }
+
+        .pulse-node.completed .pulse-node-dot {
+            background: #10b981;
+            box-shadow: 0 0 12px #10b981;
+        }
+
+        .pulse-node.completed {
+            color: #10b981;
+        }
+
+        @keyframes pulseRing {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.75); }
+            70% { transform: scale(1.35); box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+        /* Live Terminal Telemetry Readout */
+        .terminal-box {
+            width: 100%;
+            background: rgba(3, 7, 18, 0.88);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-family: "Courier New", monospace;
+            font-size: 0.78rem;
+            color: #38bdf8;
+            text-align: left;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .terminal-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 90%;
+        }
+
+        .terminal-cursor {
+            display: inline-block;
+            width: 7px;
+            height: 14px;
+            background: #38bdf8;
+            margin-left: 4px;
+            animation: cursorBlink 0.8s infinite;
+        }
+
+        @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Footer Info */
+        .footer-note {
+            margin-top: 16px;
+            font-size: 0.75rem;
+            color: #64748b;
+            letter-spacing: 0.5px;
+        }
+
+        .footer-note a {
+            color: #38bdf8;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer-note a:hover {
+            color: #7dd3fc;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Matrix Code Rain Canvas -->
+    <canvas id="matrix-canvas"></canvas>
+
+    <!-- Radial Glow Grid Overlay -->
+    <div class="ambient-grid"></div>
+
+    <!-- Splash Card -->
+    <div class="splash-card" id="splash-card">
+        
+        <!-- Flying Butterfly Stage -->
+        <div class="butterfly-stage">
+            <div class="butterfly-orb"></div>
+            <div class="butterfly-wrapper" id="butterfly-wrapper">
+                <img src="assets/avatars/ButterFly.png" alt="jButterfly" class="butterfly-img" id="butterfly-img">
+            </div>
+        </div>
+
+        <div class="brand-badge">
+            <span class="pulse-dot"></span>
+            <span>jButterFly MLM Mission Control</span>
+        </div>
+
+        <h1 class="title">jFindMe Enterprise Matrix</h1>
+        <div class="subtitle">Live GPS Telemetry & Cloud Sentinel Radar</div>
+
+        <!-- Realtime Heartbeat Pulse Beats -->
+        <div class="heartbeat-section">
+            <div class="heartbeat-header">
+                <span>Telemetry Heartbeat Carrier</span>
+                <span class="bpm-indicator">
+                    <span class="heart-icon">♥</span>
+                    <span id="bpm-val">76</span> BPM · LIVE
+                </span>
+            </div>
+            <!-- ECG Wave Path -->
+            <svg class="ecg-svg" viewBox="0 0 500 50" preserveAspectRatio="none">
+                <path class="ecg-path" d="M0,25 L120,25 L130,22 L140,28 L150,25 L170,25 L180,5 L190,45 L200,10 L210,35 L220,25 L260,25 L275,18 L290,25 L500,25" />
+            </svg>
+        </div>
+
+        <!-- Progression Bar with 3 Pulse Nodes -->
+        <div class="progress-container">
+            <div class="progress-meta">
+                <span class="progress-label" id="step-label">
+                    <span>⚡</span> [PULSE 1/3] Booting Daemon Core...
+                </span>
+                <span class="progress-percent" id="step-percent">0%</span>
+            </div>
+            <div class="progress-track">
+                <div class="track-marker marker-1"></div>
+                <div class="track-marker marker-2"></div>
+                <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+            </div>
+            <!-- 3 Heartbeat Pulse Nodes -->
+            <div class="pulse-nodes-row">
+                <div class="pulse-node active" id="node-pulse-1">
+                    <span class="pulse-node-dot"></span>
+                    <span>Pulse 1: Core</span>
+                </div>
+                <div class="pulse-node" id="node-pulse-2">
+                    <span class="pulse-node-dot"></span>
+                    <span>Pulse 2: Cloud</span>
+                </div>
+                <div class="pulse-node" id="node-pulse-3">
+                    <span class="pulse-node-dot"></span>
+                    <span>Pulse 3: Fleet</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terminal Diagnostic Status -->
+        <div class="terminal-box">
+            <div class="terminal-text" id="terminal-text">&gt; [PULSE 1/3] Waking background daemon on port 3000...</div>
+            <span class="terminal-cursor"></span>
+        </div>
+
+        <div class="footer-note">
+            <span>Directing to http://127.0.0.1:3000 · </span>
+            <a href="http://127.0.0.1:3000/index.html" id="direct-link">Manual Bypass</a>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // Matrix Rain Canvas Animation
+        // =========================================================================
+        (function initMatrixRain() {
+            const canvas = document.getElementById('matrix-canvas');
+            const ctx = canvas.getContext('2d');
+
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            const chars = '0123456789ABCDEFGPS·LAT·LON·RADAR·SENTINEL·MLM·TELEMETRY';
+            const fontSize = 13;
+            const columns = Math.floor(canvas.width / fontSize);
+            const drops = Array(columns).fill(1);
+
+            function draw() {
+                ctx.fillStyle = 'rgba(3, 7, 18, 0.08)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#0284c7';
+                ctx.font = fontSize + 'px monospace';
+
+                for (let i = 0; i < drops.length; i++) {
+                    const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                    ctx.fillStyle = Math.random() > 0.88 ? '#38bdf8' : (Math.random() > 0.5 ? '#818cf8' : '#0369a1');
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    drops[i]++;
+                }
+            }
+
+            setInterval(draw, 42);
+        })();
+
+        // =========================================================================
+        // Telemetry Poller & 3-Pulse Heartbeat Progression Manager
+        // =========================================================================
+        (function initSplashOrchestrator() {
+            const progressBar = document.getElementById('progress-bar');
+            const stepPercent = document.getElementById('step-percent');
+            const stepLabel = document.getElementById('step-label');
+            const terminalText = document.getElementById('terminal-text');
+            const bpmVal = document.getElementById('bpm-val');
+            const butterflyWrapper = document.getElementById('butterfly-wrapper');
+            const splashCard = document.getElementById('splash-card');
+
+            const node1 = document.getElementById('node-pulse-1');
+            const node2 = document.getElementById('node-pulse-2');
+            const node3 = document.getElementById('node-pulse-3');
+
+            let currentProgress = 0;
+            let targetProgress = 10;
+            let isServerReady = false;
+            let hasRedirected = false;
+            let pollAttempts = 0;
+            const MAX_POLLS = 45; // up to ~22s max for cold network
+
+            // 3 Heartbeat Pulse Milestones
+            const PULSE_STAGES = [
+                {
+                    pulse: 1,
+                    pct: 35,
+                    label: "[PULSE 1/3] Forensic Daemon Core Online",
+                    log: "> [PULSE 1/3] Memory Core & Local Sockets Initialized.",
+                    bpm: 78
+                },
+                {
+                    pulse: 2,
+                    pct: 70,
+                    label: "[PULSE 2/3] Cloud Sentinel WebSocket Connected",
+                    log: "> [PULSE 2/3] Firebase RTDB Handshake Verified & Active.",
+                    bpm: 92
+                },
+                {
+                    pulse: 3,
+                    pct: 100,
+                    label: "[PULSE 3/3] Live Fleet Telemetry Synchronized",
+                    log: "> [PULSE 3/3] All Active Fleet Nodes Synchronized with GPS.",
+                    bpm: 108
+                }
+            ];
+
+            function triggerPulseAnimation() {
+                progressBar.classList.add('pulsing');
+                setTimeout(() => progressBar.classList.remove('pulsing'), 450);
+            }
+
+            // Smooth Progress Animation Loop
+            setInterval(() => {
+                if (currentProgress < targetProgress) {
+                    currentProgress += 1;
+                    progressBar.style.width = currentProgress + '%';
+                    stepPercent.innerText = currentProgress + '%';
+                }
+            }, 25);
+
+            // Dynamic Heartbeat BPM variance
+            setInterval(() => {
+                const baseBpm = isServerReady ? 94 : 76;
+                const jitter = Math.floor(Math.random() * 5) - 2;
+                bpmVal.innerText = (baseBpm + jitter);
+            }, 1000);
+
+            // Execute 3 Guaranteed Heartbeat Pulses
+            async function executePulseSequence(fleetCount = null) {
+                // --- PULSE 1 (Core) ---
+                node1.className = 'pulse-node active';
+                targetProgress = PULSE_STAGES[0].pct;
+                stepLabel.innerHTML = `<span>⚡</span> ${PULSE_STAGES[0].label}`;
+                terminalText.innerText = PULSE_STAGES[0].log;
+                bpmVal.innerText = PULSE_STAGES[0].bpm;
+                triggerPulseAnimation();
+
+                await new Promise(r => setTimeout(r, 750));
+                node1.className = 'pulse-node completed';
+
+                // --- PULSE 2 (Cloud) ---
+                node2.className = 'pulse-node active';
+                targetProgress = PULSE_STAGES[1].pct;
+                stepLabel.innerHTML = `<span>⚡</span> ${PULSE_STAGES[1].label}`;
+                terminalText.innerText = PULSE_STAGES[1].log;
+                bpmVal.innerText = PULSE_STAGES[1].bpm;
+                triggerPulseAnimation();
+
+                await new Promise(r => setTimeout(r, 750));
+                node2.className = 'pulse-node completed';
+
+                // --- PULSE 3 (Fleet) ---
+                node3.className = 'pulse-node active';
+                targetProgress = PULSE_STAGES[2].pct;
+                currentProgress = 100;
+                progressBar.style.width = '100%';
+                stepPercent.innerText = '100%';
+
+                const fleetMsg = fleetCount ? `${fleetCount} Active Nodes Locked` : 'Fleet Synchronized';
+                stepLabel.innerHTML = `<span style="color: #10b981;">✔</span> [PULSE 3/3] ${fleetMsg}!`;
+                terminalText.innerText = `> [PULSE 3/3] Telemetry Carrier Locked. Launching Live Radar...`;
+                bpmVal.innerText = PULSE_STAGES[2].bpm;
+                triggerPulseAnimation();
+
+                await new Promise(r => setTimeout(r, 600));
+                node3.className = 'pulse-node completed';
+
+                // Butterfly Takeoff & Launch
+                completeLaunch();
+            }
+
+            async function checkServer() {
+                if (hasRedirected) return;
+                pollAttempts++;
+
+                try {
+                    const res = await fetch('http://127.0.0.1:3000/api/ping', {
+                        cache: 'no-store',
+                        mode: 'cors'
+                    });
+
+                    if (res.ok) {
+                        isServerReady = true;
+
+                        let fleetCount = null;
+                        try {
+                            const fleetRes = await fetch('http://127.0.0.1:3000/api/fleet/compact-live', { cache: 'no-store', mode: 'cors' });
+                            const fleetData = await fleetRes.json();
+                            if (fleetData && fleetData.count) {
+                                fleetCount = fleetData.count;
+                            }
+                        } catch (e) {
+                            // Non-blocking
+                        }
+
+                        // Play guaranteed 3-pulse sequence before transition
+                        executePulseSequence(fleetCount);
+                        return;
+                    }
+                } catch (err) {
+                    // Server booting in background
+                    if (pollAttempts < 5) {
+                        targetProgress = 12;
+                    } else if (pollAttempts < 12) {
+                        targetProgress = 24;
+                        terminalText.innerText = `> Probing background proxy (Attempt ${pollAttempts})...`;
+                    }
+                }
+
+                if (pollAttempts < MAX_POLLS && !hasRedirected) {
+                    setTimeout(checkServer, 500);
+                } else if (!hasRedirected) {
+                    // Fallback
+                    executePulseSequence(null);
+                }
+            }
+
+            function completeLaunch() {
+                if (hasRedirected) return;
+                hasRedirected = true;
+
+                // Flying Butterfly Takeoff Animation
+                butterflyWrapper.classList.add('butterfly-takeoff');
+                splashCard.style.transform = 'scale(0.97)';
+                splashCard.style.opacity = '0.9';
+
+                setTimeout(() => {
+                    window.location.href = 'http://127.0.0.1:3000/index.html';
+                }, 700);
+            }
+
+            // Begin Polling
+            setTimeout(checkServer, 200);
+        })();
+    </script>
+</body>
+</html>

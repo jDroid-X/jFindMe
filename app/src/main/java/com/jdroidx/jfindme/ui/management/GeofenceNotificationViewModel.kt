@@ -162,4 +162,8 @@ class GeofenceNotificationViewModel(application: Application) : AndroidViewModel
             com.jdroidx.jfindme.data.remote.FirebaseComm.getGeofencingSafeZonesRef(cleanHostCode).removeEventListener(it)
         }
     }
+
+    fun dismissAlert(notificationId: String) {
+        // Dismiss notification
+    }
 }

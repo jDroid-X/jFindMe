@@ -120,9 +120,10 @@ export class SanitizerService {
     static sanitizeDeviceName(name, model = "", deviceId = "") {
         if (!name || typeof name !== 'string') return model || `Device_${deviceId}`;
         const trimmed = name.trim();
+        // [Variables]: name, model, deviceId, trimmed | [Constants]: None | [Dependencies]: None | [Integration Points]: DeviceModel.js
+        // Zero Hardcoded Device Policy (Program Mapping Master SSOT)
         if (trimmed === "Cloud Roster Mirror") {
-            if (deviceId === "2C811042") return "Redmi 5 Pro";
-            return model || `Device_${deviceId}`;
+            return model || (deviceId ? `Device_${deviceId}` : "Active Node");
         }
         return trimmed;
     }

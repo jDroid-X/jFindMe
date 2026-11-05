@@ -123,7 +123,10 @@ object RoadSmoothingEngine {
         val filteredLng = state.lngFilter.filter(rawLng, acc, timeStepSec, qNoise, rNoise)
         val filteredLatLng = LatLng(filteredLat, filteredLng)
 
-        // 2. Determine Speed and Movement
+        // 2. Determine Speed and Movement using Google Maps GNSS Standard:
+        // Doppler hardware speed from GNSS chipset (rawSpeedMps) is the source of truth.
+        // Coordinate differentiation (distanceDelta / timeStepSec) is prone to GPS multipath jumps
+        // (e.g. 15m jump over 0.5s = 30 m/s = 108 km/h for a pedestrian).
         val previousLatLng = state.lastSmoothedLatLng
         val distanceDelta = if (previousLatLng != null) {
             SphericalUtil.computeDistanceBetween(previousLatLng, filteredLatLng).toFloat()
@@ -131,9 +134,38 @@ object RoadSmoothingEngine {
             0f
         }
 
-        val calculatedSpeedMps = if (timeStepSec > 0) distanceDelta / timeStepSec.toFloat() else 0f
-        val effectiveSpeedMps = if (rawSpeedMps > 0.5f) rawSpeedMps else calculatedSpeedMps
-        state.smoothedSpeedMps = (state.smoothedSpeedMps * 0.4f) + (effectiveSpeedMps * 0.6f)
+        // Only calculate fallback speed from coordinates if timeStep is significant (> 1.5s) and accuracy is tight (< 20m)
+        val calculatedDiffSpeedMps = if (timeStepSec >= 1.5 && acc <= 20.0) {
+            (distanceDelta / timeStepSec.toFloat()).coerceAtMost(35f) // Cap instantaneous coordinate jumps at 126 km/h
+        } else {
+            0f
+        }
+
+        // Trust hardware GNSS Doppler speed if valid (> 0.2 m/s); otherwise fallback to low-pass differentiated speed
+        val candidateSpeedMps = if (rawSpeedMps > 0.2f) {
+            rawSpeedMps
+        } else if (distanceDelta > 2.0f && calculatedDiffSpeedMps > 0.3f) {
+            calculatedDiffSpeedMps
+        } else {
+            0f
+        }
+
+        // Physical Human Motion Acceleration Clamping (max physical acceleration for pedestrian/runner <= 3.5 m/s²):
+        // Prevents wild jumps from 5 km/h to 117 km/h in a single epoch.
+        val maxAllowedDelta = (3.5f * timeStepSec.toFloat()).coerceAtLeast(1.5f)
+        val clampedSpeedMps = if (candidateSpeedMps > state.smoothedSpeedMps + maxAllowedDelta && state.smoothedSpeedMps < 8.0f) {
+            state.smoothedSpeedMps + maxAllowedDelta
+        } else {
+            candidateSpeedMps
+        }
+
+        // Exponential Moving Average filter (70% history, 30% new) to eliminate speed flicker
+        state.smoothedSpeedMps = if (state.smoothedSpeedMps <= 0.1f) clampedSpeedMps else (state.smoothedSpeedMps * 0.7f) + (clampedSpeedMps * 0.3f)
+
+        // Stationary deadband: If speed < 0.4 m/s (~1.4 km/h), lock to 0 to prevent wandering while standing
+        if (state.smoothedSpeedMps < 0.4f) {
+            state.smoothedSpeedMps = 0f
+        }
 
         val isMoving = state.smoothedSpeedMps >= minMotionSpeed && distanceDelta >= 1.5f
 

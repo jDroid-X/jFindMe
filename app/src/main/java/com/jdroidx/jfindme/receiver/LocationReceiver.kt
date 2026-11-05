@@ -58,7 +58,7 @@ class LocationReceiver : BroadcastReceiver() {
                             userName = resolvedUserName,
                             avatar_id = resolvedAvatarId
                         )
-                        repository.updateMyLocation(userLoc)
+                        com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(appContext, userLoc)
                     } catch (repoEx: Exception) {
                         SystemLogger.e(TAG, "REPO_UPDATE_PENDING_INTENT_ERROR: ${repoEx.message}", repoEx)
                     }

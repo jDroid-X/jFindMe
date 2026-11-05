@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 75 // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
+        const val DATABASE_VERSION = 79 // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -38,7 +38,9 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         const val TABLE_HISTORY = "location_event" 
         const val TABLE_PAIRING = "device_pairings" 
         const val TABLE_SIM_INVENTORY = "sim_inventory" 
-        const val TABLE_SIM_TRANS = "sim_transactions" 
+        const val TABLE_SIM_TRANS = "sim_transactions"
+        const val TABLE_STEALTH_SCHEDULE = "stealth_schedule_config"
+        const val TABLE_SECURITY_AUDIT = "security_audit_log"  
         const val TABLE_SYNC_QUEUE = "sync_queue" 
         const val TABLE_SAFE_ZONE_GROUPS = "safe_zone_user_map" 
         const val TABLE_GEOFENCE_LOGS = "geofence_events" 
@@ -54,6 +56,164 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         const val EXT_FIELDS = "$COL_FLAG_A INTEGER, $COL_FLAG_B INTEGER, $COL_FLAG_C INTEGER, $COL_REF_A TEXT, $COL_REF_B TEXT, $COL_REF_C TEXT"
         const val LINEAGE_FIELDS = "owner_name TEXT, $COL_UID_1 TEXT, $COL_UID_2 TEXT"
 
+        // --- 🗄️ REVERSE GEOCODE & ALERT HISTORY ENTITIES ---
+        const val TABLE_REVERSE_GEOCODE_CACHE = "reverse_geocode_cache"
+        const val TABLE_ALERT_HISTORY = "alert_history"
+        const val TABLE_DEVICE_POLICY = "device_policy_state"
+        const val TABLE_WATCHDOG_RESURRECTION = "watchdog_resurrection_log"
+        const val COL_IS_READ = "is_read"
+        const val COL_RESOLVED_AT = "resolved_at"
+        const val ALERT_TYPE_SOS_PANIC = "SOS_PANIC"
+        const val MASTER_ROSTER_TABLE = "master_roster"
+        const val COL_PERMISSIONS_MASK = "permissions_mask"
+        const val COL_PHONE_NUMBER = "phone_number"
+
+        // ──────────────────────────────────────────────────────────────────
+        // 🛠️ ENTERPRISE FORENSIC METRICS & MAINTENANCE (Screen 21, 24, 27)
+        // ──────────────────────────────────────────────────────────────────
+
+        @JvmStatic
+        fun getDatabaseForensicMetrics(context: Context): Map<String, Any> {
+            val appContext = context.applicationContext ?: context
+            val dbFile = appContext.getDatabasePath(DATABASE_NAME)
+            val fileSizeBytes = if (dbFile.exists()) dbFile.length() else 0L
+            val fileSizeFormatted = String.format(java.util.Locale.US, "%.2f MB", fileSizeBytes / (1024.0 * 1024.0))
+
+            var pageCount = 0L
+            var pageSize = 4096L
+            var journalMode = "WAL"
+            var integrityStatus = "OK"
+
+            try {
+                val db = getInstance(appContext).readableDatabase
+                db.rawQuery("PRAGMA page_count", null)?.use { cursor ->
+                    if (cursor.moveToFirst()) pageCount = cursor.getLong(0)
+                }
+                db.rawQuery("PRAGMA page_size", null)?.use { cursor ->
+                    if (cursor.moveToFirst()) pageSize = cursor.getLong(0)
+                }
+                db.rawQuery("PRAGMA journal_mode", null)?.use { cursor ->
+                    if (cursor.moveToFirst()) journalMode = cursor.getString(0) ?: "WAL"
+                }
+                db.rawQuery("PRAGMA integrity_check", null)?.use { cursor ->
+                    if (cursor.moveToFirst()) integrityStatus = cursor.getString(0) ?: "OK"
+                }
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Error fetching forensic metrics: ${e.message}")
+            }
+
+            return mapOf(
+                "file_size_bytes" to fileSizeBytes,
+                "file_size_formatted" to fileSizeFormatted,
+                "page_count" to pageCount,
+                "page_size" to pageSize,
+                "journal_mode" to journalMode,
+                "integrity_status" to integrityStatus
+            )
+        }
+
+        @JvmStatic
+        fun getTableRecordCounts(context: Context): Map<String, Long> {
+            val counts = mutableMapOf<String, Long>()
+            val tables = listOf(
+                "locations", "sim_transactions", "security_audit_log", "stealth_schedule_config",
+                "device_vitals", "user_profile", "user_identity", "devices", "safe_zones",
+                "reverse_geocode_cache", "alert_history", "device_policy_state", "watchdog_resurrection_log"
+            )
+            try {
+                // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                // Forensic Metric Aggregator: Query row counts with resource-safe Cursor auto-closure
+                val db = getInstance(context).readableDatabase
+                for (tbl in tables) {
+                    try {
+                        db.rawQuery("SELECT count(*) FROM $tbl", null)?.use { c ->
+                            if (c.moveToFirst()) counts[tbl] = c.getLong(0)
+                        }
+                    } catch (_: Exception) {
+                        counts[tbl] = 0L
+                    }
+                }
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Error querying table counts: ${e.message}")
+            }
+            return counts
+        }
+
+        @JvmStatic
+        fun vacuumAndReindex(context: Context): Boolean {
+            return try {
+                // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                // Database Maintenance: Vacuum and reindex SQLite to defragment B-trees and rebuild indexes
+                val db = getInstance(context).writableDatabase
+                db.execSQL("PRAGMA optimize")
+                db.execSQL("VACUUM")
+                db.execSQL("REINDEX")
+                com.jdroidx.jfindme.utils.SystemLogger.i("DatabaseHelper", "Database vacuum & reindex successfully executed.")
+                true
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Vacuum & reindex failed: ${e.message}")
+                false
+            }
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun getAuditLogsCursor(context: Context, filterEventType: String? = null): android.database.Cursor? {
+            val helper = getInstance(context) ?: return null
+            val db = helper.readableDatabase
+            return if (!filterEventType.isNullOrBlank() && filterEventType != "ALL") {
+                db.rawQuery(
+                    "SELECT * FROM security_audit_log WHERE event_type = ? ORDER BY timestamp DESC",
+                    arrayOf(filterEventType)
+                )
+            } else {
+                db.rawQuery(
+                    "SELECT * FROM security_audit_log ORDER BY timestamp DESC",
+                    null
+                )
+            }
+        }
+
+        @JvmStatic
+        fun setAutoVacuumEnabled(context: Context, enabled: Boolean) {
+            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("pref_sqlite_auto_vacuum", enabled).apply()
+            try {
+                val db = getInstance(context).writableDatabase
+                val mode = if (enabled) 1 else 0
+                db.execSQL("PRAGMA auto_vacuum = $mode")
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Failed to toggle PRAGMA auto_vacuum: ${e.message}")
+            }
+        }
+
+        @JvmStatic
+        fun isAutoVacuumEnabled(context: Context): Boolean {
+            return context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                .getBoolean("pref_sqlite_auto_vacuum", true)
+        }
+
+        // --- 📋 SPECIALIZED FORENSIC AUDIT DISPATCHERS ---
+        @JvmStatic
+        fun logTransportHealthCheck(context: Context, details: String) {
+            getInstance(context).logSecurityEvent("transport_health_check", details, "INFO")
+        }
+
+        @JvmStatic
+        fun logWatchdogForceRestart(context: Context, details: String) {
+            getInstance(context).logSecurityEvent("watchdog_force_restart", details, "WARN")
+        }
+
+        @JvmStatic
+        fun logEmergencySirenDismissed(context: Context, details: String) {
+            getInstance(context).logSecurityEvent("emergency_siren_dismissed", details, "WARN")
+        }
+
+        @JvmStatic
+        fun logRosterReclamation(context: Context, details: String) {
+            getInstance(context).logSecurityEvent("roster_reclamation", details, "INFO")
+        }
+
         @Volatile
         private var instance: DatabaseHelper? = null
 
@@ -66,6 +226,18 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     private var isPerformingMigration = false
+
+    // 🛠️ Instance Delegation for Enterprise Forensic Operations
+    fun getDatabaseForensicMetrics(): Map<String, Any> = Companion.getDatabaseForensicMetrics(this.context)
+    fun getTableRecordCounts(): Map<String, Long> = Companion.getTableRecordCounts(this.context)
+    fun vacuumAndReindex(): Boolean = Companion.vacuumAndReindex(this.context)
+    fun getAuditLogsCursor(filterEventType: String? = null): android.database.Cursor? = Companion.getAuditLogsCursor(this.context, filterEventType)
+    fun setAutoVacuumEnabled(enabled: Boolean) = Companion.setAutoVacuumEnabled(this.context, enabled)
+    fun logTransportHealthCheck(details: String) = Companion.logTransportHealthCheck(this.context, details)
+    fun logWatchdogForceRestart(details: String) = Companion.logWatchdogForceRestart(this.context, details)
+    fun logEmergencySirenDismissed(details: String) = Companion.logEmergencySirenDismissed(this.context, details)
+    fun logRosterReclamation(details: String) = Companion.logRosterReclamation(this.context, details)
+
 
     // --- TIERED ARCHITECTURE METHODS (ANALYTICAL REDESIGN) ---
 
@@ -173,6 +345,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         if (uid1.isBlank()) return -1L
         try {
             val db = readableDatabase
+            // Direct Primary Key fallback if uid1 is already a valid row ID
+            val asLong = uid1.toLongOrNull()
+            if (asLong != null && asLong > 0) {
+                db.rawQuery("SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_ID} = ? LIMIT 1", arrayOf(uid1)).use {
+                    if (it.moveToFirst()) return it.getLong(0)
+                }
+            }
             val cursor = db.query(UserIdentityTable.TABLE_NAME, arrayOf(UserIdentityTable.COL_ID),
                 "${UserIdentityTable.COL_UID_1}=? OR ${UserIdentityTable.COL_FULL_NAME}=? OR ${UserIdentityTable.COL_OWNER_NAME}=? OR ${UserIdentityTable.COL_AUTH_UID}=? OR ${UserIdentityTable.COL_CONNECTED_ID}=? OR ${UserIdentityTable.COL_UID_2}=?",
                 arrayOf(uid1, uid1, uid1, uid1, uid1, uid1), null, null, null)
@@ -368,6 +547,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         // 🚀 Self-Healing: Verify ChangeLogTable presence
         try {
             db.execSQL(ChangeLogTable.CREATE_TABLE)
+            db.execSQL(DevicePolicyTable.CREATE_TABLE)
+            db.execSQL(WatchdogResurrectionTable.CREATE_TABLE)
         } catch (e: Exception) { }
 
         // 🚀 Data Sanitization: Purge corrupted legacy logs saved as safe zones
@@ -387,7 +568,50 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
 
-            // 🛡️ V74 Anti-GIGO Deduplication Indexes
+            // 🛡️ V77 Self-Healing: Stealth Schedule Config & Security Audit Log
+        try {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS stealth_schedule_config (
+                    config_key TEXT PRIMARY KEY,
+                    config_value TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+            // 🛡️ REVERSE GEOCODE CACHE & ALERT HISTORY
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS reverse_geocode_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    latitude REAL NOT NULL,
+                    longitude REAL NOT NULL,
+                    address TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS alert_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id TEXT,
+                    alert_type TEXT DEFAULT 'SOS_PANIC',
+                    timestamp INTEGER,
+                    details TEXT
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS security_audit_log (
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    event_details TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'INFO',
+                    timestamp INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_security_audit_ts ON security_audit_log(timestamp DESC)")
+            db.execSQL("INSERT OR IGNORE INTO stealth_schedule_config (config_key, config_value, updated_at) VALUES ('dormant_interval_mins', '60', 1792422553000)")
+        } catch (_: Exception) {}
+
+        // 🛡️ V74 Anti-GIGO Deduplication Indexes
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_dedupe ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP})")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
         } catch (e: Exception) { }
@@ -406,6 +630,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(DeviceTable.CREATE_TABLE)
             db.execSQL(DevicePairingTable.CREATE_TABLE)
             db.execSQL(SimTable.CREATE_TABLE)
+            db.execSQL(DevicePolicyTable.CREATE_TABLE)
 
             // TIER 3: RELATIONSHIP
             db.execSQL(GroupTable.CREATE_TABLE)
@@ -423,6 +648,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(DeviceVitalsTable.CREATE_TABLE)
             db.execSQL(ChangeLogTable.CREATE_TABLE)
             db.execSQL(UserProfileTable.CREATE_TABLE_SYS_LOG)
+            db.execSQL(WatchdogResurrectionTable.CREATE_TABLE)
 
             // Performance Compound Indexes
             try {
@@ -629,38 +855,118 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    fun markRosterNodeDeleted(uid1: String): Boolean {
+    /**
+     * 🛡️ V78: Queries Granular ACL Permission Mask for connected node.
+     * Default 0xFF (All permissions granted).
+     */
+    fun getMemberPermissionsMask(uid1: String): Int {
+        return try {
+            val db = readableDatabase
+            val iId = resolveInternalId(uid1)
+            if (iId != -1L) {
+                db.rawQuery(
+                    "SELECT ${GroupMemberTable.COL_PERMISSIONS_MASK} FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_IDENTITY_ID} = ? LIMIT 1",
+                    arrayOf(iId.toString())
+                ).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val raw = cursor.getString(0) ?: "0xFF"
+                        if (raw.startsWith("0x") || raw.startsWith("0X")) {
+                            raw.substring(2).toIntOrNull(16) ?: 0xFF
+                        } else {
+                            raw.toIntOrNull() ?: 0xFF
+                        }
+                    } else 0xFF
+                }
+            } else 0xFF
+        } catch (e: Exception) {
+            0xFF
+        }
+    }
+
+    /**
+     * 🛡️ V78: Updates Granular ACL Permission Mask for connected node.
+     */
+    fun updateMemberPermissionsMask(uid1: String, mask: Int): Boolean {
+        return try {
+            val db = writableDatabase
+            val iId = resolveInternalId(uid1)
+            if (iId != -1L) {
+                val hexStr = "0x" + Integer.toHexString(mask).uppercase(java.util.Locale.US)
+                val cv = android.content.ContentValues().apply {
+                    put(GroupMemberTable.COL_PERMISSIONS_MASK, hexStr)
+                }
+                db.update(GroupMemberTable.TABLE_NAME, cv, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString())) > 0
+            } else false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Group-Scoped Soft Deletion: Scopes unlinking to active group_members without poisoning physical user_identities
+    @JvmOverloads fun markRosterNodeDeleted(uid1: String, groupId: String? = null): Boolean {
         return try {
             val db = writableDatabase
             val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
             val iId = resolveInternalId(uid1)
             if (iId != -1L) {
-                val cv = ContentValues().apply {
-                    put(UserIdentityTable.COL_STATUS, "DELETED")
-                    put(UserIdentityTable.COL_UPDATED_AT, now)
+                if (!groupId.isNullOrBlank()) {
+                    db.delete(GroupMemberTable.TABLE_NAME, "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(iId.toString(), uid1, groupId))
+                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                } else {
+                    val cv = ContentValues().apply {
+                        put(UserIdentityTable.COL_STATUS, "DELETED")
+                        put(UserIdentityTable.COL_UPDATED_AT, now)
+                    }
+                    db.update(UserIdentityTable.TABLE_NAME, cv, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                 }
-                db.update(UserIdentityTable.TABLE_NAME, cv, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
-                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+            } else if (!groupId.isNullOrBlank()) {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
             }
-            db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+            if (groupId.isNullOrBlank()) {
+                db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+            }
             true
         } catch (e: Exception) {
             false
         }
     }
 
-    fun isDeviceDeleted(uid1: String): Boolean {
+    @JvmOverloads fun isDeviceDeleted(uid1: String, groupId: String? = null): Boolean {
         return try {
             val db = readableDatabase
-            val cursor = db.query(
+            val cursorGlobal = db.query(
                 UserIdentityTable.TABLE_NAME,
                 arrayOf(UserIdentityTable.COL_STATUS),
                 "(${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?) AND ${UserIdentityTable.COL_STATUS} = 'DELETED'",
                 arrayOf(uid1, uid1), null, null, null
             )
-            cursor.use {
-                it.moveToFirst()
+            val isGloballyDeleted = cursorGlobal.use { it.moveToFirst() }
+            if (isGloballyDeleted) return true
+
+            if (!groupId.isNullOrBlank()) {
+                val iId = resolveInternalId(uid1)
+                val existsInGroup = if (iId != -1L) {
+                    val curGrp = db.query(
+                        GroupMemberTable.TABLE_NAME,
+                        arrayOf(GroupMemberTable.COL_ROLE),
+                        "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?",
+                        arrayOf(iId.toString(), uid1, groupId), null, null, null
+                    )
+                    curGrp.use { it.moveToFirst() }
+                } else {
+                    val curGrp = db.query(
+                        GroupMemberTable.TABLE_NAME,
+                        arrayOf(GroupMemberTable.COL_ROLE),
+                        "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?",
+                        arrayOf(uid1, groupId), null, null, null
+                    )
+                    curGrp.use { it.moveToFirst() }
+                }
+                if (!existsInGroup) return true
             }
+            false
         } catch (e: Exception) {
             false
         }
@@ -721,20 +1027,31 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    fun deleteRosterNode(uid1: String): Boolean {
-        markRosterNodeDeleted(uid1)
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Cascading Unlink Service: Group-scoped deletion prevents destroying identities participating in multiple circles
+    @JvmOverloads fun deleteRosterNode(uid1: String, groupId: String? = null): Boolean {
+        markRosterNodeDeleted(uid1, groupId)
         return try {
             val db = writableDatabase
             val iId = resolveInternalId(uid1)
             if (iId != -1L) {
-                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                db.delete(UserOrgMapTable.TABLE_NAME, "${UserOrgMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                db.delete(UserProfileTable.TABLE_NAME, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
+                if (!groupId.isNullOrBlank()) {
+                    db.delete(GroupMemberTable.TABLE_NAME, "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(iId.toString(), uid1, groupId))
+                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                } else {
+                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(UserOrgMapTable.TABLE_NAME, "${UserOrgMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(UserProfileTable.TABLE_NAME, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
+                }
+            } else if (!groupId.isNullOrBlank()) {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
             }
-            db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+            if (groupId.isNullOrBlank()) {
+                db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+            }
             true
         } catch (e: Exception) {
             false
@@ -993,6 +1310,196 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 android.util.Log.i("DatabaseHelper", "V75 Schema Migration: Hardware specifications & Dual-SIM columns deployed.")
             } catch (e: Exception) {
                 android.util.Log.e("DatabaseHelper", "V75 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 76) {
+            db.beginTransaction()
+            try {
+                val newCols = mapOf(
+                    DeviceVitalsTable.COL_ACTIVE_ROUTE to "TEXT DEFAULT 'N1_CELLULAR_FAST'",
+                    DeviceVitalsTable.COL_ACK_TIMESTAMP to "INTEGER DEFAULT 0",
+                    DeviceVitalsTable.COL_ACK_LATENCY_MS to "INTEGER DEFAULT 0"
+                )
+                for ((col, def) in newCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${DeviceVitalsTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${DeviceVitalsTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V76 Schema Migration: Closed-Loop Telemetry Vitals & Failover Route Caching deployed.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V76 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 78) {
+            db.beginTransaction()
+            try {
+                try {
+                    db.rawQuery("SELECT ${GroupMemberTable.COL_PERMISSIONS_MASK} FROM ${GroupMemberTable.TABLE_NAME} LIMIT 0", null).use { }
+                } catch (e: Exception) {
+                    try {
+                        db.execSQL("ALTER TABLE ${GroupMemberTable.TABLE_NAME} ADD COLUMN ${GroupMemberTable.COL_PERMISSIONS_MASK} TEXT DEFAULT '0xFF'")
+                    } catch (ex: Exception) { }
+                }
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V78 Schema Migration: Granular ACL permissions_mask verified.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V78 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 79) {
+            db.beginTransaction()
+            try {
+                // 1. user_profile additions: nickname, display_name, avatar_url, master_pin_hash, salt
+                val profileCols = mapOf(
+                    UserProfileTable.COL_NICKNAME to "TEXT",
+                    UserProfileTable.COL_DISPLAY_NAME to "TEXT",
+                    UserProfileTable.COL_AVATAR_URL to "TEXT",
+                    UserProfileTable.COL_MASTER_PIN_HASH to "TEXT",
+                    UserProfileTable.COL_SALT to "TEXT"
+                )
+                for ((col, def) in profileCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${UserProfileTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${UserProfileTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 2. user_identity additions: token_hash, auth_token, tracking_status
+                val identityCols = mapOf(
+                    UserIdentityTable.COL_TOKEN_HASH to "TEXT DEFAULT ''",
+                    UserIdentityTable.COL_AUTH_TOKEN to "TEXT DEFAULT ''",
+                    UserIdentityTable.COL_TRACKING_STATUS to "TEXT DEFAULT 'ACTIVE'"
+                )
+                for ((col, def) in identityCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${UserIdentityTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${UserIdentityTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 3. device additions: battery_optimization_exempt, os_version, app_version
+                val deviceCols = mapOf(
+                    DeviceTable.COL_BATTERY_OPTIMIZATION_EXEMPT to "INTEGER DEFAULT 0",
+                    DeviceTable.COL_OS_VERSION to "TEXT",
+                    DeviceTable.COL_APP_VERSION to "TEXT"
+                )
+                for ((col, def) in deviceCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${DeviceTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${DeviceTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 4. device_vitals additions: motion_state, storage_free_mb, ram_usage_mb
+                val vitalsCols = mapOf(
+                    DeviceVitalsTable.COL_MOTION_STATE to "TEXT DEFAULT 'STATIONARY'",
+                    DeviceVitalsTable.COL_STORAGE_FREE_MB to "INTEGER DEFAULT 0",
+                    DeviceVitalsTable.COL_RAM_USAGE_MB to "INTEGER DEFAULT 0"
+                )
+                for ((col, def) in vitalsCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${DeviceVitalsTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${DeviceVitalsTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 5. group_members additions: circle_type, is_muted
+                val memberCols = mapOf(
+                    GroupMemberTable.COL_CIRCLE_TYPE to "TEXT DEFAULT 'FAMILY'",
+                    GroupMemberTable.COL_IS_MUTED to "INTEGER DEFAULT 0"
+                )
+                for ((col, def) in memberCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${GroupMemberTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${GroupMemberTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 6. location_event additions: accuracy, bearing, altitude, motion_state
+                val locCols = mapOf(
+                    LocationEventTable.COL_ACCURACY to "REAL DEFAULT 0.0",
+                    LocationEventTable.COL_BEARING to "REAL DEFAULT 0.0",
+                    LocationEventTable.COL_ALTITUDE to "REAL DEFAULT 0.0",
+                    LocationEventTable.COL_MOTION_STATE to "TEXT DEFAULT 'UNKNOWN'"
+                )
+                for ((col, def) in locCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${LocationEventTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${LocationEventTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 7. sim additions: serving_cid, carrier_name
+                val simCols = mapOf(
+                    SimTable.COL_SERVING_CID to "TEXT DEFAULT ''",
+                    SimTable.COL_CARRIER_NAME to "TEXT DEFAULT ''"
+                )
+                for ((col, def) in simCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${SimTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${SimTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 8. safe_zone additions: radius_meters, is_dwell_alert_enabled
+                val safeCols = mapOf(
+                    SafeZoneTable.COL_RADIUS_METERS to "REAL DEFAULT 0.0",
+                    SafeZoneTable.COL_IS_DWELL_ALERT_ENABLED to "INTEGER DEFAULT 1"
+                )
+                for ((col, def) in safeCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${SafeZoneTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${SafeZoneTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 9. alert_history additions: is_read, resolved_at
+                val alertCols = mapOf(
+                    "is_read" to "INTEGER DEFAULT 0",
+                    "resolved_at" to "INTEGER DEFAULT 0"
+                )
+                for ((col, def) in alertCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM alert_history LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE alert_history ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 10. Create new tables
+                try { db.execSQL(DevicePolicyTable.CREATE_TABLE) } catch (e: Exception) { }
+                try { db.execSQL(WatchdogResurrectionTable.CREATE_TABLE) } catch (e: Exception) { }
+
+                // 11. Performance and compound indexes
+                try {
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_vitals_motion ON ${DeviceVitalsTable.TABLE_NAME} (${DeviceVitalsTable.COL_HARDWARE_ID}, ${DeviceVitalsTable.COL_MOTION_STATE})")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_motion ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_MOTION_STATE})")
+                } catch (e: Exception) { }
+
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V79 Schema Migration: Master REA Schema Refabrication Deployed.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V79 Migration Failure: ${e.message}")
             } finally {
                 db.endTransaction()
             }
@@ -1273,6 +1780,15 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         } finally {
             db.endTransaction()
         }
+        try {
+            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                context,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                uid1,
+                mapOf("uid" to uid1, "name" to name, "role" to role)
+            )
+        } catch (ignored: Exception) {}
     }
 
     /**
@@ -1362,7 +1878,19 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 put(SafeZoneTable.COL_IS_ACTIVE, if (isActive) 1 else 0)
                 put("flag_b", if (isActive) 1 else 0)
             }
-            db.update(SafeZoneTable.TABLE_NAME, v, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+            val updated = db.update(SafeZoneTable.TABLE_NAME, v, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+            if (updated) {
+                try {
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                        context,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_SAFE_ZONE,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                        zoneId,
+                        mapOf("zone_id" to zoneId, "is_active" to isActive)
+                    )
+                } catch (ignored: Exception) {}
+            }
+            updated
         } catch (e: Exception) { false }
     }
 
@@ -1372,7 +1900,19 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val v = android.content.ContentValues().apply {
                 put("flag_a", if (alertsEnabled) 1 else 0)
             }
-            db.update(SafeZoneTable.TABLE_NAME, v, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+            val updated = db.update(SafeZoneTable.TABLE_NAME, v, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+            if (updated) {
+                try {
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                        context,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_SAFE_ZONE,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                        zoneId,
+                        mapOf("zone_id" to zoneId, "alerts_enabled" to alertsEnabled)
+                    )
+                } catch (ignored: Exception) {}
+            }
+            updated
         } catch (e: Exception) { false }
     }
 
@@ -1576,7 +2116,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     MAX(e.${LocationEventTable.COL_EVENT_ID}) as log_id
                 FROM ${LocationEventTable.TABLE_NAME} e
                 JOIN ${UserIdentityTable.TABLE_NAME} i ON e.${LocationEventTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
-                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ?)
+                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_UID_2} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?)
                   AND e.${LocationEventTable.COL_TIMESTAMP} >= ?
                   AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
                 GROUP BY ROUND(e.${LocationEventTable.COL_LAT}, 3), ROUND(e.${LocationEventTable.COL_LNG}, 3), e.${LocationEventTable.COL_DAY_KEY}
@@ -1626,6 +2166,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+     * Variables: currentCanonicalId, phoneOrModel, pruned, orphanUids, orphanUid
+     * Constants: UserIdentityTable.TABLE_NAME, UserProfileTable.TABLE_NAME, DeviceTable.TABLE_NAME, UserProfileTable.COL_PHONE, DeviceTable.COL_DEVICE_MODEL, UserProfileTable.COL_NAME, UserProfileTable.COL_NICKNAME, UserProfileTable.COL_DISPLAY_NAME
+     * Dependencies: android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.utils.SystemLogger
+     * Integration Points: NetworkGatewayActivity.java, FirebaseComm.kt, DevicePairingEngine.kt
      * 🛡️ Multi-Device Zombie Node Pruner: De-duplicates stale instances of the same phone/model
      * on fresh app reinstalls (Solves Redmi Reinstall Zombie Leak #12).
      */
@@ -1640,20 +2185,24 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 FROM ${UserIdentityTable.TABLE_NAME} i
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} p ON i.id = p.identity_id
                 LEFT JOIN ${DeviceTable.TABLE_NAME} d ON i.id = d.identity_id
-                WHERE (p.phone_number = ? OR d.device_model = ? OR p.user_name = ?) 
+                WHERE (p.${UserProfileTable.COL_PHONE} = ? OR d.${DeviceTable.COL_DEVICE_MODEL} = ? OR p.${UserProfileTable.COL_NAME} = ? OR p.${UserProfileTable.COL_NICKNAME} = ? OR p.${UserProfileTable.COL_DISPLAY_NAME} = ?) 
                   AND i.uid_1 != ? 
                   AND i.status != 'DELETED'
                 """.trimIndent(),
-                arrayOf(phoneOrModel, phoneOrModel, phoneOrModel, currentCanonicalId)
+                arrayOf(phoneOrModel, phoneOrModel, phoneOrModel, phoneOrModel, phoneOrModel, currentCanonicalId)
             )
+            val orphanUids = mutableListOf<String>()
             cursor.use {
                 while (it.moveToNext()) {
                     val orphanUid = it.getString(1)
                     if (!orphanUid.isNullOrBlank()) {
-                        markRosterNodeDeleted(orphanUid)
-                        pruned++
+                        orphanUids.add(orphanUid)
                     }
                 }
+            }
+            for (orphanUid in orphanUids) {
+                markRosterNodeDeleted(orphanUid)
+                pruned++
             }
         } catch (e: Exception) {
             com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "pruneZombieNodes error", e)
@@ -1708,7 +2257,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 ORDER BY e.${LocationEventTable.COL_TIMESTAMP} DESC
                 LIMIT 1
             """.trimIndent()
-            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1))
+            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, uid1))
             cursor.use {
                 if (it.moveToFirst()) {
                     val map = mutableMapOf<String, Any>()
@@ -1896,6 +2445,20 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             polygonPoints = polyPoints,
             dwellMinutes = dwellMin
         )
+        try {
+            val zoneId = v.getAsString("zone_id") ?: ""
+            val zoneMap = mutableMapOf<String, Any?>()
+            for (key in v.keySet()) {
+                zoneMap[key] = v.get(key)
+            }
+            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                context,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_SAFE_ZONE,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                zoneId,
+                zoneMap
+            )
+        } catch (ignored: Exception) {}
     }
 
     fun syncSafeZoneGroup(zoneId: String, nodes: String, start: Int, end: Int, days: String, flagA: Int = 1, flagB: Int = 1, addr: String? = null) {
@@ -1931,7 +2494,19 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     fun deleteSafeZone(zoneId: String): Boolean {
         val db = writableDatabase
-        return db.delete(SafeZoneTable.TABLE_NAME, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+        val deleted = db.delete(SafeZoneTable.TABLE_NAME, "${SafeZoneTable.COL_ZONE_ID} = ?", arrayOf(zoneId)) > 0
+        if (deleted) {
+            try {
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                    context,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_SAFE_ZONE,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_DELETE,
+                    zoneId,
+                    mapOf("zone_id" to zoneId)
+                )
+            } catch (ignored: Exception) {}
+        }
+        return deleted
     }
 
     // --- ORGANIZATION & CORPORATE DOSSIER BRIDGES ---
@@ -2017,6 +2592,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                    OR i.${UserIdentityTable.COL_AUTH_UID} = ? 
                    OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? 
                    OR i.${UserIdentityTable.COL_UID_2} = ?
+                LIMIT 1
             """.trimIndent()
             
             val cursor = db.rawQuery(sql, arrayOf(uid, uid, uid, uid))
@@ -2072,6 +2648,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                    OR i.${UserIdentityTable.COL_AUTH_UID} = ? 
                    OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? 
                    OR i.${UserIdentityTable.COL_UID_2} = ?
+                LIMIT 1
             """.trimIndent()
             
             val cursor = db.rawQuery(sql, arrayOf(agentId, agentId, agentId, agentId))
@@ -2392,7 +2969,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         updateCitizenRole(uid1, famRole, frRole, isFriend, groupId)
     }
 
-    fun getOfflineRoster(): List<Map<String, Any>> {
+    @JvmOverloads fun getOfflineRoster(groupId: String? = null): List<Map<String, Any>> {
         val list = mutableListOf<Map<String, Any>>()
         try {
             val db = readableDatabase
@@ -2409,6 +2986,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     i.${UserIdentityTable.COL_IS_ADMIN} as is_admin,
                     i.${UserIdentityTable.COL_ID} as identity_id,
                     COALESCE(NULLIF(m.${GroupMemberTable.COL_ROLE}, ''), 'Member') as role_type,
+                    COALESCE(NULLIF(m.${GroupMemberTable.COL_PERMISSIONS_MASK}, ''), '0xFF') as permissions_mask,
+                    COALESCE(NULLIF(i.${UserIdentityTable.COL_STATUS}, ''), 'Active') as status,
                     CASE 
                         WHEN UPPER(COALESCE(m.${GroupMemberTable.COL_ROLE}, '')) LIKE '%FRIEND%' THEN 1
                         WHEN UPPER(COALESCE(m.${GroupMemberTable.COL_ROLE}, '')) LIKE '%COLLEAGUE%' THEN 1
@@ -2419,7 +2998,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     END as is_friend,
                     'LIVE' as st_session_state
                 FROM ${UserIdentityTable.TABLE_NAME} i
-                LEFT JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID}
+                ${if (!groupId.isNullOrBlank()) "JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID} AND m.${GroupMemberTable.COL_GROUP_ID} = '$groupId'" else "LEFT JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID}"}
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} u ON i.${UserIdentityTable.COL_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
                 WHERE i.${UserIdentityTable.COL_UID_1} IS NOT NULL 
                   AND i.${UserIdentityTable.COL_UID_1} != '' 
@@ -2641,6 +3220,49 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.insert("sim_transactions", null, v)
         } catch (e: Exception) { }
     }
+    // --- STEALTH SCHEDULE & SECURITY AUDIT (V77) ---
+
+    fun getStealthIntervalMins(): Long {
+        return try {
+            val db = readableDatabase
+            val cursor = db.rawQuery("SELECT config_value FROM stealth_schedule_config WHERE config_key = 'dormant_interval_mins' LIMIT 1", null)
+            cursor.use {
+                if (it.moveToFirst()) {
+                    it.getString(0).toLongOrNull() ?: 60L
+                } else {
+                    60L
+                }
+            }
+        } catch (_: Exception) {
+            60L
+        }
+    }
+
+    fun setStealthIntervalMins(mins: Long) {
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put("config_key", "dormant_interval_mins")
+                put("config_value", mins.toString())
+                put("updated_at", System.currentTimeMillis())
+            }
+            db.insertWithOnConflict("stealth_schedule_config", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (_: Exception) {}
+    }
+
+    fun logSecurityEvent(eventType: String, details: String, severity: String = "INFO") {
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put("event_type", eventType)
+                put("event_details", details)
+                put("severity", severity)
+                put("timestamp", System.currentTimeMillis())
+            }
+            db.insert("security_audit_log", null, values)
+        } catch (_: Exception) {}
+    }
+
     fun isGeofenceAlertEnabled(zoneId: String): Boolean {
         return try {
             val db = readableDatabase
@@ -2927,11 +3549,130 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         } catch (e: Exception) { 0 }
     }
 
+    // ⚖️ YESTERDAY ↔ TODAY BALANCE DATA DELTA HELPERS
+    fun getBalanceDeltaQueue(startTime: Long, endTime: Long, limit: Int = 200): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                PendingSyncQueueTable.TABLE_NAME,
+                null,
+                "${PendingSyncQueueTable.COL_STATUS} = 'PENDING' AND ${PendingSyncQueueTable.COL_TIMESTAMP} >= ? AND ${PendingSyncQueueTable.COL_TIMESTAMP} <= ?",
+                arrayOf(startTime.toString(), endTime.toString()),
+                null, null,
+                "${PendingSyncQueueTable.COL_TIMESTAMP} ASC",
+                limit.toString()
+            )
+            cursor.use {
+                val cols = it.columnNames
+                while (it.moveToNext()) {
+                    val map = mutableMapOf<String, Any>()
+                    for (c in cols) {
+                        val idx = it.getColumnIndexOrThrow(c)
+                        map[c] = when (it.getType(idx)) {
+                            android.database.Cursor.FIELD_TYPE_INTEGER -> it.getLong(idx)
+                            android.database.Cursor.FIELD_TYPE_FLOAT -> it.getDouble(idx)
+                            else -> it.getString(idx) ?: ""
+                        }
+                    }
+                    list.add(map)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Failed to query balance delta queue: ${e.message}")
+        }
+        return list
+    }
+
+    fun markBalanceDeltaSynced(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        try {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                val cv = android.content.ContentValues().apply {
+                    put(PendingSyncQueueTable.COL_STATUS, "SYNCED")
+                }
+                for (id in ids) {
+                    db.update(PendingSyncQueueTable.TABLE_NAME, cv, "${PendingSyncQueueTable.COL_ID} = ?", arrayOf(id.toString()))
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Failed to mark balance delta synced: ${e.message}")
+        }
+    }
+
+    fun forceWalCheckpoint(): Boolean {
+        return try {
+            val db = writableDatabase
+            val cursor = db.rawQuery("PRAGMA wal_checkpoint(FULL)", null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    SystemLogger.i("DatabaseHelper", "WAL Checkpoint executed successfully: code=${it.getInt(0)}")
+                }
+            }
+            true
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Failed to execute WAL checkpoint: ${e.message}")
+            false
+        }
+    }
+
+
     // 🔋 DEVICE VITALS HELPERS
     fun upsertDeviceVitals(hardwareId: String, battery: Int, isCharging: Boolean, networkType: String, signalDbm: Int, isMockGps: Boolean, isRooted: Boolean) {
         try {
             val db = writableDatabase
             DeviceVitalsTable.upsertVitals(db, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted)
+        } catch (e: Exception) { }
+    }
+
+    fun updateTelemetryAck(hardwareId: String, ackTimestamp: Long, rttMs: Long, activeRoute: String? = null) {
+        try {
+            val db = writableDatabase
+            val cleanId = hardwareId.removePrefix("HW_")
+            val hwPrefixedId = "HW_$cleanId"
+            val whereClause = "${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ?"
+            val whereArgs = arrayOf(hardwareId, cleanId, hwPrefixedId)
+
+            val v = android.content.ContentValues().apply {
+                put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_LAST_SEEN, ackTimestamp)
+                put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_ACK_TIMESTAMP, ackTimestamp)
+                put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_ACK_LATENCY_MS, rttMs)
+                if (activeRoute != null && activeRoute.isNotBlank()) {
+                    put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_ACTIVE_ROUTE, activeRoute)
+                }
+            }
+            val rows = db.update(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.TABLE_NAME, v, whereClause, whereArgs)
+            if (rows == 0) {
+                v.put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID, hardwareId)
+                v.put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_BATTERY_LEVEL, 100)
+                db.insertWithOnConflict(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.TABLE_NAME, null, v, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+        } catch (e: Exception) { }
+    }
+
+    fun updateDeviceActiveRoute(hardwareId: String, activeRoute: String) {
+        try {
+            val db = writableDatabase
+            val cleanId = hardwareId.removePrefix("HW_")
+            val hwPrefixedId = "HW_$cleanId"
+            val whereClause = "${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID} = ?"
+            val whereArgs = arrayOf(hardwareId, cleanId, hwPrefixedId)
+
+            val v = android.content.ContentValues().apply {
+                put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_ACTIVE_ROUTE, activeRoute)
+                put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_LAST_SEEN, System.currentTimeMillis())
+            }
+            val rows = db.update(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.TABLE_NAME, v, whereClause, whereArgs)
+            if (rows == 0) {
+                v.put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_HARDWARE_ID, hardwareId)
+                v.put(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_BATTERY_LEVEL, 100)
+                db.insertWithOnConflict(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.TABLE_NAME, null, v, SQLiteDatabase.CONFLICT_IGNORE)
+            }
         } catch (e: Exception) { }
     }
 
@@ -2963,5 +3704,391 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             }
         } catch (e: Exception) { }
         return null
+    }
+
+    // =========================================================================
+    // 🧹 STORAGE PRUNE & VACUUM MAINTENANCE ENGINE (Rolling Retention)
+    // =========================================================================
+    /**
+     * Purges expired telemetry history, orphaned vitals, logs, and completed sync items.
+     * Executes SQLite VACUUM to reclaim filesystem disk blocks (prevents storage bloat).
+     *
+     * @param retentionDays Max age of data in days to preserve (Default: 3 days)
+     * @return Total number of records deleted across all tables
+     */
+    fun pruneExpiredData(retentionDays: Int = 3): Long {
+        var totalDeleted: Long = 0
+        try {
+            val db = writableDatabase
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.DAY_OF_YEAR, -retentionDays)
+            
+            val sdfDayKey = SimpleDateFormat("yyyyMMdd", Locale.US)
+            val cutoffDayKey = sdfDayKey.format(cal.time).toIntOrNull() ?: 0
+            val cutoffTimestampMs = cal.timeInMillis
+            val cutoffIso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(cal.time)
+            val cutoffForensicFull = "${cutoffDayKey}00000000"
+
+            SystemLogger.i("DatabaseHelper", "🧹 Starting SQLite rolling purge. Cutoff: $cutoffIso (dayKey: $cutoffDayKey)")
+
+            // 1. Purge time-series location events
+            try {
+                val deletedByDayKey = db.delete(
+                    LocationEventTable.TABLE_NAME,
+                    "${LocationEventTable.COL_DAY_KEY} > 0 AND ${LocationEventTable.COL_DAY_KEY} < ?",
+                    arrayOf(cutoffDayKey.toString())
+                )
+                totalDeleted += deletedByDayKey
+
+                val deletedLegacy = db.delete(
+                    LocationEventTable.TABLE_NAME,
+                    "(${LocationEventTable.COL_DAY_KEY} IS NULL OR ${LocationEventTable.COL_DAY_KEY} <= 0) AND (" +
+                        "(${LocationEventTable.COL_TIMESTAMP} LIKE '20%' AND ${LocationEventTable.COL_TIMESTAMP} < ?) OR " +
+                        "(${LocationEventTable.COL_TIMESTAMP} NOT LIKE '20%' AND CAST(${LocationEventTable.COL_TIMESTAMP} AS INTEGER) > 0 AND CAST(${LocationEventTable.COL_TIMESTAMP} AS INTEGER) < ?) OR " +
+                        "(${LocationEventTable.COL_CREATED_ON} IS NOT NULL AND ${LocationEventTable.COL_CREATED_ON} < ?)" +
+                    ")",
+                    arrayOf(cutoffForensicFull, cutoffTimestampMs.toString(), cutoffIso)
+                )
+                totalDeleted += deletedLegacy
+                SystemLogger.i("DatabaseHelper", "Deleted ${deletedByDayKey + deletedLegacy} expired location_event records.")
+            } catch (e: Exception) {
+                SystemLogger.e("DatabaseHelper", "Failed pruning location_event", e)
+            }
+
+            // 2. Purge device vitals older than retention cutoff
+            try {
+                val deletedVitals = db.delete(
+                    DeviceVitalsTable.TABLE_NAME,
+                    "${DeviceVitalsTable.COL_LAST_SEEN} < ?",
+                    arrayOf(cutoffTimestampMs.toString())
+                )
+                totalDeleted += deletedVitals
+            } catch (e: Exception) { }
+
+            // 3. Purge geofence transition events older than cutoff
+            try {
+                val deletedGeofence = db.delete(
+                    GeofenceEventTable.TABLE_NAME,
+                    "${GeofenceEventTable.COL_TIMESTAMP} < ?",
+                    arrayOf(cutoffTimestampMs.toString())
+                )
+                totalDeleted += deletedGeofence
+            } catch (e: Exception) { }
+
+            // 4. Purge completed or failed sync queue items older than 48 hours
+            try {
+                val syncCutoff = System.currentTimeMillis() - (48 * 3600 * 1000L)
+                val deletedSync = db.delete(
+                    PendingSyncQueueTable.TABLE_NAME,
+                    "${PendingSyncQueueTable.COL_STATUS} != 'PENDING' OR ${PendingSyncQueueTable.COL_TIMESTAMP} < ?",
+                    arrayOf(syncCutoff.toString())
+                )
+                totalDeleted += deletedSync
+
+                val deletedSyncQueue = db.delete(
+                    SyncQueueTable.TABLE_NAME,
+                    "${SyncQueueTable.COL_STATUS} = 'ACKED' OR ${SyncQueueTable.COL_CREATED_ON} < ?",
+                    arrayOf(cutoffIso)
+                )
+                totalDeleted += deletedSyncQueue
+            } catch (e: Exception) { }
+
+            // 5. Purge ChangeLog Table
+            try {
+                val deletedChanges = db.delete(
+                    ChangeLogTable.TABLE_NAME,
+                    "${ChangeLogTable.COL_TIMESTAMP} < ?",
+                    arrayOf(cutoffIso)
+                )
+                totalDeleted += deletedChanges
+            } catch (e: Exception) { }
+
+            // 6. Purge sys_log (System Audit Ledger) - Capped to strict 48-hour rolling window
+            try {
+                val logCutoffMs = System.currentTimeMillis() - (48 * 3600 * 1000L)
+                val logCutoffIso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(logCutoffMs))
+                val deletedLogs = db.delete(
+                    "sys_log",
+                    "timestamp < ? OR (created_on IS NOT NULL AND created_on < ?)",
+                    arrayOf(logCutoffMs.toString(), logCutoffIso)
+                )
+                totalDeleted += deletedLogs
+                SystemLogger.i("DatabaseHelper", "Deleted $deletedLogs expired sys_log records (48h cutoff).")
+            } catch (e: Exception) { }
+
+            // 7. Purge sim_transactions (Cellular Breadcrumb Ledger)
+            try {
+                val deletedSim = db.delete(
+                    "sim_transactions",
+                    "timestamp < ? OR (created_on IS NOT NULL AND created_on < ?)",
+                    arrayOf(cutoffTimestampMs.toString(), cutoffIso)
+                )
+                totalDeleted += deletedSim
+            } catch (e: Exception) { }
+
+            // 8. 🚀 TRUNCATE WAL WRITE-AHEAD LOG & EXECUTE SQLITE VACUUM TO RECLAIM DISK BLOCKS
+            try {
+                // Step 8A: Force WAL checkpoint to flush all dirty pages and truncate .db-wal to 0 bytes
+                try {
+                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val busy = cursor.getInt(0)
+                            val log = cursor.getInt(1)
+                            val checkpointed = cursor.getInt(2)
+                            SystemLogger.i("DatabaseHelper", "WAL Checkpoint TRUNCATE: busy=$busy, log=$log, checkpointed=$checkpointed")
+                        }
+                    }
+                } catch (walEx: Exception) {
+                    SystemLogger.w("DatabaseHelper", "WAL Checkpoint note: ${walEx.message}")
+                }
+
+                // Step 8B: Execute VACUUM to reclaim filesystem disk blocks
+                SystemLogger.i("DatabaseHelper", "Executing VACUUM to reclaim unallocated disk pages...")
+                db.execSQL("VACUUM")
+
+                // Step 8C: Post-VACUUM checkpoint to ensure WAL is minimized
+                try {
+                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null)?.close()
+                } catch (ignored: Exception) {}
+
+                SystemLogger.i("DatabaseHelper", "VACUUM & WAL Truncate completed successfully. Total records purged: $totalDeleted")
+            } catch (e: Exception) {
+                SystemLogger.w("DatabaseHelper", "VACUUM execution deferred or skipped: ${e.message}")
+            }
+
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Error during storage pruning", e)
+        }
+        return totalDeleted
+    }
+
+    /**
+     * Calculates the raw on-disk size of the SQLite database in Megabytes.
+     */
+    fun getDatabaseStorageSizeMb(): Double {
+        return try {
+            val dbFile = context.getDatabasePath(DATABASE_NAME)
+            val walFile = context.getDatabasePath("$DATABASE_NAME-wal")
+            val shmFile = context.getDatabasePath("$DATABASE_NAME-shm")
+            var totalBytes = if (dbFile.exists()) dbFile.length() else 0L
+            if (walFile.exists()) totalBytes += walFile.length()
+            if (shmFile.exists()) totalBytes += shmFile.length()
+            totalBytes / (1024.0 * 1024.0)
+        } catch (e: Exception) {
+            0.0
+        }
+    }
+
+    /**
+     * 🧹 Purges temporary application cache directories (internal cache, external cache, code cache, external downloads).
+     * Reclaims space occupied by downloaded APKs, camera buffers, and HTTP/map caches.
+     *
+     * @return Total bytes reclaimed
+     */
+    fun pruneCacheAndTempFiles(): Long {
+        var reclaimedBytes = 0L
+        try {
+            context.cacheDir?.let { reclaimedBytes += deleteDirContents(it) }
+            context.externalCacheDir?.let { reclaimedBytes += deleteDirContents(it) }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                context.codeCacheDir?.let { reclaimedBytes += deleteDirContents(it) }
+            }
+
+            // 📦 Purge orphaned APK update binaries in App-Specific External Downloads
+            try {
+                val extDownloads = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (extDownloads != null && extDownloads.exists()) {
+                    val apkFiles = extDownloads.listFiles { _, name -> name.endsWith(".apk", ignoreCase = true) }
+                    apkFiles?.forEach { apk ->
+                        val len = apk.length()
+                        if (apk.delete()) {
+                            reclaimedBytes += len
+                            SystemLogger.i("DatabaseHelper", "Purged stale APK update binary: ${apk.name} (${len / (1024 * 1024)} MB)")
+                        }
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+            // 📦 Purge legacy APK binaries in public Downloads (jButterFly*.apk / jFindMe*.apk)
+            try {
+                val pubDownloads = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (pubDownloads != null && pubDownloads.exists()) {
+                    val jApks = pubDownloads.listFiles { _, name -> 
+                        (name.startsWith("jButterFly", ignoreCase = true) || name.startsWith("jFindMe", ignoreCase = true)) && name.endsWith(".apk", ignoreCase = true)
+                    }
+                    jApks?.forEach { apk ->
+                        val len = apk.length()
+                        if (apk.delete()) {
+                            reclaimedBytes += len
+                            SystemLogger.i("DatabaseHelper", "Purged public Downloads APK: ${apk.name} (${len / (1024 * 1024)} MB)")
+                        }
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+            SystemLogger.i("DatabaseHelper", "🧹 Pruned cache & temp files. Reclaimed ${(reclaimedBytes / (1024.0 * 1024.0))} MB")
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Failed pruning cache files: ${e.message}")
+        }
+        return reclaimedBytes
+    }
+
+    /**
+     * Calculates total cached storage in Megabytes.
+     */
+    fun getCacheStorageSizeMb(): Double {
+        var totalBytes = 0L
+        try {
+            context.cacheDir?.let { totalBytes += getDirSize(it) }
+            context.externalCacheDir?.let { totalBytes += getDirSize(it) }
+        } catch (e: Exception) { }
+        return totalBytes / (1024.0 * 1024.0)
+    }
+
+    private fun deleteDirContents(dir: java.io.File): Long {
+        var deletedBytes = 0L
+        if (!dir.exists()) return 0L
+        val files = dir.listFiles() ?: return 0L
+        for (f in files) {
+            if (f.isDirectory) {
+                deletedBytes += deleteDirContents(f)
+                f.delete()
+            } else {
+                val len = f.length()
+                if (f.delete()) {
+                    deletedBytes += len
+                }
+            }
+        }
+        return deletedBytes
+    }
+
+    private fun getDirSize(dir: java.io.File): Long {
+        var total = 0L
+        if (!dir.exists()) return 0L
+        val files = dir.listFiles() ?: return 0L
+        for (f in files) {
+            if (f.isDirectory) {
+                total += getDirSize(f)
+            } else {
+                total += f.length()
+            }
+        }
+        return total
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 🛡️ V79 REA REFABRICATION APIS: Master PIN, Device Policy, Motion & Watchdog
+    // ──────────────────────────────────────────────────────────────────
+
+    fun setMasterPin(uid1: String, pinHash: String, salt: String): Boolean {
+        return try {
+            val db = writableDatabase
+            val identityId = resolveInternalId(uid1)
+            if (identityId == -1L) return false
+            val cv = android.content.ContentValues().apply {
+                put(UserProfileTable.COL_MASTER_PIN_HASH, pinHash)
+                put(UserProfileTable.COL_SALT, salt)
+                put(UserProfileTable.COL_UPDATED_AT, com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp())
+            }
+            db.update(UserProfileTable.TABLE_NAME, cv, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(identityId.toString())) > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun getMasterPin(uid1: String): Pair<String, String>? {
+        return try {
+            val db = readableDatabase
+            val identityId = resolveInternalId(uid1)
+            if (identityId == -1L) return null
+            db.query(
+                UserProfileTable.TABLE_NAME,
+                arrayOf(UserProfileTable.COL_MASTER_PIN_HASH, UserProfileTable.COL_SALT),
+                "${UserProfileTable.COL_IDENTITY_ID} = ?",
+                arrayOf(identityId.toString()),
+                null, null, null
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val hash = cursor.getString(0) ?: ""
+                    val salt = cursor.getString(1) ?: ""
+                    if (hash.isNotEmpty()) Pair(hash, salt) else null
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun setBatteryOptimizationExempt(deviceId: String, exempt: Boolean): Boolean {
+        return try {
+            val db = writableDatabase
+            val cv = android.content.ContentValues().apply {
+                put(DeviceTable.COL_BATTERY_OPTIMIZATION_EXEMPT, if (exempt) 1 else 0)
+                put(DeviceTable.COL_UPDATED_AT, com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp())
+            }
+            db.update(DeviceTable.TABLE_NAME, cv, "${DeviceTable.COL_DEVICE_ID} = ?", arrayOf(deviceId)) > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun updateMotionState(hardwareId: String, motionState: String): Boolean {
+        return try {
+            val db = writableDatabase
+            val cv = android.content.ContentValues().apply {
+                put(DeviceVitalsTable.COL_MOTION_STATE, motionState)
+                put(DeviceVitalsTable.COL_LAST_SEEN, System.currentTimeMillis())
+            }
+            val cleanId = hardwareId.removePrefix("HW_")
+            val hwPrefixedId = "HW_$cleanId"
+            db.update(
+                DeviceVitalsTable.TABLE_NAME,
+                cv,
+                "${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ?",
+                arrayOf(hardwareId, cleanId, hwPrefixedId)
+            ) > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun markAlertRead(alertId: Long): Boolean {
+        return try {
+            val db = writableDatabase
+            val cv = android.content.ContentValues().apply {
+                put("is_read", 1)
+            }
+            db.update("alert_history", cv, "id = ?", arrayOf(alertId.toString())) > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun setDevicePolicy(key: String, value: String, active: Boolean = true): Boolean {
+        return try {
+            val db = writableDatabase
+            DevicePolicyTable.setPolicy(db, key, value, active) > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun getDevicePolicy(key: String): String? {
+        return try {
+            val db = readableDatabase
+            DevicePolicyTable.getPolicy(db, key)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun logWatchdogResurrection(triggerAction: String, success: Boolean = true): Long {
+        return try {
+            val db = writableDatabase
+            WatchdogResurrectionTable.logResurrection(db, triggerAction, success)
+        } catch (e: Exception) {
+            -1L
+        }
     }
 }

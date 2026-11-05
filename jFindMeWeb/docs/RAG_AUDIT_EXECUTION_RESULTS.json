@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-11-04T05:26:54.654Z",
-  "total": 31,
-  "passed": 31,
+  "timestamp": "2026-11-05T18:23:34.179Z",
+  "total": 33,
+  "passed": 33,
   "failed": 0,
   "passPercent": 100,
-  "duration": "40.26",
+  "duration": "25.15",
   "results": [
     {
       "suite": "GET_ENDPOINTS",
@@ -53,7 +53,7 @@
       "pass": true,
       "details": {
         "status": "SUCCESS",
-        "count": 2,
+        "count": 8,
         "keys": [
           "status",
           "source",
@@ -74,7 +74,7 @@
       "pass": true,
       "details": {
         "status": "SUCCESS",
-        "count": 2,
+        "count": 8,
         "keys": [
           "status",
           "source",
@@ -177,7 +177,7 @@
       "pass": true,
       "details": {
         "status": "SUCCESS",
-        "count": 1,
+        "count": 0,
         "keys": [
           "status",
           "count",
@@ -472,6 +472,39 @@
         "keys": [
           "relPostPass",
           "relGetPass"
+        ]
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 5: Dynamic Fleet Recency & RAG Calculation Loop",
+      "condition": "8 Firebase devices validated with dynamic recency thresholds",
+      "validationRule": "BFR-SEQ-05: Realtime fleet parity matching Firebase RTDB",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "total",
+          "hasGhostNodes",
+          "hasTwinClones"
+        ]
+      }
+    },
+    {
+      "suite": "CHRONO_FLOWS",
+      "scenarioName": "Seq 6: Duplicate Pair Silicon Hash Verification & Old_Device_ID Parity",
+      "condition": "Hardware clone detection via Silicon SHA-256",
+      "validationRule": "BFR-SEQ-06: Precise hardware twin identification without false positives",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "pass": true,
+      "details": {
+        "status": "SUCCESS",
+        "keys": [
+          "foundPair",
+          "siliconHash"
         ]
       }
     }

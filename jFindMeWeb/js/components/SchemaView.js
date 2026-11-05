@@ -1333,7 +1333,7 @@ export class SchemaView {
                                 </td>
                                 <td class="p-2 font-bold text-blue-600">${id}</td>
                                 <td class="p-2 font-bold">${z.zoneName || z.name || id}</td>
-                                <td class="p-2 text-amber-600 font-bold">${z.creatorId || z.owner_uid || '2T929153'}</td>
+                                <td class="p-2 text-amber-600 font-bold">${z.creatorId || z.owner_uid || 'SYSTEM'}</td>
                                 <td class="p-2 font-bold">${z.radius || 50}m</td>
                                 <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600 font-bold">ACTIVE</span></td>
                                 <td class="p-2 text-slate-500">Entry: YES • Exit: YES</td>
@@ -1345,7 +1345,7 @@ export class SchemaView {
                                         <div class="space-y-2 font-mono text-xs">
                                             <div class="font-bold text-blue-600">Perimeter Center & Boundary Coordinates:</div>
                                             <div>Latitude: <b>${z.latitude || z.lat || 18.5594}</b> | Longitude: <b>${z.longitude || z.lng || 73.8843}</b> | Radius: <b>${z.radius || 50}m</b></div>
-                                            <div>Created by Device: <b class="text-amber-600">${z.creatorId || z.owner_uid || '2T929153'}</b> | Bound Targets: <b>${targets}</b></div>
+                                            <div>Created by Device: <b class="text-amber-600">${z.creatorId || z.owner_uid || 'SYSTEM'}</b> | Bound Targets: <b>${targets}</b></div>
                                             <pre class="bg-white dark:bg-slate-800 p-2 rounded border text-[11px]">${JSON.stringify(z, null, 2)}</pre>
                                         </div>
                                     </td>

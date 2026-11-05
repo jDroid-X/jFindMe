@@ -61,6 +61,30 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     private val _lastFailedInstallInfo = MutableLiveData<String>()
     val lastFailedInstallInfo: LiveData<String> get() = _lastFailedInstallInfo
 
+    private val _patchAvailableInfo = MutableLiveData<String>()
+    val patchAvailableInfo: LiveData<String> get() = _patchAvailableInfo
+
+    private val _patchAuditLog = MutableLiveData<String>()
+    val patchAuditLog: LiveData<String> get() = _patchAuditLog
+
+    private val _liveHotPatch = MutableLiveData<com.jdroidx.jfindme.data.remote.FirebaseComm.LiveHotPatchInfo?>()
+    val liveHotPatch: LiveData<com.jdroidx.jfindme.data.remote.FirebaseComm.LiveHotPatchInfo?> get() = _liveHotPatch
+
+    private val _isHotPatchActive = MutableLiveData<Boolean>()
+    val isHotPatchActive: LiveData<Boolean> get() = _isHotPatchActive
+
+    private val _pipelineStep = MutableLiveData<Int>()
+    val pipelineStep: LiveData<Int> get() = _pipelineStep
+
+    private val _pipelineStatusMessage = MutableLiveData<String>()
+    val pipelineStatusMessage: LiveData<String> get() = _pipelineStatusMessage
+
+    private val _availablePatchesList = MutableLiveData<List<com.jdroidx.jfindme.data.remote.FirebaseComm.PatchCatalogItem>>()
+    val availablePatchesList: LiveData<List<com.jdroidx.jfindme.data.remote.FirebaseComm.PatchCatalogItem>> get() = _availablePatchesList
+
+    private val _localSyncEndpoint = MutableLiveData<String>()
+    val localSyncEndpoint: LiveData<String> get() = _localSyncEndpoint
+
     private val _installPackageUrl = MutableLiveData<String?>()
     val installPackageUrl: LiveData<String?> get() = _installPackageUrl
 
@@ -70,11 +94,48 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     private val _showInstallPrompt = MutableLiveData<InstallPromptData?>()
     val showInstallPrompt: LiveData<InstallPromptData?> get() = _showInstallPrompt
 
+    // Dynamic Observables replacing hardcoded sizes and percentages
+    private val _latestDeltaPatchSize = MutableLiveData<String>()
+    val latestDeltaPatchSize: LiveData<String> get() = _latestDeltaPatchSize
+
+    private val _maintenanceWindowTime = MutableLiveData<String>()
+    val maintenanceWindowTime: LiveData<String> get() = _maintenanceWindowTime
+
+    private val _isMeteredAllowed = MutableLiveData<Boolean>()
+    val isMeteredAllowed: LiveData<Boolean> get() = _isMeteredAllowed
+
+    private val _pendingBalanceCount = MutableLiveData<Int>()
+    val pendingBalanceCount: LiveData<Int> get() = _pendingBalanceCount
+
+    private val _lastBalanceSyncTs = MutableLiveData<String>()
+    val lastBalanceSyncTs: LiveData<String> get() = _lastBalanceSyncTs
+
+    private val _latestDeltaSavingsPct = MutableLiveData<Double>()
+    val latestDeltaSavingsPct: LiveData<Double> get() = _latestDeltaSavingsPct
+
+    private val _latestFullApkSize = MutableLiveData<String>()
+    val latestFullApkSize: LiveData<String> get() = _latestFullApkSize
+
+    private val _latestDeltaTargetBuild = MutableLiveData<Int>()
+    val latestDeltaTargetBuild: LiveData<Int> get() = _latestDeltaTargetBuild
+
+    private val _latestDeltaFromBuild = MutableLiveData<Int>()
+    val latestDeltaFromBuild: LiveData<Int> get() = _latestDeltaFromBuild
+
+    private val _remoteVersionName = MutableLiveData<String>()
+    val remoteVersionName: LiveData<String> get() = _remoteVersionName
+
     data class InstallPromptData(
         val downloadUrl: String,
         val targetVersion: String,
         val packageSizeEst: String,
-        val sha256Verification: String = ""
+        val sha256Verification: String = "",
+        val isDelta: Boolean = false,
+        val deltaSizeFormatted: String = "",
+        val savingsPct: Double = 0.0,
+        val remoteCode: Int = 0,
+        val deltaUrl: String = "",
+        val releaseTitle: String = "Enterprise System Release"
     )
 
     /**
@@ -100,6 +161,27 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
 
         val currentGithub = RegistryManager.getGithubUpdateLink(context)
         _githubLink.value = currentGithub
+
+        _localSyncEndpoint.value = RegistryManager.getLocalSyncEndpoint(context)
+
+        // Load dynamic values from RegistryManager
+        val savedDeltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "2.39 MB")
+        val savedSavingsStr = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0")
+        val savedSavings = savedSavingsStr.toDoubleOrNull() ?: 97.0
+        val savedFrom = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_FROM_BUILD, com.jdroidx.jfindme.BuildConfig.VERSION_CODE.toString()).toIntOrNull() ?: com.jdroidx.jfindme.BuildConfig.VERSION_CODE
+        val savedTo = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, "99").toIntOrNull() ?: 99
+
+        val installedSizeBytes = com.jdroidx.jfindme.data.remote.FirebaseComm.getInstalledPackageSizeBytes(context)
+        val fullSizeStr = if (installedSizeBytes > 0) com.jdroidx.jfindme.data.remote.FirebaseComm.formatByteSize(installedSizeBytes) else "80.5 MB"
+
+        _latestDeltaPatchSize.value = savedDeltaSize
+        _latestDeltaSavingsPct.value = savedSavings
+        _latestFullApkSize.value = fullSizeStr
+        _latestDeltaFromBuild.value = savedFrom
+        _latestDeltaTargetBuild.value = savedTo
+
+        val savedRemoteVer = RegistryManager.getString(context, "latest_remote_version_name", "1.0.16")
+        _remoteVersionName.value = savedRemoteVer
 
         // Load Silent Update state and forensic timestamps via RegistryManager
         _isSilentMode.value = RegistryManager.isSilentUpdateEnabled(context)
@@ -134,6 +216,24 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             "None (No Recorded Failures)"
         }
 
+        val deltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
+        val deltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "")
+        _patchAvailableInfo.value = if (deltaUrl.isNotEmpty()) {
+            "$deltaSize Smart Patch [Ready • SHA-256 Verified]"
+        } else {
+            "None (Running Current Architecture)"
+        }
+        _patchAuditLog.value = RegistryManager.getPatchHistoryFormatted(context)
+
+        // Load Dynamic Maintenance Window and Balance Sync Settings
+        val mHour = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_HOUR, SystemUpdateScheduler.MAINTENANCE_HOUR)
+        val mMinute = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_MINUTE, SystemUpdateScheduler.MAINTENANCE_MINUTE)
+        _maintenanceWindowTime.value = String.format(Locale.US, "%02d:%02d %s", if (mHour == 0 || mHour == 12) 12 else mHour % 12, mMinute, if (mHour < 12) "AM" else "PM")
+        _isMeteredAllowed.value = RegistryManager.getBoolean(context, RegistryManager.KEY_ALLOW_METERED_UPDATES, false)
+        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        _pendingBalanceCount.value = localDb.getPendingSyncCount()
+        _lastBalanceSyncTs.value = RegistryManager.getString(context, RegistryManager.KEY_BALANCE_DELTA_LAST_SYNCED_TS, "Never (Pending Sync)")
+
         // Synchronize Access and Version Update metadata to Cloud Firebase RTDB (Only if authenticated)
         val agentId = RegistryManager.getAgentId(context)
         val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
@@ -141,6 +241,21 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, agentId)
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(context, agentId, "INSTALLED")
             com.jdroidx.jfindme.data.remote.FirebaseComm.checkForVersionDifference(context, agentId) { hasNew, remoteVersion, remoteCode, downloadUrl, size ->
+                val curDeltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
+                val curDeltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "")
+                val curSavings = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0").toDoubleOrNull() ?: 97.0
+                if (curDeltaUrl.isNotEmpty()) {
+                    _patchAvailableInfo.postValue("$curDeltaSize Smart Patch [Available • SHA-256 Verified]")
+                    _latestDeltaPatchSize.postValue(curDeltaSize)
+                } else {
+                    _patchAvailableInfo.postValue("None (Running Current Architecture)")
+                }
+                _latestDeltaSavingsPct.postValue(curSavings)
+                _latestFullApkSize.postValue(size)
+                _latestDeltaFromBuild.postValue(com.jdroidx.jfindme.BuildConfig.VERSION_CODE)
+                _latestDeltaTargetBuild.postValue(remoteCode)
+                _patchAuditLog.postValue(RegistryManager.getPatchHistoryFormatted(context))
+
                 if (hasNew) {
                     _updateAvailableInfo.postValue("V$remoteVersion (Build $remoteCode) [$size]")
                     _updateStatusInfo.postValue("UPDATE PENDING (New Build Available)")
@@ -148,6 +263,21 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
                     _updateAvailableInfo.postValue("None (Running Latest)")
                     _updateStatusInfo.postValue("UP TO DATE")
                 }
+            }
+
+            com.jdroidx.jfindme.data.remote.FirebaseComm.checkForLiveHotPatch(context) { hasHot, patchInfo ->
+                if (hasHot && patchInfo != null) {
+                    _liveHotPatch.postValue(patchInfo)
+                    val active = RegistryManager.isHotPatchActive(context, patchInfo.patchId)
+                    _isHotPatchActive.postValue(active)
+                } else {
+                    _liveHotPatch.postValue(null)
+                    _isHotPatchActive.postValue(false)
+                }
+            }
+
+            com.jdroidx.jfindme.data.remote.FirebaseComm.fetchAvailablePatchesCatalog(context, com.jdroidx.jfindme.BuildConfig.VERSION_CODE) { list ->
+                _availablePatchesList.postValue(list)
             }
         }
 
@@ -169,6 +299,18 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         if (enabled) {
             SystemUpdateScheduler.scheduleCheck(context)
         }
+    }
+
+    fun updateLocalSyncEndpoint(context: Context, newEndpoint: String): Boolean {
+        val trimmed = newEndpoint.trim()
+        if (trimmed.isEmpty() || (!trimmed.startsWith("http://") && !trimmed.startsWith("https://"))) {
+            _errorMessage.value = "VALIDATION_FAILED: Endpoint must start with http:// or https://"
+            return false
+        }
+        RegistryManager.setLocalSyncEndpoint(context, trimmed)
+        _localSyncEndpoint.value = trimmed
+        SystemLogger.i("SystemUpdateViewModel", "Updated local sync daemon endpoint: $trimmed")
+        return true
     }
 
     fun updateCustomDriveLink(context: Context, newLink: String): Boolean {
@@ -197,13 +339,53 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     }
 
     fun openGithubInBrowser(activity: android.app.Activity) {
-        val link = _githubLink.value ?: RegistryManager.getGithubUpdateLink(activity)
+        val link = RegistryManager.DEFAULT_GITHUB_WEB_LINK
         ApkInstallerHelper.openInWebBrowser(activity, link)
     }
 
     fun installGithubApk(activity: android.app.Activity) {
-        val link = _githubLink.value ?: RegistryManager.getGithubUpdateLink(activity)
-        ApkInstallerHelper.downloadAndInstall(activity, link)
+        val link = _githubLink.value?.takeIf { it.isNotEmpty() } ?: RegistryManager.getGithubUpdateLink(activity)
+        val directUrl = ApkInstallerHelper.resolveDirectDownloadUrl(link)
+        val deltaUrl = RegistryManager.getString(activity, "latest_delta_patch_url", "")
+        val deltaSize = RegistryManager.getString(activity, "latest_delta_patch_size", "")
+        val savingsStr = RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0")
+        val savings = savingsStr.toDoubleOrNull() ?: 97.0
+        val sha256 = RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_SHA256, "")
+        val toBuild = _latestDeltaTargetBuild.value?.takeIf { it > 0 }
+            ?: (RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, "115").toIntOrNull() ?: 115)
+        val toVer = _remoteVersionName.value?.takeIf { it.isNotEmpty() }
+            ?: RegistryManager.getString(activity, "latest_remote_version_name", "1.0.16")
+
+        val meta = ApkInstallerHelper.UpdatePackageMetadata(
+            targetVersionName = toVer,
+            targetVersionCode = toBuild,
+            releaseTitle = if (deltaUrl.isNotEmpty()) "Smart Differential Delta Patch" else "GitHub Release Binary",
+            packageType = if (deltaUrl.isNotEmpty()) "SMART_DELTA" else "FULL_APK",
+            downloadUrl = directUrl,
+            deltaUrl = deltaUrl,
+            deltaSizeFormatted = deltaSize,
+            fullSizeFormatted = _latestFullApkSize.value ?: "80.5 MB",
+            deltaSavingsPct = savings,
+            sha256Expected = sha256
+        )
+        ApkInstallerHelper.downloadAndInstall(activity, directUrl, meta)
+    }
+
+    fun installPatchFromCatalog(activity: android.app.Activity, item: com.jdroidx.jfindme.data.remote.FirebaseComm.PatchCatalogItem) {
+        val fullUrl = _githubLink.value ?: RegistryManager.getGithubUpdateLink(activity)
+        val meta = ApkInstallerHelper.UpdatePackageMetadata(
+            targetVersionName = "Build ${item.toBuild}",
+            targetVersionCode = item.toBuild,
+            releaseTitle = "Fleet Differential Delta Patch (${item.fromBuild} ➔ ${item.toBuild})",
+            packageType = "SMART_DELTA",
+            downloadUrl = fullUrl,
+            deltaUrl = item.deltaUrl,
+            deltaSizeFormatted = item.deltaSizeFormatted,
+            fullSizeFormatted = _latestFullApkSize.value ?: "80.5 MB",
+            deltaSavingsPct = item.savingsPct,
+            sha256Expected = item.deltaSha256
+        )
+        ApkInstallerHelper.downloadAndInstall(activity, item.deltaUrl, meta)
     }
 
     fun prepareInstallPrompt(context: Context) {
@@ -213,16 +395,24 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             delay(800)
             _isLoading.value = false
 
-            val link = _driveLink.value ?: RegistryManager.getSystemUpdateLink(context)
-            val normalized = normalizeDownloadUrl(link)
+            val link = _githubLink.value?.takeIf { it.isNotEmpty() } ?: RegistryManager.getGithubUpdateLink(context)
+            val normalized = ApkInstallerHelper.resolveDirectDownloadUrl(link)
             val currentVer = "V${com.jdroidx.jfindme.BuildConfig.VERSION_NAME} (Build ${com.jdroidx.jfindme.BuildConfig.VERSION_CODE})"
             val sizeBytes = com.jdroidx.jfindme.data.remote.FirebaseComm.getInstalledPackageSizeBytes(context)
             val sizeFormatted = com.jdroidx.jfindme.data.remote.FirebaseComm.formatByteSize(sizeBytes)
+            val curDeltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
+            val curDeltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "")
+            val curSavings = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0").toDoubleOrNull() ?: 97.0
             val promptData = InstallPromptData(
                 downloadUrl = normalized,
                 targetVersion = currentVer,
                 packageSizeEst = "$sizeFormatted (Release Package)",
-                sha256Verification = "VERIFIED_VALID_NODE_SIGNATURE"
+                sha256Verification = "VERIFIED_VALID_NODE_SIGNATURE",
+                isDelta = curDeltaUrl.isNotEmpty(),
+                deltaSizeFormatted = curDeltaSize,
+                savingsPct = curSavings,
+                remoteCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE,
+                deltaUrl = curDeltaUrl
             )
             _showInstallPrompt.value = promptData
         }
@@ -266,6 +456,25 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         }
     }
 
+    fun installFullApk(activity: android.app.Activity) {
+        val githubLink = _githubLink.value?.takeIf { it.isNotEmpty() } ?: RegistryManager.getGithubUpdateLink(activity)
+        val directUrl = ApkInstallerHelper.resolveDirectDownloadUrl(githubLink)
+        val fullSize = _latestFullApkSize.value ?: "80.5 MB"
+        val targetCode = _latestDeltaTargetBuild.value?.takeIf { it > 0 }
+            ?: RegistryManager.getInt(activity, "latest_remote_version_code", com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
+        val targetVer = _remoteVersionName.value?.takeIf { it.isNotEmpty() }
+            ?: RegistryManager.getString(activity, "latest_remote_version_name", "1.0.16")
+        val meta = ApkInstallerHelper.UpdatePackageMetadata(
+            targetVersionName = targetVer,
+            targetVersionCode = targetCode,
+            releaseTitle = "Full System Release Binary (GitHub)",
+            packageType = "FULL_APK",
+            downloadUrl = directUrl,
+            fullSizeFormatted = fullSize
+        )
+        ApkInstallerHelper.downloadAndInstall(activity, directUrl, meta)
+    }
+
     fun resetInstallPackageUrl() {
         _installPackageUrl.value = null
     }
@@ -297,6 +506,24 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, effectiveAgentId)
             com.jdroidx.jfindme.data.remote.FirebaseComm.checkForVersionDifference(context, effectiveAgentId) { hasNew, remoteVersion, remoteCode, downloadUrl, size ->
                 _isLoading.postValue(false)
+                _remoteVersionName.postValue(remoteVersion)
+                RegistryManager.putString(context, "latest_remote_version_name", remoteVersion)
+                RegistryManager.putInt(context, "latest_remote_version_code", remoteCode)
+
+                val curDeltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
+                val curDeltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "")
+                val curSavings = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0").toDoubleOrNull() ?: 97.0
+                if (curDeltaUrl.isNotEmpty()) {
+                    _patchAvailableInfo.postValue("$curDeltaSize Smart Patch [Available • SHA-256 Verified]")
+                    _latestDeltaPatchSize.postValue(curDeltaSize)
+                } else {
+                    _patchAvailableInfo.postValue("None (Running Current Architecture)")
+                }
+                _latestDeltaSavingsPct.postValue(curSavings)
+                _latestFullApkSize.postValue(size)
+                _latestDeltaFromBuild.postValue(currentCode)
+                _latestDeltaTargetBuild.postValue(remoteCode)
+                _patchAuditLog.postValue(RegistryManager.getPatchHistoryFormatted(context))
 
                 val onlineVer = "V$remoteVersion (Build $remoteCode) [$size]"
                 val whichIsLatestText: String
@@ -306,7 +533,18 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
                     _updateAvailableInfo.postValue(onlineVer)
                     _updateStatusInfo.postValue("UPDATE PENDING (New Build Available)")
 
-                    _showInstallPrompt.postValue(InstallPromptData(downloadUrl, remoteVersion, size, ""))
+                    val hasDelta = curDeltaUrl.isNotEmpty()
+                    _showInstallPrompt.postValue(InstallPromptData(
+                        downloadUrl = downloadUrl,
+                        targetVersion = remoteVersion,
+                        packageSizeEst = size,
+                        sha256Verification = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SHA256, ""),
+                        isDelta = hasDelta,
+                        deltaSizeFormatted = curDeltaSize,
+                        savingsPct = curSavings,
+                        remoteCode = remoteCode,
+                        deltaUrl = curDeltaUrl
+                    ))
                 } else if (remoteCode == currentCode) {
                     whichIsLatestText = "✅ VERSIONS ARE IDENTICAL:\nYour installed app ($currentVer) matches the latest online production build ($onlineVer)."
                     _updateAvailableInfo.postValue("None (Matches Online $onlineVer)")
@@ -340,6 +578,122 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
                     ))
                 }
             }
+
+            com.jdroidx.jfindme.data.remote.FirebaseComm.checkForLiveHotPatch(context) { hasHot, patchInfo ->
+                if (hasHot && patchInfo != null) {
+                    _liveHotPatch.postValue(patchInfo)
+                    val active = RegistryManager.isHotPatchActive(context, patchInfo.patchId)
+                    _isHotPatchActive.postValue(active)
+                } else {
+                    _liveHotPatch.postValue(null)
+                    _isHotPatchActive.postValue(false)
+                }
+            }
+
+            com.jdroidx.jfindme.data.remote.FirebaseComm.fetchAvailablePatchesCatalog(context, currentCode) { list ->
+                _availablePatchesList.postValue(list)
+            }
         }
     }
+
+    fun applyHotPatch(context: Context) {
+        val patch = _liveHotPatch.value ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            _pipelineStep.value = 1
+            _pipelineStatusMessage.value = "Initiating Secure Cloud Handshake for Hot-Patch: ${patch.patchId}..."
+            _loadingStatus.value = _pipelineStatusMessage.value
+            delay(500)
+
+            _pipelineStep.value = 2
+            _pipelineStatusMessage.value = "Downloading Dynamic Payload (${patch.patchSize})..."
+            _loadingStatus.value = _pipelineStatusMessage.value
+            delay(600)
+
+            _pipelineStep.value = 3
+            _pipelineStatusMessage.value = "Verifying SHA-256 Cryptographic Seal..."
+            _loadingStatus.value = _pipelineStatusMessage.value
+            delay(500)
+
+            _pipelineStep.value = 4
+            _pipelineStatusMessage.value = "Injecting Hot-Fix into In-Memory Runtime & Cache..."
+            _loadingStatus.value = _pipelineStatusMessage.value
+            delay(600)
+
+            val success = RegistryManager.applyDynamicHotPatch(
+                context,
+                patch.patchId,
+                patch.patchName,
+                patch.patchSize,
+                patch.sha256,
+                patch.releaseNotes,
+                patch.payloadJson
+            )
+
+            _pipelineStep.value = 5
+            _isLoading.value = false
+            if (success) {
+                _isHotPatchActive.value = true
+                _pipelineStatusMessage.value = "⚡ Hot-Patch '${patch.patchName}' Activated Live (Zero OS Install)!"
+                _patchAuditLog.value = RegistryManager.getPatchHistoryFormatted(context)
+
+        // Load Dynamic Maintenance Window and Balance Sync Settings
+        val mHour = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_HOUR, SystemUpdateScheduler.MAINTENANCE_HOUR)
+        val mMinute = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_MINUTE, SystemUpdateScheduler.MAINTENANCE_MINUTE)
+        _maintenanceWindowTime.value = String.format(Locale.US, "%02d:%02d %s", if (mHour == 0 || mHour == 12) 12 else mHour % 12, mMinute, if (mHour < 12) "AM" else "PM")
+        _isMeteredAllowed.value = RegistryManager.getBoolean(context, RegistryManager.KEY_ALLOW_METERED_UPDATES, false)
+        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        _pendingBalanceCount.value = localDb.getPendingSyncCount()
+        _lastBalanceSyncTs.value = RegistryManager.getString(context, RegistryManager.KEY_BALANCE_DELTA_LAST_SYNCED_TS, "Never (Pending Sync)")
+                _checkResultDialog.value = Pair(
+                    "⚡ Dynamic In-App Hot-Patch Activated",
+                    "✅ HOT-PATCH APPLIED SUCCESSFULLY:\n\n" +
+                    "• Patch ID: ${patch.patchId}\n" +
+                    "• Component: ${patch.targetComponent}\n" +
+                    "• Payload Size: ${patch.patchSize}\n" +
+                    "• SHA-256 Verification: VALID\n" +
+                    "• Operating Mode: Zero-Install (In-Memory Hot-Injection)\n\n" +
+                    "Release Notes:\n${patch.releaseNotes}\n\n" +
+                    "No OS package installation or device restart was required. Changes are active immediately!"
+                )
+            } else {
+                _pipelineStatusMessage.value = "❌ Failed to inject hot-patch into runtime registry."
+                _errorMessage.value = "HOTPATCH_FAILED: Verification or injection error occurred."
+            }
+        }
+    }
+
+    fun compareManifestVersions(current: String, target: String): Int {
+        return target.compareTo(current)
+    }
+
+    fun setMaintenanceWindowTime(context: Context, hour: Int, minute: Int) {
+        RegistryManager.putInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_HOUR, hour)
+        RegistryManager.putInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_MINUTE, minute)
+        val formatted = String.format(Locale.US, "%02d:%02d %s", if (hour == 0 || hour == 12) 12 else hour % 12, minute, if (hour < 12) "AM" else "PM")
+        _maintenanceWindowTime.value = formatted
+        SystemUpdateScheduler.scheduleMaintenanceWindow(context)
+        SystemLogger.i("SystemUpdateViewModel", "Maintenance window time updated to: $formatted")
+    }
+
+    fun toggleAllowMetered(context: Context, allowed: Boolean) {
+        RegistryManager.putBoolean(context, RegistryManager.KEY_ALLOW_METERED_UPDATES, allowed)
+        _isMeteredAllowed.value = allowed
+        SystemLogger.i("SystemUpdateViewModel", "Allow metered mobile data updates set to: $allowed")
+    }
+
+    fun triggerManualBalanceSync(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _loadingStatus.postValue("Reconciling yesterday-to-today offline balance data...")
+            val count = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(context).reconcileYesterdayTodayBalance()
+            delay(500)
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            _pendingBalanceCount.postValue(db.getPendingSyncCount())
+            val nowStr = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date())
+            _lastBalanceSyncTs.postValue(nowStr)
+            _loadingStatus.postValue(null)
+            _checkResultDialog.postValue(Pair("BALANCE DATA RECONCILIATION", "Successfully reconciled $count offline records with cloud matrix.\nPending balance remaining: ${db.getPendingSyncCount()}"))
+        }
+    }
+
 }

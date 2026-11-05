@@ -23,6 +23,8 @@ class SecurityReceiver : BroadcastReceiver() {
                 SystemLogger.w(TAG, "DEVICE_REBOOTED_ALERT: Restarting Tracking Service & Re-registering Geofences")
                 startTrackingService(context)
                 restoreHardwareGeofences(context)
+                com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleMaintenanceWindow(context)
+                com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(context)
             }
             Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                 val isOn = SecurityEngine.isAirplaneModeOn(context)
@@ -55,9 +57,13 @@ class SecurityReceiver : BroadcastReceiver() {
                     com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.dispatchAlert(
                         context,
                         com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.TYPE_GPS_DISABLED,
-                        "Location / GPS was disabled on this device.",
+                        "Location / GPS was disabled on this device. Switched to SIM Tower Tracking.",
                         "CRITICAL"
                     )
+                    // 🛡️ Trigger fast 1-min Stealth SIM failover pulse
+                    try {
+                        com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(context, 1L)
+                    } catch (_: Exception) {}
                 }
             }
             Intent.ACTION_BATTERY_LOW -> {

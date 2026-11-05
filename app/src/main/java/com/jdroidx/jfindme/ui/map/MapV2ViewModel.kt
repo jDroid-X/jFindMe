@@ -106,7 +106,8 @@ class MapV2ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startLiveDeviceListeners() {
-        val myUid = FirebaseAuth.getInstance().uid ?: return
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        val myUid = FirebaseAuth.getInstance().uid ?: com.jdroidx.jfindme.utils.RegistryManager.getAgentId(getApplication()) ?: return
         val db = DatabaseHelper.getInstance(getApplication())
         val offlineRoster = db.getOfflineRoster()
         

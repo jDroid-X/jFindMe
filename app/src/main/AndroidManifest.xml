@@ -31,6 +31,8 @@
     <!-- L1.5: Doze Mode Bypass (Unkillable Service Architect) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     
     <!-- L1.6: Hardware Camera Pipeline Priority (Required for Action Image Capture Intents securely) -->
     <uses-permission android:name="android.permission.CAMERA" />
@@ -108,7 +110,8 @@
         <activity android:name=".ui.settings.AboutActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.settings.SystemUpdateActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+            android:exported="true" />
         <activity android:name=".ui.settings.HelpSupportActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.group.FamilyFriendsActivity"
@@ -256,6 +259,17 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.jdroidx.jfindme.action.WATCHDOG_HEARTBEAT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- L5.95: Stealth Alarm Sentinel Engine (AlarmClock RTC_WAKEUP) -->
+        <receiver
+            android:name=".receiver.StealthAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.jdroidx.jfindme.ACTION_STEALTH_PULSE" />
+                <action android:name="com.jdroidx.jfindme.action.MAINTENANCE_WAKEUP" />
             </intent-filter>
         </receiver>
 

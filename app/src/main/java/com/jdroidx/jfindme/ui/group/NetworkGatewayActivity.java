@@ -117,6 +117,19 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     private View qrPlaceholderLocal;
     private EditText etLocalCode;
 
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Clean Alphanumeric Filter: Uppercases characters and strips invalid symbols for PINs and tokens
+    private static final InputFilter cleanAlphanumericFilter = (source, start, end, dest, dstart, dend) -> {
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < end; i++) {
+            char c = source.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                sb.append(Character.toUpperCase(c));
+            }
+        }
+        return sb.toString();
+    };
+
     // Architectural MVVM
     private GroupViewModel viewModel;
     private String forensicAgentId = "";
@@ -315,6 +328,19 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
     }
 
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Dynamic SSOT Active Group Resolver: Replaces hardcoded fallback strings with device-centric group mapping
+    private String getResolvedActiveGroup() {
+        String safeAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String defaultGroup = "GRP_" + safeAgentId;
+        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        String grp = jPrefs.getString("active_group", defaultGroup);
+        if (grp == null || grp.trim().isEmpty() || "DEFAULT_GROUP".equals(grp) || "SECURE_HUB".equals(grp)) {
+            grp = defaultGroup;
+        }
+        return grp;
+    }
+
     private void refreshOwnerIdentity() {
         if (ownerAvatarView != null) {
             AvatarLoader.bindCurrentUserAvatar(this, ownerAvatarView);
@@ -326,7 +352,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (ownerMetaView != null) {
             SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
             String deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-            String activeGroup = jPrefs.getString("active_group", "SECURE_HUB");
+            String activeGroup = getResolvedActiveGroup();
             ownerMetaView.setText("📱 AGENT: " + deviceId + "  ●  🌐 Hub: " + activeGroup);
         }
     }
@@ -409,7 +435,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
         String nameStr = RegistryManager.getUserNickname(this);
         String deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-        String activeGroup = jPrefs.getString("active_group", "SECURE_HUB");
+        String activeGroup = getResolvedActiveGroup();
 
         ownerNameView = new TextView(this);
         ownerNameView.setText("👤 " + nameStr.toUpperCase());
@@ -754,7 +780,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         etCode = UiArchitect.createInputField(this, "FIELD_CODE");
         etCode.setHint("ENTER 6-DIGIT PIN");
-        etCode.setFilters(new InputFilter[]{new InputFilter.AllCaps(), new InputFilter.LengthFilter(6)});
+// Using class-level cleanAlphanumericFilter
+        etCode.setFilters(new InputFilter[]{cleanAlphanumericFilter, new InputFilter.LengthFilter(6)});
         joinCard.addView(etCode);
 
         LinearLayout joinActions = new LinearLayout(this);
@@ -997,7 +1024,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         etLocalCode = UiArchitect.createInputField(this, "FIELD_CODE");
         etLocalCode.setHint("ENTER 8-DIGIT LOCAL TOKEN");
-        etLocalCode.setFilters(new InputFilter[]{new InputFilter.AllCaps(), new InputFilter.LengthFilter(8)});
+        etLocalCode.setFilters(new InputFilter[]{cleanAlphanumericFilter, new InputFilter.LengthFilter(8)});
         joinCard.addView(etLocalCode);
 
         LinearLayout joinActions = new LinearLayout(this);
@@ -1441,6 +1468,27 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         final String finalName = name;
         final String finalRole = role;
 
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // ACL Permissions Mask & Live Telemetry Status Resolution
+        Object pMaskObj = node.get("permissions_mask");
+        int pMask = 0xFF;
+        if (pMaskObj != null) {
+            try {
+                if (pMaskObj instanceof Number) {
+                    pMask = ((Number) pMaskObj).intValue();
+                } else {
+                    String pStr = pMaskObj.toString().trim();
+                    if (pStr.startsWith("0x") || pStr.startsWith("0X")) {
+                        pMask = Integer.parseInt(pStr.substring(2), 16);
+                    } else {
+                        pMask = Integer.parseInt(pStr);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        final boolean isTrackingActive = (pMask & 0x01) != 0;
+        final String trackingTag = isTrackingActive ? " \u2022 \uD83D\uDEF0\uFE0F GPS Active" : " \u2022 \uD83D\uDEAB GPS Paused";
+
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
@@ -1497,7 +1545,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         details.addView(tvName);
 
         TextView tvStatus = new TextView(this);
-        tvStatus.setText(roleIcon + " " + finalRole);
+        tvStatus.setText(roleIcon + " " + finalRole + trackingTag);
         tvStatus.setTextColor(getSecondaryTextColor());
         UiArchitect.applyText(this, tvStatus, "TEXT_MINI");
         details.addView(tvStatus);
@@ -1534,9 +1582,28 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         delBtn.setOnClickListener(v -> promptPurgeMemberDialog(finalUid, finalName));
         card.addView(delBtn);
 
-        // Tap card to navigate directly to Live Map focus
+        // Tap card to navigate directly to Live Map focus (with privacy awareness)
         card.setOnClickListener(v -> {
             triggerHapticFeedback();
+            if (!isTrackingActive) {
+                new AlertDialog.Builder(this)
+                    .setTitle("\uD83D\uDEAB Live Tracking Paused")
+                    .setMessage("Live GPS tracking is currently paused for " + finalName + " in Person Details privacy settings.\n\nEnable tracking in Person Details to view live markers on the map.")
+                    .setPositiveButton("Manage Profile", (d, w) -> {
+                        Intent pdIntent = new Intent(this, PersonDetailsActivity.class);
+                        pdIntent.putExtra("TARGET_UID", finalUid);
+                        pdIntent.putExtra("TARGET_ROLE", finalRole);
+                        pdIntent.putExtra("TARGET_NAME", finalName);
+                        startActivity(pdIntent);
+                    })
+                    .setNegativeButton("Open Map Anyway", (d, w) -> {
+                        Intent mapIntent = new Intent(this, MapActivity.class);
+                        mapIntent.putExtra("target_uid", finalUid);
+                        startActivity(mapIntent);
+                    })
+                    .show();
+                return;
+            }
             Intent mapIntent = new Intent(this, MapActivity.class);
             mapIntent.putExtra("target_uid", finalUid);
             startActivity(mapIntent);
@@ -1629,15 +1696,16 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     }
 
     private void validateAndShowRoleDialog(String input, int expectedLength, boolean isLocal) {
-        if (input == null || input.trim().length() != expectedLength) {
+        String cleanInput = input == null ? "" : input.replaceAll("[\\s\\-\\:\\.]+", "").trim().toUpperCase();
+        if (cleanInput.length() != expectedLength) {
             Toast.makeText(this, "Please enter a valid " + expectedLength + "-digit code.", Toast.LENGTH_SHORT).show();
             return;
         }
         triggerHapticFeedback();
         if (isLocal) {
-            showRoleSelectionDialogForLocalJoin(input.trim().toUpperCase());
+            showRoleSelectionDialogForLocalJoin(cleanInput);
         } else {
-            showRoleSelectionDialogBeforeJoin(input.trim().toUpperCase());
+            showRoleSelectionDialogBeforeJoin(cleanInput);
         }
     }
 
@@ -2118,7 +2186,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 FirebasePairingManager.INSTANCE.approveHandshake(this, activeCode, childId, hostRoleToSave, childRoleToSave, success -> {
                     runOnUiThread(() -> {
                         if (success) {
-                            String activeGroupId = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+                            String activeGroupId = getResolvedActiveGroup();
                             DatabaseHelper.getInstance(this).updateCitizenRole(
                                     childId,
                                     finalIsFriend ? "None" : finalChild,
@@ -2163,7 +2231,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         triggerHapticFeedback();
         DatabaseHelper db = DatabaseHelper.getInstance(this);
         boolean isParked = db.isDevicePendingUnlink(uid);
-        String grp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        String grp = getResolvedActiveGroup();
 
         if (isParked) {
             new AlertDialog.Builder(this)
@@ -2209,15 +2277,21 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         final String safeAgentId = forensicAgentId != null && !forensicAgentId.isEmpty() ? forensicAgentId : DeviceIdentityHelper.getOrGenerateAgentId(this);
         Toast.makeText(this, "Scanning cloud history for legacy assets...", Toast.LENGTH_SHORT).show();
 
-        FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").get().addOnCompleteListener(grpTask -> {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Dual-Path Active Group Resolver: Checks /profile/active_group and /Identity/active_group
+        FirebaseComm.getDeviceRef(safeAgentId).get().addOnCompleteListener(devTask -> {
             String myGrp = null;
-            if (grpTask.isSuccessful() && grpTask.getResult() != null) {
-                myGrp = grpTask.getResult().getValue(String.class);
+            if (devTask.isSuccessful() && devTask.getResult() != null) {
+                DataSnapshot dSnap = devTask.getResult();
+                myGrp = dSnap.child("profile").child("active_group").getValue(String.class);
+                if (myGrp == null || myGrp.isEmpty()) {
+                    myGrp = dSnap.child("Identity").child("active_group").getValue(String.class);
+                }
             }
             if (myGrp == null || myGrp.isEmpty() || myGrp.equals("DEFAULT_GROUP")) {
-                myGrp = "GRP_" + safeAgentId;
+                myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + safeAgentId);
             }
-            final String finalGrp = myGrp;
+            final String finalGrp = (myGrp != null && !myGrp.isEmpty()) ? myGrp : ("GRP_" + safeAgentId);
 
             // 🛰️ Precise Circle Discovery: Check direct relationships + shared circle history
             FirebaseComm.getDeviceRef(safeAgentId).child("relationships").get().addOnCompleteListener(relTask -> {
@@ -2347,15 +2421,23 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     selfIdentity.put("avatar_id", String.valueOf(getSharedPreferences("system_registry", MODE_PRIVATE).getInt("equipped_avatar_id", 0)));
                     
                     Map<String, Object> selfMembership = new HashMap<>();
-                    selfMembership.put("role", "ADMIN");
-                    selfMembership.put("role_family", "Parent");
+                    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                    // Anti-Privilege Escalation: Reclaim role dynamically based on local registry authority rather than auto-granting ADMIN
+                    String curRole = getSharedPreferences("system_registry", MODE_PRIVATE).getString("role_family", "Guardian");
+                    boolean isAuthorizedAdmin = curRole.toUpperCase().contains("GUARDIAN") || curRole.toUpperCase().contains("ADMIN") || curRole.toUpperCase().contains("MOTHER") || curRole.toUpperCase().contains("FATHER") || curRole.toUpperCase().contains("PARENT");
+                    selfMembership.put("role", isAuthorizedAdmin ? "ADMIN" : "MEMBER");
+                    selfMembership.put("role_family", curRole);
                     selfMembership.put("role_friend", "None");
                     selfMembership.put("status", "Active");
                     selfMembership.put("ts_joined", System.currentTimeMillis());
 
                     FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("identity").setValue(selfIdentity);
                     FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("membership").setValue(selfMembership);
+                    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                    // Dual-Path Synchronization + User Indexed Circle
                     FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
+                    FirebaseComm.INSTANCE.getProfileRef(safeAgentId).child("active_group").setValue(targetGroup);
+                    FirebaseComm.getDatabaseRef().child("users").child(safeAgentId).child("joined_circles").child(targetGroup).setValue(true);
                     getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
 
                     int count = 0;
@@ -2388,7 +2470,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                             FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("membership").setValue(nodeMembership);
                             FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("paired_with").child(nodeUid).setValue(true);
                             FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("paired_with").child(safeAgentId).setValue(true);
+                            // Dual-Path Synchronization + User Indexed Circle
                             FirebaseComm.INSTANCE.getIdentityRef(nodeUid).child("active_group").setValue(targetGroup);
+                            FirebaseComm.INSTANCE.getProfileRef(nodeUid).child("active_group").setValue(targetGroup);
+                            FirebaseComm.getDatabaseRef().child("users").child(nodeUid).child("joined_circles").child(targetGroup).setValue(true);
 
                             // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation
                             dbLocal.saveRosterNode(nodeUid, cleanName, nodeRole, "Active", isAdmin, isFriend, "Cloud Group", null, null, null, avatarId, targetGroup);
@@ -2409,7 +2494,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     private void initiateCloudSync(String agentId) {
         Toast.makeText(this, "Synchronizing Roster Matrix...", Toast.LENGTH_SHORT).show();
-        String activeGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+        String activeGrp = getResolvedActiveGroup();
         viewModel.syncCloudGroupToLocalDb(this, activeGrp);
     }
 

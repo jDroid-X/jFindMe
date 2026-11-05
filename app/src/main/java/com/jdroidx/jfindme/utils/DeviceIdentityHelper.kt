@@ -153,6 +153,67 @@ object DeviceIdentityHelper {
         return safeId
     }
 
+    private fun getPersistentAnchorFile(context: Context): java.io.File? {
+        return try {
+            val mediaDirs = context.externalMediaDirs
+            val targetDir = mediaDirs.firstOrNull { it != null } 
+                ?: java.io.File(android.os.Environment.getExternalStorageDirectory(), "Android/media/" + context.packageName)
+            if (!targetDir.exists()) targetDir.mkdirs()
+            java.io.File(targetDir, ".silicon_anchor")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun savePersistentAnchor(context: Context, agentId: String) {
+        try {
+            val file = getPersistentAnchorFile(context) ?: return
+            file.writeText(agentId.trim().uppercase())
+            SystemLogger.d(TAG, "Persisted silicon anchor to external storage: $agentId")
+        } catch (e: Exception) { }
+    }
+
+    private fun readPersistentAnchor(context: Context): String? {
+        return try {
+            val file = getPersistentAnchorFile(context)
+            if (file != null && file.exists()) {
+                val text = file.readText().trim().uppercase()
+                if (isValidAgentId(text)) text else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Updates and saves a custom hardware agent ID across RegistryManager, SQLite user_identity, persistent storage, and runtime cache.
+     * Returns true if valid and successfully committed.
+     */
+    @JvmStatic
+    @Synchronized
+    fun setCustomAgentId(context: Context, newAgentId: String?): Boolean {
+        if (!isValidAgentId(newAgentId)) {
+            SystemLogger.w(TAG, "setCustomAgentId rejected: Invalid Agent ID format '$newAgentId'")
+            return false
+        }
+        val cleanId = newAgentId!!.trim().uppercase()
+        RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, cleanId)
+        agentIdCache = cleanId
+        savePersistentAnchor(context, cleanId)
+
+        try {
+            val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
+            val hwId = getHardwareUid(context)
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            db.syncIdentityCore(authUid, cleanId, hwId)
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Failed to cascade updated Agent ID into SQLite: ${e.message}")
+        }
+
+        SystemLogger.i(TAG, "Custom Hardware Agent ID committed: $cleanId")
+        return true
+    }
+
     /**
      * Complete Hardware Specifications & Dual-SIM Identifier Snapshot
      */
@@ -261,4 +322,7 @@ object DeviceIdentityHelper {
             isDualSim = isDualSim
         )
     }
+
+    @JvmStatic
+    fun getHardwareSerial(context: Context): String = getHardwareUid(context)
 }

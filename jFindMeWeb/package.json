@@ -6,8 +6,13 @@
   "scripts": {
     "start": "node js/server.js",
     "dev": "node js/server.js",
-    "test": "node scripts/deployment/run-integration-tests.js",
-    "setup": "node scripts/deployment/firebase-setup.js"
+    "test": "node scripts/check_syntax.js && node scripts/lint_hardcoded_devices.js && node scripts/deployment/run-integration-tests.js",
+    "check:syntax": "node scripts/check_syntax.js",
+    "lint:ssot": "node scripts/lint_hardcoded_devices.js",
+    "setup": "node scripts/deployment/firebase-setup.js",
+    "shortcut": "node scripts/create_desktop_shortcut.js",
+    "validate": "node scripts/validate-system.js",
+    "audit:rag": "node scripts/test_rag_conditions.js"
   },
   "keywords": ["gps", "telemetry", "firebase", "leaflet"],
   "author": "jButterfly Team",

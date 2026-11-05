@@ -53,6 +53,13 @@ class GroupViewModel : ViewModel() {
     private var activeHandshakeQuery: Query? = null
     private var activeHandshakeListener: ValueEventListener? = null
 
+    // 🛡️ Handshake Grace Period Sentinel
+    private var isHandshakePending = false
+
+    fun setHandshakePending(pending: Boolean) {
+        this.isHandshakePending = pending
+    }
+
     fun setSyncStatus(status: String) {
         _syncStatus.postValue(status)
     }
@@ -80,6 +87,24 @@ class GroupViewModel : ViewModel() {
             }
 
             override fun onFinish() {
+                if (isHandshakePending) {
+                    _syncStatus.postValue("⏳ NEGOTIATING HANDSHAKE (GRACE PERIOD: 30s)")
+                    activeCountDownTimer = object : CountDownTimer(30000L, 1000L) {
+                        override fun onTick(ms: Long) {
+                            val secs = ms / 1000
+                            _timerDisplay.postValue("00:${String.format(Locale.getDefault(), "%02d", secs)}")
+                        }
+                        override fun onFinish() {
+                            _timerDisplay.postValue("00:00")
+                            _isTimerExpired.postValue(true)
+                            _isTimerActive.postValue(false)
+                            isHandshakePending = false
+                            _syncStatus.postValue(if (isLocal) "🔴 P2P TOKEN EXPIRED - REGENERATE" else "🔴 CLOUD PIN EXPIRED - REGENERATE")
+                            onExpire?.invoke()
+                        }
+                    }.start()
+                    return
+                }
                 _timerDisplay.postValue("00:00")
                 _isTimerExpired.postValue(true)
                 _isTimerActive.postValue(false)
@@ -93,6 +118,7 @@ class GroupViewModel : ViewModel() {
         activeCountDownTimer?.cancel()
         activeCountDownTimer = null
         _isTimerActive.postValue(false)
+        isHandshakePending = false // Reset pending handshake sentinel
     }
 
     /**
@@ -236,9 +262,12 @@ class GroupViewModel : ViewModel() {
                     FirebaseComm.relationshipsRef.child("GRP_$uid").child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
 
                     FirebaseComm.logChange(activeGroup, FirebaseComm.LOG_ITEM_PAIRING, "MEMBER_UNLINK", uid, mapOf("unlinked_member" to uid))
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(uid).child("joined_circles").child(activeGroup).removeValue()
                 }
 
-                db?.deleteRosterNode(uid)
+                // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                // Group-Scoped Unlink: Purges group_members entry for active group while keeping user_identities intact
+                db?.deleteRosterNode(uid, activeGroup)
 
                 val updated = db?.getOfflineRoster()
                 _rosterData.postValue(updated ?: emptyList())
@@ -430,5 +459,9 @@ class GroupViewModel : ViewModel() {
         cancelCountdown()
         clearSignalListener()
         clearHandshakeListener()
+    }
+
+    fun loadFullRoster() {
+        // Load group members
     }
 }

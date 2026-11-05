@@ -99,6 +99,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     private var currentGroupId: String? = null
 
     init {
+        loadInitialData()
+    }
+
+    fun loadInitialData() {
         fetchDynamicGroupId()
         fetchRosterMetadata()
     }
@@ -155,11 +159,12 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun initFirebaseCloudLink() {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Load local SQLite geofence vault immediately so offline perimeters are always visible
+        loadLocalBackupVault(false)
         val activeId = currentGroupId ?: return
         val safeUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: return
         val hostCode = getHostDeviceCode()
-        
-        loadLocalBackupVault(false)
         performGlobalMatrixSync(safeUid, activeId)
         
         val ref = FirebaseComm.relationshipsRef.child(activeId).child("geofences")
@@ -386,10 +391,10 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             val finalId = agentId ?: return@resolveHardwareIdentity
             val rootRef = FirebaseComm.getDeviceRef(finalId)
             
-            // Cluster 1: Identity & Network (Profile + Roster + Org)
+            // Cluster 1: Identity & Network (Profile + Roster + Org) - Single-value fetch to prevent perpetual listeners
             syncCloudProfileRegistry(finalId)
             syncCloudRosterRegistry(finalId)
-            rootRef.child("profile").child("org").addValueEventListener(object : ValueEventListener {
+            rootRef.child("profile").child("org").addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(s: DataSnapshot) {
                     val rawMap = s.value as? Map<*, *> ?: return
                     val map = rawMap.entries.associate { it.key.toString() to (it.value?.toString() ?: "") }
@@ -406,8 +411,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                 override fun onCancelled(e: DatabaseError) {}
             })
 
-        // Cluster 2: Strategic Missions (Missions + Handshakes)
-        rootRef.child("missions").addValueEventListener(object : ValueEventListener {
+        // Cluster 2: Strategic Missions (Missions + Handshakes) - Single-value fetch
+        rootRef.child("missions").addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -428,7 +433,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             }
             override fun onCancelled(e: DatabaseError) {}
         })
-        rootRef.child("handshakes").addValueEventListener(object : ValueEventListener {
+        rootRef.child("handshakes").addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -448,8 +453,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onCancelled(e: DatabaseError) {}
         })
 
-        // Cluster 3: Forensic Audit (Alerts + History + Logs)
-        rootRef.child("alerts").limitToLast(50).addValueEventListener(object : ValueEventListener {
+        // Cluster 3: Forensic Audit (Alerts + History + Logs) - Single-value fetch
+        rootRef.child("alerts").limitToLast(50).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -466,7 +471,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             }
             override fun onCancelled(e: DatabaseError) {}
         })
-        rootRef.child("history").limitToLast(100).addValueEventListener(object : ValueEventListener {
+        rootRef.child("history").limitToLast(100).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -503,8 +508,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onCancelled(e: DatabaseError) {}
         })
 
-        // Cluster 4: Hardware Situational Awareness (SIM Inventory + Transactions)
-        rootRef.child("sim_inventory").addValueEventListener(object : ValueEventListener {
+        // Cluster 4: Hardware Situational Awareness (SIM Inventory + Transactions) - Single-value fetch
+        rootRef.child("sim_inventory").addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -523,7 +528,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             }
             override fun onCancelled(e: DatabaseError) {}
         })
-        rootRef.child("sim_transactions").limitToLast(50).addValueEventListener(object : ValueEventListener {
+        rootRef.child("sim_transactions").limitToLast(50).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -547,8 +552,8 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             override fun onCancelled(e: DatabaseError) {}
         })
 
-        // Cluster 5: Mission Diagnostics (Transitions + Sync Queue)
-        rootRef.child("transition_logs").limitToLast(100).addValueEventListener(object : ValueEventListener {
+        // Cluster 5: Mission Diagnostics (Transitions + Sync Queue) - Single-value fetch
+        rootRef.child("transition_logs").limitToLast(100).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(s: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (snap in s.children) {
@@ -572,7 +577,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
     
     private fun syncCloudProfileRegistry(uid: String) {
         FirebaseComm.getProfileRef(uid)
-            .addValueEventListener(object : ValueEventListener {
+            .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val rawMap = snapshot.value as? Map<*, *> ?: return
                     val stringMap = rawMap.entries.associate { it.key.toString() to (it.value?.toString() ?: "") }
@@ -588,7 +593,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
 
     private fun syncCloudRosterRegistry(uid: String) {
         FirebaseComm.getRelationshipsRef(uid)
-            .addValueEventListener(object : ValueEventListener {
+            .addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     viewModelScope.launch(Dispatchers.IO) {
                         for (snap in snapshot.children) {

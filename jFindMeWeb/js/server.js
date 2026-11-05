@@ -101,7 +101,8 @@ if (fs.existsSync(FIXTURE_PATH)) {
 }
 
 // Universal Resilient RTDB Timeout Helpers with Local Mock Support
-const queryNodeWithTimeout = (refPath, ms = 3500) => {
+// [Variables]: refPath, ms, parts, curr, devicesSnap, lookupSnap, geofenceSnap, relSnap, verUpdateSnap | [Constants]: FIXTURE_PATH, LOCAL_MOCK_DATA, CACHE_TTL_MS | [Dependencies]: admin.database (db), fs, path | [Integration Points]: Firebase RTDB, /api/devices-live, /api/fleet/compact-live
+const queryNodeWithTimeout = (refPath, ms = 8000) => {
     if (process.env.USE_LOCAL_MOCK === "true" && LOCAL_MOCK_DATA) {
         const parts = refPath.split("/").filter(Boolean);
         let curr = LOCAL_MOCK_DATA;
@@ -185,7 +186,7 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
 app.use(cors({
     origin: function(origin, callback) {
         // Allow requests with no origin (like mobile apps or curl)
-        if (!origin) return callback(null, true);
+        if (!origin || origin === 'null') return callback(null, true);
         
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
@@ -267,12 +268,15 @@ function parseTimestampToMillis(raw) {
 async function computeLiveDevicesPayload() {
     const now = Date.now();
 
-    const [devicesSnap, lookupSnap, geofenceSnap, relSnap, verUpdateSnap] = await Promise.all([
-        queryNodeWithTimeout("devices", 3000),
-        queryNodeWithTimeout("lookup_indices/auth_to_device", 2500),
-        queryNodeWithTimeout("Geofencing", 2500),
-        queryNodeWithTimeout("relationships", 2500),
-        queryNodeWithTimeout("Version_Update", 2500)
+    // [Variables]: recencyLimitMs, dormantLimitMs, settingsData
+    // [Constants]: None | [Dependencies]: queryNodeWithTimeout | [Integration Points]: Operator Settings SSOT
+    const [devicesSnap, lookupSnap, geofenceSnap, relSnap, verUpdateSnap, settingsSnap] = await Promise.all([
+        queryNodeWithTimeout("devices", 8000),
+        queryNodeWithTimeout("lookup_indices/auth_to_device", 6000),
+        queryNodeWithTimeout("Geofencing", 6000),
+        queryNodeWithTimeout("relationships", 6000),
+        queryNodeWithTimeout("Version_Update", 6000),
+        queryNodeWithTimeout("config/operator/settings", 4000)
     ]);
 
     const devicesData = (devicesSnap && typeof devicesSnap.val === 'function' ? devicesSnap.val() : null)
@@ -283,7 +287,10 @@ async function computeLiveDevicesPayload() {
     const geofenceData = (geofenceSnap && typeof geofenceSnap.val === 'function' && geofenceSnap.val()) || {};
     const relData = (relSnap && typeof relSnap.val === 'function' && relSnap.val()) || {};
     const verUpdateData = (verUpdateSnap && typeof verUpdateSnap.val === 'function' && verUpdateSnap.val()) || {};
-    console.log(`[FIREBASE_SYNC] Fetched devicesData with ${Object.keys(devicesData).length} nodes (Snap: ${Boolean(devicesSnap)}), authToDevice: ${Object.keys(authToDevice).length} keys.`);
+    const settingsData = (settingsSnap && typeof settingsSnap.val === 'function' && settingsSnap.val()) || {};
+    const recencyLimitMs = Math.max(1, parseInt(settingsData.recencyThresholdMinutes || 15, 10)) * 60 * 1000;
+    const dormantLimitMs = Math.max(1, parseInt(settingsData.dormantThresholdHours || 6, 10)) * 60 * 60 * 1000;
+    console.log(`[FIREBASE_SYNC] Fetched devicesData with ${Object.keys(devicesData).length} nodes (Snap: ${Boolean(devicesSnap)}), authToDevice: ${Object.keys(authToDevice).length} keys, recencyLimitMs: ${recencyLimitMs}, dormantLimitMs: ${dormantLimitMs}.`);
 
     const safeZoneCoords = new Map();
     for (const [creatorId, creatorNode] of Object.entries(geofenceData)) {
@@ -357,9 +364,17 @@ async function computeLiveDevicesPayload() {
         for (const [agentId, node] of Object.entries(devicesData)) {
             if (!node || typeof node !== "object") continue;
             if (agentId.length > 16 || agentId.startsWith("HW_") || agentId.startsWith("GRP_")) continue;
-            // Strictly filter to active devices that possess recorded history entries (Active 5 Devices)
-            const hasHistory = Boolean(node.history && Object.keys(node.history).length > 0);
-            if (!hasHistory) continue;
+            // Include any valid hardware node that possesses device metadata, profile, telemetry, live state, or command queue
+            const isValidDevice = Boolean(
+                node.device || 
+                node.profile || 
+                node.telemetry || 
+                node.Identity || 
+                node.live || 
+                (node.history && Object.keys(node.history).length > 0) ||
+                node.commands
+            );
+            if (!isValidDevice) continue;
 
             const profile = node.profile || {};
             const deviceInfo = node.device || {};
@@ -368,21 +383,73 @@ async function computeLiveDevicesPayload() {
             const safeZones = node.safe_zones || {};
             const relationships = Object.assign({}, node.relationships || {});
 
-            // Aggregate circle relationships from root /relationships tree
+            // 1. Direct device-level roster from node.roster (Clean SSOT)
             const cleanIdUpper = agentId.toUpperCase();
+            if (node.roster && typeof node.roster === 'object') {
+                for (const [rKey, rVal] of Object.entries(node.roster)) {
+                    const rClean = rKey.replace(/^HW_/, '').replace(/^HW_/, '').toUpperCase();
+                    if (rClean !== cleanIdUpper && !rKey.toUpperCase().includes(cleanIdUpper)) {
+                        if (!relationships[rClean]) {
+                            relationships[rClean] = {
+                                agentId: rClean,
+                                name: (typeof rVal === 'object' ? (rVal.name || rVal.user_name || rVal.display_name) : '') || devicesData[rClean]?.profile?.name || rClean,
+                                role: (typeof rVal === 'object' ? (rVal.role || rVal.role_family || rVal.membership?.role) : '') || "Connected",
+                                source: "device_roster"
+                            };
+                        }
+                    }
+                }
+            }
+
+            // 2. Strict Circle Pairings from root /relationships tree (Respect paired_with mapping)
             for (const [grpId, grp] of Object.entries(relData)) {
                 if (!grp || typeof grp !== 'object') continue;
                 const grpDevs = grp.devices || grp.members || {};
-                const hasMe = Object.keys(grpDevs).some(k => k.toUpperCase().includes(cleanIdUpper) || cleanIdUpper.includes(k.toUpperCase()));
-                if (hasMe) {
+                
+                // Find entry for current agentId in this group
+                let myEntry = null;
+                for (const [devKey, devVal] of Object.entries(grpDevs)) {
+                    const devClean = devKey.replace(/^HW_/, '').toUpperCase();
+                    if (devClean === cleanIdUpper || devKey.toUpperCase().includes(cleanIdUpper)) {
+                        myEntry = devVal;
+                        break;
+                    }
+                }
+
+                if (myEntry) {
+                    const myPairings = (myEntry && typeof myEntry === 'object' && myEntry.paired_with) || {};
+                    const hostId = (grp.group_info?.host_device_id || "").replace(/^HW_/, '').toUpperCase();
+                    const isHost = hostId === cleanIdUpper;
+
                     for (const [peerKey, peerVal] of Object.entries(grpDevs)) {
                         const peerClean = peerKey.replace(/^HW_/, '').toUpperCase();
-                        if (peerClean !== cleanIdUpper && !peerKey.toUpperCase().includes(cleanIdUpper)) {
-                            if (!relationships[peerKey]) {
-                                relationships[peerKey] = {
-                                    agentId: peerKey,
-                                    name: (typeof peerVal === 'object' ? (peerVal.name || peerVal.device_name || peerVal.membership?.role) : '') || (devicesData[peerKey]?.profile?.name) || peerKey,
-                                    role: (typeof peerVal === 'object' ? (peerVal.membership?.role || peerVal.role) : '') || "Family",
+                        if (peerClean === cleanIdUpper || peerKey.toUpperCase().includes(cleanIdUpper)) continue;
+
+                        const peerPairings = (peerVal && typeof peerVal === 'object' && peerVal.paired_with) || {};
+                        const isPeerHost = hostId === peerClean;
+
+                        // Peer is linked IF AND ONLY IF explicit pairwise binding exists
+                        const isExplicitlyPaired = Boolean(
+                            myPairings[peerKey] || myPairings[peerClean] ||
+                            peerPairings[agentId] || peerPairings[cleanIdUpper] ||
+                            (isHost && (peerPairings[agentId] || peerPairings[cleanIdUpper])) ||
+                            (isPeerHost && (myPairings[hostId] || myPairings[peerKey] || myPairings[peerClean]))
+                        );
+
+                        if (isExplicitlyPaired) {
+                            if (!relationships[peerClean]) {
+                                const peerRole = (typeof peerVal === 'object' ? (peerVal.membership?.role || peerVal.role || peerVal.role_family) : '') ||
+                                                 (typeof myPairings === 'object' && typeof myPairings[peerClean] === 'string' ? myPairings[peerClean] : '') ||
+                                                 (devicesData[peerClean]?.profile?.role_family || devicesData[peerClean]?.profile?.role) ||
+                                                 "Family";
+                                const peerName = (typeof peerVal === 'object' ? (peerVal.name || peerVal.device_name || peerVal.identity?.full_name || peerVal.identity?.name) : '') || 
+                                                 devicesData[peerClean]?.profile?.name || 
+                                                 devicesData[peerClean]?.name || 
+                                                 peerClean;
+                                relationships[peerClean] = {
+                                    agentId: peerClean,
+                                    name: peerName,
+                                    role: peerRole,
                                     source: grpId
                                 };
                             }
@@ -467,8 +534,9 @@ async function computeLiveDevicesPayload() {
             // Latest true epoch timestamp across all nodes
             const lastSeenEpoch = Math.max(liveEpoch, liveTEpoch, telemEpoch, devEpoch);
             const rawTs = lastSeenEpoch > 0 ? lastSeenEpoch : (liveLoc.t || liveLoc.updated_at || 0);
-            const isRecent = lastSeenEpoch > 0 && (now - lastSeenEpoch < 15 * 60 * 1000);
-            const isOnline = (identity.st_session_state === "ONLINE") || (telemetry.status === "ONLINE") || isRecent;
+            const isRecent = lastSeenEpoch > 0 && (now - lastSeenEpoch < recencyLimitMs);
+            const isExplicitlyOffline = (identity.st_session_state === "OFFLINE") || (identity.st_session_state === "PARKED") || (identity.st_session_state === "DELETED") || (identity.st_session_state === "UNINSTALLED");
+            const isOnline = Boolean(isRecent && !isExplicitlyOffline);
 
             // RAG Status Engine & Accurate Battery Resolution
             // If liveLoc.battery is valid (> 0), use it; otherwise prioritize telemetry.battery_pct / telemetry.battery
@@ -493,9 +561,10 @@ async function computeLiveDevicesPayload() {
             const isSos = Boolean(node.alerts?.sos || node.isSos || liveLoc.isSos || liveLoc.isSosActive || liveLoc.sos_flag || (liveLoc.vmask != null && ((parseInt(liveLoc.vmask, 10) >> 7) & 1)));
             const isGhost = Boolean(node.isGhost || identity.status === "Ghost" || (lastSeenEpoch === 0 && !node.profile));
 
+            const dormantHoursLabel = Math.max(1, Math.round(dormantLimitMs / (3600 * 1000)));
             let ragStatus = "INACTIVE_CRITICAL";
             let ragColor = "#EF4444";
-            let ragLabel = "INACTIVE (> 6H)";
+            let ragLabel = `INACTIVE (> ${dormantHoursLabel}H)`;
 
             if (isSos) {
                 ragStatus = "EMERGENCY_SOS";
@@ -509,10 +578,10 @@ async function computeLiveDevicesPayload() {
                 ragStatus = "ACTIVE";
                 ragColor = "#22C55E";
                 ragLabel = "ACTIVE (LIVE)";
-            } else if (lastSeenEpoch > 0 && (now - lastSeenEpoch <= 6 * 3600 * 1000)) {
+            } else if (lastSeenEpoch > 0 && (now - lastSeenEpoch <= dormantLimitMs)) {
                 ragStatus = "INACTIVE_WARNING";
                 ragColor = "#F59E0B";
-                ragLabel = "INACTIVE (< 6H)";
+                ragLabel = `INACTIVE (< ${dormantHoursLabel}H)`;
             }
 
             // 🚀 TIMESTAMP-AWARE AVATAR & IDENTITY RESOLUTION
@@ -611,6 +680,10 @@ async function computeLiveDevicesPayload() {
             devicesList.push({
                 agentId,
                 deviceId: deviceInfo.deviceId || identity.uid_2 || `HW_${agentId}`,
+                siliconHash: (function() {
+                    const h = computeSiliconHash(node);
+                    return h ? ('SILICON_' + h.substring(0, 8)) : '';
+                })(),
                 name,
                 deviceName,
                 model,
@@ -654,6 +727,7 @@ async function computeLiveDevicesPayload() {
                 department: profile.department || profile.org_name || profile.deptName || "",
                 emergencyNote: profile.emergency_note || profile.emergencyNote || "",
                 safeZonesCount: Object.keys(safeZones).length,
+                relationships: relationships,
                 relationshipsCount: Object.keys(relationships).length,
                 packageName: deviceInfo.package_name || "com.jdroidx.jfindme",
                 packageSizeBytes: devVerLatest.package_size_bytes || null,
@@ -729,7 +803,8 @@ app.use('/api', createSystemRouter({
     writeWithTimeout,
     PROJECT_ID,
     DATABASE_URL,
-    LOCAL_MOCK_DATA
+    LOCAL_MOCK_DATA,
+    setLiveDevicesCache: (val) => { LIVE_DEVICES_CACHE = val; }
 }));
 
 app.use('/api', createSafezoneRouter({
@@ -3504,16 +3579,23 @@ function buildHeadingsComparison(oldId, newId, oldNode = {}, newNode = {}, rawHi
 app.get("/api/duplicate-devices", async (req, res) => {
     try {
         const [devSnap, histSnap, geofenceSnap] = await Promise.all([
-            Promise.resolve(null), // Use in-memory LIVE_DEVICES_CACHE directly instead of heavy WAN refetch
+            (LIVE_DEVICES_CACHE.data && LIVE_DEVICES_CACHE.data.devices && LIVE_DEVICES_CACHE.data.devices.length > 0) ? Promise.resolve(null) : queryNodeWithTimeout("devices", 6000),
             queryNodeWithTimeout("History", 3500),
             queryNodeWithTimeout("Geofencing", 3500)
         ]);
 
-        if (!devSnap || typeof devSnap.val !== 'function' || !devSnap.exists()) {
-            return res.json({ duplicates: [], totalCount: 0, scannedAt: Date.now() });
+        let rawDevices = {};
+        if (LIVE_DEVICES_CACHE.data && LIVE_DEVICES_CACHE.data.devices && LIVE_DEVICES_CACHE.data.devices.length > 0) {
+            for (const d of LIVE_DEVICES_CACHE.data.devices) {
+                rawDevices[d.agentId] = d.raw || d;
+            }
+        } else if (devSnap && typeof devSnap.val === 'function' && devSnap.exists()) {
+            rawDevices = devSnap.val() || {};
         }
 
-        const rawDevices = devSnap.val() || {};
+        if (Object.keys(rawDevices).length === 0) {
+            return res.json({ duplicates: [], totalCount: 0, scannedAt: Date.now() });
+        }
         const rawHistory = (histSnap && typeof histSnap.val === 'function' && histSnap.exists()) ? histSnap.val() : {};
         const rawGeofencing = (geofenceSnap && typeof geofenceSnap.val === 'function' && geofenceSnap.exists()) ? geofenceSnap.val() : {};
 

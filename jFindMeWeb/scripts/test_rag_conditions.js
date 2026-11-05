@@ -344,6 +344,30 @@ class RAGConditionTester {
             this.recordResult('CHRONO_FLOWS', 'Seq 4: SSOT Master Release OTA Management', 'Release engineer registers binary update', 'BFR-SEQ-04: Instantaneous fleet version-gap calculation', 200, 500, false, { error: e.message });
         }
 
+        // Sequence 5: Dynamic Fleet Recency & RAG Calculation Loop
+        try {
+            const devRes = await this.request('/api/devices-live', 'GET');
+            const devPass = devRes.status === 200 && Array.isArray(devRes.data?.devices) && devRes.data.devices.length >= 8;
+            const hasGhostNodes = devRes.data?.devices?.some(d => d.agentId === 'UNIT0001' && d.ragStatus === 'GHOST');
+            const hasTwinClones = devRes.data?.devices?.some(d => d.agentId === '4379A761') && devRes.data?.devices?.some(d => d.agentId === 'A7D5968D');
+            const seq5Pass = devPass && hasGhostNodes && hasTwinClones;
+            this.recordResult('CHRONO_FLOWS', 'Seq 5: Dynamic Fleet Recency & RAG Calculation Loop', '8 Firebase devices validated with dynamic recency thresholds', 'BFR-SEQ-05: Realtime fleet parity matching Firebase RTDB', 200, devRes.status, seq5Pass, { total: devRes.data?.count, hasGhostNodes, hasTwinClones });
+        } catch (e) {
+            this.recordResult('CHRONO_FLOWS', 'Seq 5: Dynamic Fleet Recency & RAG Calculation Loop', '8 Firebase devices validated with dynamic recency thresholds', 'BFR-SEQ-05: Realtime fleet parity matching Firebase RTDB', 200, 500, false, { error: e.message });
+        }
+
+        // Sequence 6: Duplicate Pair Silicon Hash Verification & Old_Device_ID Parity
+        try {
+            const dupRes = await this.request('/api/duplicate-devices', 'GET');
+            const dupPass = dupRes.status === 200 && Array.isArray(dupRes.data?.duplicates);
+            const foundPair = dupRes.data?.duplicates?.find(d => d.pairId === 'A7D5968D_TO_4379A761' || (d.oldAgentId === 'A7D5968D' && d.newAgentId === '4379A761'));
+            const hasSiliconHash = Boolean(foundPair?.siliconHash);
+            const seq6Pass = dupPass && Boolean(foundPair) && hasSiliconHash;
+            this.recordResult('CHRONO_FLOWS', 'Seq 6: Duplicate Pair Silicon Hash Verification & Old_Device_ID Parity', 'Hardware clone detection via Silicon SHA-256', 'BFR-SEQ-06: Precise hardware twin identification without false positives', 200, dupRes.status, seq6Pass, { foundPair: Boolean(foundPair), siliconHash: foundPair?.siliconHash });
+        } catch (e) {
+            this.recordResult('CHRONO_FLOWS', 'Seq 6: Duplicate Pair Silicon Hash Verification & Old_Device_ID Parity', 'Hardware clone detection via Silicon SHA-256', 'BFR-SEQ-06: Precise hardware twin identification without false positives', 200, 500, false, { error: e.message });
+        }
+
         // Summary
         this.printSummary();
     }

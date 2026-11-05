@@ -299,4 +299,8 @@ public class FactoryResetViewModel extends AndroidViewModel {
             this.sample = s;
         }
     }
+
+    public void promptSecurityChallenge() {
+        // Challenge prompt
+    }
 }

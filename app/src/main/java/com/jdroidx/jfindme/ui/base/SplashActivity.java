@@ -68,6 +68,75 @@ public class SplashActivity extends Activity {
 
         setContentView(root);
 
+        // 🚀 Maps SDK Pre-Warming: Pre-load vector renderer in background during splash
+        new Thread(() -> {
+            try {
+                com.google.android.gms.maps.MapsInitializer.initialize(
+                    getApplicationContext(),
+                    com.google.android.gms.maps.MapsInitializer.Renderer.LATEST,
+                    renderer -> com.jdroidx.jfindme.utils.SystemLogger.i("SplashActivity", "Maps SDK Pre-Warmed: " + renderer.name())
+                );
+            } catch (Exception ignored) {}
+        }).start();
+
+        // 🔄 Zero-Data-Loss Migration State Restore (Debug to Release Upgrade)
+        try {
+            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (downloadDir != null && downloadDir.exists()) {
+                java.io.File migrationFile = new java.io.File(downloadDir, ".jfindme_migration_state.json");
+                if (migrationFile.exists()) {
+                    String jsonStr = new String(java.nio.file.Files.readAllBytes(migrationFile.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                    org.json.JSONObject rootObj = new org.json.JSONObject(jsonStr);
+                    if (rootObj.has("preferences")) {
+                        org.json.JSONObject prefsObj = rootObj.getJSONObject("preferences");
+                        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+                        android.content.SharedPreferences.Editor editor = prefs.edit();
+                        java.util.Iterator<String> keys = prefsObj.keys();
+                        while (keys.hasNext()) {
+                            String k = keys.next();
+                            Object val = prefsObj.get(k);
+                            if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
+                            else if (val instanceof Integer) editor.putInt(k, (Integer) val);
+                            else if (val instanceof Long) editor.putLong(k, (Long) val);
+                            else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
+                            else if (val instanceof String) editor.putString(k, (String) val);
+                        }
+                        editor.apply();
+                    }
+                    migrationFile.delete();
+                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from debug upgrade!");
+                } else {
+                    // Secondary Cloud Fallback Restore
+                    String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                    if (!agentId.isEmpty()) {
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
+                            .child(agentId)
+                            .child("migration_backup")
+                            .get()
+                            .addOnSuccessListener(backupSnap -> {
+                                if (backupSnap.exists()) {
+                                    android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+                                    android.content.SharedPreferences.Editor editor = prefs.edit();
+                                    for (com.google.firebase.database.DataSnapshot child : backupSnap.getChildren()) {
+                                        String k = child.getKey();
+                                        if (k == null || k.startsWith("_")) continue;
+                                        Object val = child.getValue();
+                                        if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
+                                        else if (val instanceof Long) editor.putLong(k, (Long) val);
+                                        else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
+                                        else if (val instanceof String) editor.putString(k, (String) val);
+                                    }
+                                    editor.apply();
+                                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from Cloud node!");
+                                }
+                            });
+                    }
+                }
+            }
+        } catch (Exception e) {
+            com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Migration restore note: " + e.getMessage());
+        }
+
         // Start Firebase sync if user is logged in to recover profile data seamlessly
         com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
         if (user != null) {

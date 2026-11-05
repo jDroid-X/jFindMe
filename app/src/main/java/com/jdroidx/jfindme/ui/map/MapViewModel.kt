@@ -58,6 +58,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingSafeZoneRequestsCount = MutableLiveData<Int>(0)
     val pendingSafeZoneRequestsCount: LiveData<Int> = _pendingSafeZoneRequestsCount
 
+    private var userLocationsObserver: androidx.lifecycle.Observer<List<UserLocation>>? = null
+
     init {
         SystemLogger.i(TAG, "MapViewModel initialized")
         syncLocalMeshIds()
@@ -66,11 +68,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         bindSecureFamilyMesh()
         bindPendingRequestsListener()
         
-        repository.userLocations.observeForever { rawLocations ->
+        userLocationsObserver = androidx.lifecycle.Observer { rawLocations ->
             rawLocationCache.clear()
             rawLocationCache.addAll(rawLocations)
             applyTacticalFilter()
         }
+        repository.userLocations.observeForever(userLocationsObserver!!)
         
         loadLocalDossier()
         loadSafeZones()
@@ -573,6 +576,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopListening()
+        
+        userLocationsObserver?.let {
+            repository.userLocations.removeObserver(it)
+        }
+        userLocationsObserver = null
         
         activeValueListeners.forEach { (query, listener) ->
             query.removeEventListener(listener)

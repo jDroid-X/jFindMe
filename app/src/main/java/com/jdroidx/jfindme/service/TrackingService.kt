@@ -66,10 +66,21 @@ class TrackingService : Service() {
 
         ensureLocationEngineInitialized()
         registerBatteryMonitor()
+        registerClosedLoopFeedbackReceiver()
         setupBackgroundSyncListener()
         setupRemoteCommandListener()
         startSilentBatteryValidation()
         requestBatteryOptimizationBypass()
+
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Real-Time Cloud Presence Sentinel: Arms onDisconnect and publishes initial online heartbeat
+        try {
+            val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            val grpId = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+            FirebaseComm.setupPresenceSentinel(agentId, grpId)
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Presence Sentinel Init Deferred: ${e.message}")
+        }
     }
 
     private fun ensureLocationEngineInitialized() {
@@ -121,12 +132,15 @@ class TrackingService : Service() {
 
             // Cache Device Vitals in local SQLite for offline health inspection
             try {
+                val servingCell = com.jdroidx.jfindme.engine.location.CellTowerSentinel.extractServingCellInfo(applicationContext)
+                val netType = if (servingCell.hasValidTowerData) servingCell.networkType else "CELLULAR"
+                val sigDbm = if (servingCell.signalDbm != -999) servingCell.signalDbm else -75
                 db.upsertDeviceVitals(
                     hardwareId = myAgentId,
                     battery = p.getInt("last_known_battery", 100),
                     isCharging = p.getBoolean("last_known_charging", false),
-                    networkType = "CELLULAR",
-                    signalDbm = -75,
+                    networkType = netType,
+                    signalDbm = sigDbm,
                     isMockGps = secReport.isMockGps,
                     isRooted = secReport.isRooted
                 )
@@ -187,7 +201,7 @@ class TrackingService : Service() {
                         userName = p.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
                         avatar_id = resolvedAvatarId
                     )
-                    repository.updateMyLocation(userLocation)
+                    com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(applicationContext, userLocation)
                 }
             }
 
@@ -252,6 +266,9 @@ class TrackingService : Service() {
         val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
         if (!FirebaseComm.isAgentIdValid(localAgentId)) return
 
+        // 🛰️ MASTER DATA SYNC SENTINEL: Real-time peer inbox listener
+        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.startRealtimePeerSyncListener(applicationContext, localAgentId)
+
         val cmdRef = FirebaseComm.getDeviceRef(localAgentId).child("device").child("remote_command")
         remoteCommandListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -261,17 +278,27 @@ class TrackingService : Service() {
                     val epochMs = snapshot.child("epoch_ms").getValue(Long::class.java) ?: 0L
                     val now = System.currentTimeMillis()
 
-                    if (action == "RING_DEVICE" && (now - epochMs) < 90000L) {
-                        SystemLogger.w(TAG, "🔊 INCOMING REMOTE RING COMMAND RECEIVED for $localAgentId (${durationSec}s)")
-                        com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.startSiren(
-                            this@TrackingService,
-                            durationSec,
-                            "Remote Guardian"
-                        )
+                    if (action == "RING_DEVICE") {
+                        if ((now - epochMs) < 90000L) {
+                            SystemLogger.w(TAG, "🔊 INCOMING REMOTE RING COMMAND RECEIVED for $localAgentId (${durationSec}s)")
+                            com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.startSiren(
+                                this@TrackingService,
+                                durationSec,
+                                "Remote Guardian"
+                            )
+                        } else {
+                            SystemLogger.w(TAG, "🔊 Expired RING_DEVICE command ($epochMs) purged from cloud")
+                        }
                         snapshot.ref.removeValue()
-                    } else if ((action == "LOCATE_DEVICE" || action == "POKE_DEVICE" || action == "REQUEST_LOCATION" || action == "PING_LOCATION") && (now - epochMs) < 90000L) {
-                        SystemLogger.w(TAG, "🛰️ INCOMING REMOTE LOCATE COMMAND RECEIVED for $localAgentId -> triggering immediate GPS fix")
-                        requestImmediateLocationAndPublish()
+                    } else if (action == "LOCATE_DEVICE" || action == "POKE_DEVICE" || action == "REQUEST_LOCATION" || action == "PING_LOCATION") {
+                        if ((now - epochMs) < 90000L) {
+                            SystemLogger.w(TAG, "🛰️ INCOMING REMOTE LOCATE COMMAND RECEIVED for $localAgentId -> triggering immediate GPS fix")
+                            requestImmediateLocationAndPublish()
+                        } else {
+                            SystemLogger.w(TAG, "🛰️ Expired LOCATE_DEVICE command ($epochMs) purged from cloud")
+                        }
+                        snapshot.ref.removeValue()
+                    } else if (action != null) {
                         snapshot.ref.removeValue()
                     }
                 }
@@ -290,9 +317,13 @@ class TrackingService : Service() {
                     val cmd = snapshot.child("command").getValue(String::class.java)
                     val ts = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
                     val now = System.currentTimeMillis()
-                    if (cmd == "POKE_LOCATION_UPDATE" && (now - ts) < 90000L) {
-                        SystemLogger.w(TAG, "🛰️ INCOMING POKE LOCATION UPDATE RECEIVED for $localAgentId")
-                        requestImmediateLocationAndPublish()
+                    if (cmd == "POKE_LOCATION_UPDATE") {
+                        if ((now - ts) < 90000L) {
+                            SystemLogger.w(TAG, "🛰️ INCOMING POKE LOCATION UPDATE RECEIVED for $localAgentId")
+                            requestImmediateLocationAndPublish()
+                        } else {
+                            SystemLogger.w(TAG, "🛰️ Expired POKE_LOCATION_UPDATE command ($ts) purged from cloud")
+                        }
                         snapshot.ref.removeValue()
                     }
                 }
@@ -319,34 +350,39 @@ class TrackingService : Service() {
                     if (loc != null) {
                         SystemLogger.i(TAG, "IMMEDIATE_GPS_FIX_PUBLISHED: Lat=${loc.latitude}, Lng=${loc.longitude}")
                         val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
-                        val p = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-                        val userName = p.getString("user_nickname", "Agent") ?: "Agent"
-                        val avatarId = p.getString("user_avatar_id", "butterfly") ?: "butterfly"
+                        val deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext)
+                        val userName = RegistryManager.getUserNickname(applicationContext)
+                        val db = DatabaseHelper.getInstance(applicationContext)
+                        val ssotAvatar = db.getDeviceCentricAvatar(myAgentId)
+                        val rawBaseId = RegistryManager.getEquippedAvatarId(applicationContext)
+                        val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
+                        val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") {
+                            ssotAvatar
+                        } else if (dynamicIdx > 0) {
+                            "avatar_custom_$dynamicIdx"
+                        } else {
+                            "butterfly"
+                        }
 
-                        val liveMap = mapOf(
-                            "latitude" to loc.latitude,
-                            "longitude" to loc.longitude,
-                            "speed" to loc.speed,
-                            "bearing" to loc.bearing,
-                            "accuracy" to loc.accuracy,
-                            "altitude" to loc.altitude,
-                            "updated_at" to FirebaseComm.getForensicTimestamp(),
-                            "userName" to userName,
-                            "avatar_id" to avatarId
+                        // P0 FIX: Route through unified repository path instead of raw duplicate writes.
+                        // This eliminates 2x bandwidth by using the single syncPartitionedLocationTrace() path.
+                        val userLocation = UserLocation(
+                            userId = myAgentId,
+                            deviceId = deviceId,
+                            latitude = loc.latitude,
+                            longitude = loc.longitude,
+                            bearing = loc.bearing,
+                            speed = loc.speed,
+                            timestamp = FirebaseComm.getForensicTimestamp(),
+                            allowDependents = RegistryManager.getAllowDependents(applicationContext),
+                            active_group = RegistryManager.getActiveGroup(applicationContext),
+                            isForensicAudit = true,
+                            userName = userName,
+                            avatar_id = resolvedAvatarId
                         )
-
-                        FirebaseComm.devicesRef.child(myAgentId).child("device").child("live").updateChildren(liveMap)
-                        FirebaseComm.historyArchiveRef.child(myAgentId).child("history").push().setValue(
-                            mapOf(
-                                "latitude" to loc.latitude,
-                                "longitude" to loc.longitude,
-                                "timestamp" to FirebaseComm.getForensicTimestamp(),
-                                "userId" to myAgentId,
-                                "speed" to loc.speed,
-                                "battery" to p.getInt("last_known_battery", -1),
-                                "sos" to false
-                            )
-                        )
+                        RegistryManager.setLastKnownLatitude(applicationContext, loc.latitude)
+                        RegistryManager.setLastKnownLongitude(applicationContext, loc.longitude)
+                        com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(applicationContext, userLocation)
                     }
                     if (wakeLock.isHeld) wakeLock.release()
                 }
@@ -362,21 +398,112 @@ class TrackingService : Service() {
         batteryPingJob?.cancel()
         batteryPingJob = CoroutineScope(Dispatchers.IO).launch {
             val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(applicationContext)
+
             while (isActive) {
-                // 🔋 Power-Efficient Background Heartbeat: Default 5-minute cycle (300,000ms)
-                val cycleMs = maxOf(300000L, prefs.getLong("pref_tracking_interval", 300000L))
+                // 📡 WHATSAPP ALGORITHM: Dynamic live cadence respecting user tracking frequency setting
+                val userInterval = RegistryManager.getTrackingInterval(applicationContext)
+                val cycleMs = userInterval.coerceIn(15000L, 300000L) // Respect configured interval (min 15s)
+                
+                // Acquire brief partial WakeLock (max 3s) to bypass deep Android Doze while screen is off / silent
+                try {
+                    if (cpuWakeLock == null) {
+                        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                        cpuWakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe:WhatsAppStyleHeartbeat")
+                    }
+                    cpuWakeLock?.acquire(3000L)
+                } catch (e: Exception) {
+                    SystemLogger.w(TAG, "WakeLock acquisition warning: ${e.message}")
+                }
                 
                 // Forensic Battery Sweep
                 val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                 val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val plugged = intent?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, -1) ?: -1
                 
-                SystemLogger.i(TAG, "BATTERY_PING_ACTIVE: Level $level% | Cycle: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
+                SystemLogger.i(TAG, "LIVE_HEARTBEAT_ACTIVE: Level $level% | Cadence: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
                 
-                // 📡 Push Vitals to Cloud Telemetry Sub-Group
                 val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+                val now = System.currentTimeMillis()
+
+                // 🛰️ WhatsApp Continuous Background Position Sharing with SIM-First Multi-Tier Fallback:
+                // When app is in background or silent mode, proactively fetch fresh fused/network location
+                if (hasLocationPermission()) {
+                    try {
+                        var resolvedLoc: android.location.Location? = null
+                        
+                        // Tier 1: Fresh Balanced Fused Location (2-second fast budget)
+                        try {
+                            val task = fusedClient.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
+                            resolvedLoc = com.google.android.gms.tasks.Tasks.await(task, 2, java.util.concurrent.TimeUnit.SECONDS)
+                        } catch (timeoutEx: Exception) {
+                            SystemLogger.d(TAG, "Tier 1 fresh location timed out, proceeding to Tier 2 cache: ${timeoutEx.message}")
+                        }
+
+                        // Tier 2: Fused Provider Cached Last Location (instantaneous)
+                        if (resolvedLoc == null || resolvedLoc.latitude == 0.0 && resolvedLoc.longitude == 0.0) {
+                            try {
+                                val lastTask = fusedClient.lastLocation
+                                resolvedLoc = com.google.android.gms.tasks.Tasks.await(lastTask, 1, java.util.concurrent.TimeUnit.SECONDS)
+                            } catch (lastEx: Exception) {
+                                SystemLogger.d(TAG, "Tier 2 lastLocation fallback error: ${lastEx.message}")
+                            }
+                        }
+
+                        // Tier 3: SIM Telephony / Cell-Tower Sentinel Cached Coordinates
+                        if (resolvedLoc == null || (resolvedLoc.latitude == 0.0 && resolvedLoc.longitude == 0.0)) {
+                            val cachedLat = RegistryManager.getLastKnownLatitude(applicationContext)
+                            val cachedLng = RegistryManager.getLastKnownLongitude(applicationContext)
+                            if (cachedLat != 0.0 && cachedLng != 0.0) {
+                                resolvedLoc = android.location.Location("cell_tower_engine").apply {
+                                    latitude = cachedLat
+                                    longitude = cachedLng
+                                    accuracy = 100.0f
+                                    time = now
+                                }
+                                SystemLogger.i(TAG, "Tier 3 Cell Tower fallback activated: $cachedLat, $cachedLng")
+                            }
+                        }
+
+                        if (resolvedLoc != null && resolvedLoc.latitude != 0.0 && resolvedLoc.longitude != 0.0) {
+                            val timeStampSign = FirebaseComm.getForensicTimestamp(now)
+                            val db = DatabaseHelper.getInstance(applicationContext)
+                            val ssotAvatar = db.getDeviceCentricAvatar(myAgentId)
+                            val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
+                            val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
+                            val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") {
+                                ssotAvatar
+                            } else if (dynamicIdx > 0) {
+                                "avatar_custom_$dynamicIdx"
+                            } else {
+                                "butterfly"
+                            }
+
+                            val userLoc = UserLocation(
+                                userId = myAgentId,
+                                deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext),
+                                latitude = resolvedLoc.latitude,
+                                longitude = resolvedLoc.longitude,
+                                bearing = resolvedLoc.bearing,
+                                speed = resolvedLoc.speed,
+                                timestamp = timeStampSign,
+                                allowDependents = prefs.getBoolean("allow_dependents", true),
+                                active_group = prefs.getString("active_group", "") ?: "",
+                                isForensicAudit = true,
+                                userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
+                                avatar_id = resolvedAvatarId
+                            )
+                            RegistryManager.setLastKnownLatitude(applicationContext, resolvedLoc.latitude)
+                            RegistryManager.setLastKnownLongitude(applicationContext, resolvedLoc.longitude)
+                            repository.updateMyLocation(userLoc)
+                        }
+                    } catch (e: Exception) {
+                        SystemLogger.d(TAG, "Background fused location tick completed with fallback: ${e.message}")
+                    }
+                }
+
+                // 📡 Push Vitals to Cloud Telemetry Sub-Group
                 if (FirebaseComm.isAuthenticated() && FirebaseComm.isAgentIdValid(myAgentId) && level != -1) {
-                    val now = System.currentTimeMillis()
                     val durationSec = (now - serviceStartEpoch).coerceAtLeast(0L) / 1000L
                     val telemetry = mapOf(
                         "battery_pct" to level,
@@ -540,6 +667,30 @@ class TrackingService : Service() {
         }
     }
 
+    private var closedLoopReceiver: BroadcastReceiver? = null
+
+    private fun registerClosedLoopFeedbackReceiver() {
+        val filter = IntentFilter(com.jdroidx.jfindme.engine.sync.TelemetryClosedLoopSentinel.ACTION_CLOSED_LOOP_ACK)
+        closedLoopReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val status = intent.getStringExtra("status") ?: ""
+                val rttMs = intent.getLongExtra("rtt_ms", 0L)
+                if (status == "ACK_CONFIRMED") {
+                    SystemLogger.d(TAG, "CLOSED_LOOP_ACK_VERIFIED: Round-trip confirmed in ${rttMs}ms")
+                } else if (status == "ACK_FAILED") {
+                    SystemLogger.w(TAG, "CLOSED_LOOP_ACK_FAILED: ACK missed. Circuit breaker active.")
+                }
+            }
+        }
+        closedLoopReceiver?.let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(it, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(it, filter)
+            }
+        }
+    }
+
     private fun getNotification(content: String): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("jFindMe Tracking")
@@ -613,11 +764,13 @@ class TrackingService : Service() {
         batteryPingJob?.cancel()
         
         // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
-        // QA Memory Leak Resolution: Safely unregister native OS Receiver to prevent RAM explosion
         batteryReceiver?.let {
             try { unregisterReceiver(it) } catch (e: Exception) { SystemLogger.e(TAG, "Receiver Cleanup Error", e) }
         }
         
+        closedLoopReceiver?.let {
+            try { unregisterReceiver(it) } catch (e: Exception) { }
+        }
         // 🚀 QA Architecture: De-allocate Hardware Wakelock cleanly preventing Phantom battery draining
         if (cpuWakeLock != null && cpuWakeLock!!.isHeld) {
             cpuWakeLock?.release()
@@ -642,6 +795,7 @@ class TrackingService : Service() {
             pokeCommandListener?.let { listener ->
                 FirebaseComm.getDeviceRef(localAgentId).child("commands").child("poke").removeEventListener(listener)
             }
+            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.stopRealtimePeerSyncListener(localAgentId)
         }
     }
 

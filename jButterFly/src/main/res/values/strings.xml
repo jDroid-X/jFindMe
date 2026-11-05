@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">jButterFly</string>
+    <string name="app_tagline">Enterprise Spatial Telemetry &amp; Family Safety Matrix</string>
+    <string name="title_auth">jButterFly Sentinel Gateway</string>
+    <string name="hint_email">Enter Enterprise Email</string>
+    <string name="hint_password">Enter Secure Password</string>
+    <string name="btn_authorize">AUTHORIZE ACCESS</string>
+    <string name="btn_switch_theme">SWITCH THEME</string>
+    <string name="msg_auth_success">Access Granted. Redirecting to Mesh...</string>
+    <string name="msg_empty_fields">Please enter credentials.</string>
+
+    <!-- Trust & Cryptographic Badges -->
+    <string name="badge_security">AES-256 E2EE Cryptographic Mesh</string>
+    <string name="badge_sentinel">Unkillable OS PendingIntent Sentinel</string>
+    <string name="badge_privacy">Zero-Data-Brokerage Privacy Compliant</string>
+
+    <!-- Google Maps API Key - Enterprise Restricted -->
+    <string name="google_maps_key" translatable="false">AIzaSyDbkAsYbNmxJxBVy2_XmCmKnIvjflJV0Vg</string>
+</resources>

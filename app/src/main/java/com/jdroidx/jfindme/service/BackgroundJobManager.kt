@@ -12,6 +12,7 @@ import com.jdroidx.jfindme.data.remote.OfflineSyncManager
 import com.jdroidx.jfindme.engine.sync.LocationWatchdogWorker
 import com.jdroidx.jfindme.engine.sync.OfflineSyncWorker
 import com.jdroidx.jfindme.utils.SilentUpdateWorker
+import com.jdroidx.jfindme.engine.sync.DatabaseMaintenanceWorker
 import com.jdroidx.jfindme.utils.SystemLogger
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -31,6 +32,9 @@ object BackgroundJobManager {
 
     // Preference Keys
     const val PREF_TRACKING_INTERVAL = "pref_tracking_interval"
+    const val PREF_STEALTH_DORMANT_INTERVAL = "pref_stealth_dormant_interval_mins"
+    const val PREF_STEALTH_ALARM_ACTIVE = "pref_stealth_alarm_active"
+    const val DEFAULT_STEALTH_DORMANT_MINS = 60L
     const val PREF_OFFLINE_SYNC_INTERVAL = "pref_offline_sync_interval_mins"
     const val PREF_WATCHDOG_INTERVAL = "pref_watchdog_interval_mins"
     const val PREF_SIM_FORENSIC_INTERVAL = "pref_sim_forensic_interval_mins"
@@ -53,6 +57,9 @@ object BackgroundJobManager {
     const val PREF_FCM_ACTIVE = "pref_fcm_active"
     const val PREF_LIVE_MAP_STREAM_ACTIVE = "pref_live_map_stream_active"
     const val PREF_UPGRADE_WATCH_ACTIVE = "pref_upgrade_watch_active"
+    const val PREF_STORAGE_PRUNE_ACTIVE = "pref_storage_prune_active"
+    const val PREF_STORAGE_PRUNE_INTERVAL_DAYS = "pref_storage_prune_interval_days"
+    const val DEFAULT_STORAGE_PRUNE_DAYS = 7L
 
     // Last Run Timestamp Keys
     const val PREF_LAST_RUN_PREFIX = "pref_last_run_"
@@ -381,11 +388,56 @@ object BackgroundJobManager {
             )
         )
 
+        // 13. Rolling Storage Hygiene & SQLite VACUUM
+        val storagePruneEnabled = prefs.getBoolean(PREF_STORAGE_PRUNE_ACTIVE, true)
+        val storagePruneLastRun = formatLastRun(prefs.getLong(PREF_LAST_RUN_PREFIX + "JOB_STORAGE_PRUNE", 0L))
+        val storagePruneDays = prefs.getLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, DEFAULT_STORAGE_PRUNE_DAYS)
+        val storagePruneJob = JobMetadata(
+            jobId = "JOB_STORAGE_PRUNE",
+            category = "⚡ SYSTEM MAINTENANCE & HYGIENE",
+            title = "🧹 Rolling Storage Prune & SQLite VACUUM",
+            iconRes = android.R.drawable.ic_menu_delete,
+            description = "Purges expired GPS breadcrumbs (>30 days), clears stale queues, and runs SQLite VACUUM to reclaim disk space.",
+            currentFrequencyLabel = "Every $storagePruneDays days",
+            currentIntervalRaw = storagePruneDays,
+            isEnabled = storagePruneEnabled,
+            lastRunFormatted = storagePruneLastRun,
+            status = if (storagePruneEnabled) "ARMED (Weekly Maintenance)" else "PAUSED",
+            frequencyOptions = listOf(
+                "Every 3 days (High Telemetry Retention)" to 3L,
+                "Every 7 days [Default]" to 7L,
+                "Every 14 days (Extended Archival)" to 14L,
+                "Every 30 days (Minimal Maintenance)" to 30L
+            )
+        )
+
+                val stealthIntervalMins = prefs.getLong(PREF_STEALTH_DORMANT_INTERVAL, DEFAULT_STEALTH_DORMANT_MINS)
+        val stealthLastRun = formatLastRun(prefs.getLong(PREF_LAST_RUN_PREFIX + "JOB_STEALTH_ALARM", 0L))
+        val stealthJob = JobMetadata(
+            jobId = "JOB_STEALTH_ALARM",
+            category = "⚡ SYSTEM MAINTENANCE & HYGIENE",
+            title = "⏰ Autonomous Alarm Clock & SIM Sentinel",
+            iconRes = android.R.drawable.ic_lock_idle_alarm,
+            description = "Uses AlarmManager.setAlarmClock() and RTC WakeLock to punch through OEM Doze/sleep. Extracts SIM baseband tower identifiers even when child disables location.",
+            currentFrequencyLabel = "Every $stealthIntervalMins mins",
+            currentIntervalRaw = stealthIntervalMins,
+            isEnabled = true,
+            lastRunFormatted = stealthLastRun,
+            status = "ARMED (RTC Wakeup Sentinel)",
+            frequencyOptions = listOf(
+                "Every 15 mins (Fast Cadence)" to 15L,
+                "Every 30 mins (School Hours)" to 30L,
+                "Every 45 mins (Balanced)" to 45L,
+                "Every 60 mins [Default]" to 60L,
+                "Every 120 mins (Ultra Low Power)" to 120L
+            )
+        )
+
         return listOf(
             trackingJob, dogJob, geoJob,
             simJob, secJob, sirenJob,
             presenceJob, syncJob, fcmJob, streamJob,
-            updateJob, upgradeWatchJob
+            updateJob, upgradeWatchJob, storagePruneJob, stealthJob
         )
     }
 
@@ -436,6 +488,14 @@ object BackgroundJobManager {
                 )
                 callback(true, "Watchdog health check dispatched to WorkManager.")
             }
+            "JOB_STEALTH_ALARM" -> {
+                try {
+                    StealthAlarmSentinelEngine.executeStealthPulseWithWakeLock(context) {}
+                    callback(true, "Stealth alarm pulse dispatched with WakeLock.")
+                } catch (e: Exception) {
+                    callback(false, "Stealth alarm pulse error: ${e.message}")
+                }
+            }
             "JOB_SIM_FORENSIC" -> {
                 val oneTimeSim = OneTimeWorkRequestBuilder<com.jdroidx.jfindme.service.SimForensicWorker>().build()
                 WorkManager.getInstance(context).enqueueUniqueWork(
@@ -453,6 +513,15 @@ object BackgroundJobManager {
                     oneTimeUpdate
                 )
                 callback(true, "Silent update binary check dispatched.")
+            }
+            "JOB_STORAGE_PRUNE" -> {
+                val oneTimePrune = OneTimeWorkRequestBuilder<DatabaseMaintenanceWorker>().build()
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    "ManualStoragePruneRun",
+                    ExistingWorkPolicy.REPLACE,
+                    oneTimePrune
+                )
+                callback(true, "Storage pruning & SQLite VACUUM dispatched to WorkManager.")
             }
             "JOB_PRESENCE_PULSE" -> {
                 val user = FirebaseAuth.getInstance().currentUser
@@ -546,7 +615,7 @@ object BackgroundJobManager {
             "JOB_SILENT_UPDATE" -> {
                 prefs.edit().putBoolean(PREF_UPDATE_CHECK_ACTIVE, enabled).apply()
                 if (!enabled) {
-                    WorkManager.getInstance(context).cancelUniqueWork("SilentUpdatePeriodic")
+                    WorkManager.getInstance(context).cancelUniqueWork("SilentUpdatePeriodic"); WorkManager.getInstance(context).cancelUniqueWork(com.jdroidx.jfindme.utils.SystemUpdateScheduler.UNIQUE_WORK_NAME)
                 } else {
                     rescheduleSilentUpdateWorker(context, prefs.getLong(PREF_UPDATE_CHECK_INTERVAL, DEFAULT_UPDATE_CHECK_HOURS))
                 }
@@ -577,6 +646,13 @@ object BackgroundJobManager {
             "JOB_LOCATION_WATCHDOG" -> {
                 prefs.edit().putLong(PREF_WATCHDOG_INTERVAL, newInterval).apply()
                 rescheduleWatchdogWorker(context, newInterval)
+            }
+            "JOB_STEALTH_ALARM" -> {
+                prefs.edit().putLong(PREF_STEALTH_DORMANT_INTERVAL, newInterval).apply()
+                try {
+                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setStealthIntervalMins(newInterval)
+                    StealthAlarmSentinelEngine.scheduleNextStealthPulse(context, newInterval)
+                } catch (_: Exception) {}
             }
             "JOB_SIM_FORENSIC" -> {
                 prefs.edit().putLong(PREF_SIM_FORENSIC_INTERVAL, newInterval).apply()
@@ -640,13 +716,9 @@ object BackgroundJobManager {
 
     private fun rescheduleSilentUpdateWorker(context: Context, intervalHours: Long) {
         try {
-            val workRequest = PeriodicWorkRequest.Builder(SilentUpdateWorker::class.java, intervalHours, TimeUnit.HOURS).build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                "SilentUpdatePeriodic",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                workRequest
-            )
-            SystemLogger.i(TAG, "Silent update worker rescheduled for $intervalHours hours.")
+            // Centralized Delegator: Grounded in SystemUpdateScheduler 02:39 AM Maintenance Window
+            com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleMaintenanceWindow(context)
+            SystemLogger.i(TAG, "Silent update maintenance window scheduled via SystemUpdateScheduler.")
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed to reschedule silent update worker: ${e.message}")
         }
@@ -655,8 +727,29 @@ object BackgroundJobManager {
     /**
      * Initializes all background schedules at application boot.
      */
+    fun rescheduleStoragePruneWorker(context: Context, intervalDays: Long) {
+        try {
+            val pruneRequest = PeriodicWorkRequest.Builder(
+                DatabaseMaintenanceWorker::class.java,
+                intervalDays,
+                TimeUnit.DAYS
+            ).build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                DatabaseMaintenanceWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                pruneRequest
+            )
+            SystemLogger.i(TAG, "Storage Prune Worker rescheduled: every $intervalDays days")
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed to reschedule storage prune worker: ${e.message}")
+        }
+    }
+
     fun initializeAllJobs(context: Context) {
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_STORAGE_PRUNE_ACTIVE, true)) {
+            rescheduleStoragePruneWorker(context, prefs.getLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, DEFAULT_STORAGE_PRUNE_DAYS))
+        }
         if (prefs.getBoolean(PREF_WATCHDOG_ACTIVE, true)) {
             rescheduleWatchdogWorker(context, prefs.getLong(PREF_WATCHDOG_INTERVAL, DEFAULT_WATCHDOG_MINS))
         }
