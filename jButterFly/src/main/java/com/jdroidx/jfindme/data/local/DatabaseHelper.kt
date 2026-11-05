@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 79 // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
+        const val DATABASE_VERSION = 80 // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -1504,6 +1504,36 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.endTransaction()
             }
         }
+
+        if (oldVersion < 80) {
+            db.beginTransaction()
+            try {
+                // 1. pending_sync_queue sensor telemetry additions: accuracy, altitude, motion_state
+                val queueCols = mapOf(
+                    PendingSyncQueueTable.COL_ACCURACY to "REAL DEFAULT 0.0",
+                    PendingSyncQueueTable.COL_ALTITUDE to "REAL DEFAULT 0.0",
+                    PendingSyncQueueTable.COL_MOTION_STATE to "TEXT DEFAULT 'UNKNOWN'"
+                )
+                for ((col, def) in queueCols) {
+                    try {
+                        db.rawQuery("SELECT $col FROM ${PendingSyncQueueTable.TABLE_NAME} LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE ${PendingSyncQueueTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+                // 2. High-performance compound index for offline sync queue draining
+                try {
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_pending_sync_status_ts ON ${PendingSyncQueueTable.TABLE_NAME}(${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_TIMESTAMP} ASC)")
+                } catch (e: Exception) { }
+
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V80 Schema Migration: Sensor Telemetry Queue & Index Deployed.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V80 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
     }
 
     /**
@@ -2061,7 +2091,21 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return rootTree
     }
 
-    fun saveHistoryPoint(uid1: String, deviceId: String, lat: Double, lng: Double, speed: Float, battery: Int, sos: Boolean, source: String?, ts: String) {
+    fun saveHistoryPoint(
+        uid1: String, 
+        deviceId: String, 
+        lat: Double, 
+        lng: Double, 
+        speed: Float, 
+        battery: Int, 
+        sos: Boolean, 
+        source: String?, 
+        ts: String,
+        accuracy: Float = 0f,
+        bearing: Float = 0f,
+        altitude: Double = 0.0,
+        motionState: String? = null
+    ) {
         // 🛡️ Anti-GIGO Coordinate Guard: Reject null island (0,0) and invalid coordinates
         if (lat == 0.0 && lng == 0.0) return
         if (lat.isNaN() || lng.isNaN() || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) return
@@ -2074,7 +2118,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             iId = UserIdentityTable.insertOrUpdate(db, uid1, null, "", connectedId = deviceId, nodeIndex = nIdx)
         }
         
-        LocationEventTable.logLocation(db, iId, lat, lng, speed, battery, sos, ts, source)
+        LocationEventTable.logLocation(db, iId, lat, lng, speed, battery, sos, ts, source, accuracy, bearing, altitude, motionState)
     }
 
     fun parseForensicStringToMillis(str: String?): Long {
@@ -3497,10 +3541,26 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     // 🛰️ OFFLINE SYNC QUEUE HELPERS
-    fun enqueuePendingSync(payloadType: String, targetUid: String, lat: Double, lng: Double, bearing: Float, speed: Float, battery: Int, isSos: Boolean, extraData: String? = null): Long {
+    fun enqueuePendingSync(
+        payloadType: String, 
+        targetUid: String, 
+        lat: Double, 
+        lng: Double, 
+        bearing: Float, 
+        speed: Float, 
+        battery: Int, 
+        isSos: Boolean, 
+        extraData: String? = null,
+        accuracy: Float = 0f,
+        altitude: Double = 0.0,
+        motionState: String = "UNKNOWN"
+    ): Long {
         return try {
             val db = writableDatabase
-            PendingSyncQueueTable.enqueue(db, payloadType, targetUid, lat, lng, bearing, speed, battery, isSos, System.currentTimeMillis(), extraData)
+            PendingSyncQueueTable.enqueue(
+                db, payloadType, targetUid, lat, lng, bearing, speed, battery, isSos, 
+                System.currentTimeMillis(), extraData, accuracy, altitude, motionState
+            )
         } catch (e: Exception) { -1L }
     }
 

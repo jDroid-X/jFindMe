@@ -137,7 +137,11 @@ class OfflineSyncManager private constructor(context: Context) {
                 location.batteryLevel.toInt(),
                 location.isSosActive,
                 location.address,
-                location.getResolvedTimestamp()
+                location.getResolvedTimestamp(),
+                location.accuracy,
+                location.bearing,
+                location.altitude,
+                location.motion_state
             )
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Local history point caching error: ${e.message}")
@@ -165,7 +169,10 @@ class OfflineSyncManager private constructor(context: Context) {
                     bearing = location.bearing,
                     speed = location.speed,
                     battery = location.batteryLevel.toInt(),
-                    isSos = location.isSosActive
+                    isSos = location.isSosActive,
+                    accuracy = location.accuracy,
+                    altitude = location.altitude,
+                    motionState = location.motion_state
                 )
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "SQLite pending queue enqueue error: ${e.message}")
@@ -237,6 +244,9 @@ class OfflineSyncManager private constructor(context: Context) {
                 val battery = (item["battery"] as? Long)?.toInt() ?: 100
                 val isSos = (item["is_sos"] as? Long) == 1L
                 val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
+                val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)
+                val altitude = (item["altitude"] as? Double) ?: ((item["altitude"] as? Long)?.toDouble() ?: 0.0)
+                val motionState = (item["motion_state"] as? String) ?: "UNKNOWN"
 
                 if (targetUid.isNotBlank() && (lat != 0.0 || lng != 0.0)) {
                     val ul = UserLocation(
@@ -245,6 +255,9 @@ class OfflineSyncManager private constructor(context: Context) {
                         longitude = lng,
                         bearing = bearing,
                         speed = speed,
+                        accuracy = accuracy,
+                        altitude = altitude,
+                        motion_state = motionState,
                         batteryLevel = battery,
                         isSosActive = isSos,
                         timestamp = FirebaseComm.getForensicTimestamp(ts)
@@ -304,6 +317,9 @@ class OfflineSyncManager private constructor(context: Context) {
                     val battery = (item["battery"] as? Long)?.toInt() ?: 100
                     val isSos = (item["is_sos"] as? Long) == 1L
                     val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
+                    val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)
+                    val altitude = (item["altitude"] as? Double) ?: ((item["altitude"] as? Long)?.toDouble() ?: 0.0)
+                    val motionState = (item["motion_state"] as? String) ?: "UNKNOWN"
 
                     if (targetUid.isNotBlank() && (lat != 0.0 || lng != 0.0)) {
                         val ul = UserLocation(
@@ -312,6 +328,9 @@ class OfflineSyncManager private constructor(context: Context) {
                             longitude = lng,
                             bearing = bearing,
                             speed = speed,
+                            accuracy = accuracy,
+                            altitude = altitude,
+                            motion_state = motionState,
                             batteryLevel = battery,
                             isSosActive = isSos,
                             timestamp = FirebaseComm.getForensicTimestamp(ts)

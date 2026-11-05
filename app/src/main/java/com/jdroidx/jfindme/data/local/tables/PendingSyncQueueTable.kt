@@ -23,6 +23,9 @@ object PendingSyncQueueTable {
     const val COL_STATUS = "sync_status" // PENDING, SYNCING, FAILED
     const val COL_RETRY_COUNT = "retry_count"
     const val COL_EXTRA_DATA = "extra_data" // JSON metadata
+    const val COL_ACCURACY = "accuracy"
+    const val COL_ALTITUDE = "altitude"
+    const val COL_MOTION_STATE = "motion_state"
 
     val CREATE_TABLE = """
         CREATE TABLE IF NOT EXISTS $TABLE_NAME (
@@ -38,7 +41,10 @@ object PendingSyncQueueTable {
             $COL_TIMESTAMP INTEGER NOT NULL,
             $COL_STATUS TEXT DEFAULT 'PENDING',
             $COL_RETRY_COUNT INTEGER DEFAULT 0,
-            $COL_EXTRA_DATA TEXT
+            $COL_EXTRA_DATA TEXT,
+            $COL_ACCURACY REAL DEFAULT 0.0,
+            $COL_ALTITUDE REAL DEFAULT 0.0,
+            $COL_MOTION_STATE TEXT DEFAULT 'UNKNOWN'
         )
     """.trimIndent()
 
@@ -53,7 +59,10 @@ object PendingSyncQueueTable {
         battery: Int,
         isSos: Boolean,
         timestamp: Long = System.currentTimeMillis(),
-        extraData: String? = null
+        extraData: String? = null,
+        accuracy: Float = 0f,
+        altitude: Double = 0.0,
+        motionState: String = "UNKNOWN"
     ): Long {
         val cv = ContentValues().apply {
             put(COL_PAYLOAD_TYPE, payloadType)
@@ -68,6 +77,9 @@ object PendingSyncQueueTable {
             put(COL_STATUS, "PENDING")
             put(COL_RETRY_COUNT, 0)
             put(COL_EXTRA_DATA, extraData)
+            put(COL_ACCURACY, accuracy)
+            put(COL_ALTITUDE, altitude)
+            put(COL_MOTION_STATE, motionState)
         }
         return try {
             db.insert(TABLE_NAME, null, cv)
