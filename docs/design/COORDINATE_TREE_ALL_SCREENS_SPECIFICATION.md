@@ -28,7 +28,7 @@
 
 ## 1. Architectural Axioms & Coordinate Tree Methodology
 
-The **Coordinate Tree** (`ROOT ⊃ BR ⊃ EL ⊃ FE ⊃ BE ⊃ DB`) represents the rigorous mathematical and functional mapping connecting human operator affordances down to byte-level SQLite v76 tables and Firebase Cloud SSOT nodes:
+The **Coordinate Tree** (`ROOT ⊃ BR ⊃ EL ⊃ FE ⊃ BE ⊃ DB`) represents the rigorous mathematical and functional mapping connecting human operator affordances down to byte-level SQLite V80 tables and Firebase Cloud SSOT nodes:
 
 $$	ext{ROOT} \supset 	ext{BR (Business Rules)} \supset 	ext{EL (UI Elements)} \supset 	ext{FE (Client Behaviors)} \supset 	ext{BE (Engine Logics)} \supset 	ext{DB (Physical Storage)}$$
 
@@ -38,7 +38,7 @@ $$	ext{ROOT} \supset 	ext{BR (Business Rules)} \supset 	ext{EL (UI Elements)} \s
 - **`[EL]` (Element Affordance)**: Physical screen region, interactive card, input field, switch, floating button, or dialog component.
 - **`[FE]` (Frontend Component & UI Validation)**: Reactive UI widget, layout geometry, click/change listener, client validation rules (`FR₁ ... FRₙ`), and deterministic Pass/Fail test scenarios.
 - **`[BE]` (Backend Service & Engine Logic)**: Thread-isolated controller, background worker, cryptographic verifier, IPC binder, engine validation rules (`BFR₁ ... BFRₙ`), and deterministic Pass/Fail test logic.
-- **`[DB]` (Database SSOT & Persistence)**: Physical SQLite v76 table, column, index, foreign key, `system_registry.xml` key, or Firebase Realtime Database path.
+- **`[DB]` (Database SSOT & Persistence)**: Physical SQLite V80 table, column, index, foreign key, `system_registry.xml` key, or Firebase Realtime Database path.
 
 ---
 
@@ -67,7 +67,7 @@ ROOT: SPLASH_ACTIVITY_MASTER_PLAN (com.jdroidx.jfindme.ui.base.SplashActivity)
 │    │    ├── 🖥️ [FE]₁․₃․₁: Subtitle Text ("Secure Tactical Telemetry & Mesh Network", alpha 0.85f, 13sp)
 │    │    │    └── ⚙️ [BE]₁․₃․₁․₁: Localization Resource Loader (`R.string.splash_subtitle`)
 │    ├── 🖱️ [EL]₁․₄: Boot Status Text & Dynamic Step Indicator
-│    │    ├── 🖥️ [FE]₁․₄․₁: Live Text View ("Attesting Silicon Root...", "Verifying SQLite v76 Schema...")
+│    │    ├── 🖥️ [FE]₁․₄․₁: Live Text View ("Attesting Silicon Root...", "Verifying SQLite V80 Schema...")
 │    │    │    ├── (FR1.2): Updates synchronously with background initialization sequence steps.
 │    │    │    └── ⚙️ [BE]₁․₄․₁․₁: BootSequenceProgressObservable
 │    ├── 🖱️ [EL]₁․₅: Root & Tamper Attestation Guard
@@ -1744,7 +1744,7 @@ flowchart LR
     D5 --> S18["18. FamilyFriendsActivity (Unified Social Fleet)"]
     D5 --> S19["19. NetworkGatewayActivity (Cloud/P2P Pairing Hub)"]
     D5 --> S20["20. OrgActivity (Enterprise Multi-Tenant Tenant)"]
-    D5 --> S21["21. DatabaseManagementActivity (SQLite Schema v76)"]
+    D5 --> S21["21. DatabaseManagementActivity (SQLite Schema V80)"]
     D5 --> S22["22. FactoryResetActivity (2-Stage Crypto Wipe)"]
     D5 --> S23["23. FirebaseCloudMatrixActivity (WebSocket RTDB Monitor)"]
     D5 --> S24["24. ForensicVaultExplorerActivity (Audit Vault Reader)"]

@@ -746,38 +746,57 @@ The system utilizes two synchronized storage engines:
 
 ---
 
-### 6.2 17 Normalized SQLite Tables (Schemas, Keys, Indexes & VACUUM)
+### 6.2 25 Normalized SQLite Tables (V80 Gold Master Architecture)
+
+The physical SQLite database (`JFindMe_CitizenData.db`) is structured into a strict **Tri-Tier Star Schema** across 25 normalized tables conforming to the **Northwind 2003 Relational Standard ($1 \rightarrow \infty$, 0 Orphan Tables)**:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                           17 NORMALIZED SQLITE TABLES SPECIFICATION                            │
+│                           25 NORMALIZED SQLITE TABLES SPECIFICATION (V80)                      │
 ├────┬──────────────────────────┬─────────────────────────────┬──────────────────────────────────┤
 │ #  │ Table Name               │ Primary Key / Uniques       │ Core Purpose & Business Domain   │
 ├────┼──────────────────────────┼─────────────────────────────┼──────────────────────────────────┤
-│ 1  │ `user_identity`          │ `uid` (Hardware Agent ID)   │ Immutable hardware anchor, certs │
-│ 2  │ `user_profile`           │ `user_id`                   │ Nickname, avatar, emergency cell │
-│ 3  │ `devices`                │ `device_id`                 │ Device model, OS, battery state  │
-│ 4  │ `device_pairings`        │ `pairing_id` (Unique A+B)   │ Symmetrical mutual pairing trust │
-│ 5  │ `device_vitals`          │ `id` (Auto-increment)       │ Battery mA, CPU temp, RAM, Doze  │
-│ 6  │ `location_event`         │ `event_id` (Auto-increment) │ Breadcrumbs: lat, lng, speed, ts │
-│ 7  │ `geofence_events`        │ `id` (Auto-increment)       │ SafeZone transitions (ENTER/EXIT)│
-│ 8  │ `safe_zones`             │ `zone_id`                   │ Circle radius / polygon vertices │
-│ 9  │ `safe_zone_user_map`     │ `id` (Unique Zone + User)   │ SafeZone member assignments      │
-│ 10 │ `groups`                 │ `group_id`                  │ Circles (Family, Office, Fleet)  │
-│ 11 │ `group_members`          │ `id` (Unique Group + User)  │ Circle membership & roles        │
-│ 12 │ `organizations`          │ `org_id`                    │ Corporate enterprise entity      │
-│ 13 │ `user_org_map`           │ `id` (Unique Org + User)    │ Department & employee mappings   │
-│ 14 │ `sim_inventory`          │ `iccid`                     │ Physical SIM cards inventory     │
-│ 15 │ `sim_transactions`       │ `id` (Auto-increment)       │ Tower LAC/CID handover logs      │
-│ 16 │ `sync_queue`             │ `queue_id`                  │ General offline mutations queue  │
-│ 17 │ `pending_sync_queue`     │ `id`                        │ Priority telemetry sync queue    │
+│ 1  │ `user_identity` (T1)     │ `id` (AP), `uid_1` (T64UI)  │ Root master identity anchor      │
+│ 2  │ `devices` (T1)           │ `id` (AP), `hardware_id`    │ Hardware registry. ISOLATED.     │
+│ 3  │ `groups` (T1)            │ `id` (AP), `group_id` (T64U)│ Circles & family containers      │
+│ 4  │ `safe_zones` (T1)        │ `id` (AP), `zone_id` (T64U) │ Geofencing boundaries & polygons │
+│ 5  │ `security_master_keys`(T1│ `id` (AP), `key_alias`      │ Cryptographic key store          │
+│ 6  │ `user_profile` (T2)      │ `id` (AP), `identity_id`    │ Profile, avatar, salted PIN hash │
+│ 7  │ `user_org_map` (T2)      │ `id` (AP), `identity_id`    │ Clearance level & role type      │
+│ 8  │ `group_members` (T2)     │ `id` (AP), `(group,member)` │ Membership & permissions_mask    │
+│ 9  │ `safe_zone_user_map` (T2)│ `id` (AP), `(zone,user)`    │ Geofence schedule assignments    │
+│ 10 │ `sim` (T2)               │ `id` (AP), `device_id`      │ Cellular SIM slots & carrier info│
+│ 11 │ `device_policy` (T2)     │ `id` (AP), `device_id`      │ Kiosk & GPS governance policy    │
+│ 12 │ `stealth_schedule_config`│ `id` (AP), `identity_id`    │ Quiet hours & stealth tracking   │
+│ 13 │ `reverse_geocode_cache`  │ `id` (AP), `(lat,lng)`      │ Spatial coordinate address lookup│
+│ 14 │ `location_event` (T3)    │ `id` (AP), `identity_id`    │ Telemetry breadcrumbs (lat/lng)  │
+│ 15 │ `pending_sync_queue` (T3)│ `id` (AP), `target_uid`     │ V80 Zero-loss outbox (accuracy)  │
+│ 16 │ `device_vitals` (T3)     │ `id` (AP), `hardware_id`    │ Battery, thermal, RAM diagnostics│
+│ 17 │ `alert_history` (T3)     │ `id` (AP), `identity_id`    │ Emergency SOS & boundary breaches│
+│ 18 │ `watchdog_resurrection`  │ `id` (AP), `hardware_id`    │ Daemon self-healing audit ledger │
+│ 19 │ `security_evasion_audit` │ `id` (AP), `identity_id`    │ Root, mock GPS & tamper audit    │
+│ 20 │ `telemetry_failover`     │ `id` (AP), `identity_id`    │ 5-tier failover circuit routes   │
+│ 21 │ `sys_logs` (T3)          │ `id` (AP), `identity_id`    │ Forensic runtime system log      │
+│ 22 │ `p2p_mesh_packets` (T3)  │ `id` (AP), `sender_id`      │ Offline BLE/Wi-Fi mesh hops      │
+│ 23 │ `invitations` (T3)       │ `id` (AP), `token`          │ QR codes & asymmetric pair tokens│
+│ 24 │ `sim_transactions` (T3)  │ `id` (AP), `sim_id`         │ Cell tower handoff stream        │
+│ 25 │ `geofence_events` (T3)   │ `id` (AP), `safe_zone_id`   │ Geofence transitions (ENTER/EXIT)│
 └────┴──────────────────────────┴─────────────────────────────┴──────────────────────────────────┘
 ```
 
-**Indexes & Performance Optimization**:
-- Index `idx_location_event_ts`: `CREATE INDEX IF NOT EXISTS idx_location_event_ts ON location_event(timestamp DESC);` (Guarantees historical query execution `< 16ms`).
-- Index `idx_pairing_nodes`: `CREATE INDEX IF NOT EXISTS idx_pairing_nodes ON device_pairings(uid_1, uid_2);`
-- Pruning & VACUUM: Executed weekly by `DatabaseMaintenanceWorker.kt` to purge breadcrumbs older than 30 days and reclaim disk sectors.
+**Zero Cross-Connection Invariant**:
+- Each physical device's hardware metadata (`devices`, `sim`, `device_vitals`, `device_policy`, `watchdog_resurrection`) is completely independent and autonomous.
+- No direct table cross-connections exist between distinct devices. Devices connect solely via the logical relational identity mapping (`user_identity` $\longleftrightarrow$ `invitations` / `group_members`).
+
+**MLM Asymmetric Hierarchy & Visibility Rules**:
+- **Top-to-Bottom ($\Downarrow$)**: Superior guardians (Level 1/2) can inspect telemetry, vitals, and breadcrumbs of all subordinate devices assigned below them.
+- **Bottom-to-Top ($\Uparrow$)**: Subordinates (Level 3+ Dependent Child) cannot view guardian presence or location unless explicitly permitted via `allow_dependents = true` (Bit `0x08` in `permissions_mask`).
+- **Lateral Isolation**: Sibling nodes on parallel branches cannot see each other.
+
+**V80 Performance Indexes**:
+- Index `idx_location_event_ts`: `CREATE INDEX IF NOT EXISTS idx_location_event_ts ON location_event(timestamp DESC);`
+- Index `idx_pending_sync_status_ts`: `CREATE INDEX IF NOT EXISTS idx_pending_sync_status_ts ON pending_sync_queue(sync_status, timestamp ASC);`
+- Compound Index `idx_vitals_motion`: `CREATE INDEX IF NOT EXISTS idx_vitals_motion ON device_vitals(hardware_id, motion_state);`
 
 ---
 

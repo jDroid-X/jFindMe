@@ -189,3 +189,4 @@ flowchart TD
    `docs/reference/DATABASE_FUNCTIONS_AND_RELATIONSHIPS_SPECIFICATION.md`
 3. **Frontend-to-Tri-Tier Coordinate Mapping**:  
    `docs/design/FRONTEND_TO_TRI_TIER_DATABASE_MAPPING_SPECIFICATION.md`
+
