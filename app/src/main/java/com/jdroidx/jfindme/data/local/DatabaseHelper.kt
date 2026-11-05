@@ -2091,6 +2091,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return rootTree
     }
 
+    @JvmOverloads
     fun saveHistoryPoint(
         uid1: String, 
         deviceId: String, 
@@ -2296,7 +2297,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 SELECT e.*, i.${UserIdentityTable.COL_UID_1} as uid_1, COALESCE(NULLIF(i.${UserIdentityTable.COL_FULL_NAME}, ''), 'Target Node') as fullName
                 FROM ${LocationEventTable.TABLE_NAME} e
                 JOIN ${UserIdentityTable.TABLE_NAME} i ON e.${LocationEventTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
-                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ?)
+                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? OR i.${UserIdentityTable.COL_UID_2} = ?)
                   AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
                 ORDER BY e.${LocationEventTable.COL_TIMESTAMP} DESC
                 LIMIT 1
@@ -2313,6 +2314,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     if (speedIdx >= 0) map["speed"] = it.getFloat(speedIdx)
                     val battIdx = it.getColumnIndex(LocationEventTable.COL_BATTERY)
                     if (battIdx >= 0) map["battery"] = it.getInt(battIdx)
+                    val accIdx = it.getColumnIndex(LocationEventTable.COL_ACCURACY)
+                    if (accIdx >= 0) map["accuracy"] = it.getFloat(accIdx)
+                    val brgIdx = it.getColumnIndex(LocationEventTable.COL_BEARING)
+                    if (brgIdx >= 0) map["bearing"] = it.getFloat(brgIdx)
+                    val altIdx = it.getColumnIndex(LocationEventTable.COL_ALTITUDE)
+                    if (altIdx >= 0) map["altitude"] = it.getDouble(altIdx)
+                    val motIdx = it.getColumnIndex(LocationEventTable.COL_MOTION_STATE)
+                    if (motIdx >= 0) map["motion_state"] = it.getString(motIdx) ?: "UNKNOWN"
                     return map
                 }
             }
@@ -2354,6 +2363,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val addr = it.getString(it.getColumnIndexOrThrow(LocationEventTable.COL_ADDRESS))
                     val name = it.getString(it.getColumnIndexOrThrow("fullName")) ?: ""
                     val devId = it.getString(it.getColumnIndexOrThrow("connectedId")) ?: uid1
+                    val acc = if (it.getColumnIndex(LocationEventTable.COL_ACCURACY) >= 0 && !it.isNull(it.getColumnIndex(LocationEventTable.COL_ACCURACY))) it.getFloat(it.getColumnIndex(LocationEventTable.COL_ACCURACY)) else 0f
+                    val bearing = if (it.getColumnIndex(LocationEventTable.COL_BEARING) >= 0 && !it.isNull(it.getColumnIndex(LocationEventTable.COL_BEARING))) it.getFloat(it.getColumnIndex(LocationEventTable.COL_BEARING)) else 0f
+                    val altitude = if (it.getColumnIndex(LocationEventTable.COL_ALTITUDE) >= 0 && !it.isNull(it.getColumnIndex(LocationEventTable.COL_ALTITUDE))) it.getDouble(it.getColumnIndex(LocationEventTable.COL_ALTITUDE)) else 0.0
+                    val motionState = if (it.getColumnIndex(LocationEventTable.COL_MOTION_STATE) >= 0 && !it.isNull(it.getColumnIndex(LocationEventTable.COL_MOTION_STATE))) it.getString(it.getColumnIndex(LocationEventTable.COL_MOTION_STATE)) ?: "UNKNOWN" else "UNKNOWN"
 
                     val point = com.jdroidx.jfindme.data.model.UserLocation(
                         userId = uid1,
@@ -2365,7 +2378,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         batteryLevel = battery,
                         isSosActive = sos,
                         address = addr,
-                        userName = name
+                        userName = name,
+                        accuracy = acc,
+                        bearing = bearing,
+                        altitude = altitude,
+                        motion_state = motionState
                     )
                     list.add(point)
                 }
@@ -3541,6 +3558,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     // 🛰️ OFFLINE SYNC QUEUE HELPERS
+    @JvmOverloads
     fun enqueuePendingSync(
         payloadType: String, 
         targetUid: String, 

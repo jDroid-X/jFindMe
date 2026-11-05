@@ -1170,6 +1170,25 @@ object FirebaseComm {
                                 is String -> batVal.toIntOrNull() ?: 100
                                 else -> 100
                             }
+                            val accuracyVal = pointSnap.child("accuracy").value
+                            val accuracy = when (accuracyVal) {
+                                is Number -> accuracyVal.toFloat()
+                                is String -> accuracyVal.toFloatOrNull() ?: 0f
+                                else -> 0f
+                            }
+                            val bearingVal = pointSnap.child("bearing").value
+                            val bearing = when (bearingVal) {
+                                is Number -> bearingVal.toFloat()
+                                is String -> bearingVal.toFloatOrNull() ?: 0f
+                                else -> 0f
+                            }
+                            val altitudeVal = pointSnap.child("altitude").value
+                            val altitude = when (altitudeVal) {
+                                is Number -> altitudeVal.toDouble()
+                                is String -> altitudeVal.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                            val motionState = pointSnap.child("motion_state").value?.toString() ?: "UNKNOWN"
                             val addr = pointSnap.child("address").value?.toString() ?: ""
                             if (lat != 0.0 && lng != 0.0) {
                                 points.add(mapOf(
@@ -1178,7 +1197,11 @@ object FirebaseComm {
                                     "timestamp" to ts,
                                     "speed" to speed,
                                     "battery" to battery,
-                                    "address" to addr
+                                    "address" to addr,
+                                    "accuracy" to accuracy,
+                                    "bearing" to bearing,
+                                    "altitude" to altitude,
+                                    "motion_state" to motionState
                                 ))
                             }
                         } catch (e: Exception) {}
@@ -1230,6 +1253,26 @@ object FirebaseComm {
                         else -> 100
                     }
 
+                    val accuracyVal = pointSnap.child("accuracy").value
+                    val accuracy = when (accuracyVal) {
+                        is Number -> accuracyVal.toFloat()
+                        is String -> accuracyVal.toFloatOrNull() ?: 0f
+                        else -> 0f
+                    }
+                    val bearingVal = pointSnap.child("bearing").value
+                    val bearing = when (bearingVal) {
+                        is Number -> bearingVal.toFloat()
+                        is String -> bearingVal.toFloatOrNull() ?: 0f
+                        else -> 0f
+                    }
+                    val altitudeVal = pointSnap.child("altitude").value
+                    val altitude = when (altitudeVal) {
+                        is Number -> altitudeVal.toDouble()
+                        is String -> altitudeVal.toDoubleOrNull() ?: 0.0
+                        else -> 0.0
+                    }
+                    val motionState = pointSnap.child("motion_state").value?.toString() ?: "UNKNOWN"
+
                     val addr = pointSnap.child("address").value?.toString() ?: ""
 
                     if (lat != 0.0 && lng != 0.0) {
@@ -1239,7 +1282,11 @@ object FirebaseComm {
                             "timestamp" to ts,
                             "speed" to speed,
                             "battery" to battery,
-                            "address" to addr
+                            "address" to addr,
+                            "accuracy" to accuracy,
+                            "bearing" to bearing,
+                            "altitude" to altitude,
+                            "motion_state" to motionState
                         ))
                     }
                 } catch (e: Exception) {

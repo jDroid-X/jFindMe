@@ -255,11 +255,23 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
             if (points.isNotEmpty()) {
                 viewModelScope.launch(Dispatchers.IO) {
                     for (pt in points) {
+                        val lat = (pt["lat"] as? Number)?.toDouble() ?: 0.0
+                        val lng = (pt["lng"] as? Number)?.toDouble() ?: 0.0
+                        val spd = (pt["speed"] as? Number)?.toFloat() ?: 0f
+                        val bat = (pt["battery"] as? Number)?.toInt() ?: -1
+                        val acc = (pt["accuracy"] as? Number)?.toFloat() ?: 0f
+                        val brg = (pt["bearing"] as? Number)?.toFloat() ?: 0f
+                        val alt = (pt["altitude"] as? Number)?.toDouble() ?: 0.0
+                        val motion = (pt["motion_state"] as? String) ?: "UNKNOWN"
+                        val ts = (pt["timestamp"] as? String) ?: com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
+                        val addr = pt["address"] as? String
+
                         dbHelper.saveHistoryPoint(
                             targetUid, "HW_$targetUid",
-                            pt["lat"] as Double, pt["lng"] as Double,
-                            pt["speed"] as Float, pt["battery"] as Int,
-                            false, pt["address"] as? String, (pt["timestamp"] as? String) ?: com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
+                            lat, lng,
+                            spd, bat,
+                            false, addr, ts,
+                            acc, brg, alt, motion
                         )
                     }
                     loadHistorySessions(context, targetUid, 86400000L * 7) // 7 days window

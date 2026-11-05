@@ -52,6 +52,8 @@ class LocationReceiver : BroadcastReceiver() {
                             timestamp = forensicTs,
                             bearing = location.bearing,
                             speed = location.speed,
+                            accuracy = location.accuracy,
+                            altitude = location.altitude,
                             allowDependents = prefs.getBoolean("allow_dependents", true),
                             active_group = prefs.getString("active_group", "") ?: "",
                             isForensicAudit = true,

@@ -75,6 +75,8 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
                         geohash = com.jdroidx.jfindme.engine.location.GeohashHelper.encode(loc.latitude, loc.longitude),
                         bearing = loc.bearing,
                         speed = loc.speed,
+                        accuracy = loc.accuracy,
+                        altitude = loc.altitude,
                         timestamp = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(System.currentTimeMillis()),
                         userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
                         avatar_id = resolvedAvatarId

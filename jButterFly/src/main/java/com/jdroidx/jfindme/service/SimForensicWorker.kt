@@ -102,6 +102,7 @@ class SimForensicWorker(
             var resolvedLat = 0.0
             var resolvedLng = 0.0
             var resolvedAcc = 100f
+            var resolvedAlt = 0.0
             var resolvedSpeed = 0f
             var resolvedBearing = 0f
 
@@ -113,6 +114,7 @@ class SimForensicWorker(
                     resolvedLat = loc.latitude
                     resolvedLng = loc.longitude
                     resolvedAcc = loc.accuracy
+                    resolvedAlt = loc.altitude
                     resolvedSpeed = loc.speed
                     resolvedBearing = loc.bearing
                 }
@@ -168,6 +170,8 @@ class SimForensicWorker(
                     geohash = com.jdroidx.jfindme.engine.location.GeohashHelper.encode(resolvedLat, resolvedLng),
                     bearing = resolvedBearing,
                     speed = resolvedSpeed,
+                    accuracy = resolvedAcc,
+                    altitude = resolvedAlt,
                     timestamp = timeStampSign,
                     allowDependents = prefs.getBoolean("allow_dependents", true),
                     active_group = prefs.getString("active_group", "") ?: "",

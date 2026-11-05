@@ -43,6 +43,7 @@ class LocationRepository(internal val context: Context) {
         val myHardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
         val myRawAndroidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(context)
         val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
 
         val isSelf = resolvedId == myAgentId || 
                      resolvedId == myHardwareUid || 
@@ -52,6 +53,25 @@ class LocationRepository(internal val context: Context) {
                      resolvedId.equals("You", ignoreCase = true) ||
                      resolvedId == "SELF_USER"
         
+        // 🛡️ MLM ASYMMETRIC HIERARCHY ACCESS CONTROL GATE:
+        // Top-to-Bottom: Permitted by default (parents/guardians view dependents)
+        // Bottom-to-Top: Blocked unless explicitly permitted by allowDependents == true or emergency SOS active
+        val myRole = db.getRoleForDevice(myAgentId) ?: prefs.getString("user_role", "") ?: ""
+        val isLocalDependent = myRole.contains("CHILD", ignoreCase = true) || 
+                               myRole.contains("DEPENDENT", ignoreCase = true) || 
+                               myRole.contains("WARD", ignoreCase = true) ||
+                               prefs.getBoolean("is_dependent", false)
+        if (!isSelf && isLocalDependent && !loc.allowDependents && !loc.isSosActive) {
+            SystemLogger.w("LocationRepository", "MLM Gate Enforced: Upstream location for $resolvedId suppressed (allowDependents=false, sos=false).")
+            val canonicalStoreId = resolvedId
+            latestLocations.remove(canonicalStoreId)
+            _userLocations.postValue(latestLocations.values.sortedWith(
+                compareByDescending<UserLocation> { it.isSosActive }
+                    .thenByDescending { it.getLongTimestamp() }
+            ))
+            return
+        }
+
         // 🚀 REMOTE PEER INGESTION: Process all authorized incoming telemetry for local and remote devices
         SystemLogger.i("LocationRepository", "Ingesting location for Node: $resolvedId (Lat: ${loc.latitude}, Lng: ${loc.longitude})")
 
@@ -211,7 +231,27 @@ class LocationRepository(internal val context: Context) {
                         if (rawLoc == null) {
                             val lat = snapshot.child("latitude").getValue(Double::class.java) ?: 0.0
                             val lng = snapshot.child("longitude").getValue(Double::class.java) ?: 0.0
-                            rawLoc = UserLocation(userId = uid, latitude = lat, longitude = lng)
+                            val acc = snapshot.child("accuracy").getValue(Double::class.java)?.toFloat()
+                                ?: snapshot.child("accuracy").getValue(Long::class.java)?.toFloat() ?: 0f
+                            val alt = snapshot.child("altitude").getValue(Double::class.java) ?: 0.0
+                            val motion = snapshot.child("motion_state").getValue(String::class.java) ?: "UNKNOWN"
+                            val spd = snapshot.child("speed").getValue(Double::class.java)?.toFloat()
+                                ?: snapshot.child("speed").getValue(Long::class.java)?.toFloat() ?: 0f
+                            val brg = snapshot.child("bearing").getValue(Double::class.java)?.toFloat()
+                                ?: snapshot.child("bearing").getValue(Long::class.java)?.toFloat() ?: 0f
+                            val allowDep = snapshot.child("allowDependents").getValue(Boolean::class.java)
+                                ?: snapshot.child("allow_dependents").getValue(Boolean::class.java) ?: true
+                            rawLoc = UserLocation(
+                                userId = uid,
+                                latitude = lat,
+                                longitude = lng,
+                                accuracy = acc,
+                                altitude = alt,
+                                motion_state = motion,
+                                speed = spd,
+                                bearing = brg,
+                                allowDependents = allowDep
+                            )
                         }
 
                         // If coordinates missing but currently inside safe zone, fallback to safe zone coordinates
@@ -330,6 +370,10 @@ class LocationRepository(internal val context: Context) {
                     val lat = hist["lat"] as? Double ?: 0.0
                     val lng = hist["lng"] as? Double ?: 0.0
                     val ts = hist["timestamp"] as? Long ?: 0L
+                    val acc = (hist["accuracy"] as? Number)?.toFloat() ?: 0f
+                    val brg = (hist["bearing"] as? Number)?.toFloat() ?: 0f
+                    val alt = (hist["altitude"] as? Number)?.toDouble() ?: 0.0
+                    val motion = hist["motion_state"] as? String ?: "UNKNOWN"
                     if (lat != 0.0 && lng != 0.0 && !latestLocations.containsKey(peerId)) {
                         val peerName = db.getDeviceCentricName(peerId)
                         val peerAvatar = db.getDeviceCentricAvatar(peerId)
@@ -339,7 +383,11 @@ class LocationRepository(internal val context: Context) {
                             avatar_id = peerAvatar,
                             latitude = lat,
                             longitude = lng,
-                            timestamp = ts
+                            timestamp = ts,
+                            accuracy = acc,
+                            bearing = brg,
+                            altitude = alt,
+                            motion_state = motion
                         )
                     }
                 }
@@ -562,7 +610,11 @@ class LocationRepository(internal val context: Context) {
                                     point.batteryLevel.toInt(),
                                     point.isSosActive,
                                     point.address,
-                                    effectiveTs
+                                    effectiveTs,
+                                    point.accuracy,
+                                    point.bearing,
+                                    point.altitude,
+                                    point.motion_state
                                 )
                             }
                         }

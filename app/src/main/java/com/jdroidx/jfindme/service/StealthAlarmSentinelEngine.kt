@@ -164,6 +164,7 @@ object StealthAlarmSentinelEngine {
                 var resolvedLat = 0.0
                 var resolvedLng = 0.0
                 var resolvedAcc = 100f
+                var resolvedAlt = 0.0
                 var resolvedSpeed = 0f
                 var resolvedBearing = 0f
 
@@ -175,6 +176,7 @@ object StealthAlarmSentinelEngine {
                         resolvedLat = loc.latitude
                         resolvedLng = loc.longitude
                         resolvedAcc = loc.accuracy
+                        resolvedAlt = loc.altitude
                         resolvedSpeed = loc.speed
                         resolvedBearing = loc.bearing
                     }
@@ -201,6 +203,8 @@ object StealthAlarmSentinelEngine {
                         geohash = GeohashHelper.encode(resolvedLat, resolvedLng),
                         bearing = resolvedBearing,
                         speed = resolvedSpeed,
+                        accuracy = resolvedAcc,
+                        altitude = resolvedAlt,
                         timestamp = forensicTs,
                         allowDependents = prefs.getBoolean("allow_dependents", true),
                         active_group = prefs.getString("active_group", "") ?: "",
