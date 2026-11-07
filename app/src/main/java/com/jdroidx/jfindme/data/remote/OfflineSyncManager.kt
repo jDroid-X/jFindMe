@@ -116,8 +116,11 @@ class OfflineSyncManager private constructor(context: Context) {
 
     /**
      * Strategic Update: Sync or Persist in AES-256 Vault.
+     * [Variables]: rUserId, db, dispatchCloud | [Constants]: TAG | [Dependencies]: UserLocation, DatabaseHelper, FirebaseComm
+     * [Integration Points]: LocationRepository.finalizeLocationPush, Zero-Duplicate-Write Single-Push Guard
      */
-    fun syncLocation(location: UserLocation) {
+    @JvmOverloads
+    fun syncLocation(location: UserLocation, dispatchCloud: Boolean = false) {
         // 🛡️ Anti-GIGO Guard: Do not sync corrupt, NaN, or null-island coordinates
         if (!location.isValidLocation()) {
             SystemLogger.w(TAG, "Rejected invalid GPS ping (lat: ${location.latitude}, lng: ${location.longitude})")
@@ -148,7 +151,11 @@ class OfflineSyncManager private constructor(context: Context) {
         }
 
         if (isNetworkAvailable) {
-            FirebaseComm.syncAnalyticalEvent(rUserId, location)
+            // ⚡ Phase 3 Optimization: Only dispatch standalone analytical event if explicitly requested.
+            // Avoids redundant double-write when updateUserLocation() immediately follows with syncPartitionedLocationTrace().
+            if (dispatchCloud) {
+                FirebaseComm.syncAnalyticalEvent(rUserId, location)
+            }
             // If queue had backlogged items, flush them now
             if (syncQueue.isNotEmpty()) {
                 processQueue()
@@ -320,6 +327,16 @@ class OfflineSyncManager private constructor(context: Context) {
                     val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)
                     val altitude = (item["altitude"] as? Double) ?: ((item["altitude"] as? Long)?.toDouble() ?: 0.0)
                     val motionState = (item["motion_state"] as? String) ?: "UNKNOWN"
+
+                    // 🛡️ Age Boundary Guard (TS-06): Suppress queue items older than dynamic retention ceiling
+                    val retentionDays = db.getDynamicConfigInt("retention_days", 7)
+                    val maxAgeMs = retentionDays * 24 * 3600 * 1000L
+                    val itemAge = System.currentTimeMillis() - ts
+                    if (itemAge > maxAgeMs) {
+                        db.deletePendingSyncItem(id)
+                        SystemLogger.w(TAG, "Suppressed expired outbox telemetry item $id (age: ${itemAge / 86400000}d > ${retentionDays}d ceiling)")
+                        continue
+                    }
 
                     if (targetUid.isNotBlank() && (lat != 0.0 || lng != 0.0)) {
                         val ul = UserLocation(

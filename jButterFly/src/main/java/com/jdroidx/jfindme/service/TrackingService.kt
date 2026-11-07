@@ -38,6 +38,8 @@ class TrackingService : Service() {
     // 🔋 SILENT BATTERY VALIDATION (V9.2)
     private var batteryPingJob: kotlinx.coroutines.Job? = null
     private var lastPulseTime = 0L
+    @Volatile private var lastUploadedLocation: android.location.Location? = null
+    @Volatile private var lastPresencePulseEpoch: Long = 0L
     private val PING_INTERVAL_MS = 60000L // 60 Second Forensic Cycle
     private var serviceStartEpoch: Long = System.currentTimeMillis()
 
@@ -146,15 +148,40 @@ class TrackingService : Service() {
                 )
             } catch (e: Exception) { }
 
+            val currentTime = System.currentTimeMillis()
+            val isSos = p.getBoolean("is_sos_active", false)
+            val distMoved = lastUploadedLocation?.distanceTo(location) ?: Float.MAX_VALUE
+            // [Variables]: deadReckoningThreshold, presencePulseInterval, stationarySpeedThreshold | [Constants]: KEY_DEAD_RECKONING_RADIUS_METERS, KEY_PRESENCE_PULSE_INTERVAL_MS, KEY_STATIONARY_SPEED_THRESHOLD_MPS | [Dependencies]: RegistryManager | [Integration Points]: Settings & Dynamic Fleet OOPS Config
+            val deadReckoningThreshold = com.jdroidx.jfindme.utils.RegistryManager.getDeadReckoningRadiusMeters(applicationContext)
+            val presencePulseInterval = com.jdroidx.jfindme.utils.RegistryManager.getPresencePulseIntervalMs(applicationContext)
+            val stationarySpeedThreshold = com.jdroidx.jfindme.utils.RegistryManager.getStationarySpeedThresholdMps(applicationContext)
+            val isPhysicallyStationary = (distMoved < deadReckoningThreshold && location.speed < stationarySpeedThreshold) && !isSos
+
+            // 🛡️ Spatial Dead-Reckoning: Suppress redundant full GPS uploads when stationary (< deadReckoningThreshold m)
+            if (isPhysicallyStationary) {
+                // Dispatch lean 28-byte presence heartbeat every presencePulseInterval ms (default 180s) to keep server.js and family map ONLINE
+                if (currentTime - lastPresencePulseEpoch >= presencePulseInterval) {
+                    lastPresencePulseEpoch = currentTime
+                    val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+                    val authUid = FirebaseAuth.getInstance().uid ?: ""
+                    FirebaseComm.syncPresencePulse(authUid, localAgentId, p.getInt("last_known_battery", 100))
+                    SystemLogger.d(TAG, "DEAD_RECKONING: Stationary device ($distMoved m < $deadReckoningThreshold m). Dispatched 28-byte presence heartbeat.")
+                }
+                return@LocationEngine
+            }
+
+            // Kinematic movement (> 15m) or Emergency SOS: Update anchor and continue through adaptive throttle
+            lastUploadedLocation = android.location.Location(location)
+            lastPresencePulseEpoch = currentTime
+
             // 🛡️ Adaptive Telemetry Polling Throttle (GisSpatialEngine)
             val adaptiveInterval = com.jdroidx.jfindme.engine.location.GisSpatialEngine.computeAdaptivePollingInterval(
-                isSosActive = p.getBoolean("is_sos_active", false),
+                isSosActive = isSos,
                 speedMps = location.speed,
                 batteryPct = p.getInt("last_known_battery", 100),
                 isCharging = p.getBoolean("last_known_charging", false),
-                isStationary = location.speed < 0.5f
+                isStationary = isPhysicallyStationary
             )
-            val currentTime = System.currentTimeMillis()
             
             if (currentTime - lastPulseTime < adaptiveInterval) {
                 SystemLogger.d(TAG, "THROTTLE: Adaptive throttle holding fix (Interval: ${adaptiveInterval / 1000}s, Delta: ${(currentTime - lastPulseTime) / 1000}s)")
@@ -810,6 +837,12 @@ class TrackingService : Service() {
         const val ACTION_STOP_TRACKING = "com.jdroidx.jfindme.ACTION_STOP_TRACKING"
         private const val CHANNEL_ID = "tracking_channel"
         private const val SERVICE_NOTIFICATION_ID = 101
+
+        // 🛡️ Dynamic Telemetry & Dead-Reckoning Config Keys
+        const val KEY_DEAD_RECKONING_RADIUS_METERS = "dead_reckoning_radius_meters"
+        const val DEFAULT_DEAD_RECKONING_RADIUS_METERS = 15.0f
+        const val KEY_PRESENCE_PULSE_INTERVAL_MS = "presence_pulse_interval_ms"
+        const val DEFAULT_PRESENCE_PULSE_INTERVAL_MS = 180_000L
     }
 
     // QA Persistence Upgrade: Allow Unauthenticated Testers to blast Tracker Events without crashing!

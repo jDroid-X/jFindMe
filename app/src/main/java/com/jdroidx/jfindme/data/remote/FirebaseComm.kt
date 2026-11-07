@@ -84,6 +84,8 @@ object FirebaseComm {
     @JvmStatic val traceArchivesRef: DatabaseReference get() = historyArchiveRef
     @JvmStatic val geofencingRef: DatabaseReference get() = database.reference.child(NODE_GEOFENCING)
     @JvmStatic fun getDatabaseRef(): DatabaseReference = database.reference
+    // [Variables]: lastTransmittedMeta (avatar_id, userName, address) | [Dependencies]: ConcurrentHashMap, Triple | [Integration Points]: Differential Delta Writer
+    private val lastTransmittedMeta = java.util.concurrent.ConcurrentHashMap<String, Triple<String, String, String>>()
 
     // 🛡️ Zero-Trust Security Gate: Check if user is authenticated before any cloud write
     @JvmStatic fun isAuthenticated(): Boolean {
@@ -96,17 +98,30 @@ object FirebaseComm {
         return key.replace(Regex("[.#$\\[\\]/\\s:]"), "_").trim()
     }
 
-    // 🛡️ CANONICAL AGENT ID SANITIZER: Strips GRP_ and DEV_ prefixes ensuring only valid hardware keys access /devices
+    // 🛡️ CANONICAL AGENT ID SANITIZER: Strips GRP_, DEV_, and HW_ prefixes ensuring only valid hardware keys access /devices
+    // [Variables] clean: String, stripped: Boolean, prev: String
+    // [Constants] None | [Dependencies] Regex | [Integration Points] Master RTDB /devices node accessor SSOT
     @JvmStatic
     fun sanitizeAgentId(id: String?): String {
         if (id.isNullOrBlank()) return "UNKNOWN_"
         var clean = id.trim().uppercase()
-        if (clean.startsWith("GRP_")) {
-            clean = clean.removePrefix("GRP_")
-        } else if (clean.startsWith("DEV_")) {
-            clean = clean.removePrefix("DEV_")
+        // Iterative prefix stripper to handle single or nested prefixes (e.g. GRP_, DEV_, HW_, HW_HW_)
+        var stripped = true
+        while (stripped) {
+            val prev = clean
+            if (clean.startsWith("GRP_")) clean = clean.removePrefix("GRP_")
+            if (clean.startsWith("DEV_")) clean = clean.removePrefix("DEV_")
+            if (clean.startsWith("HW_")) clean = clean.removePrefix("HW_")
+            stripped = (clean != prev)
         }
-        return if (clean.length == 8) clean else clean.take(8)
+        clean = clean.filter { it.isLetterOrDigit() }
+        // Silicon derivation compression: If 12-character raw silicon serial (e.g. 2C819R121042), compress first 4 + last 4
+        if (clean.length == 12) {
+            clean = clean.take(4) + clean.takeLast(4)
+        } else if (clean.length > 8) {
+            clean = clean.take(4) + clean.takeLast(4)
+        }
+        return if (clean.length == 8) clean else clean.padEnd(8, '0').take(8)
     }
 
     // 🛡️ GRANULAR GEOFENCING TREE ACCESSORS: Creator -> SafeZone -> Target Device -> Notifications (Date-Grouped)
@@ -338,6 +353,128 @@ object FirebaseComm {
             SystemLogger.i("FirebaseComm", "✅ Version Update metadata synchronized for Node $agentId: V$versionName")
         } catch (e: Exception) {
             SystemLogger.e("FirebaseComm", "Failed to sync version update metadata: ${e.message}")
+        }
+    }
+
+    /**
+     * 🛡️ >7 DAYS CLOSED FEEDBACK LOOP EVICTION ENGINE
+     * Enforces strict 7-day retention on transient/historical cloud nodes:
+     * 1. /Version_Update/{agentId}: Retains 'latest' and purges historical versions older than 7 days.
+     * 2. /relationships/{groupId}/signals: Auto-evicts signals older than 7 days.
+     * 3. /lookup_indices: Evicts orphaned reverse index mappings.
+     */
+    @JvmStatic
+    fun enforce7DayCloudRetention(context: android.content.Context, agentId: String) {
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser ?: return
+        if (agentId.isBlank()) return
+
+        // [Variables]: retentionDays, cutoffEpoch | [Dependencies]: RegistryManager | [Integration Points]: Cloud Database Retention & Storage Compaction
+        val retentionDays = com.jdroidx.jfindme.utils.RegistryManager.getStorageRetentionDays(context)
+        val cutoffEpoch = System.currentTimeMillis() - (retentionDays.toLong() * 24 * 3600 * 1000L)
+
+        // 1. Purge historical versions in /Version_Update/{agentId} older than 7 days (preserving 'latest')
+        try {
+            val devVerRef = getVersionUpdatesDeviceRef(agentId)
+            devVerRef.get().addOnSuccessListener { snapshot ->
+                for (child in snapshot.children) {
+                    val key = child.key ?: continue
+                    if (key == "latest" || key == "master_release") continue
+                    val epoch = child.child("epoch_ms").getValue(Long::class.java)
+                        ?: child.child("timestamp").getValue(Long::class.java) ?: 0L
+                    if (epoch > 0 && epoch < cutoffEpoch) {
+                        child.ref.removeValue()
+                        SystemLogger.i("FirebaseComm", "Purged expired version node >7d: /Version_Update/$agentId/$key")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("FirebaseComm", "Failed version retention sweep: ${e.message}")
+        }
+
+        // 2. Purge stale signals in /relationships/{groupId}/signals older than 7 days
+        try {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val roster = db.getOfflineRoster()
+            val checkedGroups = mutableSetOf<String>()
+            for (node in roster) {
+                val grpId = node["active_group"]?.toString() ?: node["group_id"]?.toString() ?: continue
+                if (grpId.isNotBlank() && checkedGroups.add(grpId)) {
+                    val signalsRef = relationshipsRef.child(grpId).child("signals")
+                    signalsRef.get().addOnSuccessListener { sigSnap ->
+                        for (sigChild in sigSnap.children) {
+                            val sigTs = sigChild.getValue(Long::class.java) ?: 0L
+                            if (sigTs > 0 && sigTs < cutoffEpoch) {
+                                sigChild.ref.removeValue()
+                                SystemLogger.i("FirebaseComm", "Purged stale signal >7d: /relationships/$grpId/signals/${sigChild.key}")
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("FirebaseComm", "Failed signal retention sweep: ${e.message}")
+        }
+    }
+
+    /**
+     * 🛡️ Reverse Index Closed-Loop Tombstone: Immediately purges lookup_indices when an identity is deleted/unlinked
+     */
+    @JvmStatic
+    fun purgeStaleLookupIndex(authUid: String?, deviceId: String?) {
+        try {
+            val lookupRef = database.reference.child(NODE_LOOKUP_INDICES)
+            if (!authUid.isNullOrBlank()) {
+                lookupRef.child("auth_to_device").child(authUid).removeValue()
+            }
+            if (!deviceId.isNullOrBlank()) {
+                val clean = sanitizeAgentId(deviceId)
+                lookupRef.child("device_to_hw").child(clean).removeValue()
+                lookupRef.child("active_monitors").child(clean).removeValue()
+            }
+            SystemLogger.i("FirebaseComm", "Tombstoned lookup_indices for authUid: $authUid, deviceId: $deviceId")
+        } catch (e: Exception) {
+            SystemLogger.e("FirebaseComm", "Failed to purge lookup_indices: ${e.message}")
+        }
+    }
+
+    /**
+     * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+     * Variables: clean, authUid, updates, onComplete
+     * Constants: NODE_DEVICES, NODE_LOOKUP_INDICES
+     * Dependencies: FirebaseDatabase, SystemLogger
+     * Integration Points: DatabaseHelper.deleteRosterNode, FactoryResetViewModel
+     *
+     * 🛡️ Device Removal Closed-Loop Cascade:
+     * Atomically tombstones the device state under /devices/{agentId}/,
+     * purges lookup_indices, and updates live/telemetry nodes to DELETED state.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun deleteDeviceRemote(agentId: String, authUid: String? = null, onComplete: ((Boolean) -> Unit)? = null) {
+        if (!isAuthenticated()) { onComplete?.invoke(false); return }
+        val clean = sanitizeAgentId(agentId)
+        if (!isAgentIdValid(clean)) { onComplete?.invoke(false); return }
+        
+        try {
+            purgeStaleLookupIndex(authUid, clean)
+            val updates = mapOf<String, Any>(
+                "$NODE_DEVICES/$clean/device/live/status" to "DELETED",
+                "$NODE_DEVICES/$clean/device/live/is_online" to false,
+                "$NODE_DEVICES/$clean/telemetry/status" to "DELETED",
+                "$NODE_DEVICES/$clean/Identity/st_session_state" to "OFFLINE"
+            )
+            database.reference.updateChildren(updates) { error, _ ->
+                if (error != null) {
+                    SystemLogger.e("FirebaseComm", "Failed to tombstone remote device $clean: ${error.message}")
+                    onComplete?.invoke(false)
+                } else {
+                    SystemLogger.i("FirebaseComm", "Successfully tombstoned remote device $clean")
+                    onComplete?.invoke(true)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("FirebaseComm", "deleteDeviceRemote error: ${e.message}")
+            onComplete?.invoke(false)
         }
     }
 
@@ -1025,6 +1162,8 @@ object FirebaseComm {
         updates["$livePath/latitude"] = eventData.latitude
         updates["$livePath/longitude"] = eventData.longitude
         updates["$livePath/speed"] = eventData.speed
+        updates["$livePath/accuracy"] = eventData.accuracy
+        updates["$livePath/altitude"] = eventData.altitude
         updates["$livePath/battery"] = eventData.batteryLevel
         updates["$livePath/bearing"] = eventData.bearing
         updates["$livePath/isSosActive"] = eventData.isSosActive
@@ -1055,15 +1194,25 @@ object FirebaseComm {
             updates["$memberPath/updated_at"] = now
         }
 
-        // 🛡️ IDENTITY SHIELD: Guarantee GPS tick never clears current avatar or user name
+        // 🛡️ IDENTITY & ADDRESS SHIELD (Differential Delta): Transmit avatar/name/address only when altered or on cold sync
         val av = eventData.avatar_id.trim()
-        if (av.isNotEmpty() && av != "butterfly") {
-            updates["$livePath/avatar_id"] = av
-        }
         val un = eventData.userName.trim()
-        if (un.isNotEmpty() && !un.equals("null", ignoreCase = true) && !un.equals("Active Tracker", ignoreCase = true)) {
-            updates["$livePath/userName"] = un
-            updates["$livePath/name"] = un
+        val addr = eventData.address?.trim() ?: ""
+        val cachedMeta = lastTransmittedMeta[agentId]
+        val metaChanged = (cachedMeta == null || cachedMeta.first != av || cachedMeta.second != un || cachedMeta.third != addr)
+
+        if (metaChanged) {
+            if (av.isNotEmpty() && av != "butterfly") {
+                updates["$livePath/avatar_id"] = av
+            }
+            if (un.isNotEmpty() && !un.equals("null", ignoreCase = true) && !un.equals("Active Tracker", ignoreCase = true)) {
+                updates["$livePath/userName"] = un
+                updates["$livePath/name"] = un
+            }
+            if (addr.isNotEmpty()) {
+                updates["$livePath/address"] = addr
+            }
+            lastTransmittedMeta[agentId] = Triple(av, un, addr)
         }
 
         database.reference.updateChildren(updates) { error, _ ->
@@ -1341,6 +1490,30 @@ object FirebaseComm {
      * 🟢 Live Presence & Session Duration Management
      */
     @JvmStatic
+    fun syncPresencePulse(authUid: String, agentId: String, batteryLevel: Int) {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Variables: nowEpoch, nowForensic, updates
+        // Constants: NODE_DEVICES, STATUS_ONLINE
+        // Dependencies: FirebaseDatabase, SystemLogger
+        // Integration Points: TrackingService, server.js
+        if (!isAgentIdValid(agentId)) return
+        val nowEpoch = System.currentTimeMillis()
+        val nowForensic = getForensicTimestamp(nowEpoch)
+        val updates = mutableMapOf<String, Any>(
+            "$NODE_DEVICES/$agentId/device/live/last_heartbeat" to nowEpoch,
+            "$NODE_DEVICES/$agentId/device/live/battery" to batteryLevel,
+            "$NODE_DEVICES/$agentId/device/live/is_online" to true,
+            "$NODE_DEVICES/$agentId/device/live/status" to STATUS_ONLINE,
+            "$NODE_DEVICES/$agentId/device/live/updated_at" to nowForensic,
+            "$NODE_DEVICES/$agentId/telemetry/last_heartbeat" to nowEpoch,
+            "$NODE_DEVICES/$agentId/telemetry/last_seen" to nowEpoch,
+            "$NODE_DEVICES/$agentId/telemetry/status" to STATUS_ONLINE,
+            "$NODE_DEVICES/$agentId/telemetry/battery_pct" to batteryLevel
+        )
+        database.reference.updateChildren(updates)
+    }
+
+    @JvmStatic
     fun updatePresence(agentId: String, isOnline: Boolean, sessionStartEpoch: Long = System.currentTimeMillis()) {
         if (!isAgentIdValid(agentId)) return
         val now = System.currentTimeMillis()
@@ -1424,9 +1597,11 @@ object FirebaseComm {
             "epoch_ms" to nowMs,
             "status" to "ACTIVE"
         )
-        publishAlert(agentId, "sos_latest", alertPayload)
-        devicesRef.child(agentId).child("device").child("sos_active").setValue(true)
-        SystemLogger.w("FirebaseComm", "🚨 SOS_EMERGENCY_BROADCAST_ACTIVE for Node: $agentId at ($latitude, $longitude)")
+        // [Variables] cleanAgentId: String | [Constants] None | [Dependencies] sanitizeAgentId | [Integration Points] SOS Device State
+        val cleanAgentId = sanitizeAgentId(agentId)
+        publishAlert(cleanAgentId, "sos_latest", alertPayload)
+        devicesRef.child(cleanAgentId).child("device").child("sos_active").setValue(true)
+        SystemLogger.w("FirebaseComm", "🚨 SOS_EMERGENCY_BROADCAST_ACTIVE for Node: $cleanAgentId at ($latitude, $longitude)")
     }
 
     /**
@@ -1548,8 +1723,10 @@ object FirebaseComm {
 
     @JvmStatic
     fun pokeLocationUpdate(agentId: String) {
-        if (!isAuthenticated() || !isAgentIdValid(agentId)) return
-        devicesRef.child(agentId).child("poke").setValue(System.currentTimeMillis())
+        // [Variables] cleanId: String | [Constants] None | [Dependencies] sanitizeAgentId | [Integration Points] RTDB poke
+        val cleanId = sanitizeAgentId(agentId)
+        if (!isAuthenticated() || !isAgentIdValid(cleanId)) return
+        devicesRef.child(cleanId).child("poke").setValue(System.currentTimeMillis())
     }
 
     @JvmStatic

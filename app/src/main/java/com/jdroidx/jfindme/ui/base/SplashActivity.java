@@ -79,63 +79,65 @@ public class SplashActivity extends Activity {
             } catch (Exception ignored) {}
         }).start();
 
-        // 🔄 Zero-Data-Loss Migration State Restore (Debug to Release Upgrade)
-        try {
-            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
-            if (downloadDir != null && downloadDir.exists()) {
-                java.io.File migrationFile = new java.io.File(downloadDir, ".jfindme_migration_state.json");
-                if (migrationFile.exists()) {
-                    String jsonStr = new String(java.nio.file.Files.readAllBytes(migrationFile.toPath()), java.nio.charset.StandardCharsets.UTF_8);
-                    org.json.JSONObject rootObj = new org.json.JSONObject(jsonStr);
-                    if (rootObj.has("preferences")) {
-                        org.json.JSONObject prefsObj = rootObj.getJSONObject("preferences");
-                        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-                        android.content.SharedPreferences.Editor editor = prefs.edit();
-                        java.util.Iterator<String> keys = prefsObj.keys();
-                        while (keys.hasNext()) {
-                            String k = keys.next();
-                            Object val = prefsObj.get(k);
-                            if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
-                            else if (val instanceof Integer) editor.putInt(k, (Integer) val);
-                            else if (val instanceof Long) editor.putLong(k, (Long) val);
-                            else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
-                            else if (val instanceof String) editor.putString(k, (String) val);
+        // 🔄 Zero-Data-Loss Migration State Restore (Debug to Release Upgrade) in Background Thread
+        new Thread(() -> {
+            try {
+                java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+                if (downloadDir != null && downloadDir.exists()) {
+                    java.io.File migrationFile = new java.io.File(downloadDir, ".jfindme_migration_state.json");
+                    if (migrationFile.exists()) {
+                        String jsonStr = new String(java.nio.file.Files.readAllBytes(migrationFile.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                        org.json.JSONObject rootObj = new org.json.JSONObject(jsonStr);
+                        if (rootObj.has("preferences")) {
+                            org.json.JSONObject prefsObj = rootObj.getJSONObject("preferences");
+                            android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+                            android.content.SharedPreferences.Editor editor = prefs.edit();
+                            java.util.Iterator<String> keys = prefsObj.keys();
+                            while (keys.hasNext()) {
+                                String k = keys.next();
+                                Object val = prefsObj.get(k);
+                                if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
+                                else if (val instanceof Integer) editor.putInt(k, (Integer) val);
+                                else if (val instanceof Long) editor.putLong(k, (Long) val);
+                                else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
+                                else if (val instanceof String) editor.putString(k, (String) val);
+                            }
+                            editor.apply();
                         }
-                        editor.apply();
-                    }
-                    migrationFile.delete();
-                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from debug upgrade!");
-                } else {
-                    // Secondary Cloud Fallback Restore
-                    String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-                    if (!agentId.isEmpty()) {
-                        com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
-                            .child(agentId)
-                            .child("migration_backup")
-                            .get()
-                            .addOnSuccessListener(backupSnap -> {
-                                if (backupSnap.exists()) {
-                                    android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-                                    android.content.SharedPreferences.Editor editor = prefs.edit();
-                                    for (com.google.firebase.database.DataSnapshot child : backupSnap.getChildren()) {
-                                        String k = child.getKey();
-                                        if (k == null || k.startsWith("_")) continue;
-                                        Object val = child.getValue();
-                                        if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
-                                        else if (val instanceof Long) editor.putLong(k, (Long) val);
-                                        else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
-                                        else if (val instanceof String) editor.putString(k, (String) val);
+                        migrationFile.delete();
+                        com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from debug upgrade!");
+                    } else {
+                        // Secondary Cloud Fallback Restore
+                        String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(SplashActivity.this);
+                        if (!agentId.isEmpty()) {
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
+                                .child(agentId)
+                                .child("migration_backup")
+                                .get()
+                                .addOnSuccessListener(backupSnap -> {
+                                    if (backupSnap.exists()) {
+                                        android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+                                        android.content.SharedPreferences.Editor editor = prefs.edit();
+                                        for (com.google.firebase.database.DataSnapshot child : backupSnap.getChildren()) {
+                                            String k = child.getKey();
+                                            if (k == null || k.startsWith("_")) continue;
+                                            Object val = child.getValue();
+                                            if (val instanceof Boolean) editor.putBoolean(k, (Boolean) val);
+                                            else if (val instanceof Long) editor.putLong(k, (Long) val);
+                                            else if (val instanceof Double) editor.putFloat(k, ((Double) val).floatValue());
+                                            else if (val instanceof String) editor.putString(k, (String) val);
+                                        }
+                                        editor.apply();
+                                        com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from Cloud node!");
                                     }
-                                    editor.apply();
-                                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Successfully restored migration state from Cloud node!");
-                                }
-                            });
+                                });
+                        }
                     }
                 }
+            } catch (Exception e) {
+                com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Migration restore note: " + e.getMessage());
             }
-        } catch (Exception e) {
-            com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Migration restore note: " + e.getMessage());
-        }
+        }).start();
 
         // Start Firebase sync if user is logged in to recover profile data seamlessly
         com.google.firebase.auth.FirebaseUser user = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
@@ -143,17 +145,9 @@ public class SplashActivity extends Activity {
             startBackgroundProfileSync(user.getUid());
         }
 
-        // Android Main Thread Handler locking the Splash UI natively
+        // Lightweight, Non-Blocking Splash Transition (Smooth 1.2s Display)
         transitionRunnable = () -> {
             if (isFinishing() || isDestroyed()) return;
-            
-            if (isSyncInProgress && syncRetries < 5) {
-                syncRetries++;
-                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Profile sync still in progress. Delaying transition retry: " + syncRetries);
-                transitionHandler.postDelayed(transitionRunnable, 500);
-                return;
-            }
-            isSyncInProgress = false; // 🛡️ Offline-First Fallback: Release sync latch and continue with local SQLite cache
             
             com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Splash screen transition triggered.");
             
@@ -163,7 +157,9 @@ public class SplashActivity extends Activity {
             
             // 🧬 V75: Self-healing hardware telemetry upgrade for installed devices
             new Thread(() -> {
-                db.backfillCurrentDeviceHardwareSpecs(SplashActivity.this);
+                try {
+                    db.backfillCurrentDeviceHardwareSpecs(SplashActivity.this);
+                } catch (Exception ignored) {}
             }).start();
             
             Intent nextIntent;
@@ -193,7 +189,7 @@ public class SplashActivity extends Activity {
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
         };
         
-        transitionHandler.postDelayed(transitionRunnable, 3500); 
+        transitionHandler.postDelayed(transitionRunnable, 1200); 
     }
 
     private void startBackgroundProfileSync(String authUid) {
@@ -271,21 +267,29 @@ public class SplashActivity extends Activity {
                     groupData.put("group_id", activeGroup);
                     groupData.put("group_name", "Primary Circle");
                     
-                    // Save to SQLite
-                    com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(SplashActivity.this);
-                    String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(SplashActivity.this);
-                    String hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(SplashActivity.this);
-                    String androidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(SplashActivity.this);
-                    
-                    db.executeTieredHandshake(
-                        authUid, canonicalAgentId, hardwareUid, androidId,
-                        profileData, orgData, null, groupData, null, null, null,
-                        0.0, 0.0, null, "ADMIN"
-                    );
-                    db.pruneZombieNodes(canonicalAgentId, android.os.Build.MODEL);
-                    db.applyTtlDecay(7);
-                    
-                    // Save locally to SharedPreferences `"system_registry"`
+                    final String canonicalAgentId = (agentId != null && !agentId.isEmpty())
+                        ? agentId
+                        : com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(SplashActivity.this);
+                    final String hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(SplashActivity.this);
+                    final String androidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(SplashActivity.this);
+
+                    // Save to SQLite asynchronously off the UI thread to keep app launch lightweight & responsive
+                    new Thread(() -> {
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(SplashActivity.this);
+                            db.executeTieredHandshake(
+                                authUid, canonicalAgentId, hardwareUid, androidId,
+                                profileData, orgData, null, groupData, null, null, null,
+                                0.0, 0.0, null, "ADMIN"
+                            );
+                            db.pruneZombieNodes(canonicalAgentId, android.os.Build.MODEL);
+                            db.applyTtlDecay(7);
+                        } catch (Exception e) {
+                            com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Background handshake persistence notice: " + e.getMessage());
+                        }
+                    }).start();
+
+                    // Save locally to SharedPreferences "system_registry"
                     android.content.SharedPreferences prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
                     prefs.edit()
                          .putString("agent_id", canonicalAgentId)

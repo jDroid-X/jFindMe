@@ -5,8 +5,8 @@ import android.database.sqlite.SQLiteDatabase
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: zoneId, name, lat, lng, radius, createdBy, target, alerts, active, archived, polygonPoints, dwellMinutes, radiusMeters, isDwellAlertEnabled, now
- * Constants: TABLE_NAME = "safe_zone", COL_ZONE_ID, COL_NAME, COL_ZONE_NAME, COL_LAT, COL_LNG, COL_RADIUS, COL_RADIUS_METERS, COL_IS_DWELL_ALERT_ENABLED, COL_CREATED_BY, COL_TARGET_UID, COL_ICON_TYPE, COL_ACTIVE_SCHEDULE_JSON, COL_ASSIGNED_AGENT_ID, COL_IS_ALERTS_ENABLED, COL_IS_ACTIVE, COL_IS_ARCHIVED, COL_POLYGON_POINTS, COL_DWELL_MINUTES, COL_CREATED_ON
+ * Variables: zoneId, name, lat, lng, radius, createdBy, target, alerts, active, archived, polygonPoints, dwellMinutes, radiusMeters, isDwellAlertEnabled, startTime, endTime, activeDays, updatedAt, now
+ * Constants: TABLE_NAME = "safe_zone", COL_ZONE_ID, COL_NAME, COL_ZONE_NAME, COL_LAT, COL_LNG, COL_RADIUS, COL_RADIUS_METERS, COL_IS_DWELL_ALERT_ENABLED, COL_CREATED_BY, COL_TARGET_UID, COL_ICON_TYPE, COL_ACTIVE_SCHEDULE_JSON, COL_ASSIGNED_AGENT_ID, COL_IS_ALERTS_ENABLED, COL_IS_ACTIVE, COL_IS_ARCHIVED, COL_POLYGON_POINTS, COL_DWELL_MINUTES, COL_START_TIME, COL_END_TIME, COL_ACTIVE_DAYS, COL_CREATED_ON, COL_UPDATED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, MapViewModel.kt, GeofenceViewModel.kt
  */
@@ -34,7 +34,14 @@ object SafeZoneTable {
     const val COL_IS_ARCHIVED = "is_archived"
     const val COL_POLYGON_POINTS = "polygon_points" // JSON string of [{lat, lng}, ...]
     const val COL_DWELL_MINUTES = "dwell_minutes"
+
+    // 🚀 V81 Schedule Matrix & Cloud Parity
+    const val COL_START_TIME = "start_time"
+    const val COL_END_TIME = "end_time"
+    const val COL_ACTIVE_DAYS = "active_days"
+
     const val COL_CREATED_ON = "created_on"
+    const val COL_UPDATED_AT = "updated_at"
 
     val CREATE_TABLE = """
         CREATE TABLE IF NOT EXISTS $TABLE_NAME (
@@ -55,7 +62,11 @@ object SafeZoneTable {
             $COL_IS_ARCHIVED INTEGER DEFAULT 0,
             $COL_POLYGON_POINTS TEXT,
             $COL_DWELL_MINUTES INTEGER DEFAULT 0,
+            $COL_START_TIME INTEGER DEFAULT 0,
+            $COL_END_TIME INTEGER DEFAULT 2359,
+            $COL_ACTIVE_DAYS TEXT DEFAULT '1,2,3,4,5,6,0',
             $COL_CREATED_ON TEXT,
+            $COL_UPDATED_AT TEXT,
             FOREIGN KEY ($COL_CREATED_BY) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE SET NULL
         )
     """.trimIndent()

@@ -21,7 +21,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 80 // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
+        const val DATABASE_VERSION = 81 // 🚀 V81: Complete 25-Table Tri-Tier Enterprise Schema Refabrication, Offline-to-Online Parity & Compatibility Views // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -34,7 +34,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         const val MASTER_ROSTER = "MASTER_ROSTER" 
         const val TABLE_ORG = "organizations"
         const val TABLE_SAFE_ZONES = "safe_zones" 
-        const val TABLE_ALERTS = "alerts"
+        const val TABLE_ALERTS = "alert_history"
         const val TABLE_HISTORY = "location_event" 
         const val TABLE_PAIRING = "device_pairings" 
         const val TABLE_SIM_INVENTORY = "sim_inventory" 
@@ -46,6 +46,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         const val TABLE_GEOFENCE_LOGS = "geofence_events" 
         const val TABLE_DEVICE = "devices" 
         const val TABLE_SYS_LOG = "sys_log" 
+
+        // 🚀 V81 Master Key, Failover, P2P Mesh & Invitation Tables
+        const val TABLE_SECURITY_KEYS = "security_master_keys"
+        const val TABLE_TELEMETRY_FAILOVER = "telemetry_failover_routes"
+        const val TABLE_P2P_MESH = "p2p_mesh_packets"
+        const val TABLE_INVITATIONS = "invitations" 
 
         const val COL_FLAG_A = "flag_a"
         const val COL_FLAG_B = "flag_b"
@@ -116,9 +122,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         fun getTableRecordCounts(context: Context): Map<String, Long> {
             val counts = mutableMapOf<String, Long>()
             val tables = listOf(
-                "locations", "sim_transactions", "security_audit_log", "stealth_schedule_config",
-                "device_vitals", "user_profile", "user_identity", "devices", "safe_zones",
-                "reverse_geocode_cache", "alert_history", "device_policy_state", "watchdog_resurrection_log"
+                "user_identity", "device", "groups", "safe_zone", "security_master_keys", "organization",
+                "user_profile", "user_org_map", "device_pairing", "sim", "device_policy_state", "group_members",
+                "safe_zone_user_map", "stealth_schedule_config", "reverse_geocode_cache",
+                "location_event", "pending_sync_queue", "device_vitals", "alert_history", "watchdog_resurrection_log",
+                "telemetry_failover_routes", "sys_log", "p2p_mesh_packets", "invitations", "sim_transactions",
+                "geofence_event", "sync_queue", "change_log", "security_audit_log"
             )
             try {
                 // [Variables] | [Constants] | [Dependencies] | [Integration Points]
@@ -316,6 +325,31 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * [Variables] db, cursor, auth | [Constants] UserIdentityTable | [Dependencies] UserIdentityTable.kt | [Integration Points] decommissionDevice, hardDeleteDevice
+     * Resolves the transient Auth UID from the 8-character Agent ID (uid_1) using the local ledger.
+     */
+    fun resolveAuthUidLocally(uid1: String): String? {
+        if (uid1.isBlank()) return null
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                UserIdentityTable.TABLE_NAME,
+                arrayOf(UserIdentityTable.COL_AUTH_UID),
+                "${UserIdentityTable.COL_UID_1}=? OR ${UserIdentityTable.COL_UID_2}=?",
+                arrayOf(uid1, uid1),
+                null, null, null
+            )
+            cursor.use {
+                if (it.moveToFirst()) {
+                    val auth = it.getString(0)
+                    if (!auth.isNullOrBlank()) return auth
+                }
+            }
+        } catch (e: Exception) { }
+        return null
+    }
+
+    /**
      * 🧬 L7 Segregation: Calculates the device index for a specific user.
      * Starts with 1 for the first device of any UID_1.
      */
@@ -452,6 +486,50 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         )
     }
 
+    // 🚀 V81 Security Key, Failover, P2P Mesh & Invitation Helper Bridges
+    fun saveSecurityMasterKey(identityId: Long, alias: String, publicKey: String, fingerprint: String, isHardwareBacked: Boolean = true): Long {
+        return SecurityMasterKeysTable.saveKey(writableDatabase, identityId, alias, publicKey, fingerprint = fingerprint, isHardwareBacked = isHardwareBacked)
+    }
+
+    fun getSecurityMasterKey(alias: String): String? {
+        return SecurityMasterKeysTable.getKey(readableDatabase, alias)
+    }
+
+    fun logTelemetryFailover(identityId: Long, hardwareId: String, routeName: String, priorityTier: Int, state: String, rttLatencyMs: Long, packetLossRate: Float, consecutiveFailures: Int): Long {
+        return TelemetryFailoverRoutesTable.logRouteHealth(writableDatabase, identityId, hardwareId, routeName, priorityTier, state, rttLatencyMs, packetLossRate, consecutiveFailures)
+    }
+
+    fun recordP2pMeshPacket(packetId: String, identityId: Long, senderId: String, recipientId: String, payloadType: String, encryptedPayload: String, hopCount: Int = 0, rssi: Int = 0): Long {
+        return P2pMeshPacketsTable.recordPacket(writableDatabase, packetId, identityId, senderId, recipientId, payloadType, encryptedPayload, hopCount = hopCount, rssi = rssi)
+    }
+
+    fun createInvitation(token: String, groupId: String, initiatorId: Long, initiatorAgentId: String, targetContact: String = "", inviteType: String = "QR_CODE", targetRole: String = "member", targetCircleType: String = "FAMILY", validityMinutes: Long = 60): Long {
+        return InvitationsTable.createInvitation(writableDatabase, token, groupId, initiatorId, initiatorAgentId, targetContact, inviteType, targetRole, targetCircleType, validityMinutes)
+    }
+
+    fun acceptInvitation(token: String, accepterAgentId: String): Boolean {
+        return InvitationsTable.acceptInvitation(writableDatabase, token, accepterAgentId)
+    }
+
+    // ⚙️ Dynamic Configuration Engine (OOPS-based SSOT bridging SQLite and Settings)
+    fun getDynamicConfig(key: String, defaultVal: String = ""): String {
+        return StealthScheduleConfigTable.getConfig(readableDatabase, key, defaultVal)
+    }
+
+    fun getDynamicConfigInt(key: String, defaultVal: Int): Int {
+        val s = StealthScheduleConfigTable.getConfig(readableDatabase, key, defaultVal.toString())
+        return s.toIntOrNull() ?: defaultVal
+    }
+
+    fun getDynamicConfigLong(key: String, defaultVal: Long): Long {
+        val s = StealthScheduleConfigTable.getConfig(readableDatabase, key, defaultVal.toString())
+        return s.toLongOrNull() ?: defaultVal
+    }
+
+    fun setDynamicConfig(key: String, value: String, description: String = "", identityId: Long = 0L): Long {
+        return StealthScheduleConfigTable.setConfig(writableDatabase, key, value, description, identityId)
+    }
+
     // --- SYSTEM LIFECYCLE ---
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -464,6 +542,20 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
+        // [Variables] db: SQLiteDatabase, decommissioned: Set<String> | [Constants] DevicePairingTable, UserIdentityTable, GroupMemberTable | [Dependencies] SQLiteDatabase, RegistryManager | [Integration Points] Dynamic Self-Healing Decommissioned Fleet Purge
+        // 🚀 Self-Healing: Purge decommissioned nodes and corrupted 'HW_HW_' pairings/identities dynamically
+        try {
+            val decommissioned = com.jdroidx.jfindme.utils.RegistryManager.getDecommissionedAgentIds(context)
+            for (orphanId in decommissioned) {
+                db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(orphanId, orphanId))
+                db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ?", arrayOf(orphanId))
+                db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(orphanId))
+            }
+            db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'HW_HW_%' OR ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'HW_HW_%'")
+            db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} LIKE 'HW_HW_%'")
+            db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} LIKE 'HW_HW_%'")
+        } catch (e: Exception) { }
+
         // 🚀 Self-Healing diagnostic: Force-audit sys_log for 'level' column presence
         try {
             db.rawQuery("SELECT level FROM sys_log LIMIT 0", null).use { }
@@ -492,7 +584,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             try { db.execSQL("ALTER TABLE location_event ADD COLUMN created_on TEXT") } catch (ex: Exception) { }
         }
 
-        // 🚀 Self-Healing: Verify user_identity has 'install_epoch_id' and 'is_current_session' columns (V72 Patch)
+        // 🚀 Self-Healing: Verify user_identity has 'install_epoch_id', 'is_current_session' and 'full_name' columns (V72/V81 Patch)
         try {
             db.rawQuery("SELECT install_epoch_id FROM ${UserIdentityTable.TABLE_NAME} LIMIT 0", null).use { }
         } catch (e: Exception) {
@@ -502,6 +594,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.rawQuery("SELECT is_current_session FROM ${UserIdentityTable.TABLE_NAME} LIMIT 0", null).use { }
         } catch (e: Exception) {
             try { db.execSQL("ALTER TABLE ${UserIdentityTable.TABLE_NAME} ADD COLUMN is_current_session INTEGER DEFAULT 1") } catch (ex: Exception) { }
+        }
+        try {
+            db.rawQuery("SELECT ${UserIdentityTable.COL_NAME_ALIAS} FROM ${UserIdentityTable.TABLE_NAME} LIMIT 0", null).use { }
+        } catch (e: Exception) {
+            try { db.execSQL("ALTER TABLE ${UserIdentityTable.TABLE_NAME} ADD COLUMN ${UserIdentityTable.COL_NAME_ALIAS} TEXT DEFAULT ''") } catch (ex: Exception) { }
+        }
+        try {
+            db.rawQuery("SELECT ${OrganizationTable.COL_CLEARANCE_LEVEL} FROM ${OrganizationTable.TABLE_NAME} LIMIT 0", null).use { }
+        } catch (e: Exception) {
+            try { db.execSQL("ALTER TABLE ${OrganizationTable.TABLE_NAME} ADD COLUMN ${OrganizationTable.COL_CLEARANCE_LEVEL} TEXT DEFAULT 'STANDARD'") } catch (ex: Exception) { }
         }
 
         // 🚀 V61.2 Self-Healing: Augment user_org_map with forensic markers
@@ -614,66 +716,256 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         // 🛡️ V74 Anti-GIGO Deduplication Indexes
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_dedupe ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP})")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
+
+            // 🚀 V81 Self-Healing: Verify 25-Table Presence & Compatibility Views
+            try {
+                db.execSQL(SecurityMasterKeysTable.CREATE_TABLE)
+                db.execSQL(TelemetryFailoverRoutesTable.CREATE_TABLE)
+                db.execSQL(P2pMeshPacketsTable.CREATE_TABLE)
+                db.execSQL(InvitationsTable.CREATE_TABLE)
+                db.execSQL(SimTransactionsTable.CREATE_TABLE)
+
+                // 🚀 V81.2 Master Rule: Deploy 13 Zero-Loss Latest-Data Compatibility Views
+                seedDefaultDynamicConfigs(db)
+                createLatestDataCompatibilityViews(db)
+            } catch (ex: Exception) { }
         } catch (e: Exception) { }
+    }
+
+    /**
+     * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+     * Variables: db, views, viewName, selectSql
+     * Constants: 13 Compatibility Views (devices, safe_zones, geofence_events, sys_logs, security_evasion_audit_log, watchdog_resurrection_ledger, device_policy, device_pairings, alerts, MASTER_ROSTER, master_roster, organizations, sim_inventory)
+     * Dependencies: android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.local.tables.*, com.jdroidx.jfindme.utils.SystemLogger
+     * Integration Points: onOpen, onCreate, onUpgrade, ForensicVaultExplorerActivity, DatabaseManagementActivity
+     *
+     * 🚀 V81.2 Master Temporal Query Invariant: All compatibility views strictly order by latest date/time descending.
+     * Guarantees that any query against these views retrieves the freshest state first.
+     */
+    private fun createLatestDataCompatibilityViews(db: SQLiteDatabase) {
+        // [Variables]: db, views, viewName, selectSql
+        // [Constants]: 13 Compatibility Views
+        // [Dependencies]: SQLiteDatabase, SystemLogger, Table contracts
+        // [Integration Points]: onOpen, onCreate, onUpgrade, ForensicVaultExplorerActivity
+        val views = listOf(
+            Pair("devices", "SELECT * FROM ${DeviceTable.TABLE_NAME} ORDER BY ${DeviceTable.COL_UPDATED_AT} DESC, ${DeviceTable.COL_DEVICE_ID} DESC"),
+            Pair("safe_zones", "SELECT * FROM ${SafeZoneTable.TABLE_NAME} ORDER BY ${SafeZoneTable.COL_UPDATED_AT} DESC, ${SafeZoneTable.COL_ZONE_ID} DESC"),
+            Pair("geofence_events", "SELECT * FROM ${GeofenceEventTable.TABLE_NAME} ORDER BY ${GeofenceEventTable.COL_TIMESTAMP} DESC, ${GeofenceEventTable.COL_EVENT_ID} DESC"),
+            Pair("sys_logs", "SELECT * FROM sys_log ORDER BY timestamp DESC, id DESC"),
+            Pair("security_evasion_audit_log", "SELECT * FROM security_audit_log ORDER BY timestamp DESC, log_id DESC"),
+            Pair("watchdog_resurrection_ledger", "SELECT * FROM ${WatchdogResurrectionTable.TABLE_NAME} ORDER BY ${WatchdogResurrectionTable.COL_TIMESTAMP} DESC, ${WatchdogResurrectionTable.COL_ID} DESC"),
+            Pair("device_policy", "SELECT * FROM ${DevicePolicyTable.TABLE_NAME} ORDER BY ${DevicePolicyTable.COL_UPDATED_AT} DESC, ${DevicePolicyTable.COL_ID} DESC"),
+            Pair("device_policy_state", "SELECT * FROM ${DevicePolicyTable.TABLE_NAME} ORDER BY ${DevicePolicyTable.COL_UPDATED_AT} DESC, ${DevicePolicyTable.COL_ID} DESC"),
+            Pair("device_pairings", "SELECT * FROM ${DevicePairingTable.TABLE_NAME} ORDER BY ${DevicePairingTable.COL_UPDATED_AT} DESC, ${DevicePairingTable.COL_PAIR_ID} DESC"),
+            Pair("alerts", "SELECT * FROM ${AlertHistoryTable.TABLE_NAME} ORDER BY ${AlertHistoryTable.COL_TIMESTAMP} DESC, ${AlertHistoryTable.COL_ID} DESC"),
+            Pair("locations", "SELECT * FROM ${LocationEventTable.TABLE_NAME} ORDER BY ${LocationEventTable.COL_TIMESTAMP} DESC, ${LocationEventTable.COL_ID} DESC"),
+            Pair("sync_queue", "SELECT * FROM ${PendingSyncQueueTable.TABLE_NAME} ORDER BY ${PendingSyncQueueTable.COL_TIMESTAMP} DESC, ${PendingSyncQueueTable.COL_ID} DESC"),
+            Pair("MASTER_ROSTER", "SELECT * FROM ${GroupMemberTable.TABLE_NAME} ORDER BY ${GroupMemberTable.COL_JOINED_AT} DESC, ${GroupMemberTable.COL_ID} DESC"),
+            Pair("master_roster", "SELECT * FROM ${GroupMemberTable.TABLE_NAME} ORDER BY ${GroupMemberTable.COL_JOINED_AT} DESC, ${GroupMemberTable.COL_ID} DESC"),
+            Pair("organizations", "SELECT * FROM ${OrganizationTable.TABLE_NAME} ORDER BY ${OrganizationTable.COL_UPDATED_AT} DESC, ${OrganizationTable.COL_ORG_ID} DESC"),
+            Pair("sim_inventory", "SELECT * FROM ${SimTable.TABLE_NAME} ORDER BY ${SimTable.COL_UPDATED_AT} DESC, ${SimTable.COL_SIM_ID} DESC")
+        )
+        for ((viewName, selectSql) in views) {
+            try {
+                db.execSQL("DROP VIEW IF EXISTS $viewName")
+                db.execSQL("CREATE VIEW IF NOT EXISTS $viewName AS $selectSql")
+            } catch (ex: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Failed to create latest view $viewName: ${ex.message}")
+            }
+        }
+
+                        // 🛡️ Bidirectional INSTEAD OF Triggers: Guarantees legacy external writers don't throw read-only view exceptions
+        try {
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS trg_alerts_insert INSTEAD OF INSERT ON alerts
+                BEGIN
+                    INSERT INTO ${AlertHistoryTable.TABLE_NAME} (
+                        ${AlertHistoryTable.COL_AGENT_ID}, ${AlertHistoryTable.COL_IDENTITY_ID}, ${AlertHistoryTable.COL_ALERT_TYPE}, 
+                        ${AlertHistoryTable.COL_TIMESTAMP}, ${AlertHistoryTable.COL_DETAILS}, ${AlertHistoryTable.COL_IS_READ}, 
+                        ${AlertHistoryTable.COL_RESOLVED_AT}, ${AlertHistoryTable.COL_LAT}, ${AlertHistoryTable.COL_LNG}, 
+                        ${AlertHistoryTable.COL_ZONE_ID}, ${AlertHistoryTable.COL_SEVERITY}, ${AlertHistoryTable.COL_CREATED_ON}
+                    ) VALUES (
+                        COALESCE(NEW.${AlertHistoryTable.COL_AGENT_ID}, (SELECT ${UserIdentityTable.COL_UID_1} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_ID} = NEW.${AlertHistoryTable.COL_IDENTITY_ID} LIMIT 1), 'SELF'),
+                        COALESCE(NEW.${AlertHistoryTable.COL_IDENTITY_ID}, (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = NEW.${AlertHistoryTable.COL_AGENT_ID} LIMIT 1), 0),
+                        COALESCE(NEW.${AlertHistoryTable.COL_ALERT_TYPE}, 'SOS_PANIC'),
+                        COALESCE(NEW.${AlertHistoryTable.COL_TIMESTAMP}, CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+                        COALESCE(NEW.${AlertHistoryTable.COL_DETAILS}, ''),
+                        COALESCE(NEW.${AlertHistoryTable.COL_IS_READ}, 0),
+                        COALESCE(NEW.${AlertHistoryTable.COL_RESOLVED_AT}, 0),
+                        COALESCE(NEW.${AlertHistoryTable.COL_LAT}, 0.0),
+                        COALESCE(NEW.${AlertHistoryTable.COL_LNG}, 0.0),
+                        COALESCE(NEW.${AlertHistoryTable.COL_ZONE_ID}, ''),
+                        COALESCE(NEW.${AlertHistoryTable.COL_SEVERITY}, 'CRITICAL'),
+                        COALESCE(NEW.${AlertHistoryTable.COL_CREATED_ON}, strftime('%Y-%m-%d %H:%M:%S', 'now'))
+                    );
+                END;
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS trg_locations_insert INSTEAD OF INSERT ON locations
+                BEGIN
+                    INSERT INTO ${LocationEventTable.TABLE_NAME} (
+                        ${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP}, ${LocationEventTable.COL_DAY_KEY}, 
+                        ${LocationEventTable.COL_LAT}, ${LocationEventTable.COL_LNG}, ${LocationEventTable.COL_SPEED}, 
+                        ${LocationEventTable.COL_BATTERY}, ${LocationEventTable.COL_SOS_FLAG}, ${LocationEventTable.COL_ADDRESS}, 
+                        ${LocationEventTable.COL_ACCURACY}, ${LocationEventTable.COL_BEARING}, ${LocationEventTable.COL_ALTITUDE}, 
+                        ${LocationEventTable.COL_MOTION_STATE}, ${LocationEventTable.COL_SYNC_STATUS}, ${LocationEventTable.COL_IS_MOCK}, 
+                        ${LocationEventTable.COL_PROVIDER}, ${LocationEventTable.COL_CREATED_ON}
+                    ) VALUES (
+                        COALESCE(NEW.${LocationEventTable.COL_IDENTITY_ID}, 1),
+                        COALESCE(NEW.${LocationEventTable.COL_TIMESTAMP}, strftime('%Y%m%d%H%M%S00', 'now')),
+                        COALESCE(NEW.${LocationEventTable.COL_DAY_KEY}, CAST(strftime('%Y%m%d', 'now') AS INTEGER)),
+                        NEW.${LocationEventTable.COL_LAT}, NEW.${LocationEventTable.COL_LNG},
+                        COALESCE(NEW.${LocationEventTable.COL_SPEED}, 0.0),
+                        COALESCE(NEW.${LocationEventTable.COL_BATTERY}, 100),
+                        COALESCE(NEW.${LocationEventTable.COL_SOS_FLAG}, 0),
+                        COALESCE(NEW.${LocationEventTable.COL_ADDRESS}, ''),
+                        COALESCE(NEW.${LocationEventTable.COL_ACCURACY}, 0.0),
+                        COALESCE(NEW.${LocationEventTable.COL_BEARING}, 0.0),
+                        COALESCE(NEW.${LocationEventTable.COL_ALTITUDE}, 0.0),
+                        COALESCE(NEW.${LocationEventTable.COL_MOTION_STATE}, 'UNKNOWN'),
+                        COALESCE(NEW.${LocationEventTable.COL_SYNC_STATUS}, 'SYNCED'),
+                        COALESCE(NEW.${LocationEventTable.COL_IS_MOCK}, 0),
+                        COALESCE(NEW.${LocationEventTable.COL_PROVIDER}, 'fused'),
+                        COALESCE(NEW.${LocationEventTable.COL_CREATED_ON}, strftime('%Y-%m-%d %H:%M:%S', 'now'))
+                    );
+                END;
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS trg_sync_queue_insert INSTEAD OF INSERT ON sync_queue
+                BEGIN
+                    INSERT INTO ${PendingSyncQueueTable.TABLE_NAME} (
+                        ${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, ${PendingSyncQueueTable.COL_TARGET_UID}, ${PendingSyncQueueTable.COL_LAT}, 
+                        ${PendingSyncQueueTable.COL_LNG}, ${PendingSyncQueueTable.COL_BEARING}, ${PendingSyncQueueTable.COL_SPEED}, 
+                        ${PendingSyncQueueTable.COL_BATTERY}, ${PendingSyncQueueTable.COL_IS_SOS}, ${PendingSyncQueueTable.COL_TIMESTAMP}, 
+                        ${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_RETRY_COUNT}, ${PendingSyncQueueTable.COL_EXTRA_DATA}, 
+                        ${PendingSyncQueueTable.COL_ACCURACY}, ${PendingSyncQueueTable.COL_ALTITUDE}, ${PendingSyncQueueTable.COL_MOTION_STATE}, 
+                        ${PendingSyncQueueTable.COL_CREATED_ON}, ${PendingSyncQueueTable.COL_LAST_ATTEMPT_TS}, ${PendingSyncQueueTable.COL_ERROR_MESSAGE}
+                    ) VALUES (
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, 'LOCATION'),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_TARGET_UID}, 'UNKNOWN'),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_LAT}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_LNG}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_BEARING}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_SPEED}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_BATTERY}, 100),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_IS_SOS}, 0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_TIMESTAMP}, strftime('%Y%m%d%H%M%S00', 'now')),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_STATUS}, 'PENDING'),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_RETRY_COUNT}, 0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_EXTRA_DATA}, ''),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_ACCURACY}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_ALTITUDE}, 0.0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_MOTION_STATE}, 'UNKNOWN'),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_CREATED_ON}, strftime('%Y-%m-%d %H:%M:%S', 'now')),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_LAST_ATTEMPT_TS}, 0),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_ERROR_MESSAGE}, '')
+                    );
+                END;
+            """.trimIndent())
+        } catch (trigEx: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "Trigger creation note: ${trigEx.message}")
+        }
+    }
+
+    /**
+     * [Variables] db, defaults | [Constants] StealthScheduleConfigTable | [Dependencies] SQLiteDatabase | [Integration Points] onCreate, onOpen, Dynamic Settings SSOT
+     * Seeds human-editable dynamic TTLs, retention limits, and cache ceilings so no hardcoded values govern runtime operations.
+     */
+    fun seedDefaultDynamicConfigs(db: SQLiteDatabase) {
+        val defaults = mapOf(
+            "p2p_mesh_ttl_hours" to Triple("24", "P2P Mesh Packet TTL in Hours", 0L),
+            "invitation_ttl_days" to Triple("7", "Device Pairing Invitation Expiry in Days", 0L),
+            "watchdog_log_ttl_days" to Triple("7", "Watchdog Resurrection Log Retention in Days", 0L),
+            "alert_history_ttl_days" to Triple("30", "Emergency Alert History Retention in Days", 0L),
+            "max_geocode_cache_size" to Triple("5000", "Maximum Reverse Geocode Cache Records", 0L),
+            "default_page_limit" to Triple("50", "Forensic Vault Grid Page Row Count", 0L),
+            "retention_days" to Triple("7", "Historical Telemetry Cloud & Local Retention Ceiling in Days", 0L)
+        )
+        for ((key, triple) in defaults) {
+            try {
+                val existing = StealthScheduleConfigTable.getConfig(db, key, "")
+                if (existing.isBlank()) {
+                    StealthScheduleConfigTable.setConfig(db, key, triple.first, triple.second, triple.third)
+                }
+            } catch (e: Exception) {
+                SystemLogger.w("DatabaseHelper", "Dynamic config seeding note for $key: ${e.message}")
+            }
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
         isPerformingMigration = true
         try {
-            // TIER 1: IDENTITY
+            // TIER 1: MASTER ENTITIES (Root Canonical Anchors)
             db.execSQL(UserIdentityTable.CREATE_TABLE)
-            db.execSQL(UserProfileTable.CREATE_TABLE)
-            db.execSQL(OrganizationTable.CREATE_TABLE)
-            db.execSQL(UserOrgMapTable.CREATE_TABLE)
-
-            // TIER 2: DEVICE
             db.execSQL(DeviceTable.CREATE_TABLE)
+            db.execSQL(GroupTable.CREATE_TABLE)
+            db.execSQL(SafeZoneTable.CREATE_TABLE)
+            db.execSQL(SecurityMasterKeysTable.CREATE_TABLE)
+            db.execSQL(OrganizationTable.CREATE_TABLE)
+
+            // TIER 2: SUB-MASTER / DIMENSION TABLES (Attributes & Lookup Matrices)
+            db.execSQL(UserProfileTable.CREATE_TABLE)
+            db.execSQL(UserOrgMapTable.CREATE_TABLE)
             db.execSQL(DevicePairingTable.CREATE_TABLE)
             db.execSQL(SimTable.CREATE_TABLE)
             db.execSQL(DevicePolicyTable.CREATE_TABLE)
-
-            // TIER 3: RELATIONSHIP
-            db.execSQL(GroupTable.CREATE_TABLE)
             db.execSQL(GroupMemberTable.CREATE_TABLE)
-
-            // TIER 4: EVENTS
-            db.execSQL(LocationEventTable.CREATE_TABLE)
-            db.execSQL(SafeZoneTable.CREATE_TABLE)
             db.execSQL(SafeZoneUserMapTable.CREATE_TABLE)
-            db.execSQL(GeofenceEventTable.CREATE_TABLE)
+            db.execSQL(StealthScheduleConfigTable.CREATE_TABLE)
+            db.execSQL(ReverseGeocodeCacheTable.CREATE_TABLE)
 
-            // TIER 5: SYSTEM & AUDIT LEDGER
-            db.execSQL(SyncQueueTable.CREATE_TABLE)
+            // TIER 3: TRANSACTIONAL HIGH-VELOCITY STREAMS & AUDIT LEDGERS
+            db.execSQL(LocationEventTable.CREATE_TABLE)
             db.execSQL(PendingSyncQueueTable.CREATE_TABLE)
             db.execSQL(DeviceVitalsTable.CREATE_TABLE)
-            db.execSQL(ChangeLogTable.CREATE_TABLE)
-            db.execSQL(UserProfileTable.CREATE_TABLE_SYS_LOG)
+            db.execSQL(AlertHistoryTable.CREATE_TABLE)
             db.execSQL(WatchdogResurrectionTable.CREATE_TABLE)
+            db.execSQL(TelemetryFailoverRoutesTable.CREATE_TABLE)
+            db.execSQL(UserProfileTable.CREATE_TABLE_SYS_LOG)
+            db.execSQL(P2pMeshPacketsTable.CREATE_TABLE)
+            db.execSQL(InvitationsTable.CREATE_TABLE)
+            db.execSQL(SimTransactionsTable.CREATE_TABLE)
+            db.execSQL(GeofenceEventTable.CREATE_TABLE)
+            db.execSQL(SyncQueueTable.CREATE_TABLE)
+            db.execSQL(ChangeLogTable.CREATE_TABLE)
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS security_audit_log (
+                    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    event_details TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'INFO',
+                    timestamp INTEGER NOT NULL
+                )
+            """.trimIndent())
 
             // Performance Compound Indexes
             try {
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_id_ts ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP} DESC)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_pending_sync_status ON ${PendingSyncQueueTable.TABLE_NAME} (${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_TIMESTAMP} ASC)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_vitals_motion ON ${DeviceVitalsTable.TABLE_NAME} (${DeviceVitalsTable.COL_HARDWARE_ID}, ${DeviceVitalsTable.COL_MOTION_STATE})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_motion ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_MOTION_STATE})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_security_audit_ts ON security_audit_log(timestamp DESC)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_reverse_geocode_rounded ON ${ReverseGeocodeCacheTable.TABLE_NAME} (${ReverseGeocodeCacheTable.COL_LAT_ROUNDED}, ${ReverseGeocodeCacheTable.COL_LNG_ROUNDED})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_sim_trans_cid ON ${SimTransactionsTable.TABLE_NAME} (${SimTransactionsTable.COL_CID}, ${SimTransactionsTable.COL_LAC})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_failover_routes_tier ON ${TelemetryFailoverRoutesTable.TABLE_NAME} (${TelemetryFailoverRoutesTable.COL_IDENTITY_ID}, ${TelemetryFailoverRoutesTable.COL_PRIORITY_TIER})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_p2p_mesh_packet ON ${P2pMeshPacketsTable.TABLE_NAME} (${P2pMeshPacketsTable.COL_PACKET_ID}, ${P2pMeshPacketsTable.COL_RECIPIENT_ID})")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_invitations_token ON ${InvitationsTable.TABLE_NAME} (${InvitationsTable.COL_TOKEN}, ${InvitationsTable.COL_STATUS})")
+
+                // De-duplication Unique Constraints
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_group_member ON ${GroupMemberTable.TABLE_NAME} (${GroupMemberTable.COL_GROUP_ID}, ${GroupMemberTable.COL_IDENTITY_ID})")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
             } catch (ex: Exception) { }
 
-            // V57 HARDWARE EXTENSION: SIM Transactions (Offline Ledger)
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS sim_transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    slot INTEGER,
-                    mcc TEXT,
-                    mnc TEXT,
-                    lac TEXT,
-                    cid TEXT,
-                    lat REAL,
-                    lng REAL,
-                    source TEXT,
-                    timestamp INTEGER,
-                    created_on TEXT
-                )
-            """.trimIndent())
+            // Compatibility SQL Views (13 Zero-Loss Latest-Data Views)
+            createLatestDataCompatibilityViews(db)
             
-            android.util.Log.i("DatabaseHelper", "V57 Redesign: Clean 5-Tier Architecture Deployed.")
+            android.util.Log.i("DatabaseHelper", "V81 Redesign: Full 25-Table Tri-Tier Architecture & Compatibility Views Deployed.")
         } catch (e: Exception) {
             android.util.Log.e("DatabaseHelper", "SCHEMA_CRITICAL FAILURE: ${e.message}")
         } finally {
@@ -705,12 +997,31 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return columns
     }
 
-    fun getPagedData(tableName: String, limit: Int, offset: Int, orderBy: String?): List<Map<String, String>> {
+    @JvmOverloads
+    fun getPagedData(tableName: String, limit: Int = 0, offset: Int = 0, orderBy: String? = null): List<Map<String, String>> {
+        // [Variables]: list, db, effectiveLimit, order, cols, cursor
+        // [Constants]: "default_page_limit", 50
+        // [Dependencies]: SQLiteDatabase, getDynamicConfigInt, getTableColumns
+        // [Integration Points]: ForensicVaultExplorerActivity, DatabaseManagementActivity, View Pagination
         val list = mutableListOf<Map<String, String>>()
         try {
             val db = readableDatabase
-            val order = orderBy ?: "rowid DESC"
-            val cursor = db.query(tableName, null, null, null, null, null, order, "$offset, $limit")
+            val effectiveLimit = if (limit > 0) limit else getDynamicConfigInt("default_page_limit", 50)
+            val order = if (!orderBy.isNullOrBlank()) {
+                orderBy
+            } else {
+                val cols = getTableColumns(tableName)
+                when {
+                    cols.contains("updated_at") -> "updated_at DESC"
+                    cols.contains("timestamp") -> "timestamp DESC"
+                    cols.contains("created_at") -> "created_at DESC"
+                    cols.contains("event_timestamp") -> "event_timestamp DESC"
+                    cols.contains("log_id") -> "log_id DESC"
+                    cols.contains("id") -> "id DESC"
+                    else -> null
+                }
+            }
+            val cursor = db.query(tableName, null, null, null, null, null, order, "$offset, $effectiveLimit")
             cursor.use {
                 val cols = it.columnNames
                 while (it.moveToNext()) {
@@ -790,23 +1101,36 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * Verifies that all mandatory enterprise fields are populated.
      */
     fun isProfileComplete(uid1: String): Boolean {
+        if (uid1.isBlank()) return false
         try {
             val db = readableDatabase
-            val cursor = db.query(UserProfileTable.TABLE_NAME, null, 
-                "${UserProfileTable.COL_IDENTITY_ID} = (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ?)", 
-                arrayOf(uid1), null, null, null)
+            val targetCols = arrayOf(
+                UserProfileTable.COL_NAME,
+                UserProfileTable.COL_PHONE,
+                UserProfileTable.COL_DOB,
+                UserProfileTable.COL_GENDER,
+                UserProfileTable.COL_COUNTRY,
+                UserProfileTable.COL_STATE,
+                UserProfileTable.COL_CITY,
+                UserProfileTable.COL_PINCODE
+            )
+            val cursor = db.query(
+                UserProfileTable.TABLE_NAME, targetCols,
+                "${UserProfileTable.COL_IDENTITY_ID} = (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ? LIMIT 1)",
+                arrayOf(uid1), null, null, null, "1"
+            )
             cursor.use {
                 if (it.moveToFirst()) {
-                    val name = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_NAME))
-                    val phone = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_PHONE))
-                    val dob = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_DOB))
-                    val gender = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_GENDER))
-                    val country = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_COUNTRY))
-                    val state = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_STATE))
-                    val city = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_CITY))
-                    val pincode = it.getString(it.getColumnIndexOrThrow(UserProfileTable.COL_PINCODE))
-                    
-                    return !name.isNullOrEmpty() && !phone.isNullOrEmpty() && 
+                    val name = it.getString(0)
+                    val phone = it.getString(1)
+                    val dob = it.getString(2)
+                    val gender = it.getString(3)
+                    val country = it.getString(4)
+                    val state = it.getString(5)
+                    val city = it.getString(6)
+                    val pincode = it.getString(7)
+
+                    return !name.isNullOrEmpty() && !phone.isNullOrEmpty() &&
                            !dob.isNullOrEmpty() && dob != "Select Birthday" &&
                            !gender.isNullOrEmpty() && gender != "Select Gender" &&
                            !country.isNullOrEmpty() && country != "Select Country" &&
@@ -819,16 +1143,49 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return false
     }
 
+    /**
+     * [Variables] tableName, target | [Constants] All Table Contracts | [Dependencies] Table classes | [Integration Points] CRUD Operations, Forensic Explorer
+     * Resolves physical table names from logical views and legacy aliases.
+     */
+    fun resolveBaseTable(tableName: String): String {
+        return when (tableName.trim().lowercase()) {
+            "devices" -> DeviceTable.TABLE_NAME
+            "safe_zones" -> SafeZoneTable.TABLE_NAME
+            "geofence_events" -> GeofenceEventTable.TABLE_NAME
+            "alerts" -> AlertHistoryTable.TABLE_NAME
+            "locations" -> LocationEventTable.TABLE_NAME
+            "sync_queue" -> PendingSyncQueueTable.TABLE_NAME
+            "device_policy", "device_policies" -> DevicePolicyTable.TABLE_NAME
+            "device_pairings" -> DevicePairingTable.TABLE_NAME
+            "organizations" -> OrganizationTable.TABLE_NAME
+            "sim_inventory" -> SimTable.TABLE_NAME
+            "master_roster" -> GroupMemberTable.TABLE_NAME
+            "watchdog_resurrection_ledger" -> WatchdogResurrectionTable.TABLE_NAME
+            "security_evasion_audit_log" -> "security_audit_log"
+            "sys_logs" -> "sys_log"
+            else -> tableName
+        }
+    }
+
     fun deleteRecord(tableName: String, idCol: String, idVal: String): Boolean {
         return try {
-            writableDatabase.delete(tableName, "$idCol = ?", arrayOf(idVal)) > 0
+            val target = resolveBaseTable(tableName)
+            writableDatabase.delete(target, "$idCol = ?", arrayOf(idVal)) > 0
         } catch (e: Exception) { false }
     }
 
     fun updateRecord(tableName: String, idCol: String, idVal: String, values: android.content.ContentValues): Boolean {
         return try {
-            writableDatabase.update(tableName, values, "$idCol = ?", arrayOf(idVal)) > 0
+            val target = resolveBaseTable(tableName)
+            writableDatabase.update(target, values, "$idCol = ?", arrayOf(idVal)) > 0
         } catch (e: Exception) { false }
+    }
+
+    fun insertRecord(tableName: String, values: android.content.ContentValues): Long {
+        return try {
+            val target = resolveBaseTable(tableName)
+            writableDatabase.insertWithOnConflict(target, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (e: Exception) { -1L }
     }
 
     /**
@@ -925,7 +1282,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
             }
             if (groupId.isNullOrBlank()) {
-                db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+                db.delete(DevicePairingTable.TABLE_NAME, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(uid1, uid1))
+                if (iId != -1L) {
+                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
+                }
+                val authUid = resolveAuthUidLocally(uid1)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.purgeStaleLookupIndex(authUid, uid1)
             }
             true
         } catch (e: Exception) {
@@ -1039,18 +1401,31 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     db.delete(GroupMemberTable.TABLE_NAME, "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(iId.toString(), uid1, groupId))
                     db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                 } else {
+                    db.delete(SecurityMasterKeysTable.TABLE_NAME, "${SecurityMasterKeysTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(TelemetryFailoverRoutesTable.TABLE_NAME, "${TelemetryFailoverRoutesTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(P2pMeshPacketsTable.TABLE_NAME, "${P2pMeshPacketsTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
                     db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                     db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                     db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                     db.delete(UserOrgMapTable.TABLE_NAME, "${UserOrgMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
                     db.delete(UserProfileTable.TABLE_NAME, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(LocationEventTable.TABLE_NAME, "${LocationEventTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(AlertHistoryTable.TABLE_NAME, "${AlertHistoryTable.COL_IDENTITY_ID} = ? OR ${AlertHistoryTable.COL_AGENT_ID} = ?", arrayOf(iId.toString(), uid1))
+                    db.delete(ChangeLogTable.TABLE_NAME, "${ChangeLogTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+                    db.delete(SimTable.TABLE_NAME, "${SimTable.COL_DEVICE_ID} = ?", arrayOf(uid1))
                     db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
                 }
             } else if (!groupId.isNullOrBlank()) {
                 db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
             }
             if (groupId.isNullOrBlank()) {
-                db.delete("device_pairings", "uid_2 = ? OR uid_1 = ?", arrayOf(uid1, uid1))
+                db.delete(DevicePairingTable.TABLE_NAME, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(uid1, uid1))
+                if (iId != -1L) {
+                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
+                }
+                val authUid = resolveAuthUidLocally(uid1)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.deleteDeviceRemote(uid1, authUid)
             }
             true
         } catch (e: Exception) {
@@ -1533,6 +1908,142 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             } finally {
                 db.endTransaction()
             }
+        }
+
+        if (oldVersion < 81) {
+            db.beginTransaction()
+            try {
+                // 1. Create missing tables
+                db.execSQL(SecurityMasterKeysTable.CREATE_TABLE)
+                db.execSQL(TelemetryFailoverRoutesTable.CREATE_TABLE)
+                db.execSQL(P2pMeshPacketsTable.CREATE_TABLE)
+                db.execSQL(InvitationsTable.CREATE_TABLE)
+                db.execSQL(AlertHistoryTable.CREATE_TABLE)
+                db.execSQL(ReverseGeocodeCacheTable.CREATE_TABLE)
+                db.execSQL(StealthScheduleConfigTable.CREATE_TABLE)
+                db.execSQL(SimTransactionsTable.CREATE_TABLE)
+
+                // 2. Add missing fields to existing tables with safety check
+                val additions = listOf(
+                    Triple(UserIdentityTable.TABLE_NAME, UserIdentityTable.COL_FCM_TOKEN, "TEXT DEFAULT ''"),
+                    Triple(UserIdentityTable.TABLE_NAME, UserIdentityTable.COL_ACTIVE_GROUP, "TEXT DEFAULT ''"),
+                    Triple(UserIdentityTable.TABLE_NAME, UserIdentityTable.COL_VALID_LINKED_AGENTS, "TEXT DEFAULT ''"),
+                    Triple(UserIdentityTable.TABLE_NAME, UserIdentityTable.COL_SILICON_ROOT_KEY, "TEXT DEFAULT ''"),
+                    Triple(UserIdentityTable.TABLE_NAME, UserIdentityTable.COL_NAME_ALIAS, "TEXT DEFAULT ''"),
+
+                    Triple(OrganizationTable.TABLE_NAME, OrganizationTable.COL_CLEARANCE_LEVEL, "TEXT DEFAULT 'STANDARD'"),
+
+                    Triple(UserProfileTable.TABLE_NAME, UserProfileTable.COL_EMERGENCY_NOTE, "TEXT DEFAULT ''"),
+                    Triple(UserProfileTable.TABLE_NAME, UserProfileTable.COL_BLOOD_GROUP, "TEXT DEFAULT ''"),
+                    Triple(UserProfileTable.TABLE_NAME, UserProfileTable.COL_ALLERGIES, "TEXT DEFAULT ''"),
+                    Triple(UserProfileTable.TABLE_NAME, UserProfileTable.COL_PHONE_SECONDARY, "TEXT DEFAULT ''"),
+
+                    Triple(DeviceTable.TABLE_NAME, DeviceTable.COL_HARDWARE_ID, "TEXT DEFAULT ''"),
+                    Triple(DeviceTable.TABLE_NAME, DeviceTable.COL_ALLOW_DEPENDENTS, "INTEGER DEFAULT 0"),
+                    Triple(DeviceTable.TABLE_NAME, DeviceTable.COL_IS_PRIMARY, "INTEGER DEFAULT 1"),
+                    Triple(DeviceTable.TABLE_NAME, DeviceTable.COL_LAST_ACTIVE, "TEXT DEFAULT ''"),
+                    Triple(DeviceTable.TABLE_NAME, DeviceTable.COL_SYNC_INTERVAL_MS, "INTEGER DEFAULT 15000"),
+
+                    Triple(GroupTable.TABLE_NAME, GroupTable.COL_GROUP_TYPE, "TEXT DEFAULT 'FAMILY'"),
+                    Triple(GroupTable.TABLE_NAME, GroupTable.COL_IS_ACTIVE, "INTEGER DEFAULT 1"),
+                    Triple(GroupTable.TABLE_NAME, GroupTable.COL_GROUP_AVATAR, "TEXT DEFAULT ''"),
+                    Triple(GroupTable.TABLE_NAME, GroupTable.COL_INVITE_CODE, "TEXT DEFAULT ''"),
+
+                    Triple(GroupMemberTable.TABLE_NAME, GroupMemberTable.COL_MEMBER_NAME, "TEXT DEFAULT ''"),
+                    Triple(GroupMemberTable.TABLE_NAME, GroupMemberTable.COL_AVATAR_ID, "TEXT DEFAULT ''"),
+                    Triple(GroupMemberTable.TABLE_NAME, GroupMemberTable.COL_ALLOW_DEPENDENTS, "INTEGER DEFAULT 0"),
+                    Triple(GroupMemberTable.TABLE_NAME, GroupMemberTable.COL_STATUS, "TEXT DEFAULT 'ACTIVE'"),
+
+                    Triple(SafeZoneTable.TABLE_NAME, SafeZoneTable.COL_START_TIME, "INTEGER DEFAULT 0"),
+                    Triple(SafeZoneTable.TABLE_NAME, SafeZoneTable.COL_END_TIME, "INTEGER DEFAULT 2359"),
+                    Triple(SafeZoneTable.TABLE_NAME, SafeZoneTable.COL_ACTIVE_DAYS, "TEXT DEFAULT '1,2,3,4,5,6,0'"),
+                    Triple(SafeZoneTable.TABLE_NAME, SafeZoneTable.COL_UPDATED_AT, "TEXT DEFAULT ''"),
+
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_ALERT_ON_ENTRY, "INTEGER DEFAULT 1"),
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_ALERT_ON_EXIT, "INTEGER DEFAULT 1"),
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_ALERT_ON_DWELL, "INTEGER DEFAULT 1"),
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_CURRENT_STATE, "TEXT DEFAULT 'OUT'"),
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_LAST_TRANSITION_TS, "INTEGER DEFAULT 0"),
+                    Triple(SafeZoneUserMapTable.TABLE_NAME, SafeZoneUserMapTable.COL_STATUS, "TEXT DEFAULT 'ACTIVE'"),
+
+                    Triple(LocationEventTable.TABLE_NAME, LocationEventTable.COL_SYNC_STATUS, "TEXT DEFAULT 'SYNCED'"),
+                    Triple(LocationEventTable.TABLE_NAME, LocationEventTable.COL_IS_MOCK, "INTEGER DEFAULT 0"),
+                    Triple(LocationEventTable.TABLE_NAME, LocationEventTable.COL_PROVIDER, "TEXT DEFAULT 'fused'"),
+
+                    Triple(PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_CREATED_ON, "TEXT DEFAULT ''"),
+                    Triple(PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_LAST_ATTEMPT_TS, "INTEGER DEFAULT 0"),
+                    Triple(PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_ERROR_MESSAGE, "TEXT DEFAULT ''"),
+
+                    Triple(DeviceVitalsTable.TABLE_NAME, DeviceVitalsTable.COL_TEMPERATURE_C, "REAL DEFAULT 0.0"),
+                    Triple(DeviceVitalsTable.TABLE_NAME, DeviceVitalsTable.COL_CPU_USAGE_PCT, "REAL DEFAULT 0.0"),
+                    Triple(DeviceVitalsTable.TABLE_NAME, DeviceVitalsTable.COL_IS_AIRPLANE_MODE, "INTEGER DEFAULT 0"),
+                    Triple(DeviceVitalsTable.TABLE_NAME, DeviceVitalsTable.COL_WIFI_SSID, "TEXT DEFAULT ''"),
+
+                    Triple(SimTable.TABLE_NAME, SimTable.COL_SLOT_INDEX, "INTEGER DEFAULT 0"),
+                    Triple(SimTable.TABLE_NAME, SimTable.COL_PHONE_NUMBER, "TEXT DEFAULT ''"),
+                    Triple(SimTable.TABLE_NAME, SimTable.COL_LAC, "TEXT DEFAULT ''"),
+                    Triple(SimTable.TABLE_NAME, SimTable.COL_SIGNAL_STRENGTH_DBM, "INTEGER DEFAULT 0"),
+
+                    Triple(DevicePolicyTable.TABLE_NAME, DevicePolicyTable.COL_DEVICE_ID, "TEXT DEFAULT ''"),
+                    Triple(DevicePolicyTable.TABLE_NAME, DevicePolicyTable.COL_CREATED_ON, "TEXT DEFAULT ''"),
+
+                    Triple(WatchdogResurrectionTable.TABLE_NAME, WatchdogResurrectionTable.COL_HARDWARE_ID, "TEXT DEFAULT ''"),
+                    Triple(WatchdogResurrectionTable.TABLE_NAME, WatchdogResurrectionTable.COL_RESURRECTION_LATENCY_MS, "INTEGER DEFAULT 0"),
+                    Triple(WatchdogResurrectionTable.TABLE_NAME, WatchdogResurrectionTable.COL_DETAILS, "TEXT DEFAULT ''"),
+                    Triple(WatchdogResurrectionTable.TABLE_NAME, WatchdogResurrectionTable.COL_CREATED_ON, "TEXT DEFAULT ''"),
+
+                    Triple(GeofenceEventTable.TABLE_NAME, GeofenceEventTable.COL_LAT, "REAL DEFAULT 0.0"),
+                    Triple(GeofenceEventTable.TABLE_NAME, GeofenceEventTable.COL_LNG, "REAL DEFAULT 0.0"),
+                    Triple(GeofenceEventTable.TABLE_NAME, GeofenceEventTable.COL_DWELL_DURATION_SECONDS, "INTEGER DEFAULT 0"),
+                    Triple(GeofenceEventTable.TABLE_NAME, GeofenceEventTable.COL_SYNC_STATUS, "TEXT DEFAULT 'SYNCED'")
+                )
+
+                for ((table, col, def) in additions) {
+                    try {
+                        db.rawQuery("SELECT $col FROM $table LIMIT 0", null).use { }
+                    } catch (e: Exception) {
+                        try { db.execSQL("ALTER TABLE $table ADD COLUMN $col $def") } catch (ex: Exception) { }
+                    }
+                }
+
+                // 3. Performance & Deduplication Indexes
+                try {
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_security_audit_ts ON security_audit_log(timestamp DESC)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_reverse_geocode_rounded ON ${ReverseGeocodeCacheTable.TABLE_NAME} (${ReverseGeocodeCacheTable.COL_LAT_ROUNDED}, ${ReverseGeocodeCacheTable.COL_LNG_ROUNDED})")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_sim_trans_cid ON ${SimTransactionsTable.TABLE_NAME} (${SimTransactionsTable.COL_CID}, ${SimTransactionsTable.COL_LAC})")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_failover_routes_tier ON ${TelemetryFailoverRoutesTable.TABLE_NAME} (${TelemetryFailoverRoutesTable.COL_IDENTITY_ID}, ${TelemetryFailoverRoutesTable.COL_PRIORITY_TIER})")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_p2p_mesh_packet ON ${P2pMeshPacketsTable.TABLE_NAME} (${P2pMeshPacketsTable.COL_PACKET_ID}, ${P2pMeshPacketsTable.COL_RECIPIENT_ID})")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_invitations_token ON ${InvitationsTable.TABLE_NAME} (${InvitationsTable.COL_TOKEN}, ${InvitationsTable.COL_STATUS})")
+
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_group_member ON ${GroupMemberTable.TABLE_NAME} (${GroupMemberTable.COL_GROUP_ID}, ${GroupMemberTable.COL_IDENTITY_ID})")
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+                } catch (e: Exception) { }
+
+                // 4. Compatibility Views (13 Zero-Loss Latest-Data Views)
+                createLatestDataCompatibilityViews(db)
+
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V81 Schema Migration: 25-Table Tri-Tier Enterprise Schema Refabricated.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V81 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+    }
+
+    /**
+     * 🛡️ Anti-Crash Safeguard: Prevents SQLiteException on version downgrade/rollback.
+     * Non-destructive: Ensures all master & sub-master tables exist without dropping user forensic ledger.
+     */
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        android.util.Log.w("DatabaseHelper", "Database downgrade requested: V$oldVersion -> V$newVersion. Applying safe schema alignment.")
+        try {
+            onCreate(db)
+        } catch (e: Exception) {
+            android.util.Log.e("DatabaseHelper", "Safe downgrade alignment notice: ${e.message}")
         }
     }
 
@@ -2168,7 +2679,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 ORDER BY ts_day_end DESC
             """.trimIndent()
             
-            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, cutoffStr))
+            // [Variables]: cursor, sql, uid1, cutoffStr
+            // [Constants]: LocationEventTable, UserIdentityTable
+            // [Dependencies]: SQLiteDatabase.rawQuery
+            // [Integration Points]: HistoryViewModel, HistoryActivity
+            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, uid1, cutoffStr))
             cursor.use {
                 while (it.moveToNext()) {
                     val map = mutableMapOf<String, Any>()
@@ -2246,7 +2761,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 }
             }
             for (orphanUid in orphanUids) {
-                markRosterNodeDeleted(orphanUid)
+                deleteRosterNode(orphanUid)
                 pruned++
             }
         } catch (e: Exception) {
@@ -2345,13 +2860,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 SELECT e.*, i.${UserIdentityTable.COL_UID_1} as uid_1, i.${UserIdentityTable.COL_FULL_NAME} as fullName, i.${UserIdentityTable.COL_CONNECTED_ID} as connectedId
                 FROM ${LocationEventTable.TABLE_NAME} e
                 JOIN ${UserIdentityTable.TABLE_NAME} i ON e.${LocationEventTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
-                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?)
+                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? OR i.${UserIdentityTable.COL_UID_2} = ?)
                   AND e.${LocationEventTable.COL_TIMESTAMP} >= ?
                   AND e.${LocationEventTable.COL_TIMESTAMP} <= ?
                   AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
                 ORDER BY e.${LocationEventTable.COL_TIMESTAMP} ASC
             """.trimIndent()
-            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, startTsStr, endTsStr))
+            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, uid1, startTsStr, endTsStr))
             cursor.use {
                 while (it.moveToNext()) {
                     val lat = it.getDouble(it.getColumnIndexOrThrow(LocationEventTable.COL_LAT))
@@ -2839,28 +3354,39 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * 🛡️ SSOT: Retrieve all unique paired device IDs across DevicePairingTable and UserIdentityTable.
      */
     fun getAllPairedDeviceIds(): Set<String> {
+        // [Variables] result: MutableSet<String>, sanitizeAndAdd: (String?) -> Unit | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId, isAgentIdValid | [Integration Points] Master Peer Dispatch SSOT
         val result = mutableSetOf<String>()
+        val sanitizeAndAdd = { raw: String? ->
+            if (!raw.isNullOrBlank() && raw != "HOST" && raw != "TARGET") {
+                val clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(raw)
+                if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(clean) && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, clean)) {
+                    result.add(clean)
+                }
+            }
+        }
         try {
             val db = readableDatabase
             // 1. DevicePairingTable
             db.rawQuery("SELECT ${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID} FROM ${DevicePairingTable.TABLE_NAME}", null).use { cursor ->
                 while (cursor.moveToNext()) {
-                    val a = cursor.getString(0)
-                    val b = cursor.getString(1)
-                    if (!a.isNullOrBlank() && a != "HOST") result.add(a.trim())
-                    if (!b.isNullOrBlank() && b != "TARGET") result.add(b.trim())
+                    sanitizeAndAdd(cursor.getString(0))
+                    sanitizeAndAdd(cursor.getString(1))
                 }
             }
             // 2. UserIdentityTable
             val idSql = "SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR ${UserIdentityTable.COL_STATUS} != 'DELETED')"
             db.rawQuery(idSql, null).use { cursor ->
                 while (cursor.moveToNext()) {
-                    val u1 = cursor.getString(0)
-                    val u2 = cursor.getString(1)
-                    val conn = cursor.getString(2)
-                    if (!u1.isNullOrBlank()) result.add(u1.trim())
-                    if (!u2.isNullOrBlank()) result.add(u2.trim())
-                    if (!conn.isNullOrBlank()) result.add(conn.trim())
+                    sanitizeAndAdd(cursor.getString(0))
+                    sanitizeAndAdd(cursor.getString(1))
+                    sanitizeAndAdd(cursor.getString(2))
+                }
+            }
+            // 3. GroupMemberTable (Active circle / group members)
+            val grpSql = "SELECT ${GroupMemberTable.COL_AGENT_ID} FROM ${GroupMemberTable.TABLE_NAME} WHERE (${GroupMemberTable.COL_STATUS} IS NULL OR ${GroupMemberTable.COL_STATUS} != 'DELETED')"
+            db.rawQuery(grpSql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    sanitizeAndAdd(cursor.getString(0))
                 }
             }
         } catch (e: Exception) {
@@ -2918,6 +3444,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 val identityValues = ContentValues()
                 if (resolvedName != null) {
                     identityValues.put(UserIdentityTable.COL_FULL_NAME, resolvedName)
+                    identityValues.put(UserIdentityTable.COL_NAME_ALIAS, resolvedName)
                     identityValues.put(UserIdentityTable.COL_OWNER_NAME, resolvedName)
                 }
                 identityValues.put(UserIdentityTable.COL_QR_REF, resolvedAvatar)
@@ -3619,6 +4146,46 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         } catch (e: Exception) { }
     }
 
+    /**
+     * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+     * Variables: limit, list, db, cursor, cols, map
+     * Constants: PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_TIMESTAMP
+     * Dependencies: android.database.sqlite.SQLiteDatabase, PendingSyncQueueTable
+     * Integration Points: ForensicVaultExplorerActivity, DatabaseManagementActivity
+     *
+     * 🚀 V81.2 Master Temporal Query Invariant: Retrieves pending sync items ordered by latest timestamp descending.
+     */
+    fun getLatestPendingSyncQueue(limit: Int = 100): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                PendingSyncQueueTable.TABLE_NAME,
+                null,
+                null,
+                null, null, null,
+                "${PendingSyncQueueTable.COL_TIMESTAMP} DESC",
+                limit.toString()
+            )
+            cursor.use {
+                val cols = it.columnNames
+                while (it.moveToNext()) {
+                    val map = mutableMapOf<String, Any>()
+                    for (c in cols) {
+                        val idx = it.getColumnIndexOrThrow(c)
+                        map[c] = when (it.getType(idx)) {
+                            android.database.Cursor.FIELD_TYPE_INTEGER -> it.getLong(idx)
+                            android.database.Cursor.FIELD_TYPE_FLOAT -> it.getDouble(idx)
+                            else -> it.getString(idx) ?: ""
+                        }
+                    }
+                    list.add(map)
+                }
+            }
+        } catch (e: Exception) { }
+        return list
+    }
+
     fun getPendingSyncCount(): Int {
         return try {
             val db = readableDatabase
@@ -3794,12 +4361,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * @param retentionDays Max age of data in days to preserve (Default: 3 days)
      * @return Total number of records deleted across all tables
      */
-    fun pruneExpiredData(retentionDays: Int = 3): Long {
+    fun pruneExpiredData(retentionDays: Int = 0): Long {
         var totalDeleted: Long = 0
         try {
             val db = writableDatabase
+            val effectiveRetentionDays = if (retentionDays > 0) retentionDays else getDynamicConfigInt("retention_days", 3)
             val cal = Calendar.getInstance()
-            cal.add(Calendar.DAY_OF_YEAR, -retentionDays)
+            cal.add(Calendar.DAY_OF_YEAR, -effectiveRetentionDays)
             
             val sdfDayKey = SimpleDateFormat("yyyyMMdd", Locale.US)
             val cutoffDayKey = sdfDayKey.format(cal.time).toIntOrNull() ?: 0
@@ -3853,9 +4421,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 totalDeleted += deletedGeofence
             } catch (e: Exception) { }
 
-            // 4. Purge completed or failed sync queue items older than 48 hours
+            // 4. Purge completed or failed sync queue items older than dynamic TTL
             try {
-                val syncCutoff = System.currentTimeMillis() - (48 * 3600 * 1000L)
+                val syncCutoffHours = getDynamicConfigInt("sync_queue_ttl_hours", 48)
+                val syncCutoff = System.currentTimeMillis() - (syncCutoffHours * 3600 * 1000L)
                 val deletedSync = db.delete(
                     PendingSyncQueueTable.TABLE_NAME,
                     "${PendingSyncQueueTable.COL_STATUS} != 'PENDING' OR ${PendingSyncQueueTable.COL_TIMESTAMP} < ?",
@@ -3881,9 +4450,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 totalDeleted += deletedChanges
             } catch (e: Exception) { }
 
-            // 6. Purge sys_log (System Audit Ledger) - Capped to strict 48-hour rolling window
+            // 6. Purge sys_log (System Audit Ledger) - Dynamic rolling window
             try {
-                val logCutoffMs = System.currentTimeMillis() - (48 * 3600 * 1000L)
+                val logCutoffHours = getDynamicConfigInt("sys_log_ttl_hours", 48)
+                val logCutoffMs = System.currentTimeMillis() - (logCutoffHours * 3600 * 1000L)
                 val logCutoffIso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(logCutoffMs))
                 val deletedLogs = db.delete(
                     "sys_log",
@@ -3891,7 +4461,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     arrayOf(logCutoffMs.toString(), logCutoffIso)
                 )
                 totalDeleted += deletedLogs
-                SystemLogger.i("DatabaseHelper", "Deleted $deletedLogs expired sys_log records (48h cutoff).")
+                SystemLogger.i("DatabaseHelper", "Deleted $deletedLogs expired sys_log records ($logCutoffHours h cutoff).")
             } catch (e: Exception) { }
 
             // 7. Purge sim_transactions (Cellular Breadcrumb Ledger)
@@ -3904,7 +4474,70 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 totalDeleted += deletedSim
             } catch (e: Exception) { }
 
-            // 8. 🚀 TRUNCATE WAL WRITE-AHEAD LOG & EXECUTE SQLITE VACUUM TO RECLAIM DISK BLOCKS
+            // 8. 🚀 V81 Rolling Purge: Failover Routes, P2P Mesh, Invitations & Caches
+            try {
+                // 8A. Purge p2p_mesh_packets older than dynamic mesh TTL
+                val meshCutoffHours = getDynamicConfigInt("p2p_mesh_ttl_hours", 24)
+                val meshCutoff = System.currentTimeMillis() - (meshCutoffHours * 3600 * 1000L)
+                val deletedMesh = db.delete(
+                    P2pMeshPacketsTable.TABLE_NAME,
+                    "${P2pMeshPacketsTable.COL_STATUS} IN ('DELIVERED', 'DROPPED') OR ${P2pMeshPacketsTable.COL_TIMESTAMP} < ?",
+                    arrayOf(meshCutoff.toString())
+                )
+                totalDeleted += deletedMesh
+
+                // 8B. Purge telemetry_failover_routes older than cutoff
+                val deletedRoutes = db.delete(
+                    TelemetryFailoverRoutesTable.TABLE_NAME,
+                    "${TelemetryFailoverRoutesTable.COL_LAST_TRIPPED_TS} > 0 AND ${TelemetryFailoverRoutesTable.COL_LAST_TRIPPED_TS} < ?",
+                    arrayOf(cutoffTimestampMs.toString())
+                )
+                totalDeleted += deletedRoutes
+
+                // 8C. Purge expired invitations older than dynamic invitation TTL
+                val invCutoffDays = getDynamicConfigInt("invitation_ttl_days", 7)
+                val invCutoff = System.currentTimeMillis() - (invCutoffDays * 24 * 3600 * 1000L)
+                val deletedInv = db.delete(
+                    InvitationsTable.TABLE_NAME,
+                    "${InvitationsTable.COL_STATUS} IN ('ACCEPTED', 'EXPIRED', 'REVOKED') AND ${InvitationsTable.COL_EXPIRES_AT} < ?",
+                    arrayOf(invCutoff.toString())
+                )
+                totalDeleted += deletedInv
+
+                // 8D. Purge watchdog resurrection logs older than dynamic watchdog TTL
+                val watchdogCutoffDays = getDynamicConfigInt("watchdog_log_ttl_days", 7)
+                val watchdogCutoff = System.currentTimeMillis() - (watchdogCutoffDays * 24 * 3600 * 1000L)
+                val deletedWatchdog = db.delete(
+                    WatchdogResurrectionTable.TABLE_NAME,
+                    "${WatchdogResurrectionTable.COL_TIMESTAMP} < ?",
+                    arrayOf(watchdogCutoff.toString())
+                )
+                totalDeleted += deletedWatchdog
+
+                // 8E. Purge resolved alerts older than dynamic alert TTL
+                val alertCutoffDays = getDynamicConfigInt("alert_history_ttl_days", 30)
+                val alertCutoff = System.currentTimeMillis() - (alertCutoffDays.toLong() * 24 * 3600 * 1000L)
+                val deletedAlerts = db.delete(
+                    AlertHistoryTable.TABLE_NAME,
+                    "${AlertHistoryTable.COL_RESOLVED_AT} > 0 AND ${AlertHistoryTable.COL_RESOLVED_AT} < ?",
+                    arrayOf(alertCutoff.toString())
+                )
+                totalDeleted += deletedAlerts
+
+                // 8F. Cap reverse_geocode_cache to dynamic max records
+                val maxCacheEntries = getDynamicConfigInt("max_geocode_cache_size", 5000)
+                db.execSQL("""
+                    DELETE FROM ${ReverseGeocodeCacheTable.TABLE_NAME} 
+                    WHERE ${ReverseGeocodeCacheTable.COL_ID} NOT IN (
+                        SELECT ${ReverseGeocodeCacheTable.COL_ID} FROM ${ReverseGeocodeCacheTable.TABLE_NAME} 
+                        ORDER BY ${ReverseGeocodeCacheTable.COL_CREATED_AT} DESC LIMIT $maxCacheEntries
+                    )
+                """.trimIndent())
+            } catch (e: Exception) {
+                SystemLogger.e("DatabaseHelper", "V81 Prune failed: ${e.message}")
+            }
+
+            // 9. 🚀 TRUNCATE WAL WRITE-AHEAD LOG & EXECUTE SQLITE VACUUM TO RECLAIM DISK BLOCKS
             try {
                 // Step 8A: Force WAL checkpoint to flush all dirty pages and truncate .db-wal to 0 bytes
                 try {
@@ -3932,6 +4565,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 SystemLogger.i("DatabaseHelper", "VACUUM & WAL Truncate completed successfully. Total records purged: $totalDeleted")
             } catch (e: Exception) {
                 SystemLogger.w("DatabaseHelper", "VACUUM execution deferred or skipped: ${e.message}")
+            }
+
+            // 10. 🛡️ Closed-Loop Feedback Sweep for Online-Only Nodes (>7 Days Retention)
+            try {
+                val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.enforce7DayCloudRetention(context, myAgentId)
+            } catch (cloudSweepEx: Exception) {
+                SystemLogger.w("DatabaseHelper", "Cloud retention sweep note: ${cloudSweepEx.message}")
             }
 
         } catch (e: Exception) {

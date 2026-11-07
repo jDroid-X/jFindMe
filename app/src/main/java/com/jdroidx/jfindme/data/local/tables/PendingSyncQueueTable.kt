@@ -4,8 +4,11 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 
 /**
- * 🛰️ PendingSyncQueueTable: Offline Telemetry & Event Queue
- * Caches location pings, battery updates, and safezone events when offline.
+ * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+ * Variables: id, payloadType, targetUid, lat, lng, bearing, speed, battery, isSos, timestamp, status, retryCount, extraData, accuracy, altitude, motionState, createdOn, lastAttemptTs, errorMessage
+ * Constants: TABLE_NAME = "pending_sync_queue", COL_ID, COL_PAYLOAD_TYPE, COL_TARGET_UID, COL_LAT, COL_LNG, COL_BEARING, COL_SPEED, COL_BATTERY, COL_IS_SOS, COL_TIMESTAMP, COL_STATUS, COL_RETRY_COUNT, COL_EXTRA_DATA, COL_ACCURACY, COL_ALTITUDE, COL_MOTION_STATE, COL_CREATED_ON, COL_LAST_ATTEMPT_TS, COL_ERROR_MESSAGE
+ * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
+ * Integration Points: DatabaseHelper.kt, OfflineSyncManager.kt, TrackingService.kt
  */
 object PendingSyncQueueTable {
     const val TABLE_NAME = "pending_sync_queue"
@@ -27,6 +30,11 @@ object PendingSyncQueueTable {
     const val COL_ALTITUDE = "altitude"
     const val COL_MOTION_STATE = "motion_state"
 
+    // 🚀 V81 Offline Diagnostic & Backoff Sentinel
+    const val COL_CREATED_ON = "created_on"
+    const val COL_LAST_ATTEMPT_TS = "last_attempt_ts"
+    const val COL_ERROR_MESSAGE = "error_message"
+
     val CREATE_TABLE = """
         CREATE TABLE IF NOT EXISTS $TABLE_NAME (
             $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +52,10 @@ object PendingSyncQueueTable {
             $COL_EXTRA_DATA TEXT,
             $COL_ACCURACY REAL DEFAULT 0.0,
             $COL_ALTITUDE REAL DEFAULT 0.0,
-            $COL_MOTION_STATE TEXT DEFAULT 'UNKNOWN'
+            $COL_MOTION_STATE TEXT DEFAULT 'UNKNOWN',
+            $COL_CREATED_ON TEXT,
+            $COL_LAST_ATTEMPT_TS INTEGER DEFAULT 0,
+            $COL_ERROR_MESSAGE TEXT DEFAULT ''
         )
     """.trimIndent()
 

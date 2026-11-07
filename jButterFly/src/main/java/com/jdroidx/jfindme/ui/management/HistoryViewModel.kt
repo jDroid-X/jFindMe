@@ -266,8 +266,11 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
                         val ts = (pt["timestamp"] as? String) ?: com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
                         val addr = pt["address"] as? String
 
+                        // [Variables] cleanTargetId: String, canonicalHwUid: String | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] SQLite HistoryPointTable SSOT
+                        val cleanTargetId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(targetUid)
+                        val canonicalHwUid = "HW_$cleanTargetId"
                         dbHelper.saveHistoryPoint(
-                            targetUid, "HW_$targetUid",
+                            cleanTargetId, canonicalHwUid,
                             lat, lng,
                             spd, bat,
                             false, addr, ts,

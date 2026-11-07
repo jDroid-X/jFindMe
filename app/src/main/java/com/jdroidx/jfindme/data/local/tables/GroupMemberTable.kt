@@ -5,8 +5,8 @@ import android.database.sqlite.SQLiteDatabase
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: id, groupId, identityId, role, permissionsMask, agentId, phoneNumber, circleType, isMuted, ts, now
- * Constants: TABLE_NAME = "group_members", COL_ID, COL_GROUP_ID, COL_IDENTITY_ID, COL_ROLE, COL_PERMISSIONS_MASK, COL_AGENT_ID, COL_PHONE_NUMBER, COL_CIRCLE_TYPE, COL_IS_MUTED, MASTER_ROSTER, COL_CREATED_ON, COL_JOINED_AT
+ * Variables: id, groupId, identityId, role, permissionsMask, agentId, phoneNumber, circleType, isMuted, memberName, avatarId, allowDependents, status, ts, now
+ * Constants: TABLE_NAME = "group_members", COL_ID, COL_GROUP_ID, COL_IDENTITY_ID, COL_ROLE, COL_PERMISSIONS_MASK, COL_AGENT_ID, COL_PHONE_NUMBER, COL_CIRCLE_TYPE, COL_IS_MUTED, COL_MEMBER_NAME, COL_AVATAR_ID, COL_ALLOW_DEPENDENTS, COL_STATUS, MASTER_ROSTER, COL_CREATED_ON, COL_JOINED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, FamilyFriendsViewModel.kt, PersonDetailsViewModel.kt
  */
@@ -26,6 +26,12 @@ object GroupMemberTable {
     const val COL_CIRCLE_TYPE = "circle_type" // FAMILY, FRIENDS, WORK, SENTINEL
     const val COL_IS_MUTED = "is_muted" // 0 = normal, 1 = muted
 
+    // 🚀 V81 Offline Fast-Rendering & Asymmetric MLM Visibility Parity
+    const val COL_MEMBER_NAME = "member_name"
+    const val COL_AVATAR_ID = "avatar_id"
+    const val COL_ALLOW_DEPENDENTS = "allow_dependents" // Bit 0x08 mirror
+    const val COL_STATUS = "status" // ACTIVE, PENDING, MUTED, BLOCKED
+
     const val COL_CREATED_ON = "created_on"
     const val COL_JOINED_AT = "joined_at"
 
@@ -40,6 +46,10 @@ object GroupMemberTable {
             $COL_PHONE_NUMBER TEXT,
             $COL_CIRCLE_TYPE TEXT DEFAULT 'FAMILY',
             $COL_IS_MUTED INTEGER DEFAULT 0,
+            $COL_MEMBER_NAME TEXT DEFAULT '',
+            $COL_AVATAR_ID TEXT DEFAULT '',
+            $COL_ALLOW_DEPENDENTS INTEGER DEFAULT 0,
+            $COL_STATUS TEXT DEFAULT 'ACTIVE',
             $COL_CREATED_ON TEXT,
             $COL_JOINED_AT INTEGER,
             FOREIGN KEY ($COL_GROUP_ID) REFERENCES ${GroupTable.TABLE_NAME}(${GroupTable.COL_GROUP_ID}) ON DELETE CASCADE,

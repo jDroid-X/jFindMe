@@ -7,7 +7,7 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
  * Variables: deviceId, identityId, model, brand, board, hardware, deviceName, imei, imei_1, imei_2, is_dual_sim, is_rooted, build_fingerprint, latitude, longitude, address, battery_optimization_exempt, os_version, app_version
- * Constants: TABLE_NAME = "device", COL_DEVICE_ID, COL_IDENTITY_ID, COL_DEVICE_MODEL, COL_BRAND, COL_BOARD, COL_HARDWARE, COL_DEVICE_NAME, COL_IMEI, COL_IMEI_1, COL_IMEI_2, COL_IS_DUAL_SIM, COL_IS_ROOTED, COL_BUILD_FINGERPRINT, COL_LATITUDE, COL_LONGITUDE, COL_ADDRESS, COL_BATTERY_OPTIMIZATION_EXEMPT, COL_OS_VERSION, COL_APP_VERSION, COL_CREATED_ON, COL_UPDATED_AT
+ * Constants: TABLE_NAME = "device", COL_DEVICE_ID, COL_IDENTITY_ID, COL_DEVICE_MODEL, COL_BRAND, COL_BOARD, COL_HARDWARE, COL_DEVICE_NAME, COL_IMEI, COL_IMEI_1, COL_IMEI_2, COL_IS_DUAL_SIM, COL_IS_ROOTED, COL_BUILD_FINGERPRINT, COL_LATITUDE, COL_LONGITUDE, COL_ADDRESS, COL_BATTERY_OPTIMIZATION_EXEMPT, COL_OS_VERSION, COL_APP_VERSION, COL_HARDWARE_ID, COL_ALLOW_DEPENDENTS, COL_IS_PRIMARY, COL_LAST_ACTIVE, COL_SYNC_INTERVAL_MS, COL_CREATED_ON, COL_UPDATED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, TrackingService.kt, NetworkGatewayActivity.java
  */
@@ -36,6 +36,13 @@ object DeviceTable {
     const val COL_OS_VERSION = "os_version"
     const val COL_APP_VERSION = "app_version"
 
+    // 🚀 V81 MLM Asymmetric Gate & Online Cloud Parity
+    const val COL_HARDWARE_ID = "hardware_id"
+    const val COL_ALLOW_DEPENDENTS = "allow_dependents" // 0 = Bottom-to-Top GATED, 1 = PERMITTED
+    const val COL_IS_PRIMARY = "is_primary"
+    const val COL_LAST_ACTIVE = "last_active"
+    const val COL_SYNC_INTERVAL_MS = "sync_interval_ms"
+
     const val COL_CREATED_ON = "created_on"
     const val COL_UPDATED_AT = "updated_at"
 
@@ -60,6 +67,11 @@ object DeviceTable {
             $COL_BATTERY_OPTIMIZATION_EXEMPT INTEGER DEFAULT 0,
             $COL_OS_VERSION TEXT,
             $COL_APP_VERSION TEXT,
+            $COL_HARDWARE_ID TEXT DEFAULT '',
+            $COL_ALLOW_DEPENDENTS INTEGER DEFAULT 0,
+            $COL_IS_PRIMARY INTEGER DEFAULT 1,
+            $COL_LAST_ACTIVE TEXT DEFAULT '',
+            $COL_SYNC_INTERVAL_MS INTEGER DEFAULT 15000,
             $COL_CREATED_ON TEXT,
             $COL_UPDATED_AT TEXT,
             FOREIGN KEY ($COL_IDENTITY_ID) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
@@ -87,7 +99,11 @@ object DeviceTable {
         isDualSim: Boolean? = null,
         batteryOptExempt: Boolean? = null,
         osVersion: String? = null,
-        appVersion: String? = null
+        appVersion: String? = null,
+        hardwareId: String? = null,
+        allowDependents: Boolean? = null,
+        isPrimary: Boolean? = null,
+        syncIntervalMs: Int? = null
     ) {
         val now = FirebaseComm.getForensicTimestamp()
         val v = ContentValues()
@@ -99,6 +115,10 @@ object DeviceTable {
         if (board != null) v.put(COL_BOARD, board)
         if (hardware != null) v.put(COL_HARDWARE, hardware)
         if (deviceName != null) v.put(COL_DEVICE_NAME, deviceName)
+        if (hardwareId != null) v.put(COL_HARDWARE_ID, hardwareId)
+        if (allowDependents != null) v.put(COL_ALLOW_DEPENDENTS, if (allowDependents) 1 else 0)
+        if (isPrimary != null) v.put(COL_IS_PRIMARY, if (isPrimary) 1 else 0)
+        if (syncIntervalMs != null) v.put(COL_SYNC_INTERVAL_MS, syncIntervalMs)
 
         val resolvedImei1 = imei1 ?: imei
         if (resolvedImei1 != null) {

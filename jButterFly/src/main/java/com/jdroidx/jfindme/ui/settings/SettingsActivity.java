@@ -638,9 +638,17 @@ public class SettingsActivity extends BaseActivityJava {
         });
         vaultCard.addView(wifiSwitch, btnLp);
 
-        // Launch 12 Background Jobs Console
+        // [Variables]: currentCacheCap, cacheSub, ttlSub, bgJobsLauncher
+        // [Constants]: Icon drawables
+        // [Dependencies]: RegistryManager, BackgroundJobsConfigDialog
+        // [Integration Points]: Card 7 Offline Vault & Sentinels, Database Vacuum & TTLs
         View bgJobsLauncher = createIconButton("⚙️ 12 BACKGROUND JOBS & ENGINE SENTINELS", com.jdroidx.jfindme.R.drawable.ic_settings_gears, true, v -> BackgroundJobsConfigDialog.show(this));
-                vaultCard.addView(createSettingTile("DATABASE VACUUM & STORAGE RETENTION", "Rolling Retention: " + RegistryManager.getStorageRetentionDays(this) + " Days • WAL Compaction", android.R.drawable.ic_menu_manage, v -> showStorageRetentionDialog(), null), btnLp);
+        vaultCard.addView(createSettingTile("DATABASE VACUUM & STORAGE RETENTION", "Rolling Retention: " + RegistryManager.getStorageRetentionDays(this) + " Days • WAL Compaction", android.R.drawable.ic_menu_manage, v -> showStorageRetentionDialog(), null), btnLp);
+        int currentCacheCap = RegistryManager.getMaxGeocodeCacheSize(this);
+        String cacheSub = "Max Cap: " + currentCacheCap + " Entries (L7 Reverse Geocode Cache)";
+        vaultCard.addView(createSettingTile("REVERSE GEOCODE CACHE CAPACITY", cacheSub, android.R.drawable.ic_menu_mapmode, v -> showGeocodeCacheCapDialog(), null), btnLp);
+        String ttlSub = "Sync Queue: " + RegistryManager.getSyncQueueTtlHours(this) + "h • Logs: " + RegistryManager.getSysLogTtlHours(this) + "h • Page Limit: " + RegistryManager.getDefaultPageLimit(this);
+        vaultCard.addView(createSettingTile("DATABASE ENGINE TTL & QUERY LIMITS", ttlSub, android.R.drawable.ic_menu_preferences, v -> showDatabaseEngineTtlDialog(), null), btnLp);
         vaultCard.addView(bgJobsLauncher, btnLp);
 
         content.addView(vaultCard, getCardParams());
@@ -685,6 +693,40 @@ public class SettingsActivity extends BaseActivityJava {
             }
         );
         sparkCard.addView(bwSaverSwitch, btnLp);
+
+        // [Variables]: deadReckoningRadius, deadReckoningSub, pulseIntervalMs, pulseSub, currentGroup, groupSub
+        // [Constants]: Icon drawables
+        // [Dependencies]: RegistryManager
+        // [Integration Points]: Card 7B Dynamic Telemetry, Dead-Reckoning, Presence Pulse & Group-By SSOT
+        float deadReckoningRadius = RegistryManager.getDeadReckoningRadiusMeters(this);
+        String deadReckoningSub = "Noise Gate: " + (int)deadReckoningRadius + "m • Suppresses Stationary GPS (97% Data Saving)";
+        sparkCard.addView(createSettingTile(
+            "SPATIAL DEAD-RECKONING NOISE GATE",
+            deadReckoningSub,
+            android.R.drawable.ic_menu_compass,
+            v -> showDeadReckoningRadiusDialog(),
+            null
+        ), btnLp);
+
+        long pulseIntervalMs = RegistryManager.getPresencePulseIntervalMs(this);
+        String pulseSub = "Cadence: " + (pulseIntervalMs / 1000) + "s • 28-Byte Presence Pulse (Keeps Server Online)";
+        sparkCard.addView(createSettingTile(
+            "PRESENCE PULSE HEARTBEAT INTERVAL",
+            pulseSub,
+            android.R.drawable.ic_menu_recent_history,
+            v -> showPresencePulseIntervalDialog(),
+            null
+        ), btnLp);
+
+        String currentGroup = RegistryManager.getDeviceCorrespondingGroup(this);
+        String groupSub = "Hierarchy Group: " + currentGroup + " • Relative Group-By Partition";
+        sparkCard.addView(createSettingTile(
+            "DEVICE CORRESPONDING GROUP (GROUP-BY)",
+            groupSub,
+            android.R.drawable.ic_menu_myplaces,
+            v -> showDeviceGroupDialog(),
+            null
+        ), btnLp);
 
         content.addView(sparkCard, getCardParams());
 
@@ -2407,6 +2449,339 @@ public class SettingsActivity extends BaseActivityJava {
                         tvRadiusVal.setText("Default Radius: " + chosen + "m (Base safe zone perimeter)");
                     }
                     UiArchitect.showSlideNotificationBanner(this, "Default Radius Updated", "New safe zones default to " + chosen + "m", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showGeocodeCacheCapDialog() {
+        int currentCap = RegistryManager.getMaxGeocodeCacheSize(this);
+        String[] options = {
+            "⚡ 1,000 Entries (Ultra Compact • Low Memory)",
+            "⚡ 2,500 Entries (Balanced Efficiency)",
+            "🛡️ 5,000 Entries (Standard Recommended)",
+            "📅 10,000 Entries (High Density Cache)",
+            "📅 20,000 Entries (Maximum Cache Capacity)"
+        };
+        int selected = -1;
+        if (currentCap == 1000) selected = 0;
+        else if (currentCap == 2500) selected = 1;
+        else if (currentCap == 5000) selected = 2;
+        else if (currentCap == 10000) selected = 3;
+        else if (currentCap == 20000) selected = 4;
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🌐 Geocode Cache Capacity")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int[] capsArr = {1000, 2500, 5000, 10000, 20000};
+                int chosen = capsArr[which];
+                RegistryManager.setMaxGeocodeCacheSize(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Cache Cap Updated", "Reverse geocode cache limit set to " + chosen + " entries.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables]: actions, dialog, which
+    // [Constants]: Dialog action labels
+    // [Dependencies]: RegistryManager, AlertDialog
+    // [Integration Points]: DatabaseHelper.setDynamicConfig, SettingsActivity Card 7
+    private void showDatabaseEngineTtlDialog() {
+        String[] actions = {
+            "⏳ Sync Queue TTL (Current: " + RegistryManager.getSyncQueueTtlHours(this) + "h)",
+            "📋 Diagnostic SysLog TTL (Current: " + RegistryManager.getSysLogTtlHours(this) + "h)",
+            "📡 P2P Mesh Packets TTL (Current: " + RegistryManager.getP2pMeshTtlHours(this) + "h)",
+            "✉️ Pairing Invitations TTL (Current: " + RegistryManager.getInvitationTtlDays(this) + "d)",
+            "🐕 Watchdog Resurrection TTL (Current: " + RegistryManager.getWatchdogLogTtlDays(this) + "d)",
+            "🚨 Alert & Distress Ledger TTL (Current: " + RegistryManager.getAlertHistoryTtlDays(this) + "d)",
+            "📄 Default Explorer Page Limit (Current: " + RegistryManager.getDefaultPageLimit(this) + " rows)"
+        };
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⚙️ Database Engine TTL & Query Limits")
+            .setItems(actions, (dialog, which) -> {
+                dialog.dismiss();
+                switch (which) {
+                    case 0: showSyncQueueTtlDialog(); break;
+                    case 1: showSysLogTtlDialog(); break;
+                    case 2: showP2pMeshTtlDialog(); break;
+                    case 3: showInvitationTtlDialog(); break;
+                    case 4: showWatchdogTtlDialog(); break;
+                    case 5: showAlertHistoryTtlDialog(); break;
+                    case 6: showDefaultPageLimitDialog(); break;
+                }
+            })
+            .setNegativeButton("CLOSE", null)
+            .show();
+    }
+
+    private void showSyncQueueTtlDialog() {
+        int current = RegistryManager.getSyncQueueTtlHours(this);
+        String[] options = {"⚡ 12 Hours", "⚡ 24 Hours (1 Day)", "🛡️ 48 Hours (2 Days • Default)", "📅 72 Hours (3 Days)", "📅 168 Hours (7 Days)"};
+        int[] vals = {12, 24, 48, 72, 168};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏳ Sync Queue Retention TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setSyncQueueTtlHours(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Sync TTL Updated", "Pending sync queue retention set to " + chosen + " hours.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showSysLogTtlDialog() {
+        int current = RegistryManager.getSysLogTtlHours(this);
+        String[] options = {"⚡ 12 Hours", "⚡ 24 Hours (1 Day)", "🛡️ 48 Hours (2 Days • Default)", "📅 72 Hours (3 Days)", "📅 168 Hours (7 Days)"};
+        int[] vals = {12, 24, 48, 72, 168};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📋 System Diagnostic Log TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setSysLogTtlHours(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "SysLog TTL Updated", "Diagnostic system log TTL set to " + chosen + " hours.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showP2pMeshTtlDialog() {
+        int current = RegistryManager.getP2pMeshTtlHours(this);
+        String[] options = {"⚡ 6 Hours", "⚡ 12 Hours", "🛡️ 24 Hours (1 Day • Default)", "📅 48 Hours (2 Days)"};
+        int[] vals = {6, 12, 24, 48};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📡 P2P Mesh Packets TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setP2pMeshTtlHours(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Mesh TTL Updated", "P2P mesh packet retention set to " + chosen + " hours.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showInvitationTtlDialog() {
+        int current = RegistryManager.getInvitationTtlDays(this);
+        String[] options = {"⚡ 1 Day", "⚡ 3 Days", "🛡️ 7 Days (1 Week • Default)", "📅 14 Days (2 Weeks)", "📅 30 Days (1 Month)"};
+        int[] vals = {1, 3, 7, 14, 30};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("✉️ Pairing Invitation TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setInvitationTtlDays(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Invitation TTL Updated", "Pairing invitation expiry set to " + chosen + " days.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showWatchdogTtlDialog() {
+        int current = RegistryManager.getWatchdogLogTtlDays(this);
+        String[] options = {"⚡ 1 Day", "⚡ 3 Days", "🛡️ 7 Days (1 Week • Default)", "📅 14 Days (2 Weeks)", "📅 30 Days (1 Month)"};
+        int[] vals = {1, 3, 7, 14, 30};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🐕 Watchdog Resurrection TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setWatchdogLogTtlDays(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Watchdog TTL Updated", "Daemon resurrection log TTL set to " + chosen + " days.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showAlertHistoryTtlDialog() {
+        int current = RegistryManager.getAlertHistoryTtlDays(this);
+        String[] options = {"⚡ 7 Days (1 Week)", "⚡ 14 Days (2 Weeks)", "🛡️ 30 Days (1 Month • Default)", "📅 60 Days (2 Months)", "📅 90 Days (3 Months)"};
+        int[] vals = {7, 14, 30, 60, 90};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🚨 Alert & Distress Ledger TTL")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setAlertHistoryTtlDays(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Alert TTL Updated", "Alert history ledger TTL set to " + chosen + " days.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showDefaultPageLimitDialog() {
+        int current = RegistryManager.getDefaultPageLimit(this);
+        String[] options = {"⚡ 25 Rows (Fastest)", "🛡️ 50 Rows (Balanced • Default)", "📅 100 Rows (Extended View)", "📅 200 Rows (Full Matrix)"};
+        int[] vals = {25, 50, 100, 200};
+        int selected = -1;
+        for (int i = 0; i < vals.length; i++) if (vals[i] == current) { selected = i; break; }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📄 Default Explorer Page Limit")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                int chosen = vals[which];
+                RegistryManager.setDefaultPageLimit(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Page Limit Updated", "Vault & Explorer default limit set to " + chosen + " rows.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables]: current, options, vals, selected, chosen
+    // [Constants]: Dialog labels
+    // [Dependencies]: RegistryManager, UiArchitect, AlertDialog
+    // [Integration Points]: TrackingService dead-reckoning threshold SSOT
+    private void showDeadReckoningRadiusDialog() {
+        float current = RegistryManager.getDeadReckoningRadiusMeters(this);
+        String[] options = {
+            "⚡ 5 Meters (Ultra Sensitive • High Battery/Data)",
+            "⚡ 10 Meters (City Walking • Moderate Tolerance)",
+            "🛡️ 15 Meters (Default Recommended • 97% Bandwidth Cut)",
+            "📅 25 Meters (Suburban Road Filter • High Tolerance)",
+            "📅 50 Meters (Macro Station Gate • Minimalist Data)"
+        };
+        float[] vals = {5.0f, 10.0f, 15.0f, 25.0f, 50.0f};
+        int selected = 2;
+        for (int i = 0; i < vals.length; i++) {
+            if (Math.abs(vals[i] - current) < 0.1f) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🛡️ Spatial Dead-Reckoning Noise Gate")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                float chosen = vals[which];
+                RegistryManager.setDeadReckoningRadiusMeters(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Dead-Reckoning Updated", "Noise gate set to " + (int)chosen + "m. Stationary GPS uploads suppressed.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables]: current, options, vals, selected, chosen
+    // [Constants]: Dialog labels
+    // [Dependencies]: RegistryManager, UiArchitect, AlertDialog
+    // [Integration Points]: TrackingService presence pulse keep-alive SSOT
+    private void showPresencePulseIntervalDialog() {
+        long current = RegistryManager.getPresencePulseIntervalMs(this);
+        String[] options = {
+            "⚡ 60 Seconds (1 Minute • Real-Time Dynamic Active)",
+            "⚡ 120 Seconds (2 Minutes • Fast Mesh Heartbeat)",
+            "🛡️ 180 Seconds (3 Minutes • Default Recommended)",
+            "📅 300 Seconds (5 Minutes • Ultra Lean Bandwidth)",
+            "📅 600 Seconds (10 Minutes • Minimalist Standby)"
+        };
+        long[] vals = {60_000L, 120_000L, 180_000L, 300_000L, 600_000L};
+        int selected = 2;
+        for (int i = 0; i < vals.length; i++) {
+            if (vals[i] == current) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("💓 Presence Pulse Heartbeat Interval")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                long chosen = vals[which];
+                RegistryManager.setPresencePulseIntervalMs(this, chosen);
+                UiArchitect.showSlideNotificationBanner(this, "Presence Pulse Updated", "Stationary heartbeat interval set to " + (chosen / 1000) + " seconds.", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables]: currentGroup, presetGroups, selected, chosen, input, container, lp
+    // [Constants]: Preset group keys
+    // [Dependencies]: RegistryManager, UiArchitect, AlertDialog
+    // [Integration Points]: Database group-by hierarchy & multi-tenancy SSOT
+    private void showDeviceGroupDialog() {
+        String currentGroup = RegistryManager.getDeviceCorrespondingGroup(this);
+        String[] presetGroups = {
+            "UNIVERSAL_FLEET",
+            "FAMILY_CORE",
+            "ALPHA_TEAM",
+            "SECURITY_PATROL",
+            "LOGISTICS_TRACK",
+            "✏️ Custom Group..."
+        };
+        int selected = -1;
+        for (int i = 0; i < presetGroups.length - 1; i++) {
+            if (presetGroups[i].equalsIgnoreCase(currentGroup)) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("👥 Device Corresponding Group (Group-By)")
+            .setSingleChoiceItems(presetGroups, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == presetGroups.length - 1) {
+                    showCustomDeviceGroupPrompt();
+                } else {
+                    String chosen = presetGroups[which];
+                    RegistryManager.setDeviceCorrespondingGroup(this, chosen);
+                    UiArchitect.showSlideNotificationBanner(this, "Device Group Updated", "Node assigned to group: " + chosen, false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomDeviceGroupPrompt() {
+        String currentGroup = RegistryManager.getDeviceCorrespondingGroup(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(currentGroup);
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Device Group")
+            .setMessage("Enter the organizational group or partition name:")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                String val = input.getText().toString().trim();
+                if (!val.isEmpty()) {
+                    RegistryManager.setDeviceCorrespondingGroup(this, val);
+                    UiArchitect.showSlideNotificationBanner(this, "Device Group Updated", "Node assigned to: " + val, false, 2500, null, null);
                 }
             })
             .setNegativeButton("CANCEL", null)

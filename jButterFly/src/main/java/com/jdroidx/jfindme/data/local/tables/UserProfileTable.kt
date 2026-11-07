@@ -10,8 +10,8 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: identityId, name, email, phone, dob, gender, country, state, city, pincode, address, orgName, deptName, avatarId, avatarLocalUri, avatarColorHex, note, nickname, displayName, avatarUrl, masterPinHash, salt
- * Constants: TABLE_NAME = "user_profile", COL_ID, COL_IDENTITY_ID, COL_NAME, COL_EMAIL, COL_PHONE, COL_DOB, COL_GENDER, COL_COUNTRY, COL_STATE, COL_CITY, COL_PINCODE, COL_ADDRESS, COL_ORG_NAME, COL_DEPT_NAME, COL_AVATAR_ID, COL_AVATAR_LOCAL_URI, COL_AVATAR_COLOR_HEX, COL_NOTE, COL_NICKNAME, COL_DISPLAY_NAME, COL_AVATAR_URL, COL_MASTER_PIN_HASH, COL_SALT, COL_CREATED_ON, COL_UPDATED_AT
+ * Variables: identityId, name, email, phone, dob, gender, country, state, city, pincode, address, orgName, deptName, avatarId, avatarLocalUri, avatarColorHex, note, nickname, displayName, avatarUrl, masterPinHash, salt, emergency_note, blood_group, allergies, phone_secondary
+ * Constants: TABLE_NAME = "user_profile", COL_ID, COL_IDENTITY_ID, COL_NAME, COL_EMAIL, COL_PHONE, COL_DOB, COL_GENDER, COL_COUNTRY, COL_STATE, COL_CITY, COL_PINCODE, COL_ADDRESS, COL_ORG_NAME, COL_DEPT_NAME, COL_AVATAR_ID, COL_AVATAR_LOCAL_URI, COL_AVATAR_COLOR_HEX, COL_NOTE, COL_NICKNAME, COL_DISPLAY_NAME, COL_AVATAR_URL, COL_MASTER_PIN_HASH, COL_SALT, COL_EMERGENCY_NOTE, COL_BLOOD_GROUP, COL_ALLERGIES, COL_PHONE_SECONDARY, COL_CREATED_ON, COL_UPDATED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, ProfileViewModel.kt, PersonDetailsViewModel.kt
  */
@@ -44,6 +44,12 @@ object UserProfileTable {
     const val COL_MASTER_PIN_HASH = "master_pin_hash"
     const val COL_SALT = "salt"
 
+    // 🚀 V81 Online Profile & Medical Triage Parity
+    const val COL_EMERGENCY_NOTE = "emergency_note"
+    const val COL_BLOOD_GROUP = "blood_group"
+    const val COL_ALLERGIES = "allergies"
+    const val COL_PHONE_SECONDARY = "phone_secondary"
+
     const val COL_CREATED_ON = "created_on" // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_UPDATED_AT = "updated_at" // 🧬 Forensic String: YYYYMMDDHHMMSSSS
 
@@ -72,6 +78,10 @@ object UserProfileTable {
             ${COL_AVATAR_URL} TEXT,
             ${COL_MASTER_PIN_HASH} TEXT,
             ${COL_SALT} TEXT,
+            ${COL_EMERGENCY_NOTE} TEXT,
+            ${COL_BLOOD_GROUP} TEXT,
+            ${COL_ALLERGIES} TEXT,
+            ${COL_PHONE_SECONDARY} TEXT,
             ${COL_CREATED_ON} TEXT,
             ${COL_UPDATED_AT} TEXT,
             FOREIGN KEY (${COL_IDENTITY_ID}) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
@@ -156,6 +166,18 @@ object UserProfileTable {
             
         if (data.containsKey("emergencyNote") || data.containsKey("note")) 
             v.put(COL_NOTE, data["emergencyNote"] ?: data["note"])
+
+        if (data.containsKey("emergency_note"))
+            v.put(COL_EMERGENCY_NOTE, data["emergency_note"])
+
+        if (data.containsKey("bloodGroup") || data.containsKey("blood_group"))
+            v.put(COL_BLOOD_GROUP, data["bloodGroup"] ?: data["blood_group"])
+
+        if (data.containsKey("allergies"))
+            v.put(COL_ALLERGIES, data["allergies"])
+
+        if (data.containsKey("phoneSecondary") || data.containsKey("phone_secondary"))
+            v.put(COL_PHONE_SECONDARY, data["phoneSecondary"] ?: data["phone_secondary"])
             
         if (v.size() > 0) {
             v.put(COL_UPDATED_AT, now)

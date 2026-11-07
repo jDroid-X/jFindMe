@@ -5,8 +5,8 @@ import android.database.sqlite.SQLiteDatabase
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: id, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted, timestamp, activeRoute, ackTimestamp, ackLatencyMs, motionState, storageFreeMb, ramUsageMb
- * Constants: TABLE_NAME = "device_vitals", COL_ID, COL_HARDWARE_ID, COL_BATTERY_LEVEL, COL_IS_CHARGING, COL_NETWORK_TYPE, COL_SIGNAL_DBM, COL_IS_MOCK_GPS, COL_IS_ROOTED, COL_LAST_SEEN, COL_ACTIVE_ROUTE, COL_IS_STEALTH, COL_ACK_TIMESTAMP, COL_ACK_LATENCY_MS, COL_MOTION_STATE, COL_STORAGE_FREE_MB, COL_RAM_USAGE_MB
+ * Variables: id, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted, timestamp, activeRoute, ackTimestamp, ackLatencyMs, motionState, storageFreeMb, ramUsageMb, temperatureC, cpuUsagePct, isAirplaneMode, wifiSsid
+ * Constants: TABLE_NAME = "device_vitals", COL_ID, COL_HARDWARE_ID, COL_BATTERY_LEVEL, COL_IS_CHARGING, COL_NETWORK_TYPE, COL_SIGNAL_DBM, COL_IS_MOCK_GPS, COL_IS_ROOTED, COL_LAST_SEEN, COL_ACTIVE_ROUTE, COL_IS_STEALTH, COL_ACK_TIMESTAMP, COL_ACK_LATENCY_MS, COL_MOTION_STATE, COL_STORAGE_FREE_MB, COL_RAM_USAGE_MB, COL_TEMPERATURE_C, COL_CPU_USAGE_PCT, COL_IS_AIRPLANE_MODE, COL_WIFI_SSID
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase
  * Integration Points: DatabaseHelper.kt, TrackingService.kt, HardwareIdentitySentinel.kt
  */
@@ -32,6 +32,12 @@ object DeviceVitalsTable {
     const val COL_STORAGE_FREE_MB = "storage_free_mb"
     const val COL_RAM_USAGE_MB = "ram_usage_mb"
 
+    // 🚀 V81 Environmental & Connectivity Diagnostics Parity
+    const val COL_TEMPERATURE_C = "temperature_c"
+    const val COL_CPU_USAGE_PCT = "cpu_usage_pct"
+    const val COL_IS_AIRPLANE_MODE = "is_airplane_mode"
+    const val COL_WIFI_SSID = "wifi_ssid"
+
     val CREATE_TABLE = """
         CREATE TABLE IF NOT EXISTS $TABLE_NAME (
             $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +55,11 @@ object DeviceVitalsTable {
             $COL_ACK_LATENCY_MS INTEGER DEFAULT 0,
             $COL_MOTION_STATE TEXT DEFAULT 'STATIONARY',
             $COL_STORAGE_FREE_MB INTEGER DEFAULT 0,
-            $COL_RAM_USAGE_MB INTEGER DEFAULT 0
+            $COL_RAM_USAGE_MB INTEGER DEFAULT 0,
+            $COL_TEMPERATURE_C REAL DEFAULT 0.0,
+            $COL_CPU_USAGE_PCT REAL DEFAULT 0.0,
+            $COL_IS_AIRPLANE_MODE INTEGER DEFAULT 0,
+            $COL_WIFI_SSID TEXT DEFAULT ''
         )
     """.trimIndent()
 

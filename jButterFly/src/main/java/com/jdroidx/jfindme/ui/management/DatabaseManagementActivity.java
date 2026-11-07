@@ -101,21 +101,36 @@ public class DatabaseManagementActivity extends BaseActivityJava {
     }
 
     private String getTableFriendlyLabel(String tName) {
-        // V57 canonical normalized tables
+        // V81 Tri-Tier Master, Sub-Master & Transactional Tables
         if (tName.equals("user_identity")) return "Master Identity Ledger";
         if (tName.equals("user_profile")) return "Personal Dossier";
         if (tName.equals("organization")) return "Enterprise Dossier";
         if (tName.equals("user_org_map")) return "User Organization Bridge";
-        if (tName.equals("device")) return "Hardware Identity Ledger";
-        if (tName.equals("device_pairing")) return "P2P Pairing Matrix";
+        if (tName.equals("device") || tName.equals("devices")) return "Hardware Identity Ledger";
+        if (tName.equals("device_pairing") || tName.equals("device_pairings")) return "P2P Pairing Matrix";
         if (tName.equals("sim")) return "SIM Card Inventory";
         if (tName.equals("groups")) return "Group & Circle Hub";
         if (tName.equals("group_members")) return "Group Members Bridge";
         if (tName.equals("location_event")) return "Location Telemetry Ledger";
-        if (tName.equals("safe_zone")) return "Safe Zone Boundaries";
-        if (tName.equals("geofence_event")) return "Geofence Transitions & Sirens";
+        if (tName.equals("safe_zone") || tName.equals("safe_zones")) return "Safe Zone Boundaries";
+        if (tName.equals("safe_zone_user_map")) return "Safe Zone User Schedules";
+        if (tName.equals("geofence_event") || tName.equals("geofence_events")) return "Geofence Transitions & Sirens";
         if (tName.equals("sync_queue")) return "Cloud Sync Queue";
-        if (tName.equals("sys_log")) return "WatchDog Audit Log";
+        if (tName.equals("pending_sync_queue")) return "V80 Store-and-Forward Outbox";
+        if (tName.equals("device_vitals")) return "Hardware Diagnostics & Vitals";
+        if (tName.equals("device_policy_state") || tName.equals("device_policy")) return "Device Sentinel Policies";
+        if (tName.equals("watchdog_resurrection_log") || tName.equals("watchdog_resurrection_ledger")) return "Daemon Resurrection Ledger";
+        if (tName.equals("security_audit_log") || tName.equals("security_evasion_audit_log")) return "Tamper & Root Detection Audit";
+        if (tName.equals("alert_history") || tName.equals("alerts")) return "Emergency SOS & Alert Ledger";
+        if (tName.equals("security_master_keys")) return "Cryptographic Key Store";
+        if (tName.equals("telemetry_failover_routes")) return "5-Tier Failover Routes";
+        if (tName.equals("p2p_mesh_packets")) return "P2P Mesh Hop Ledger";
+        if (tName.equals("invitations")) return "Pairing Invitations & QR Tokens";
+        if (tName.equals("reverse_geocode_cache")) return "Spatial Address Cache";
+        if (tName.equals("stealth_schedule_config")) return "Stealth Schedule Matrix";
+        if (tName.equals("sim_transactions")) return "Cell Tower Handoff Stream";
+        if (tName.equals("change_log")) return "Forensic State Change Log";
+        if (tName.equals("sys_log") || tName.equals("sys_logs")) return "WatchDog Audit Log";
         // Legacy fallback mappings
         if (tName.equals("PROFILE_TABLE")) return "Identity Dossier";
         if (tName.equals("device_table")) return "Hardware Identity Ledger";

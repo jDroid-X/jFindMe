@@ -142,6 +142,10 @@ object RegistryManager {
     const val DEFAULT_MAX_ACK_FAILURES           = 2
     const val DEFAULT_FAILOVER_SMS_TARGET        = ""
 
+    // 🛡️ Decommissioned & Orphan Fleet Sentinel
+    const val KEY_DECOMMISSIONED_AGENT_IDS       = "pref_decommissioned_agent_ids"
+    const val DEFAULT_DECOMMISSIONED_AGENT_IDS   = ""
+
     // 🏃 Hardware Motion & Activity Recognition Sentinel
     const val KEY_ACTIVITY_RECOGNITION_ENABLED = "pref_activity_recognition_enabled"
     const val KEY_MOTION_STILL_INTERVAL_MS      = "pref_motion_still_interval_ms"
@@ -161,6 +165,19 @@ object RegistryManager {
     const val KEY_SPARK_MONTHLY_DOWNLOAD_GB     = "pref_spark_monthly_download_gb"
     const val KEY_SPARK_DAILY_RESET_TIME_IST    = "pref_spark_daily_reset_time_ist"
     const val KEY_SPARK_BANDWIDTH_SAVER_ENABLED = "pref_spark_bandwidth_saver_enabled"
+
+    // 🛡️ Spatial Dead-Reckoning & Presence Pulse Configuration (Dynamic SSOT)
+    const val KEY_DEAD_RECKONING_RADIUS_METERS  = "dead_reckoning_radius_meters"
+    const val DEFAULT_DEAD_RECKONING_RADIUS_METERS = 15.0f
+
+    const val KEY_PRESENCE_PULSE_INTERVAL_MS    = "presence_pulse_interval_ms"
+    const val DEFAULT_PRESENCE_PULSE_INTERVAL_MS = 180_000L
+
+    const val KEY_STATIONARY_SPEED_THRESHOLD_MPS = "stationary_speed_threshold_mps"
+    const val DEFAULT_STATIONARY_SPEED_THRESHOLD_MPS = 1.0f
+
+    const val KEY_DEVICE_CORRESPONDING_GROUP    = "device_corresponding_group"
+    const val DEFAULT_DEVICE_CORRESPONDING_GROUP = "UNIVERSAL_FLEET"
 
     // Firebase Spark Plan Defaults
     const val DEFAULT_FIREBASE_PLAN_TIER        = "SPARK" // SPARK (Free) or BLAZE (Pay-as-you-go)
@@ -713,8 +730,36 @@ object RegistryManager {
         get(context).unregisterOnSharedPreferenceChangeListener(listener)
     }
 
+    // [Variables]: days, hours, limit, clamped, context
+    // [Constants]: KEY_SYNC_QUEUE_TTL_HOURS, KEY_SYS_LOG_TTL_HOURS, KEY_P2P_MESH_TTL_HOURS, KEY_INVITATION_TTL_DAYS, KEY_DEFAULT_PAGE_LIMIT, KEY_WATCHDOG_LOG_TTL_DAYS, KEY_ALERT_HISTORY_TTL_DAYS
+    // [Dependencies]: DatabaseHelper, SharedPreferences
+    // [Integration Points]: DatabaseHelper.pruneExpiredData(), DatabaseHelper.getPagedData(), SettingsActivity, StealthScheduleConfigTable
     const val KEY_STORAGE_RETENTION_DAYS = "pref_storage_retention_days"
     const val DEFAULT_STORAGE_RETENTION_DAYS = 3
+
+    const val KEY_MAX_GEOCODE_CACHE = "pref_max_geocode_cache"
+    const val DEFAULT_MAX_GEOCODE_CACHE = 5000
+
+    const val KEY_SYNC_QUEUE_TTL_HOURS = "pref_sync_queue_ttl_hours"
+    const val DEFAULT_SYNC_QUEUE_TTL_HOURS = 48
+
+    const val KEY_SYS_LOG_TTL_HOURS = "pref_sys_log_ttl_hours"
+    const val DEFAULT_SYS_LOG_TTL_HOURS = 48
+
+    const val KEY_P2P_MESH_TTL_HOURS = "pref_p2p_mesh_ttl_hours"
+    const val DEFAULT_P2P_MESH_TTL_HOURS = 24
+
+    const val KEY_INVITATION_TTL_DAYS = "pref_invitation_ttl_days"
+    const val DEFAULT_INVITATION_TTL_DAYS = 7
+
+    const val KEY_DEFAULT_PAGE_LIMIT = "pref_default_page_limit"
+    const val DEFAULT_PAGE_LIMIT = 50
+
+    const val KEY_WATCHDOG_LOG_TTL_DAYS = "pref_watchdog_log_ttl_days"
+    const val DEFAULT_WATCHDOG_LOG_TTL_DAYS = 7
+
+    const val KEY_ALERT_HISTORY_TTL_DAYS = "pref_alert_history_ttl_days"
+    const val DEFAULT_ALERT_HISTORY_TTL_DAYS = 30
 
     @JvmStatic
     fun getStorageRetentionDays(context: Context): Int {
@@ -724,6 +769,178 @@ object RegistryManager {
     @JvmStatic
     fun setStorageRetentionDays(context: Context, days: Int) {
         putInt(context, KEY_STORAGE_RETENTION_DAYS, days.coerceIn(1, 30))
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("retention_days", days.toString(), "Storage retention days")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getMaxGeocodeCacheSize(context: Context): Int {
+        return getInt(context, KEY_MAX_GEOCODE_CACHE, DEFAULT_MAX_GEOCODE_CACHE).coerceIn(500, 20000)
+    }
+
+    @JvmStatic
+    fun setMaxGeocodeCacheSize(context: Context, size: Int) {
+        val clamped = size.coerceIn(500, 20000)
+        putInt(context, KEY_MAX_GEOCODE_CACHE, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("max_geocode_cache_size", clamped.toString(), "Max reverse geocode cache size")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getSyncQueueTtlHours(context: Context): Int {
+        return getInt(context, KEY_SYNC_QUEUE_TTL_HOURS, DEFAULT_SYNC_QUEUE_TTL_HOURS).coerceIn(6, 720)
+    }
+
+    @JvmStatic
+    fun setSyncQueueTtlHours(context: Context, hours: Int) {
+        val clamped = hours.coerceIn(6, 720)
+        putInt(context, KEY_SYNC_QUEUE_TTL_HOURS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("sync_queue_ttl_hours", clamped.toString(), "Pending sync queue TTL hours")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getSysLogTtlHours(context: Context): Int {
+        return getInt(context, KEY_SYS_LOG_TTL_HOURS, DEFAULT_SYS_LOG_TTL_HOURS).coerceIn(6, 720)
+    }
+
+    @JvmStatic
+    fun setSysLogTtlHours(context: Context, hours: Int) {
+        val clamped = hours.coerceIn(6, 720)
+        putInt(context, KEY_SYS_LOG_TTL_HOURS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("sys_log_ttl_hours", clamped.toString(), "System diagnostic log TTL hours")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getP2pMeshTtlHours(context: Context): Int {
+        return getInt(context, KEY_P2P_MESH_TTL_HOURS, DEFAULT_P2P_MESH_TTL_HOURS).coerceIn(1, 168)
+    }
+
+    @JvmStatic
+    fun setP2pMeshTtlHours(context: Context, hours: Int) {
+        val clamped = hours.coerceIn(1, 168)
+        putInt(context, KEY_P2P_MESH_TTL_HOURS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("p2p_mesh_ttl_hours", clamped.toString(), "P2P mesh packet TTL hours")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getInvitationTtlDays(context: Context): Int {
+        return getInt(context, KEY_INVITATION_TTL_DAYS, DEFAULT_INVITATION_TTL_DAYS).coerceIn(1, 60)
+    }
+
+    @JvmStatic
+    fun setInvitationTtlDays(context: Context, days: Int) {
+        val clamped = days.coerceIn(1, 60)
+        putInt(context, KEY_INVITATION_TTL_DAYS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("invitation_ttl_days", clamped.toString(), "Invitation TTL days")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getDefaultPageLimit(context: Context): Int {
+        return getInt(context, KEY_DEFAULT_PAGE_LIMIT, DEFAULT_PAGE_LIMIT).coerceIn(10, 500)
+    }
+
+    @JvmStatic
+    fun setDefaultPageLimit(context: Context, limit: Int) {
+        val clamped = limit.coerceIn(10, 500)
+        putInt(context, KEY_DEFAULT_PAGE_LIMIT, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("default_page_limit", clamped.toString(), "Default database page limit")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getWatchdogLogTtlDays(context: Context): Int {
+        return getInt(context, KEY_WATCHDOG_LOG_TTL_DAYS, DEFAULT_WATCHDOG_LOG_TTL_DAYS).coerceIn(1, 90)
+    }
+
+    @JvmStatic
+    fun setWatchdogLogTtlDays(context: Context, days: Int) {
+        val clamped = days.coerceIn(1, 90)
+        putInt(context, KEY_WATCHDOG_LOG_TTL_DAYS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("watchdog_log_ttl_days", clamped.toString(), "Daemon resurrection log TTL days")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getAlertHistoryTtlDays(context: Context): Int {
+        return getInt(context, KEY_ALERT_HISTORY_TTL_DAYS, DEFAULT_ALERT_HISTORY_TTL_DAYS).coerceIn(1, 365)
+    }
+
+    @JvmStatic
+    fun setAlertHistoryTtlDays(context: Context, days: Int) {
+        val clamped = days.coerceIn(1, 365)
+        putInt(context, KEY_ALERT_HISTORY_TTL_DAYS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("alert_history_ttl_days", clamped.toString(), "Alert history ledger TTL days")
+        } catch (_: Exception) { }
+    }
+
+    // ─── 🛡️ SPATIAL DEAD-RECKONING & PRESENCE PULSE ACCESSORS ─────────────────
+    @JvmStatic
+    fun getDeadReckoningRadiusMeters(context: Context): Float {
+        return getFloat(context, KEY_DEAD_RECKONING_RADIUS_METERS, DEFAULT_DEAD_RECKONING_RADIUS_METERS).coerceIn(1.0f, 200.0f)
+    }
+
+    @JvmStatic
+    fun setDeadReckoningRadiusMeters(context: Context, radius: Float) {
+        val clamped = radius.coerceIn(1.0f, 200.0f)
+        putFloat(context, KEY_DEAD_RECKONING_RADIUS_METERS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("dead_reckoning_radius_meters", clamped.toString(), "Spatial dead reckoning filter radius")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getPresencePulseIntervalMs(context: Context): Long {
+        return getLong(context, KEY_PRESENCE_PULSE_INTERVAL_MS, DEFAULT_PRESENCE_PULSE_INTERVAL_MS).coerceIn(30_000L, 1_800_000L)
+    }
+
+    @JvmStatic
+    fun setPresencePulseIntervalMs(context: Context, intervalMs: Long) {
+        val clamped = intervalMs.coerceIn(30_000L, 1_800_000L)
+        putLong(context, KEY_PRESENCE_PULSE_INTERVAL_MS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("presence_pulse_interval_ms", clamped.toString(), "Presence heartbeat pulse interval")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getStationarySpeedThresholdMps(context: Context): Float {
+        return getFloat(context, KEY_STATIONARY_SPEED_THRESHOLD_MPS, DEFAULT_STATIONARY_SPEED_THRESHOLD_MPS).coerceIn(0.1f, 10.0f)
+    }
+
+    @JvmStatic
+    fun setStationarySpeedThresholdMps(context: Context, speed: Float) {
+        val clamped = speed.coerceIn(0.1f, 10.0f)
+        putFloat(context, KEY_STATIONARY_SPEED_THRESHOLD_MPS, clamped)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("stationary_speed_threshold_mps", clamped.toString(), "Stationary speed threshold mps")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic
+    fun getDeviceCorrespondingGroup(context: Context): String {
+        return getString(context, KEY_DEVICE_CORRESPONDING_GROUP, DEFAULT_DEVICE_CORRESPONDING_GROUP)
+    }
+
+    @JvmStatic
+    fun setDeviceCorrespondingGroup(context: Context, group: String) {
+        val clean = group.trim().ifEmpty { DEFAULT_DEVICE_CORRESPONDING_GROUP }
+        putString(context, KEY_DEVICE_CORRESPONDING_GROUP, clean)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("device_corresponding_group", clean, "Device group-by hierarchy mapping")
+        } catch (_: Exception) { }
     }
 
     // ─── EXTENDED REGISTRY ACCESSORS (Two-Tab Control Hub Standard) ───────────
@@ -980,4 +1197,24 @@ object RegistryManager {
     @JvmStatic fun setMaxAckFailures(context: Context, maxFailures: Int) =
         putInt(context, KEY_MAX_ACK_FAILURES, maxFailures)
 
+    // ─── DECOMMISSIONED & ORPHAN FLEET SENTINEL ──────────────────────────────
+    @JvmStatic fun getDecommissionedAgentIds(context: Context): Set<String> {
+        val raw = getString(context, KEY_DECOMMISSIONED_AGENT_IDS, DEFAULT_DECOMMISSIONED_AGENT_IDS)
+        return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    @JvmStatic fun setDecommissionedAgentIds(context: Context, ids: Set<String>) {
+        putString(context, KEY_DECOMMISSIONED_AGENT_IDS, ids.joinToString(","))
+    }
+
+    @JvmStatic fun addDecommissionedAgentId(context: Context, id: String) {
+        val current = getDecommissionedAgentIds(context).toMutableSet()
+        current.add(id.trim())
+        setDecommissionedAgentIds(context, current)
+    }
+
+    @JvmStatic fun isAgentIdDecommissioned(context: Context, agentId: String): Boolean {
+        if (agentId.isBlank()) return false
+        return getDecommissionedAgentIds(context).contains(agentId.trim())
+    }
 }

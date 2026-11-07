@@ -11,8 +11,8 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: id, uid_1, uid_2, hardware_serial, auth_uid, node_index, id_full_name, st_session_state, is_admin, owner_name, connected_id, qr_code_ref, status, install_epoch_id, is_current_session, token_hash, auth_token, tracking_status
- * Constants: TABLE_NAME = "user_identity", COL_ID, COL_UID_1, COL_UID_2, COL_HARDWARE_SERIAL, COL_AUTH_UID, COL_NODE_INDEX, COL_FULL_NAME, COL_SESSION_STATE, COL_IS_ADMIN, COL_OWNER_NAME, COL_CONNECTED_ID, COL_QR_REF, COL_STATUS, COL_INSTALL_EPOCH, COL_IS_CURRENT_SESSION, COL_TOKEN_HASH, COL_AUTH_TOKEN, COL_TRACKING_STATUS, COL_CREATED_ON, COL_CREATED_AT, COL_UPDATED_AT
+ * Variables: id, uid_1, uid_2, hardware_serial, auth_uid, node_index, id_full_name, full_name, st_session_state, is_admin, owner_name, connected_id, qr_code_ref, status, install_epoch_id, is_current_session, token_hash, auth_token, tracking_status, fcm_token, active_group, valid_linked_agents, silicon_root_key
+ * Constants: TABLE_NAME = "user_identity", COL_ID, COL_UID_1, COL_UID_2, COL_HARDWARE_SERIAL, COL_AUTH_UID, COL_NODE_INDEX, COL_FULL_NAME, COL_NAME_ALIAS, COL_SESSION_STATE, COL_IS_ADMIN, COL_OWNER_NAME, COL_CONNECTED_ID, COL_QR_REF, COL_STATUS, COL_INSTALL_EPOCH, COL_IS_CURRENT_SESSION, COL_TOKEN_HASH, COL_AUTH_TOKEN, COL_TRACKING_STATUS, COL_FCM_TOKEN, COL_ACTIVE_GROUP, COL_VALID_LINKED_AGENTS, COL_SILICON_ROOT_KEY, COL_CREATED_ON, COL_CREATED_AT, COL_UPDATED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, AuthViewModel.kt, TrackingService.kt
  */
@@ -28,6 +28,7 @@ object UserIdentityTable {
     
     // --- V60.2 RESTORED Forensic Identity Block ---
     const val COL_FULL_NAME = "id_full_name"         // Display Identity (Blank by default)
+    const val COL_NAME_ALIAS = "full_name"           // Tri-Tier & Spec Parity Alias
     const val COL_SESSION_STATE = "st_session_state" // Connectivity Socket
     const val COL_IS_ADMIN = "is_admin"              // Authority Level (Blank by default)
     const val COL_OWNER_NAME = "owner_name"          // Provenance Ledger (Blank by default)
@@ -44,6 +45,12 @@ object UserIdentityTable {
     const val COL_AUTH_TOKEN = "auth_token"
     const val COL_TRACKING_STATUS = "tracking_status" // ACTIVE, GHOST, PAUSED
 
+    // 🚀 V81 Online Cloud Matrix & Hardware Silicon Parity
+    const val COL_FCM_TOKEN = "fcm_token"
+    const val COL_ACTIVE_GROUP = "active_group"
+    const val COL_VALID_LINKED_AGENTS = "valid_linked_agents"
+    const val COL_SILICON_ROOT_KEY = "silicon_root_key"
+
     const val COL_CREATED_ON = "created_on"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_CREATED_AT = "created_at"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
     const val COL_UPDATED_AT = "updated_at"          // 🧬 Forensic String: YYYYMMDDHHMMSSSS
@@ -57,6 +64,7 @@ object UserIdentityTable {
             $COL_AUTH_UID TEXT DEFAULT '',
             $COL_NODE_INDEX INTEGER DEFAULT 1,
             $COL_FULL_NAME TEXT DEFAULT '',
+            $COL_NAME_ALIAS TEXT DEFAULT '',
             $COL_SESSION_STATE TEXT DEFAULT 'OFFLINE',
             $COL_IS_ADMIN TEXT DEFAULT '',
             $COL_OWNER_NAME TEXT DEFAULT '',
@@ -68,6 +76,10 @@ object UserIdentityTable {
             $COL_TOKEN_HASH TEXT DEFAULT '',
             $COL_AUTH_TOKEN TEXT DEFAULT '',
             $COL_TRACKING_STATUS TEXT DEFAULT 'ACTIVE',
+            $COL_FCM_TOKEN TEXT DEFAULT '',
+            $COL_ACTIVE_GROUP TEXT DEFAULT '',
+            $COL_VALID_LINKED_AGENTS TEXT DEFAULT '',
+            $COL_SILICON_ROOT_KEY TEXT DEFAULT '',
             $COL_CREATED_ON TEXT,
             $COL_CREATED_AT TEXT,
             $COL_UPDATED_AT TEXT
@@ -87,7 +99,11 @@ object UserIdentityTable {
         qrRef: String? = "",
         nodeIndex: Int = 1,
         tokenHash: String? = "",
-        trackingStatus: String? = "ACTIVE"
+        trackingStatus: String? = "ACTIVE",
+        fcmToken: String? = null,
+        activeGroup: String? = null,
+        validLinkedAgents: String? = null,
+        siliconRootKey: String? = null
     ): Long {
         val now = FirebaseComm.getForensicTimestamp() // 🧬 V60.2: Use 16-char precise string
         val v = ContentValues().apply {
@@ -95,6 +111,7 @@ object UserIdentityTable {
             put(COL_UID_2, uid2)
             put(COL_AUTH_UID, authUid ?: "")
             put(COL_FULL_NAME, fullName ?: "")
+            put(COL_NAME_ALIAS, fullName ?: "")
             put(COL_IS_ADMIN, isAdmin ?: "")
             put(COL_OWNER_NAME, if (owner.isNullOrEmpty()) (fullName ?: "") else owner)
             put(COL_CONNECTED_ID, connectedId ?: "")
@@ -102,6 +119,10 @@ object UserIdentityTable {
             put(COL_NODE_INDEX, nodeIndex)
             if (!tokenHash.isNullOrEmpty()) put(COL_TOKEN_HASH, tokenHash)
             if (!trackingStatus.isNullOrEmpty()) put(COL_TRACKING_STATUS, trackingStatus)
+            if (!fcmToken.isNullOrEmpty()) put(COL_FCM_TOKEN, fcmToken)
+            if (!activeGroup.isNullOrEmpty()) put(COL_ACTIVE_GROUP, activeGroup)
+            if (!validLinkedAgents.isNullOrEmpty()) put(COL_VALID_LINKED_AGENTS, validLinkedAgents)
+            if (!siliconRootKey.isNullOrEmpty()) put(COL_SILICON_ROOT_KEY, siliconRootKey)
             put(COL_UPDATED_AT, now)
         }
         
@@ -191,6 +212,7 @@ object UserIdentityTable {
             put(COL_UID_2, uid2)
             put(COL_AUTH_UID, authUid ?: "")
             put(COL_FULL_NAME, fullName ?: "")
+            put(COL_NAME_ALIAS, fullName ?: "")
             put(COL_IS_ADMIN, isAdmin ?: "")
             put(COL_OWNER_NAME, if (owner.isNullOrEmpty()) (fullName ?: "") else owner)
             put(COL_CONNECTED_ID, connectedId ?: "")

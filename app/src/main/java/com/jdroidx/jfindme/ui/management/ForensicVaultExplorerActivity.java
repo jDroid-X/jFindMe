@@ -137,12 +137,19 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         AngelLoader.show(this);
         AngelLoader.setStatus(this, "SYNCHRONIZING FORENSIC MATRIX...");
         
-        // 🚀 CLOUD PATH RESOLVER: Map local table names to device-centric sub-group architecture
+        // [Variables]: myUid, currentAgentId, activeGroup, lowerTable, activeTarget
+        // [Constants]: relationships, safe_zones, deepHistoryRef
+        // [Dependencies]: RegistryManager, FirebaseComm, FirebaseDatabase
+        // [Integration Points]: Master Cloud Analytical Node Resolver (Schema V81.2 SSOT)
         String myUid = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
         if (myUid == null || myUid.isEmpty()) {
             myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         }
         String currentAgentId = (myUid != null && !myUid.isEmpty()) ? myUid : "PRIMARY_NODE";
+        String activeGroup = com.jdroidx.jfindme.utils.RegistryManager.getActiveGroup(this);
+        if (activeGroup == null || activeGroup.trim().isEmpty()) {
+            activeGroup = "GRP_" + currentAgentId;
+        }
         
         // 5-Tier Analytical Node Mapping (Normalized Case-Insensitive Matching)
         String lowerTable = (tableName != null) ? tableName.toLowerCase() : "";
@@ -150,16 +157,28 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
             activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(currentAgentId);
         } else if (lowerTable.contains("identity")) {
             activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getIdentityRef(currentAgentId);
-        } else if (lowerTable.contains("device")) {
+        } else if (lowerTable.contains("vitals")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getTelemetryRef(currentAgentId);
+        } else if (lowerTable.contains("device") && !lowerTable.contains("pairing")) {
             activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(currentAgentId);
-        } else if (lowerTable.contains("roster") || lowerTable.contains("group") || lowerTable.contains("relationship")) {
-            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(currentAgentId);
-        } else if (lowerTable.contains("safezone") || lowerTable.contains("geofence")) {
-            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getSafeZonesRef(currentAgentId);
+        } else if (lowerTable.contains("roster") || lowerTable.contains("group") || lowerTable.contains("relationship") || lowerTable.contains("member")) {
+            activeTarget = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("relationships").child(activeGroup).child("members");
+        } else if (lowerTable.contains("safezone") || lowerTable.contains("geofence") || lowerTable.contains("safe_zone")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getGeofencingSafeZonesRef(currentAgentId);
         } else if (lowerTable.contains("history") || lowerTable.contains("location")) {
             activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeepHistoryRef(currentAgentId);
+        } else if (lowerTable.contains("security") || lowerTable.contains("key")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getIdentityRef(currentAgentId).child("security");
+        } else if (lowerTable.contains("telemetry") || lowerTable.contains("failover") || lowerTable.contains("route")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(currentAgentId).child("telemetry_routes");
+        } else if (lowerTable.contains("mesh")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(currentAgentId).child("mesh_packets");
+        } else if (lowerTable.contains("invitation")) {
+            activeTarget = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("relationships").child(activeGroup).child("invitations");
+        } else if (lowerTable.contains("sim_transaction") || lowerTable.contains("sim")) {
+            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(currentAgentId).child("sim_transactions");
         } else if (lowerTable.contains("pairing")) {
-            activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getPairingRef();
+            activeTarget = com.google.firebase.database.FirebaseDatabase.getInstance().getReference("relationships").child(activeGroup).child("devices");
         } else if (lowerTable.contains("log") || lowerTable.contains("audit") || lowerTable.contains("alert")) {
             activeTarget = com.jdroidx.jfindme.data.remote.FirebaseComm.getAlertsRef(currentAgentId);
         } else {
@@ -197,6 +216,10 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
             renderTable(localRows, columns, true);
             if (cloudSnapshot != null) {
                 renderSectionHeader("ONLINE REGISTRY (FIREBASE)");
+                // [Variables]: cloudRows, ds, row, v, m, e
+                // [Constants]: None
+                // [Dependencies]: java.util.Collections, DataSnapshot
+                // [Integration Points]: Master Temporal Invariant (Descending Latest First)
                 List<Map<String, String>> cloudRows = new ArrayList<>();
                 for (DataSnapshot ds : cloudSnapshot.getChildren()) {
                     Map<String, String> row = new HashMap<>();
@@ -208,6 +231,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
                     }
                     cloudRows.add(row);
                 }
+                // Reverse to display newest records first (DESC) matching offline ledger
+                Collections.reverse(cloudRows);
                 renderTable(cloudRows, columns, false);
             }
         } else {

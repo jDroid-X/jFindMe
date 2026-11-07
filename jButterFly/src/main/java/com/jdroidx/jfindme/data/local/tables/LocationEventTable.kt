@@ -7,8 +7,8 @@ import java.util.*
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: id, identityId, timestamp, dayKey, lat, lng, speed, battery, sosFlag, geoAddress, accuracy, bearing, altitude, motionState, createdOn
- * Constants: TABLE_NAME = "location_event", COL_EVENT_ID, COL_ID, COL_IDENTITY_ID, COL_TIMESTAMP, COL_DAY_KEY, COL_LAT, COL_LNG, COL_SPEED, COL_BATTERY, COL_SOS_FLAG, COL_ADDRESS, COL_ACCURACY, COL_BEARING, COL_ALTITUDE, COL_MOTION_STATE, COL_CREATED_ON
+ * Variables: id, identityId, timestamp, dayKey, lat, lng, speed, battery, sosFlag, geoAddress, accuracy, bearing, altitude, motionState, syncStatus, isMock, provider, createdOn
+ * Constants: TABLE_NAME = "location_event", COL_EVENT_ID, COL_ID, COL_IDENTITY_ID, COL_TIMESTAMP, COL_DAY_KEY, COL_LAT, COL_LNG, COL_SPEED, COL_BATTERY, COL_SOS_FLAG, COL_ADDRESS, COL_ACCURACY, COL_BEARING, COL_ALTITUDE, COL_MOTION_STATE, COL_SYNC_STATUS, COL_IS_MOCK, COL_PROVIDER, COL_CREATED_ON
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, TrackingService.kt, LocationRepository.kt, HistoryActivity.java
  */
@@ -33,6 +33,11 @@ object LocationEventTable {
     const val COL_ALTITUDE = "altitude"
     const val COL_MOTION_STATE = "motion_state"
 
+    // 🚀 V81 Offline Sync Tracking & Provider Sentinel
+    const val COL_SYNC_STATUS = "sync_status"
+    const val COL_IS_MOCK = "is_mock"
+    const val COL_PROVIDER = "provider"
+
     const val COL_CREATED_ON = "created_on"
 
     val CREATE_TABLE = """
@@ -51,6 +56,9 @@ object LocationEventTable {
             $COL_BEARING REAL DEFAULT 0.0,
             $COL_ALTITUDE REAL DEFAULT 0.0,
             $COL_MOTION_STATE TEXT DEFAULT 'UNKNOWN',
+            $COL_SYNC_STATUS TEXT DEFAULT 'SYNCED',
+            $COL_IS_MOCK INTEGER DEFAULT 0,
+            $COL_PROVIDER TEXT DEFAULT 'fused',
             $COL_CREATED_ON TEXT,
             FOREIGN KEY ($COL_IDENTITY_ID) REFERENCES ${UserIdentityTable.TABLE_NAME}(${UserIdentityTable.COL_ID}) ON DELETE CASCADE
         )

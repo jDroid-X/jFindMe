@@ -45,7 +45,7 @@
 | **L4 Control**| `UiConfigActivity` | MVC | Agent 3 | `UiArchitect`, `ThemeManager`, `AngelLoad` | Dynamic Theme Palette, 5-Stage Sizing & Border Geometry | Active SSOT |
 | **L4 Control**| `UiGalleryActivity` | MVC | Agent 3 | `UiArchitect` | Component Suite Visual Showcase | Active SSOT |
 | **L4 Engine** | `BackgroundJobsConfigDialog`| 4-Tier Waterfall | Agent 7, Agent 2 | `BackgroundJobManager` | 13 Engine Workers, Periodic Cadence & Manual Execution | Active SSOT |
-| **L4 Vault** | `ForensicVaultExplorerActivity`| MVC | Agent 5, Agent 2 | `DatabaseHelper` | Encrypted SQLite Forensic Inspector (27 Normalized Tables + 13 Views) | Active SSOT |
+| **L4 Vault** | `ForensicVaultExplorerActivity`| MVC | Agent 5, Agent 2 | `DatabaseHelper` | Encrypted SQLite Forensic Inspector (27 Normalized Tables + 16 Zero-Loss Views & Bidirectional Triggers) | Active SSOT |
 | **L4 Audit** | `WatchDogAuditActivity`| MVVM | Agent 5 | `WatchDogViewModel` | Process Liveness & SQLite Integrity Verifier | Active SSOT |
 | **L4 Admin** | `DatabaseManagementActivity` | MVC | Agent 2, Agent 4 | `DatabaseHelper` | SQLite Schema Inspector & Table Maintenance Console | Active SSOT |
 | **L4 Admin** | `FirebaseCloudMatrixActivity` | MVC | Agent 1, Agent 2 | `FirebaseComm` | Cloud Realtime Database Mesh Inspector | Active SSOT |
@@ -66,10 +66,10 @@
 | **W2 Shell** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\index.html` | Port 8080 (SPA) | Tactical Radar | Main web workspace, Leaflet/Google Maps radar, audit ledger | Active SSOT |
 | **W2 Orchestrator**| `C:\Users\jiten\jAnitGravity\jFindMeWeb\js\app.js` | ES6 Module | Master Controller | State dispatch, routing, telemetry subscriptions, terminal | Active SSOT |
 | **W2 Matrix** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\database-sync-settings.html` | Standalone HTML | 20-Screen Sync | 178 Master Parameter Dual-Engine Synchronization Console | Active SSOT |
-| **W3 Models** | `DeviceModel.js`, `SettingsModel.js`, `SafeZoneModel.js` | MVC Model | Data Entities | Hardware silicon ID binding, boundary polygons, telemetry | Active SSOT |
-| **W3 Controllers**| `DeviceController.js`, `MapController.js`, `SafeZoneController.js` | MVC Controller | Action Handlers | Device filtering, interrogation, map event dispatching | Active SSOT |
-| **W3 Services** | `FirebaseService.js` (FBBridge), `AvatarService.js`, `SanitizerService.js` | Service Layer | Network & IO | SSE event streaming, XSS sanitization, avatar asset mapping | Active SSOT |
-| **W3 Views** | `DashboardView.js`, `DeviceCardView.js`, `DeviceUserView.js`, `GeofencingView.js`, `MapView.js` | MVC View | Visual Renderers | Real-time map pins, KPI metrics, device dossier with Active Route & Baseband RSSI, SafeZones | Active SSOT |
+| **W3 Models** | `DeviceModel.js`, `SettingsModel.js`, `SafeZoneModel.js`, `DeviceFilterModel.js` | MVC Model | Data Entities | Hardware silicon ID binding, boundary polygons, telemetry, geographic cascading hierarchy & dynamic bandwidth hygiene | Active SSOT |
+| **W3 Controllers**| `DeviceController.js`, `MapController.js`, `SafeZoneController.js` | MVC Controller | Action Handlers | Device filtering, interrogation, map event dispatching, selective telemetry stream injection | Active SSOT |
+| **W3 Services** | `FirebaseService.js` (FBBridge), `AvatarService.js`, `SanitizerService.js` | Service Layer | Network & IO | SSE event streaming, XSS sanitization, avatar asset mapping, selective polling URL query encoder | Active SSOT |
+| **W3 Views** | `DashboardView.js`, `DeviceCardView.js`, `DeviceUserView.js`, `GeofencingView.js`, `MapView.js`, `MapSettingsView.js`, `DeviceFilterModalView.js` | MVC View | Visual Renderers | Real-time map pins, KPI metrics, device dossier, multi-column geographic fleet filter modal, dynamic settings UI | Active SSOT |
 | **W4 Release** | `C:\jFindMe_Releases\apks\sync_service.py` (Junction `apk/`) | Port 8085 (Daemon)| Python Daemon | Automated version code increments, SHA-256 hash, GitHub push | Active SSOT |
 | **W4 Studio**  | `C:\jFindMe_Releases\apks\jButterflyGithubSync_v2.html` (Junction `apk/`) | Client UI (Port 8085/8080) | HTML5 / OOPS MVC | 1-Click Auto-Compare, Slide-Out Log Drawer, USB & WhatsApp Direct Install | Active SSOT |
 

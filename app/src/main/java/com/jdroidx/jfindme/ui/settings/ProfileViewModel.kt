@@ -232,8 +232,11 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     val effectiveGrp = if (!activeGrp.isNullOrBlank() && activeGrp != "DEFAULT_GROUP") activeGrp else "GRP_$safeUid"
                     val groupData = mapOf("group_id" to effectiveGrp, "group_name" to "My Circle")
                     
+                    // [Variables] cleanHwUid: String, canonicalHwUid: String | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] executeTieredHandshake SSOT
+                    val cleanHwUid = FirebaseComm.sanitizeAgentId(hardwareId)
+                    val canonicalHwUid = "HW_$cleanHwUid"
                     db.executeTieredHandshake(
-                        authUid, safeUid, "HW_${hardwareId.uppercase()}", hardwareId,
+                        authUid, safeUid, canonicalHwUid, safeUid,
                         dossier, orgDossier, null, groupData, null, null, null
                     )
                     

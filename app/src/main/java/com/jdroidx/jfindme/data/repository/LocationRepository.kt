@@ -139,6 +139,21 @@ class LocationRepository(internal val context: Context) {
             latestLocations.remove("You")
         }
 
+        // 🛡️ LWW (Last-Write-Wins) Monotonic Timestamp Guard:
+        // Priority Rule: Always prefer latest chronological timestamp; discard out-of-order stale telemetry
+        val existing = latestLocations[canonicalStoreId]
+        if (existing != null && loc.getLongTimestamp() < existing.getLongTimestamp()) {
+            // If stale telemetry carries active SOS, propagate SOS state to newer position without rewinding coordinates
+            if (loc.isSosActive && !existing.isSosActive) {
+                existing.isSosActive = true
+                _userLocations.postValue(latestLocations.values.sortedWith(
+                    compareByDescending<UserLocation> { it.isSosActive }
+                        .thenByDescending { it.getLongTimestamp() }
+                ))
+            }
+            return
+        }
+
         latestLocations[canonicalStoreId] = loc
         _userLocations.postValue(latestLocations.values.sortedWith(
             compareByDescending<UserLocation> { it.isSosActive }
@@ -174,19 +189,27 @@ class LocationRepository(internal val context: Context) {
         // 🚀 CRITICAL FIX: Pull ONLY verified handshaked devices from SQLite Roster
         try {
             val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            // [Variables] addTarget: (String?) -> Unit | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] Realtime location listener subscription
+            val addTarget = { raw: String? ->
+                if (!raw.isNullOrBlank()) {
+                    val clean = FirebaseComm.sanitizeAgentId(raw)
+                    if (FirebaseComm.isAgentIdValid(clean)) {
+                        targetUids.add(clean)
+                    }
+                }
+            }
             val offlineNodes = localDb.getOfflineRoster()
             for (node in offlineNodes) {
-                val u1 = node["uid_1"] as? String
-                val u2 = node["uid_2"] as? String
-                val connId = node["connected_id"] as? String
-                if (!u1.isNullOrBlank()) targetUids.add(u1.trim())
-                if (!u2.isNullOrBlank()) targetUids.add(u2.trim())
-                if (!connId.isNullOrBlank()) targetUids.add(connId.trim())
+                addTarget(node["uid_1"] as? String)
+                addTarget(node["uid_2"] as? String)
+                addTarget(node["connected_id"] as? String)
             }
 
             // 🛡️ Include all verified paired device IDs across DevicePairingTable and UserIdentityTable
             val pairedIds = localDb.getAllPairedDeviceIds()
-            targetUids.addAll(pairedIds)
+            for (p in pairedIds) {
+                addTarget(p)
+            }
 
             // 🛡️ SOFT-DELETE PURGE: Immediately evict any target marked as DELETED
             targetUids.removeAll { uid ->

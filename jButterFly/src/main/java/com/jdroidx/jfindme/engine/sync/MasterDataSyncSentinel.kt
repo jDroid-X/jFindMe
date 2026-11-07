@@ -140,17 +140,19 @@ object MasterDataSyncSentinel {
 
                     var sentCount = 0
                     for (peerId in pairedIds) {
-                        if (peerId.isNotBlank() && peerId != localAgentId) {
+                        // [Variables] cleanPeerId: String | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] /devices/{id}/inbox
+                        val cleanPeerId = FirebaseComm.sanitizeAgentId(peerId)
+                        if (FirebaseComm.isAgentIdValid(cleanPeerId) && cleanPeerId != localAgentId) {
                             try {
                                 val inboxRef = FirebaseComm.devicesRef
-                                    .child(peerId)
+                                    .child(cleanPeerId)
                                     .child("inbox")
                                     .child("master_sync")
                                     .push()
                                 inboxRef.setValue(peerPacket)
                                 sentCount++
                             } catch (e: Exception) {
-                                SystemLogger.w(TAG, "Failed to fan-out to peer $peerId: ${e.message}")
+                                SystemLogger.w(TAG, "Failed to fan-out to peer $cleanPeerId: ${e.message}")
                             }
                         }
                     }

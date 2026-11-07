@@ -6,8 +6,8 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 
 /**
  * [Variables] | [Constants] | [Dependencies] | [Integration Points]
- * Variables: simId, deviceId, serial, operator, mcc, mnc, isActive, servingCid, carrierName, now
- * Constants: TABLE_NAME = "sim", COL_SIM_ID, COL_DEVICE_ID, COL_SIM_SERIAL, COL_OPERATOR, COL_MCC, COL_MNC, COL_IS_ACTIVE, COL_SERVING_CID, COL_CARRIER_NAME, COL_CREATED_ON, COL_UPDATED_AT
+ * Variables: simId, deviceId, serial, operator, mcc, mnc, isActive, servingCid, carrierName, slotIndex, phoneNumber, lac, signalStrengthDbm, now
+ * Constants: TABLE_NAME = "sim", COL_SIM_ID, COL_DEVICE_ID, COL_SIM_SERIAL, COL_OPERATOR, COL_MCC, COL_MNC, COL_IS_ACTIVE, COL_SERVING_CID, COL_CARRIER_NAME, COL_SLOT_INDEX, COL_PHONE_NUMBER, COL_LAC, COL_SIGNAL_STRENGTH_DBM, COL_CREATED_ON, COL_UPDATED_AT
  * Dependencies: android.content.ContentValues, android.database.sqlite.SQLiteDatabase, com.jdroidx.jfindme.data.remote.FirebaseComm
  * Integration Points: DatabaseHelper.kt, HardwareIdentitySentinel.kt, NetworkGatewayActivity.java
  */
@@ -26,6 +26,12 @@ object SimTable {
     const val COL_SERVING_CID = "serving_cid"
     const val COL_CARRIER_NAME = "carrier_name"
 
+    // 🚀 V81 Dual-SIM Slot & Baseband Radio Parity
+    const val COL_SLOT_INDEX = "slot_index"
+    const val COL_PHONE_NUMBER = "phone_number"
+    const val COL_LAC = "lac"
+    const val COL_SIGNAL_STRENGTH_DBM = "signal_strength_dbm"
+
     const val COL_CREATED_ON = "created_on"
     const val COL_UPDATED_AT = "updated_at"
 
@@ -40,6 +46,10 @@ object SimTable {
             $COL_IS_ACTIVE INTEGER DEFAULT 1,
             $COL_SERVING_CID TEXT DEFAULT '',
             $COL_CARRIER_NAME TEXT DEFAULT '',
+            $COL_SLOT_INDEX INTEGER DEFAULT 0,
+            $COL_PHONE_NUMBER TEXT DEFAULT '',
+            $COL_LAC TEXT DEFAULT '',
+            $COL_SIGNAL_STRENGTH_DBM INTEGER DEFAULT 0,
             $COL_CREATED_ON TEXT,
             $COL_UPDATED_AT TEXT,
             FOREIGN KEY ($COL_DEVICE_ID) REFERENCES ${DeviceTable.TABLE_NAME}(${DeviceTable.COL_DEVICE_ID}) ON DELETE CASCADE
