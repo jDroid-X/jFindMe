@@ -57,15 +57,15 @@
 
 ---
 
-## Web Mission Control & Forensic Gateway Relationship Table
+## Web Mission Control & Forensic Gateway Relationship Table (Decoupled Sovereign Workspace: `C:\Users\jiten\jAnitGravity\jFindMeWeb`)
 
 | Layer | Subsystem / File | Port / Protocol | Architecture | Role & Integration Points | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **W1 Gateway** | `jFindMeWeb/js/server.js` | Port 3000 (REST) | Express Proxy | Firebase Admin SDK, OTA broadcast, RTDB REST endpoints | Active SSOT |
-| **W1 Gateway** | `jFindMeWeb/js/static_server.js` | Port 8080 (HTTP) | Reverse Proxy | Serves static assets, reverse-proxies `/api/*` to Port 3000 | Active SSOT |
-| **W2 Shell** | `jFindMeWeb/index.html` | Port 8080 (SPA) | Tactical Radar | Main web workspace, Leaflet/Google Maps radar, audit ledger | Active SSOT |
-| **W2 Orchestrator**| `jFindMeWeb/js/app.js` | ES6 Module | Master Controller | State dispatch, routing, telemetry subscriptions, terminal | Active SSOT |
-| **W2 Matrix** | `jFindMeWeb/database-sync-settings.html` | Standalone HTML | 20-Screen Sync | 178 Master Parameter Dual-Engine Synchronization Console | Active SSOT |
+| **W1 Gateway** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\js\server.js` | Port 3000 (REST) | Express Proxy | Firebase Admin SDK, OTA broadcast, RTDB REST endpoints | Active SSOT |
+| **W1 Gateway** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\js\static_server.js` | Port 8080 (HTTP) | Reverse Proxy | Serves static assets, reverse-proxies `/api/*` to Port 3000 | Active SSOT |
+| **W2 Shell** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\index.html` | Port 8080 (SPA) | Tactical Radar | Main web workspace, Leaflet/Google Maps radar, audit ledger | Active SSOT |
+| **W2 Orchestrator**| `C:\Users\jiten\jAnitGravity\jFindMeWeb\js\app.js` | ES6 Module | Master Controller | State dispatch, routing, telemetry subscriptions, terminal | Active SSOT |
+| **W2 Matrix** | `C:\Users\jiten\jAnitGravity\jFindMeWeb\database-sync-settings.html` | Standalone HTML | 20-Screen Sync | 178 Master Parameter Dual-Engine Synchronization Console | Active SSOT |
 | **W3 Models** | `DeviceModel.js`, `SettingsModel.js`, `SafeZoneModel.js` | MVC Model | Data Entities | Hardware silicon ID binding, boundary polygons, telemetry | Active SSOT |
 | **W3 Controllers**| `DeviceController.js`, `MapController.js`, `SafeZoneController.js` | MVC Controller | Action Handlers | Device filtering, interrogation, map event dispatching | Active SSOT |
 | **W3 Services** | `FirebaseService.js` (FBBridge), `AvatarService.js`, `SanitizerService.js` | Service Layer | Network & IO | SSE event streaming, XSS sanitization, avatar asset mapping | Active SSOT |

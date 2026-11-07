@@ -1,3 +1,27 @@
 {
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "files.exclude": {
+        "**/build": true,
+        "**/.gradle": true,
+        "**/jButterFly/build": true,
+        "**/app/build": true,
+        "**/legacy": true,
+        "**/apk": true,
+        "**/jFindMeWeb": true,
+        "**/jbr_local": true,
+        "**/Github Location tracker": true,
+        "**/.git": true
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/.gradle": true,
+        "**/jButterFly/build": true,
+        "**/app/build": true,
+        "**/legacy": true,
+        "**/apk": true,
+        "**/jFindMeWeb": true,
+        "**/jbr_local": true,
+        "**/Github Location tracker": true,
+        "**/.git": true
+    }
 }
