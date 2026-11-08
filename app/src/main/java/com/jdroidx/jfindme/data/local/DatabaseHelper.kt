@@ -545,6 +545,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         // [Variables] db: SQLiteDatabase, decommissioned: Set<String> | [Constants] DevicePairingTable, UserIdentityTable, GroupMemberTable | [Dependencies] SQLiteDatabase, RegistryManager | [Integration Points] Dynamic Self-Healing Decommissioned Fleet Purge
         // 🚀 Self-Healing: Purge decommissioned nodes and corrupted 'HW_HW_' pairings/identities dynamically
         try {
+            seedDefaultDynamicConfigs(db)
             val decommissioned = com.jdroidx.jfindme.utils.RegistryManager.getDecommissionedAgentIds(context)
             for (orphanId in decommissioned) {
                 db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(orphanId, orphanId))
@@ -851,7 +852,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         COALESCE(NEW.${PendingSyncQueueTable.COL_SPEED}, 0.0),
                         COALESCE(NEW.${PendingSyncQueueTable.COL_BATTERY}, 100),
                         COALESCE(NEW.${PendingSyncQueueTable.COL_IS_SOS}, 0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_TIMESTAMP}, strftime('%Y%m%d%H%M%S00', 'now')),
+                        COALESCE(NEW.${PendingSyncQueueTable.COL_TIMESTAMP}, CAST(strftime('%s', 'now') AS INTEGER) * 1000),
                         COALESCE(NEW.${PendingSyncQueueTable.COL_STATUS}, 'PENDING'),
                         COALESCE(NEW.${PendingSyncQueueTable.COL_RETRY_COUNT}, 0),
                         COALESCE(NEW.${PendingSyncQueueTable.COL_EXTRA_DATA}, ''),
@@ -962,7 +963,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
             } catch (ex: Exception) { }
 
-            // Compatibility SQL Views (13 Zero-Loss Latest-Data Views)
+            // Dynamic Config Defaults & Compatibility SQL Views (13 Zero-Loss Latest-Data Views)
+            seedDefaultDynamicConfigs(db)
             createLatestDataCompatibilityViews(db)
             
             android.util.Log.i("DatabaseHelper", "V81 Redesign: Full 25-Table Tri-Tier Architecture & Compatibility Views Deployed.")
@@ -1155,7 +1157,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             "alerts" -> AlertHistoryTable.TABLE_NAME
             "locations" -> LocationEventTable.TABLE_NAME
             "sync_queue" -> PendingSyncQueueTable.TABLE_NAME
-            "device_policy", "device_policies" -> DevicePolicyTable.TABLE_NAME
+            "device_policy", "device_policies", "device_policy_state" -> DevicePolicyTable.TABLE_NAME
             "device_pairings" -> DevicePairingTable.TABLE_NAME
             "organizations" -> OrganizationTable.TABLE_NAME
             "sim_inventory" -> SimTable.TABLE_NAME

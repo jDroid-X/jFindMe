@@ -843,6 +843,28 @@ class TrackingService : Service() {
         const val DEFAULT_DEAD_RECKONING_RADIUS_METERS = 15.0f
         const val KEY_PRESENCE_PULSE_INTERVAL_MS = "presence_pulse_interval_ms"
         const val DEFAULT_PRESENCE_PULSE_INTERVAL_MS = 180_000L
+
+        /**
+         * [Variables] pm, intent | [Constants] ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS | [Dependencies] PowerManager | [Integration Points] UI Whitelisting Trigger
+         * Dispatches native OS battery optimization exemption dialog to prevent Doze mode throttling.
+         */
+        @JvmStatic
+        fun requestBatteryOptimizationExemption(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(context.packageName)) {
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = android.net.Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        SystemLogger.w("TrackingService", "Failed to launch battery exemption dialog: ${e.message}")
+                    }
+                }
+            }
+        }
     }
 
     // QA Persistence Upgrade: Allow Unauthenticated Testers to blast Tracker Events without crashing!
