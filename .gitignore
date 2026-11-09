@@ -37,7 +37,10 @@ all_logs.txt
 /firebase/google-services.json
 **/google-services.json
 *-adminsdk-*.json
+**/*-adminsdk-*.json
 service-account.json
+**/service-account*.json
+app/jfindme-3b15c-firebase-adminsdk-fbsvc-51f0131106.json
 *.jks
 *.keystore
 
