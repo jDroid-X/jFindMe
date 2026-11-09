@@ -2022,21 +2022,32 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
                         finish();
                     } else {
-                        // Fallback to active pin session verification
-                        FirebasePairingManager.INSTANCE.requestJoinGroup(NetworkGatewayActivity.this, inputMatrix, selectedRole, (pinSuccess, pinMessage) -> {
+                        // Check multi-device close attachment session (3/4/5 devices using the same pairing code)
+                        PairingRepository.joinMultiDevicePairingSession(inputMatrix, myAgentId, selectedRole, (multiSuccess, multiMsg) -> {
                             runOnUiThread(() -> {
-                                if (pinSuccess && "FULLY_SYNCED".equals(pinMessage)) {
-                                    Toast.makeText(NetworkGatewayActivity.this, "Pairing Complete! Opening Map...", Toast.LENGTH_LONG).show();
+                                if (Boolean.TRUE.equals(multiSuccess)) {
+                                    Toast.makeText(NetworkGatewayActivity.this, "🎉 Multi-Device Close Attachment Complete! Opening Map...", Toast.LENGTH_LONG).show();
                                     startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
-                                    new Handler(Looper.getMainLooper()).postDelayed(NetworkGatewayActivity.this::finish, 1500);
-                                } else if (pinSuccess && "PENDING_HANDSHAKE".equals(pinMessage)) {
-                                    Toast.makeText(NetworkGatewayActivity.this, "Handshake Sent! Waiting for Host Approval...", Toast.LENGTH_SHORT).show();
-                                    listenForHandshakeApproval(inputMatrix);
+                                    finish();
                                 } else {
-                                    Toast.makeText(NetworkGatewayActivity.this, message != null ? message : (pinMessage != null ? pinMessage : "Pairing Failed"), Toast.LENGTH_SHORT).show();
+                                    // Fallback to active pin session verification
+                                    FirebasePairingManager.INSTANCE.requestJoinGroup(NetworkGatewayActivity.this, inputMatrix, selectedRole, (pinSuccess, pinMessage) -> {
+                                        runOnUiThread(() -> {
+                                            if (pinSuccess && "FULLY_SYNCED".equals(pinMessage)) {
+                                                Toast.makeText(NetworkGatewayActivity.this, "Pairing Complete! Opening Map...", Toast.LENGTH_LONG).show();
+                                                startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
+                                                new Handler(Looper.getMainLooper()).postDelayed(NetworkGatewayActivity.this::finish, 1500);
+                                            } else if (pinSuccess && "PENDING_HANDSHAKE".equals(pinMessage)) {
+                                                Toast.makeText(NetworkGatewayActivity.this, "Handshake Sent! Waiting for Host Approval...", Toast.LENGTH_SHORT).show();
+                                                listenForHandshakeApproval(inputMatrix);
+                                            } else {
+                                                Toast.makeText(NetworkGatewayActivity.this, message != null ? message : (pinMessage != null ? pinMessage : "Pairing Failed"), Toast.LENGTH_SHORT).show();
+                                            }
+                                        });
+                                        return kotlin.Unit.INSTANCE;
+                                    });
                                 }
                             });
-                            return kotlin.Unit.INSTANCE;
                         });
                     }
                 });

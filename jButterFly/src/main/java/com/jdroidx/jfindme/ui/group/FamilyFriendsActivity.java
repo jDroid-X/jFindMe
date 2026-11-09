@@ -9,7 +9,9 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.util.Pair;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,9 +44,11 @@ import com.jdroidx.jfindme.utils.SystemLogger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 👨‍👩‍👧‍👦 ENTERPRISE FAMILY & FRIENDS RELATIONAL ACTIVITY (L7 OOPS-MVVM)
@@ -918,6 +922,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         actionsList.add(new UiArchitect.OptionItem("📝 View / Edit Dossier & Role", "Inspect full profile, permissions, and contacts", com.jdroidx.jfindme.R.drawable.ic_user_profile));
         actionsList.add(new UiArchitect.OptionItem("🛡️ Assign Safe Zone", "Configure geofence boundary perimeter", com.jdroidx.jfindme.R.drawable.ic_safe_zone));
         actionsList.add(new UiArchitect.OptionItem("👑 Change Relationship Category", "Reclassify as Guardian, Spouse, Child, or Friend", com.jdroidx.jfindme.R.drawable.ic_family_friends));
+        actionsList.add(new UiArchitect.OptionItem("🔗 Connect Another Device (Tickbox Selection)", "Pair " + node.getDisplayName() + " to other fleet devices with multi-select roles", com.jdroidx.jfindme.R.drawable.ic_family_friends));
         if (isChild) {
             actionsList.add(new UiArchitect.OptionItem("👨‍👩‍👧 Link Other Parent / Co-Guardian", "Assign a second parent/guardian (Spouse or Co-Guardian) to co-manage this child", com.jdroidx.jfindme.R.drawable.ic_family_friends));
         }
@@ -959,11 +964,92 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 startActivity(safeZoneIntent);
             } else if (actLabel.contains("Change Relationship")) {
                 showRoleChangeDialog(node);
+            } else if (actLabel.contains("Connect Another Device")) {
+                showConnectDeviceDialogForNode(node);
             } else if (actLabel.contains("Link Other Parent")) {
                 showLinkCoParentDialog(node);
             } else if (actLabel.contains("Unlink Device")) {
                 confirmUnlinkDevice(node);
             }
+        });
+    }
+
+    /**
+     * [Variables] candidates, seenIds, allNodes, roles, roleJoined, confirmMsg, myGrp, primaryRole, remaining, successCount
+     * [Constants] None
+     * [Dependencies] UiArchitect, PairingRepository, DatabaseHelper, AngelLoader
+     * [Integration Points] FamilyFriendsActivity, PairingRepository, DatabaseHelper
+     * 🔗 Displays Compound Device & Role Connector Modal Dialog from Family & Friends roster.
+     */
+    private void showConnectDeviceDialogForNode(RosterNode node) {
+        if (node == null) return;
+        String targetUid = node.getUid();
+        String targetName = node.getDisplayName();
+
+        List<Pair<String, String>> candidates = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        seenIds.add(targetUid.toUpperCase());
+
+        List<RosterNode> allNodes = (viewModel != null && viewModel.getRosterNodes().getValue() != null) ? viewModel.getRosterNodes().getValue() : new ArrayList<>();
+        for (RosterNode n : allNodes) {
+            if (n == null) continue;
+            String uid = n.getUid();
+            if (uid != null && !uid.isEmpty() && !seenIds.contains(uid.toUpperCase())) {
+                seenIds.add(uid.toUpperCase());
+                candidates.add(new Pair<>(uid, n.getDisplayName()));
+            }
+        }
+
+        String[] roles = new String[]{
+            "🛡️ Parent / Primary Guardian",
+            "👨‍👩‍👧 Co-Parent / Secondary Guardian",
+            "👶 Child / Dependent Ward",
+            "💍 Spouse / Partner",
+            "🤝 Friend / Peer Member",
+            "🚨 Emergency Contact"
+        };
+
+        UiArchitect.showCompoundDeviceRoleDialog(this, targetUid, targetName, candidates, roles, (selectedDeviceIds, selectedRoles) -> {
+            String roleJoined = TextUtils.join(", ", selectedRoles);
+            String confirmMsg = "Connect " + targetName + " (" + targetUid + ") to " + selectedDeviceIds.size() + " device(s) with role(s):\n" + roleJoined + "?\n\nThis will link them mutually in your active mesh.";
+            
+            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+                com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Connecting " + selectedDeviceIds.size() + " devices...");
+
+                String primaryRole = !selectedRoles.isEmpty() ? selectedRoles.get(0).replaceAll("[^a-zA-Z /]", "").trim() : "Member";
+
+                final java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(selectedDeviceIds.size());
+                final java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+                for (String tId : selectedDeviceIds) {
+                    com.jdroidx.jfindme.data.repository.PairingRepository.linkDevicesWithRoles(
+                        myGrp,
+                        targetUid,
+                        tId,
+                        primaryRole,
+                        null,
+                        null,
+                        (success, errMsg) -> {
+                            if (Boolean.TRUE.equals(success)) {
+                                successCount.incrementAndGet();
+                            }
+                            if (remaining.decrementAndGet() == 0) {
+                                runOnUiThread(() -> {
+                                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                                    if (viewModel != null) {
+                                        viewModel.initializeCloudSync(this);
+                                    }
+                                    String msg = "Successfully connected " + successCount.get() + " of " + selectedDeviceIds.size() + " devices as " + primaryRole + ".";
+                                    UiArchitect.showSlideNotificationBanner(this, "DEVICES CONNECTED", msg, false, 4000, null, null);
+                                    Toast.makeText(this, "✅ " + msg, Toast.LENGTH_LONG).show();
+                                });
+                            }
+                        }
+                    );
+                }
+            }, null);
         });
     }
 

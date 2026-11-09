@@ -82,16 +82,23 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun syncLocalMeshIds() {
         try {
             val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
-            val pairedIds = db.getAllPairedDeviceIds()
-            familyMeshIds.addAll(pairedIds)
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+            val scopedIds = db.getConnectedDeviceIds(myAgentId)
+            if (scopedIds.isNotEmpty()) {
+                familyMeshIds.clear()
+                familyMeshIds.addAll(scopedIds)
+            } else {
+                val pairedIds = db.getAllPairedDeviceIds()
+                familyMeshIds.addAll(pairedIds)
+            }
             val offlineRoster = db.getOfflineRoster()
             for (node in offlineRoster) {
                 val u1 = node["uid_1"] as? String
                 val u2 = node["uid_2"] as? String
                 val connId = node["connected_id"] as? String
-                if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
-                if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
-                if (!connId.isNullOrBlank()) familyMeshIds.add(connId.trim())
+                if (!u1.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(u1.trim()))) familyMeshIds.add(u1.trim())
+                if (!u2.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(u2.trim()))) familyMeshIds.add(u2.trim())
+                if (!connId.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(connId.trim()))) familyMeshIds.add(connId.trim())
             }
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed syncing local mesh IDs", e)

@@ -56,6 +56,15 @@ All status dots, labels, and marker badges must use these unified thresholds:
 ### 9. Deterministic Navigation (Zero Dead Ends)
 * The Back Button (`onBackPressed` / `OnBackInvokedCallback`) must return deterministically to the parent interface without resetting or destroying parent state.
 
+### 10. Coordinate Tree Protocol `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`
+All multi-component features, device-to-device pairing handshakes, and role-scoped views must define and enforce the 6-layer coordinate tree:
+- **ROOT**: Primary Subsystem Context (e.g. `jFindMe Core Engine`)
+- **BR**: Business Rules & Reciprocal Role Inversion (e.g. Multi-Device Single Pairing Code Attachment, Scoped Isolation)
+- **EL**: Event Listeners, Dialog Interceptors & State Triggers (e.g. Marker click, compound checkbox commit, RTDB socket listener)
+- **FE**: Frontend UI/UX Components (e.g. UiArchitect Compound Dialog, Target Action Sheet, Role Pills, Slide Notification Banner)
+- **BE**: Backend ViewModels, Repositories & Handlers (e.g. PairingRepository, LocationRepository, MapViewModel)
+- **DB**: Dual Storage SSOT (SQLite Normalized Tables & Compatibility Views ↔ Firebase RTDB Mesh)
+
 ---
 
 ## Tier 2: Screen-Dependent Subset Rules

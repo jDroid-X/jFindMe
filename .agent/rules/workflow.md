@@ -58,6 +58,7 @@ When ANY change, patch, bug fix, or feature request is received, every agent and
 - **Step 1**: Define the Scenario and Sub-Scenarios.
 - **Step 2**: Check Tier 1 Universal Rules and select the exact Tier 2 Screen-Dependent Subset in `.agent/rules/rules.md`.
 - **Step 3**: Design the View-ViewModel-Repository structure (Waterfall MVVM).
+- **Step 4**: **Coordinate Tree Plan `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`**: Explicitly document Context Root $\supset$ Business Rules (BR) $\supset$ Event Listeners (EL) $\supset$ Frontend UI (FE) $\supset$ Backend Repositories & ViewModels (BE) $\supset$ Dual Storage SSOT (DB).
 - **Trigger**: Move to Solutioning ONLY after the plan is approved. (Do NOT create uncoordinated sub-branches during initial execution).
 
 ## Phase 3: Solutioning (The "Modular-Build")

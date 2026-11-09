@@ -205,18 +205,20 @@ class LocationRepository(internal val context: Context) {
                 addTarget(node["connected_id"] as? String)
             }
 
-            // 🛡️ Include all verified paired device IDs across DevicePairingTable and UserIdentityTable
-            val pairedIds = localDb.getAllPairedDeviceIds()
-            for (p in pairedIds) {
-                addTarget(p)
-            }
-
-            // 🛡️ Scoped Connected Devices for active session focal agent
+            // 🛡️ Scoped Connected Devices: Enforce respective connected devices isolation
             val focalAgentId = if (myAgentId.isNotBlank()) myAgentId else (myUid ?: "")
-            if (focalAgentId.isNotBlank()) {
-                val scopedIds = localDb.getConnectedDeviceIds(focalAgentId)
+            val scopedIds = if (focalAgentId.isNotBlank()) localDb.getConnectedDeviceIds(focalAgentId) else emptySet()
+
+            if (scopedIds.isNotEmpty()) {
+                // Strictly prioritize and track only respective connected peers
                 for (s in scopedIds) {
                     addTarget(s)
+                }
+            } else {
+                // Fallback for fresh uncoupled installs / root host before initial pair
+                val pairedIds = localDb.getAllPairedDeviceIds()
+                for (p in pairedIds) {
+                    addTarget(p)
                 }
             }
 
