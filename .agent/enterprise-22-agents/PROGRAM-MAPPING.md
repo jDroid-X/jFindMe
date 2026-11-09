@@ -70,8 +70,8 @@
 | **W3 Controllers**| `DeviceController.js`, `MapController.js`, `SafeZoneController.js` | MVC Controller | Action Handlers | Device filtering, interrogation, map event dispatching, selective telemetry stream injection | Active SSOT |
 | **W3 Services** | `FirebaseService.js` (FBBridge), `AvatarService.js`, `SanitizerService.js` | Service Layer | Network & IO | SSE event streaming, XSS sanitization, avatar asset mapping, selective polling URL query encoder | Active SSOT |
 | **W3 Views** | `DashboardView.js`, `DeviceCardView.js`, `DeviceUserView.js`, `GeofencingView.js`, `MapView.js`, `MapSettingsView.js`, `DeviceFilterModalView.js` | MVC View | Visual Renderers | Real-time map pins, KPI metrics, device dossier, multi-column geographic fleet filter modal, dynamic settings UI | Active SSOT |
-| **W4 Release** | `C:\jFindMe_Releases\apks\sync_service.py` (Junction `apk/`) | Port 8085 (Daemon)| Python Daemon | Automated version code increments, SHA-256 hash, GitHub push | Active SSOT |
-| **W4 Studio**  | `C:\jFindMe_Releases\apks\jButterflyGithubSync_v2.html` (Junction `apk/`) | Client UI (Port 8085/8080) | HTML5 / OOPS MVC | 1-Click Auto-Compare, Slide-Out Log Drawer, USB & WhatsApp Direct Install | Active SSOT |
+| **W4 Release** | `C:\Users\jiten\jAnitGravity\jFindMe\apk\sync_service.py` | Port 8085 (Daemon)| Python Singleton Daemon | Singleton supervisor (`sync_service.pid`), dual-config SSOT atomic sync (`jFindMe/apk` ⇄ `jFindMeWeb`), hardware binary badging, staged release engine, SHA-256 integrity, GitHub git automation & bsdiff differential hotpatching | Active SSOT |
+| **W4 Studio**  | `C:\Users\jiten\jAnitGravity\jFindMeWeb\jButterflyGithubSync_v2.html` | Client UI (Port 3000/8085) | HTML5 / OOPS MVC | 1-Click Promote Next Build, zero-latency reactive metadata refresher, Option 1 (ADB Install vs Copy to Downloads), WhatsApp deep link, QR modal, slide-out activity console | Active SSOT |
 
 ---
 
