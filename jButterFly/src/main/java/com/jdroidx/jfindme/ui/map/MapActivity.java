@@ -65,7 +65,10 @@ import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.ui.base.BottomNavTable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import kotlin.Unit;
 
 /**
@@ -974,7 +977,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             new UiArchitect.OptionItem("🔊 Ring Device (Acoustic Siren)", "Trigger high-volume emergency siren (" + sirenDuration + "s) on target device", android.R.drawable.ic_lock_idle_alarm),
             new UiArchitect.OptionItem("👤 View Member Details & Roles", "Open dossier, ACL permissions, and contact details", com.jdroidx.jfindme.R.drawable.ic_user_profile),
             new UiArchitect.OptionItem("🔄 Refresh Latest Profile Data", "Pull and re-sync latest profile dossier, avatar, and callsign from Cloud SSOT", android.R.drawable.ic_popup_sync),
+            new UiArchitect.OptionItem("🔗 Connect Another Device (Tickbox Selection)", "Pair " + finalTargetName + " to other fleet devices with multi-select roles", com.jdroidx.jfindme.R.drawable.ic_family_friends),
             new UiArchitect.OptionItem("👨‍👩‍👧 Add Another Parent / Guardian", "Link a secondary parent/co-guardian to share oversight with variable selections", com.jdroidx.jfindme.R.drawable.ic_family_friends),
+            new UiArchitect.OptionItem("🔑 1-Code Multi-Device Attachment", "Generate single 6-digit code to attach 3/4/5 devices simultaneously", com.jdroidx.jfindme.R.drawable.ic_settings_gears),
             new UiArchitect.OptionItem("📋 Copy GPS Coordinates", "Copy exact latitude and longitude to clipboard", android.R.drawable.ic_menu_save),
             new UiArchitect.OptionItem("❌ Unlink / Remove Device", "Uncouple this device from your active tracking network", android.R.drawable.ic_menu_delete)
         };
@@ -1017,8 +1022,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 startActivity(pIntent);
             } else if (label.contains("Refresh Latest Profile")) {
                 refreshTargetProfileData(targetUid, finalTargetName);
+            } else if (label.contains("Connect Another Device")) {
+                showConnectAnotherDeviceDialog(targetUid, finalTargetName, target);
             } else if (label.contains("Add Another Parent")) {
                 showAddAnotherParentDialog(targetUid, finalTargetName, target);
+            } else if (label.contains("1-Code Multi-Device")) {
+                generateMultiDevicePairingCode(targetUid, finalTargetName);
             } else if (label.contains("Copy GPS Coordinates")) {
                 android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                 String coordStr = String.format(java.util.Locale.US, "%.6f, %.6f", target.getLatitude(), target.getLongitude());
@@ -1062,6 +1071,135 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             com.jdroidx.jfindme.utils.AngelLoader.hide(this);
             Toast.makeText(this, "Failed to refresh profile: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         });
+    }
+
+    /**
+     * [Variables] selfAgentId, allLocations, localDb, candidates, seenIds, roles, roleJoined, confirmMsg
+     * [Constants] None
+     * [Dependencies] UiArchitect, DatabaseHelper, PairingRepository, AngelLoader, UserLocation
+     * [Integration Points] MapActivity, PairingRepository, DatabaseHelper, DevicePairingTable
+     * 🔗 Displays Compound Device & Role Connector Modal Dialog:
+     * - Header: Selected Device 1
+     * - To Connect Device List (Tickboxes)
+     * - Role List (Tickboxes)
+     * On Confirm: Establishes bidirectional connections in SQLite & Firebase SSOT.
+     */
+    private void showConnectAnotherDeviceDialog(String targetUid, String targetName, UserLocation target) {
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        List<UserLocation> allLocations = (viewModel != null && viewModel.getUserLocations().getValue() != null) ? viewModel.getUserLocations().getValue() : new ArrayList<>();
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+        List<Pair<String, String>> candidates = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        seenIds.add(targetUid.toUpperCase());
+
+        // 1. From live locations
+        for (UserLocation ul : allLocations) {
+            if (ul == null) continue;
+            String uid = ul.getResolvedUserId();
+            if (uid == null || uid.isEmpty()) continue;
+            String upper = uid.toUpperCase();
+            if (!seenIds.contains(upper)) {
+                seenIds.add(upper);
+                String dName = localDb.getDeviceCentricName(uid);
+                if (dName.isEmpty()) dName = ul.getUserName();
+                if (dName.isEmpty()) dName = "Device " + uid;
+                candidates.add(new Pair<>(uid, dName));
+            }
+        }
+
+        // 2. From offline roster / known nodes
+        List<Map<String, Object>> offlineNodes = localDb.getOfflineRoster();
+        for (Map<String, Object> node : offlineNodes) {
+            String uid1 = (String) node.get("uid_1");
+            if (uid1 != null && !uid1.isEmpty() && !seenIds.contains(uid1.toUpperCase())) {
+                seenIds.add(uid1.toUpperCase());
+                String name = (String) node.get("name_alias");
+                if (name == null || name.isEmpty()) name = (String) node.get("device_name");
+                if (name == null || name.isEmpty()) name = "Node " + uid1;
+                candidates.add(new Pair<>(uid1, name));
+            }
+        }
+
+        String[] roles = new String[]{
+            "🛡️ Parent / Primary Guardian",
+            "👨‍👩‍👧 Co-Parent / Secondary Guardian",
+            "👶 Child / Dependent Ward",
+            "💍 Spouse / Partner",
+            "🤝 Friend / Peer Member",
+            "🚨 Emergency Contact"
+        };
+
+        UiArchitect.showCompoundDeviceRoleDialog(this, targetUid, targetName, candidates, roles, (selectedDeviceIds, selectedRoles) -> {
+            String roleJoined = android.text.TextUtils.join(", ", selectedRoles);
+            String confirmMsg = "Connect " + targetName + " (" + targetUid + ") to " + selectedDeviceIds.size() + " device(s) with role(s):\n" + roleJoined + "?\n\nThis will link them mutually in your active mesh.";
+            
+            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                executeBatchDeviceConnection(targetUid, targetName, selectedDeviceIds, selectedRoles);
+            }, null);
+        });
+    }
+
+    private void executeBatchDeviceConnection(String sourceUid, String sourceName, List<String> targetIds, List<String> roles) {
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Connecting " + targetIds.size() + " devices...");
+
+        String primaryRole = !roles.isEmpty() ? roles.get(0).replaceAll("[^a-zA-Z /]", "").trim() : "Member";
+
+        final java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(targetIds.size());
+        final java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        for (String targetId : targetIds) {
+            com.jdroidx.jfindme.data.repository.PairingRepository.linkDevicesWithRoles(
+                myGrp,
+                sourceUid,
+                targetId,
+                primaryRole,
+                null,
+                null,
+                (success, errMsg) -> {
+                    if (Boolean.TRUE.equals(success)) {
+                        successCount.incrementAndGet();
+                    }
+                    if (remaining.decrementAndGet() == 0) {
+                        runOnUiThread(() -> {
+                            com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                            if (viewModel != null) {
+                                viewModel.refreshAllData();
+                            }
+                            String msg = "Successfully connected " + successCount.get() + " of " + targetIds.size() + " devices as " + primaryRole + ".";
+                            UiArchitect.showSlideNotificationBanner(this, "DEVICES CONNECTED", msg, false, 4000, null, null);
+                            Toast.makeText(this, "✅ " + msg, Toast.LENGTH_LONG).show();
+                        });
+                    }
+                }
+            );
+        }
+    }
+
+    private void generateMultiDevicePairingCode(String targetUid, String targetName) {
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Generating Multi-Device Pairing Code...");
+
+        com.jdroidx.jfindme.data.repository.PairingRepository.startMultiDevicePairingSession(
+            selfAgentId,
+            targetUid,
+            "MEMBER",
+            5,
+            code -> {
+                runOnUiThread(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    String msg = "6-Digit Pairing Code: " + code + "\n\nAll 3/4/5 devices can enter this exact same code simultaneously to attach closely to " + targetName + ".\n\nCode valid for 30 minutes.";
+                    UiArchitect.showConfirmationDialog(this, "Multi-Device Pairing Code", msg, "Copy Code", "Done", () -> {
+                        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Pairing Code", code));
+                        Toast.makeText(this, "📋 Code Copied: " + code, Toast.LENGTH_SHORT).show();
+                    }, null);
+                });
+            }
+        );
     }
 
     /**

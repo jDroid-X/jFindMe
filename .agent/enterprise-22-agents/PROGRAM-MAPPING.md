@@ -281,5 +281,57 @@ flowchart TD
 | `UNIT0002` | Test Mock Stub | Injected by legacy mock testing script | Pruned from RTDB |
 | `A7D5968D` | Reinstall Orphan Node | Riddhi's prior device ID before app reinstall; >100k unconsumed sync messages | Consolidated history to `4379A761`, batched-deleted `master_sync`, node pruned |
 
+---
+
+### 6. Dynamic Bidirectional Device-to-Device Pairing & Role Scoping Architecture
+
+#### Coordinate Tree: `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)` Structured Plan
+```
+(ROOT: jFindMe Core Engine)
+ ⊃ (BR: Business Rules)
+     ├── BR-1: Multi-Device Pairing Code Attachment (1 Single 6-digit code attaches up to 5 devices simultaneously: 2T929153, 2C811042, F8CAFC67, 4379A761, 2D113789).
+     ├── BR-2: Bidirectional Role Reciprocity (Device1=Parent ⇒ Target=Child; Device1=Spouse ⇒ Target=Spouse; Device1=Friend ⇒ Target=Friend; Device1=Guardian ⇒ Target=Dependent).
+     ├── BR-3: Scoped Peer Isolation (A device only renders markers, history, vitals, and roster nodes for explicitly connected peers; eliminates circle-wide data leakage).
+     ├── BR-4: Close Attachment Mesh (Shared encryption token and circle group ID propagated to all attached devices under single pairing code).
+     └── BR-5: Human-in-the-Loop Consent SOP (Elevation to Parent/Guardian or Unlinking triggers explicit confirmation gate with reverse feedback audit).
+ ⊃ (EL: Event Listeners & Interceptors)
+     ├── EL-1: MultiMarkerEngine.OnMarkerClickListener (Triggers MapActivity Target Action Sheet).
+     ├── EL-2: UiArchitect.OnMultiSelectionConfirmListener (Validates selected target devices and assigned roles).
+     ├── EL-3: Firebase RTDB `/pairing_sessions/{pairCode}/attached_devices` ChildEventListener (Real-time live multi-device attachment).
+     ├── EL-4: SQLite Triggers & Local Broadcasts (`ACTION_PAIRING_SYNCED`, `ACTION_ROSTER_REFRESH`).
+     └── EL-5: LocationRepository.PeerSubscriptionListener (Dynamically attaches/detaches RTDB listeners strictly for connected peers).
+ ⊃ (FE: Frontend UI / UX Components)
+     ├── FE-1: MapActivity Target Action Sheet: Option 8 upgraded to "🔗 Connect / Pair Device with Roles".
+     ├── FE-2: UiArchitect Compound Checkbox Dialog:
+     │         ├── Selected Device Header (Agent ID, Callsign, Avatar, Battery).
+     │         ├── Section 1: "To Connect Device List" [Multi-choice Checkboxes for candidate fleet devices].
+     │         ├── Section 2: "Role List" [Multi-choice Checkboxes: Parent/Guardian, Child/Ward, Spouse, Friend, Tracker].
+     │         └── Action Button: "Connect Devices as [Selected Role]".
+     ├── FE-3: FamilyFriendsActivity: Role tags, connection badges, and isolated cluster grouping.
+     └── FE-4: SlideNotificationBanner: Real-time feedback banner confirming mutual link creation.
+ ⊃ (BE: Backend / ViewModels & Repositories)
+     ├── BE-1: MapViewModel.connectDeviceWithRoles(sourceUid, targetUids[], roles[])
+     ├── BE-2: PairingRepository.startMultiDeviceSession(primaryId, maxAttachments=5)
+     ├── BE-3: PairingRepository.joinMultiDeviceSession(pairCode, joiningId, role)
+     ├── BE-4: PairingRepository.linkBatchDevicesWithRoles(sourceUid, targetUids[], roles[])
+     └── BE-5: LocationRepository: Enforces `localDb.getConnectedDeviceIds(currentDeviceId)` instead of global un-scoped dumps.
+ ⊃ (DB: Dual Storage SSOT)
+     ├── DB-1: SQLite `device_pairing` table (Upgraded schema with `role_a`, `role_b`, `pairing_code`).
+     ├── DB-2: SQLite `DatabaseHelper.getConnectedDeviceIds(focalDeviceId)` (Scoped bidirectional SQL query).
+     ├── DB-3: Firebase RTDB `/pairing_sessions/{pairCode}/`
+     │         ├── status: "ACTIVE" | "SEALED" | "EXPIRED"
+     │         ├── primary_device: "2T929153"
+     │         └── attached_devices: { "2C811042": { role: "PARENT", ... }, "4379A761": { role: "CHILD", ... } }
+     └── DB-4: Firebase RTDB `/relationships/{group_id}/devices/{device_id}/paired_with/{target_id}`
+```
+
+#### Chronological Sequence & Scenarios-Based SOP
+1. **Host Generation:** Primary device generates 1 pairing code (`pairing_sessions/{code}`) with `max_attachments = 5`.
+2. **Concurrent Multi-Attachment:** Devices 2, 3, 4, 5 enter the same 6-digit code. Status remains `ACTIVE` until sealed or slots filled.
+3. **Map Selection Linker:** Operator selects any device on the Map $\rightarrow$ Chooses "🔗 Connect / Pair Device with Roles" $\rightarrow$ Selects target device(s) and role(s) via tickboxes.
+4. **Bidirectional Reciprocal Commit:** Database updates `device_pairing` locally with `(dev_a, dev_b, role_a, role_b, pairing_code)` and synchronizes to Firebase `/relationships/`.
+5. **Scoped Viewport Isolation:** Map markers and Family/Friends rosters are immediately filtered to only show permitted, connected devices.
+
+
 
 

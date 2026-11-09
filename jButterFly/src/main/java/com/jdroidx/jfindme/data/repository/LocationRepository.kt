@@ -211,6 +211,15 @@ class LocationRepository(internal val context: Context) {
                 addTarget(p)
             }
 
+            // 🛡️ Scoped Connected Devices for active session focal agent
+            val focalAgentId = if (myAgentId.isNotBlank()) myAgentId else (myUid ?: "")
+            if (focalAgentId.isNotBlank()) {
+                val scopedIds = localDb.getConnectedDeviceIds(focalAgentId)
+                for (s in scopedIds) {
+                    addTarget(s)
+                }
+            }
+
             // 🛡️ SOFT-DELETE PURGE: Immediately evict any target marked as DELETED
             targetUids.removeAll { uid ->
                 uid != myUid && uid != myAgentId && localDb.isDeviceDeleted(uid)

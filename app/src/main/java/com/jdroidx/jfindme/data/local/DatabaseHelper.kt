@@ -693,6 +693,20 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
 
+            // 🛡️ Self-Healing: Verify DevicePairingTable multi-device role and code columns
+            val devicePairingCols = listOf(
+                DevicePairingTable.COL_ROLE_A to "TEXT DEFAULT 'MEMBER'",
+                DevicePairingTable.COL_ROLE_B to "TEXT DEFAULT 'MEMBER'",
+                DevicePairingTable.COL_PAIRING_CODE to "TEXT DEFAULT ''"
+            )
+            for ((col, def) in devicePairingCols) {
+                try {
+                    db.rawQuery("SELECT $col FROM ${DevicePairingTable.TABLE_NAME} LIMIT 0", null).use { }
+                } catch (e: Exception) {
+                    try { db.execSQL("ALTER TABLE ${DevicePairingTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+                }
+            }
+
             // 🛡️ V77 Self-Healing: Stealth Schedule Config & Security Audit Log
         try {
             db.execSQL("""
@@ -3473,6 +3487,44 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             } catch (ignored: Exception) { }
         } catch (e: Exception) {
             SystemLogger.e("DatabaseHelper", "getAllPairedDeviceIds failed: ${e.message}")
+        }
+        return result
+    }
+
+    /**
+     * [Variables] result: MutableSet<String>, cleanFocal: String, query: String | [Constants] DevicePairingTable | [Dependencies] FirebaseComm, RegistryManager, SystemLogger | [Integration Points] MapActivity, LocationRepository, FamilyFriendsViewModel
+     * 🛡️ Scoped Connected Device SSOT: Retrieves only devices explicitly paired or connected to the focal device.
+     */
+    fun getConnectedDeviceIds(focalDeviceId: String): Set<String> {
+        val cleanFocal = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(focalDeviceId)
+        if (!com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanFocal)) {
+            return emptySet()
+        }
+        val result = mutableSetOf<String>()
+        try {
+            val db = readableDatabase
+            val query = """
+                SELECT 
+                    CASE 
+                        WHEN ${DevicePairingTable.COL_DEVICE_A_ID} = ? THEN ${DevicePairingTable.COL_DEVICE_B_ID} 
+                        ELSE ${DevicePairingTable.COL_DEVICE_A_ID} 
+                    END AS peer_id
+                FROM ${DevicePairingTable.TABLE_NAME}
+                WHERE (${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?)
+                  AND (${DevicePairingTable.COL_PAIR_STATUS} = 'PAIRED' OR ${DevicePairingTable.COL_PAIR_STATUS} = 'ACTIVE')
+            """.trimIndent()
+            db.rawQuery(query, arrayOf(cleanFocal, cleanFocal)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val rawPeer = cursor.getString(0)
+                    val cleanPeer = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(rawPeer)
+                    if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanPeer) && 
+                        !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeer)) {
+                        result.add(cleanPeer)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Failed reading scoped connected devices for $cleanFocal: ${e.message}")
         }
         return result
     }

@@ -335,6 +335,10 @@ public class UiArchitect {
         void onInputConfirmed(String value);
     }
 
+    public interface CompoundDeviceRoleCallback {
+        void onConfirmed(java.util.List<String> selectedDeviceIds, java.util.List<String> selectedRoles);
+    }
+
     public static class OptionItem {
         public final String title;
         public final String description;
@@ -547,6 +551,168 @@ public class UiArchitect {
         android.app.AlertDialog dialog = builder.create();
         dialog.show();
         activity.applyDialogTheme(dialog);
+    }
+
+    /**
+     * [Variables] builder, scrollView, contentLayout, header, tvTitle, tvSub, tvDevHeader, tvRoleHeader, deviceChecks, roleChecks, dialogRef
+     * [Constants] None
+     * [Dependencies] BaseActivityJava, AlertDialog, LinearLayout, CheckBox, TextView, ScrollView, GradientDrawable
+     * [Integration Points] MapActivity, FamilyFriendsActivity, PairingRepository
+     * 🔗 Compound Device & Role Connector Modal Dialog:
+     * Displays selected device header, a checklist of candidate devices to connect (Tickbox),
+     * and a checklist of roles to assign (Tickbox), with dual-list validation.
+     */
+    public static void showCompoundDeviceRoleDialog(
+            BaseActivityJava activity,
+            String sourceDeviceId,
+            String sourceDeviceName,
+            java.util.List<android.util.Pair<String, String>> candidateDevices,
+            String[] availableRoles,
+            CompoundDeviceRoleCallback callback
+    ) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity);
+        
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(activity);
+        android.widget.LinearLayout contentLayout = new android.widget.LinearLayout(activity);
+        contentLayout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = activity.scale(16);
+        contentLayout.setPadding(pad, pad, pad, pad);
+        scrollView.addView(contentLayout);
+
+        int textPrimary = ThemeManager.getTextPrimaryColor(activity.getResolvedThemeId());
+        int textSecondary = activity.getSecondaryTextColor();
+        int cardColor = activity.getCardColor();
+        int accentColor = activity.getGradientStart();
+
+        // 1. Header Card (Selected Device 1)
+        android.widget.LinearLayout header = new android.widget.LinearLayout(activity);
+        header.setOrientation(android.widget.LinearLayout.VERTICAL);
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(cardColor);
+        cardBg.setCornerRadius(activity.scale(10));
+        cardBg.setStroke(1, Color.parseColor("#33888888"));
+        header.setBackground(cardBg);
+        int hPad = activity.scale(12);
+        header.setPadding(hPad, hPad, hPad, hPad);
+
+        android.widget.TextView tvTitle = new android.widget.TextView(activity);
+        tvTitle.setText("🔗 CONNECT DEVICE: " + (sourceDeviceName != null ? sourceDeviceName.toUpperCase() : sourceDeviceId));
+        tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+        tvTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tvTitle.setTextColor(textPrimary);
+        header.addView(tvTitle);
+
+        android.widget.TextView tvSub = new android.widget.TextView(activity);
+        tvSub.setText("Agent ID: " + sourceDeviceId + "\nSelect other circle devices to attach and designate operational roles.");
+        tvSub.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        tvSub.setTextColor(textSecondary);
+        tvSub.setPadding(0, activity.scale(4), 0, 0);
+        header.addView(tvSub);
+
+        contentLayout.addView(header);
+
+        // 2. Section: To Connect Device List
+        android.widget.TextView tvDevHeader = new android.widget.TextView(activity);
+        tvDevHeader.setText("📱 TO CONNECT DEVICE LIST (Select Tickbox)");
+        tvDevHeader.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        tvDevHeader.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tvDevHeader.setTextColor(accentColor);
+        tvDevHeader.setPadding(0, activity.scale(16), 0, activity.scale(8));
+        contentLayout.addView(tvDevHeader);
+
+        final java.util.List<android.widget.CheckBox> deviceChecks = new java.util.ArrayList<>();
+        if (candidateDevices == null || candidateDevices.isEmpty()) {
+            android.widget.TextView tvEmpty = new android.widget.TextView(activity);
+            tvEmpty.setText("No other devices available in active circle.");
+            tvEmpty.setTextColor(textSecondary);
+            tvEmpty.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+            contentLayout.addView(tvEmpty);
+        } else {
+            for (android.util.Pair<String, String> cand : candidateDevices) {
+                android.widget.CheckBox cb = new android.widget.CheckBox(activity);
+                cb.setText(cand.second + " (" + cand.first + ")");
+                cb.setTag(cand.first);
+                cb.setTextColor(textPrimary);
+                cb.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+                cb.setPadding(activity.scale(4), activity.scale(4), activity.scale(4), activity.scale(4));
+                deviceChecks.add(cb);
+                contentLayout.addView(cb);
+            }
+        }
+
+        // 3. Section: Role List
+        android.widget.TextView tvRoleHeader = new android.widget.TextView(activity);
+        tvRoleHeader.setText("👑 ROLE - LIST (Select Tickbox)");
+        tvRoleHeader.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        tvRoleHeader.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tvRoleHeader.setTextColor(accentColor);
+        tvRoleHeader.setPadding(0, activity.scale(16), 0, activity.scale(8));
+        contentLayout.addView(tvRoleHeader);
+
+        final java.util.List<android.widget.CheckBox> roleChecks = new java.util.ArrayList<>();
+        String[] defaultRoles = (availableRoles != null && availableRoles.length > 0) ? availableRoles : new String[]{
+            "🛡️ Parent / Primary Guardian",
+            "👨‍👩‍👧 Co-Parent / Secondary Guardian",
+            "👶 Child / Dependent Ward",
+            "💍 Spouse / Partner",
+            "🤝 Friend / Peer Member",
+            "🚨 Emergency Contact"
+        };
+        for (String roleItem : defaultRoles) {
+            android.widget.CheckBox cbRole = new android.widget.CheckBox(activity);
+            cbRole.setText(roleItem);
+            cbRole.setTag(roleItem);
+            cbRole.setTextColor(textPrimary);
+            cbRole.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+            cbRole.setPadding(activity.scale(4), activity.scale(4), activity.scale(4), activity.scale(4));
+            roleChecks.add(cbRole);
+            contentLayout.addView(cbRole);
+        }
+
+        builder.setView(scrollView);
+        builder.setPositiveButton("Connect Selected Devices", null);
+        builder.setNegativeButton("Cancel", (dRef, which) -> dRef.dismiss());
+
+        android.app.AlertDialog dialogRef = builder.create();
+        dialogRef.setOnShowListener(d -> {
+            android.widget.Button btn = dialogRef.getButton(android.app.AlertDialog.BUTTON_POSITIVE);
+            if (btn != null) {
+                btn.setTextColor(accentColor);
+                btn.setOnClickListener(v -> {
+                    java.util.List<String> selectedDevices = new java.util.ArrayList<>();
+                    for (android.widget.CheckBox cb : deviceChecks) {
+                        if (cb.isChecked() && cb.getTag() != null) {
+                            selectedDevices.add((String) cb.getTag());
+                        }
+                    }
+                    java.util.List<String> selectedRoles = new java.util.ArrayList<>();
+                    for (android.widget.CheckBox cb : roleChecks) {
+                        if (cb.isChecked() && cb.getTag() != null) {
+                            selectedRoles.add((String) cb.getTag());
+                        }
+                    }
+
+                    if (selectedDevices.isEmpty()) {
+                        showValidationDialog(activity, "Selection Required", "Please tick at least one target device to connect.");
+                        return;
+                    }
+                    if (selectedRoles.isEmpty()) {
+                        showValidationDialog(activity, "Role Required", "Please tick at least one role to assign for this connection.");
+                        return;
+                    }
+
+                    dialogRef.dismiss();
+                    if (callback != null) {
+                        callback.onConfirmed(selectedDevices, selectedRoles);
+                    }
+                });
+            }
+        });
+
+        dialogRef.show();
+        activity.applyDialogTheme(dialogRef);
     }
 
     public static View createValidationBadge(Context context, String text, boolean isValid) {

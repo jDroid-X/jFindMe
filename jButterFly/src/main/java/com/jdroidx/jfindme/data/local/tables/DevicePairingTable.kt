@@ -15,6 +15,9 @@ object DevicePairingTable {
     const val COL_DEVICE_A_ID = "device_a_id" // FK to DeviceTable.device_id
     const val COL_DEVICE_B_ID = "device_b_id" // FK to DeviceTable.device_id
     const val COL_PAIR_STATUS = "pair_status"
+    const val COL_ROLE_A = "role_a"
+    const val COL_ROLE_B = "role_b"
+    const val COL_PAIRING_CODE = "pairing_code"
     const val COL_CREATED_ON = "created_on"
     const val COL_CREATED_AT = "created_at"
     const val COL_UPDATED_AT = "updated_at"
@@ -25,6 +28,9 @@ object DevicePairingTable {
             $COL_DEVICE_A_ID TEXT NOT NULL,
             $COL_DEVICE_B_ID TEXT NOT NULL,
             $COL_PAIR_STATUS TEXT DEFAULT 'PENDING',
+            $COL_ROLE_A TEXT DEFAULT 'MEMBER',
+            $COL_ROLE_B TEXT DEFAULT 'MEMBER',
+            $COL_PAIRING_CODE TEXT,
             $COL_CREATED_ON TEXT,
             $COL_CREATED_AT TEXT,
             $COL_UPDATED_AT TEXT,
@@ -33,13 +39,31 @@ object DevicePairingTable {
         )
     """.trimIndent()
 
+    // [Variables] now: String, v: ContentValues, id: Long | [Constants] TABLE_NAME, COL_* | [Dependencies] FirebaseComm | [Integration Points] DatabaseHelper, PairingRepository, MapActivity
     fun logPairing(db: SQLiteDatabase, pairId: String, devA: String, devB: String, status: String) {
+        logPairingWithRoles(db, pairId, devA, devB, "MEMBER", "MEMBER", null, status)
+    }
+
+    // [Variables] now: String, v: ContentValues, id: Long | [Constants] TABLE_NAME, COL_* | [Dependencies] FirebaseComm | [Integration Points] DatabaseHelper, PairingRepository, MapActivity
+    fun logPairingWithRoles(
+        db: SQLiteDatabase,
+        pairId: String,
+        devA: String,
+        devB: String,
+        roleA: String = "MEMBER",
+        roleB: String = "MEMBER",
+        pairingCode: String? = null,
+        status: String = "PAIRED"
+    ) {
         val now = FirebaseComm.getForensicTimestamp()
         val v = ContentValues().apply {
             put(COL_PAIR_ID, pairId)
             put(COL_DEVICE_A_ID, devA)
             put(COL_DEVICE_B_ID, devB)
             put(COL_PAIR_STATUS, status)
+            put(COL_ROLE_A, roleA)
+            put(COL_ROLE_B, roleB)
+            if (pairingCode != null) put(COL_PAIRING_CODE, pairingCode)
             put(COL_UPDATED_AT, now)
         }
         val id = db.insertWithOnConflict(TABLE_NAME, null, v, SQLiteDatabase.CONFLICT_IGNORE)

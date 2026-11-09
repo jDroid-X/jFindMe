@@ -83,7 +83,7 @@ class PairingRepository {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (snapshot.exists()) {
                     val session = snapshot.getValue(PairingSession::class.java)
-                    if (session != null && session.status == "pending" && session.expiresAt > System.currentTimeMillis()) {
+                    if (session != null && (session.status == "pending" || session.status == "ACTIVE") && session.expiresAt > System.currentTimeMillis()) {
                         // Link secondary device
                         val updates = mapOf(
                             "status" to "linked",
@@ -389,6 +389,245 @@ class PairingRepository {
         @JvmStatic
         fun joinCircleWithInviteCode(inviteCode: String, joiningAgentId: String, callback: ResultCallback) {
             joinCircleWithInviteCode(inviteCode, joiningAgentId) { success, msg -> callback.onResult(success, msg) }
+        }
+
+        /**
+         * [Variables] cleanDevA: String, cleanDevB: String, now: String, effectiveGroup: String, computedRoleB: String, updates: HashMap<String, Any>
+         * [Constants] NODE_DEVICES, NODE_RELATIONSHIPS, LOG_ITEM_PAIRING, LOG_ITEM_FAMILY_FRIENDS
+         * [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable
+         * [Integration Points] MapActivity, FamilyFriendsActivity, DevicePairingTable
+         * 🔗 Connect two devices bidirectionally with reciprocal roles and pairing code.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun linkDevicesWithRoles(
+            hostGroupId: String,
+            devAId: String,
+            devBId: String,
+            roleA: String,
+            roleB: String? = null,
+            pairingCode: String? = null,
+            onComplete: ((Boolean, String?) -> Unit)? = null
+        ) {
+            val cleanDevA = FirebaseComm.sanitizeAgentId(devAId)
+            val cleanDevB = FirebaseComm.sanitizeAgentId(devBId)
+            if (!FirebaseComm.isAgentIdValid(cleanDevA) || !FirebaseComm.isAgentIdValid(cleanDevB)) {
+                onComplete?.invoke(false, "Invalid Agent IDs: $cleanDevA <-> $cleanDevB")
+                return
+            }
+            val now = FirebaseComm.getForensicTimestamp()
+            val effectiveGroup = if (hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP") hostGroupId else "GRP_$cleanDevA"
+
+            // Compute reciprocal role if roleB is unspecified
+            val computedRoleB = if (!roleB.isNullOrBlank() && roleB != "None") {
+                roleB
+            } else {
+                when {
+                    roleA.contains("Guardian", ignoreCase = true) || roleA.contains("Parent", ignoreCase = true) -> "Child"
+                    roleA.contains("Child", ignoreCase = true) || roleA.contains("Ward", ignoreCase = true) -> "Guardian"
+                    roleA.contains("Spouse", ignoreCase = true) -> "Spouse"
+                    roleA.contains("Friend", ignoreCase = true) -> "Friend"
+                    else -> "Member"
+                }
+            }
+
+            // 1. Fetch Dev A's valid_linked_agents to append Dev B
+            db.child(FirebaseComm.NODE_DEVICES).child(cleanDevA).child("identity").child("valid_linked_agents").get()
+                .addOnSuccessListener { snapshot ->
+                    val currentCsv = snapshot.getValue(String::class.java) ?: ""
+                    val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    if (!approvedIds.contains(cleanDevB)) {
+                        approvedIds.add(cleanDevB)
+                    }
+                    val newSecureCsv = approvedIds.joinToString(",")
+
+                    val updates = hashMapOf<String, Any>(
+                        // Device-Centric Relationships Mesh
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/relationships/$cleanDevB" to mapOf(
+                            "role" to roleA,
+                            "group" to effectiveGroup,
+                            "linked_at" to now
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevB/relationships/$cleanDevA" to mapOf(
+                            "role" to computedRoleB,
+                            "group" to effectiveGroup,
+                            "linked_at" to now
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/identity/valid_linked_agents" to newSecureCsv,
+
+                        // Circle-level device pairing
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/paired_with/$cleanDevB" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/paired_with/$cleanDevA" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
+                    )
+
+                    db.updateChildren(updates).addOnSuccessListener {
+                        SystemLogger.i("PairingRepo", "🔗 Devices Connected: $cleanDevA ($roleA) <-> $cleanDevB ($computedRoleB) in $effectiveGroup")
+                        
+                        // Local SQLite commit
+                        JFindMeApplication.getContext()?.let { ctx ->
+                            try {
+                                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                val pairId = "PAIR_${cleanDevA}_${cleanDevB}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    localDb.writableDatabase,
+                                    pairId,
+                                    cleanDevA,
+                                    cleanDevB,
+                                    roleA,
+                                    computedRoleB,
+                                    pairingCode,
+                                    "PAIRED"
+                                )
+                            } catch (ex: Exception) {
+                                SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
+                            }
+                        }
+
+                        val logDetails = mapOf("device_a" to cleanDevA, "device_b" to cleanDevB, "role_a" to roleA, "role_b" to computedRoleB, "group" to effectiveGroup)
+                        FirebaseComm.logChange(cleanDevA, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevB, logDetails)
+                        FirebaseComm.logChange(cleanDevB, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevA, logDetails)
+                        onComplete?.invoke(true, null)
+                    }.addOnFailureListener { e ->
+                        SystemLogger.e("PairingRepo", "Failed to update device relationship: ${e.message}", e)
+                        onComplete?.invoke(false, e.message)
+                    }
+                }.addOnFailureListener { e ->
+                    SystemLogger.e("PairingRepo", "Failed reading linked agents: ${e.message}", e)
+                    onComplete?.invoke(false, e.message)
+                }
+        }
+
+        @JvmStatic
+        fun linkDevicesWithRoles(
+            hostGroupId: String,
+            devAId: String,
+            devBId: String,
+            roleA: String,
+            roleB: String,
+            pairingCode: String?,
+            callback: ResultCallback
+        ) {
+            linkDevicesWithRoles(hostGroupId, devAId, devBId, roleA, roleB, pairingCode) { success, msg ->
+                callback.onResult(success, msg)
+            }
+        }
+
+        /**
+         * 🔑 Start Multi-Device Pairing Session (Supports attaching up to 5 devices using 1 pairing code).
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun startMultiDevicePairingSession(
+            userId: String,
+            primaryDeviceId: String,
+            role: String = "MEMBER",
+            maxAttachments: Int = 5,
+            onCodeReady: (String) -> Unit
+        ) {
+            val pairCode = (100000..999999).random().toString()
+            val sessionId = UUID.randomUUID().toString().take(6)
+            val timeoutMs = 30 * 60 * 1000L // 30 minutes
+            val session = PairingSession(
+                sessionId = sessionId,
+                userId = userId,
+                pairCode = pairCode,
+                expiresAt = System.currentTimeMillis() + timeoutMs,
+                status = "ACTIVE",
+                primaryDevice = primaryDeviceId,
+                secondaryDevice = null,
+                attached_devices = emptyMap(),
+                max_attachments = maxAttachments,
+                role = role
+            )
+            FirebaseComm.database.getReference("pairing_sessions").child(pairCode).setValue(session)
+                .addOnSuccessListener {
+                    SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode (Max $maxAttachments devices)")
+                    onCodeReady(pairCode)
+                }
+                .addOnFailureListener { e ->
+                    SystemLogger.e("PairingRepo", "Failed starting multi-device pairing session", e)
+                }
+        }
+
+        @JvmStatic
+        fun startMultiDevicePairingSession(userId: String, primaryDeviceId: String, role: String, maxAttachments: Int, callback: CodeCallback) {
+            startMultiDevicePairingSession(userId, primaryDeviceId, role, maxAttachments) { callback.onCodeReady(it) }
+        }
+
+        /**
+         * 👥 Join Multi-Device Pairing Session (1 code for close attachment across 3/4/5 devices).
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun joinMultiDevicePairingSession(
+            pairCode: String,
+            joiningDeviceId: String,
+            requestedRole: String = "MEMBER",
+            onResult: (Boolean, String?) -> Unit
+        ) {
+            val cleanCode = pairCode.trim()
+            val ref = FirebaseComm.database.getReference("pairing_sessions").child(cleanCode)
+            ref.addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (!snapshot.exists()) {
+                        onResult(false, "Invalid Pair Code")
+                        return
+                    }
+                    val session = snapshot.getValue(PairingSession::class.java)
+                    if (session == null) {
+                        onResult(false, "Corrupted Pairing Session")
+                        return
+                    }
+                    if (session.expiresAt < System.currentTimeMillis() || (session.status != "ACTIVE" && session.status != "pending")) {
+                        onResult(false, "Pairing code has expired or session is sealed.")
+                        return
+                    }
+                    val attachedMap = session.attached_devices ?: emptyMap()
+                    if (attachedMap.size >= session.max_attachments) {
+                        onResult(false, "Maximum device limit (${session.max_attachments}) reached for this pairing code.")
+                        return
+                    }
+
+                    val now = FirebaseComm.getForensicTimestamp()
+                    val newAttachment = mapOf(
+                        "role" to requestedRole,
+                        "status" to "LINKED",
+                        "joined_at" to now
+                    )
+                    val updates = hashMapOf<String, Any>(
+                        "attached_devices/$joiningDeviceId" to newAttachment,
+                        "secondaryDevice" to joiningDeviceId
+                    )
+                    if (attachedMap.size + 1 >= session.max_attachments) {
+                        updates["status"] = "SEALED"
+                    }
+
+                    ref.updateChildren(updates).addOnSuccessListener {
+                        // Automatically link joining device with primary device
+                        val hostGrp = "GRP_${session.primaryDevice}"
+                        linkDevicesWithRoles(hostGrp, session.primaryDevice, joiningDeviceId, session.role, requestedRole, cleanCode) { success, err ->
+                            if (success) {
+                                SystemLogger.i("PairingRepo", "Device $joiningDeviceId successfully attached via Code $cleanCode")
+                                onResult(true, session.primaryDevice)
+                            } else {
+                                onResult(false, err)
+                            }
+                        }
+                    }.addOnFailureListener { e ->
+                        onResult(false, e.message)
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    onResult(false, error.message)
+                }
+            })
+        }
+
+        @JvmStatic
+        fun joinMultiDevicePairingSession(pairCode: String, joiningDeviceId: String, requestedRole: String, callback: ResultCallback) {
+            joinMultiDevicePairingSession(pairCode, joiningDeviceId, requestedRole) { success, msg -> callback.onResult(success, msg) }
         }
     }
 
