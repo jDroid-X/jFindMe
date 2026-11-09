@@ -32,13 +32,15 @@ object HardwareIdentitySentinel {
         val rawHardwareSeeds = mutableListOf<String>()
         
         try {
-            val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 try { Build.getSerial() } catch (e: SecurityException) { Build.SERIAL }
-            } else {
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                 @Suppress("DEPRECATION")
                 Build.SERIAL
+            } else {
+                null
             }
-            if (serial.isNotBlank() && serial != "unknown") {
+            if (!serial.isNullOrBlank() && serial != "unknown") {
                 rawHardwareSeeds.add(serial)
             }
         } catch (e: Exception) { }

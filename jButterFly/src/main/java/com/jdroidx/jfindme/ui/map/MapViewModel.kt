@@ -160,6 +160,11 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         loadSafeZones()
     }
 
+    fun refreshAllData() {
+        refreshLocations()
+        triggerRefresh()
+    }
+
     fun setFilterMode(mode: String) {
         this.currentFilterMode = mode
         applyTacticalFilter()

@@ -3,7 +3,22 @@ trigger: always_on
 ---
 
 # Antigravity Enterprise AI Agent Protocol (V3.0 Enterprise Taskforce)
+
+> **Mandatory Reference Pipeline**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)`
+
 You are a team of seven specialized AI agents collaborating under an OOPS-based MVC/MVVM Closed-Loop Waterfall architecture to build, optimize, secure, and maintain the enterprise location tracking application (`jFindMe`).
+
+---
+
+## 🧭 Master Reference Sequence: Workflow ➔ Rules ➔ Agents ➔ Skills
+
+When ANY change or bug fix is requested:
+1. **Workflow**: Check concurrency (< 4 agents) and single workflow lock (`.agent/rules/workflow.md`).
+2. **Rules**:
+   - Check **Tier 1 Universal Rules** (Pre-change declaration, Module parity `app` ⟷ `jButterFly`, SSOT, Latest-Data-First descending query order, Ponytail 1,920-line ceiling, Build quarantine).
+   - Identify **Tier 2 Screen-Dependent Subset** (Subsets A - H in `.agent/rules/rules.md`).
+3. **Agents**: Assign task to the designated Specialist Agent (Agents 1 - 7).
+4. **Skills**: Execute using specialized capabilities without stubs or partial implementations.
 
 ---
 
@@ -28,6 +43,10 @@ You are a team of seven specialized AI agents collaborating under an OOPS-based 
   - 🔴 **INACTIVE (> 6H)**: Last seen `> 6 hours` (`#EF4444` Rose Red).
   - 🚨 **EMERGENCY SOS**: `isSos == true` (`#EF4444` Pulsing Crimson).
   - ⚪ **UNLINKED / GHOST**: Deleted, unlinked, or Ghost Mode (`#64748B` Slate Gray).
+- **Master Temporal Query Invariant (Latest-Data-First SSOT Rule)**:
+  - **MANDATORY**: Every database query (SQLite and Firebase RTDB) across all screens, background workers, and view models MUST by default fetch the latest data ordered by timestamp/datetime in **descending order (`ORDER BY timestamp DESC`, `ORDER BY updated_at DESC`, `ORDER BY rowid DESC`)**, returning the most recent active state first.
+  - **All 13 Zero-Loss Compatibility Views** (`devices`, `safe_zones`, `geofence_events`, `sys_logs`, `security_evasion_audit_log`, `watchdog_resurrection_ledger`, `device_policy`, `device_pairings`, `alerts`, `MASTER_ROSTER`, `master_roster`, `organizations`, `sim_inventory`) MUST be defined with explicit `ORDER BY ... DESC` to guarantee latest-data-first retrieval without caller ambiguity.
+  - **Historical Query Exception**: Forward-chronological ordering (`ORDER BY timestamp ASC`) is strictly reserved for historical trajectory playback, time-series breadcrumb animation, or linear audit recovery flows.
 
 ---
 
@@ -41,8 +60,7 @@ You are a team of seven specialized AI agents collaborating under an OOPS-based 
   - Validated Textboxes, Floating Labels, and Search Bars.
   - Dynamic On/Off Switches and Segmented Left/Right Toggles.
   - Animated View Flippers and Dropdown List Boxes.
-  - Multi-choice condition dialogs and bottom-right slide-in/out notification banners.
-  - **Slide-Out Right Drawer Mandate**: Next time if edit, details, actions or other types popup is required, it must slide out from the right side (mostly 2-column structure (compact best smart fit), fit as per browser height with appropriate viewport fit (professional layout following UI/UX Theme design)), equipped with smooth scroll up/down features, and context-aware option/action buttons.
+  - Slide-Out Right Drawer for sub-settings and detail popups (2-column compact fit, smooth vertical scroll).
 - **Navigation Mandate**: Zero dead navigation paths; back buttons always return correctly to the parent interface.
 
 ---
@@ -62,7 +80,7 @@ You are a team of seven specialized AI agents collaborating under an OOPS-based 
 - **Core Mission**: Monitors, catches, and resolves background service crashes, ANRs, threading race conditions, and unhandled exceptions across the Android lifecycle.
 - **Historical Crash Protection Mandate**:
   - Audits `ForegroundService`, `LocationCallback`, and coroutine scopes to prevent silent terminations when Android OS aggressively restricts background processes (Doze mode, Android 13/14 battery optimization).
-  - Guarantees strict null safety and error-boundary containment during network disconnects, database read timeouts, and JSON/Firebase serialization edge cases.
+  - Guarantees strict null safety and error-boundary containment during network disconnects, database read timeouts, and JSON/Firebase serialization edge cases (e.g. `safeLong`, `safeInt`).
 - **Deliverables**: Root cause analyses, crash-proofing patches, and proactive watchdog error handlers.
 
 ---
@@ -86,6 +104,6 @@ You are a team of seven specialized AI agents collaborating under an OOPS-based 
 ---
 
 ### Global Architecture Governance: Ponytail 96% Auto-Branching & Bounded Reporting (EMR-22)
-1. **Ponytail 96% Auto-Branching (1,920 Lines)**: In the `<coordinate Tree (ROOT⊃BR⊃EL⊃FE⊃BE⊃DB) structured plan>`, executable code files (Controllers, Services, Endpoints, ViewModels) reaching **96% of the 2,000-line Ponytail ceiling ($\ge 1,920$ lines)** MUST automatically branch into modular OOPS MVC sub-modules (sub-routes, sub-controllers, or component models) via call-by-reference. Compiled distribution bundles and standalone UI markup templates are exempt.
+1. **Ponytail 96% Auto-Branching (1,920 Lines)**: In executable code files (Controllers, Services, Endpoints, ViewModels) reaching **96% of the 2,000-line Ponytail ceiling ($\ge 1,920$ lines)** MUST automatically branch into modular OOPS MVC sub-modules (sub-routes, sub-controllers, or component models) via call-by-reference. Compiled distribution bundles and standalone UI markup templates are exempt.
 2. **Legacy Monolith Shield (Strangler Adapter Pattern)**: When modifying existing brownfield files exceeding 1,920 lines (such as `jFindMeWeb/js/server.js` at 4,682 lines), agents are strictly forbidden from in-place monolithic regex loops or trial-and-error surgery. Extract the target sub-route into a clean modular sub-handler (`routes/{module}.js`) while preserving legacy caller signatures intact.
-3. **Bounded Test Output Contract**: All automated test suites, RAG audit generators, and telemetry tools MUST enforce bounded output schemas: summary metrics + maximum 10-record sample slices ($\le 100\text{ KB}$ file size). Dumping unbounded live WAN database payloads (e.g. Firebase or SQLite table dumps) into repository files is strictly prohibited.
+3. **Bounded Test Output Contract**: All automated test suites, RAG audit generators, and telemetry tools MUST enforce bounded output schemas: summary metrics + maximum 10-record sample slices ($\le 100\text{ KB}$ file size). Dumping unbounded live WAN database payloads into repository files is strictly prohibited.

@@ -900,61 +900,69 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     }
 
     private void showNodeQuickActionsDialog(RosterNode node) {
-        UiArchitect.OptionItem[] actions = new UiArchitect.OptionItem[]{
-            new UiArchitect.OptionItem("📍 Track on Live Map", "Open real-time GPS tracking stream", android.R.drawable.ic_dialog_map),
-            new UiArchitect.OptionItem("⏱️ View Location History", "View past telemetry logs and timeline", android.R.drawable.ic_menu_recent_history),
-            new UiArchitect.OptionItem("🔊 Ring Device (30s Acoustic Alarm)", "Override DND and trigger high-volume siren", android.R.drawable.ic_lock_idle_alarm),
-            new UiArchitect.OptionItem("✏️ Rename Device (Custom Callsign)", "Assign an identifiable custom name or nickname to this node", android.R.drawable.ic_menu_edit),
-            new UiArchitect.OptionItem("📝 View / Edit Dossier & Role", "Inspect full profile, permissions, and contacts", com.jdroidx.jfindme.R.drawable.ic_user_profile),
-            new UiArchitect.OptionItem("🛡️ Assign Safe Zone", "Configure geofence boundary perimeter", com.jdroidx.jfindme.R.drawable.ic_safe_zone),
-            new UiArchitect.OptionItem("👑 Change Relationship Category", "Reclassify as Guardian, Spouse, Child, or Friend", com.jdroidx.jfindme.R.drawable.ic_family_friends),
-            new UiArchitect.OptionItem("🗑️ Unlink Device from Group", "Revoke authorization and remove from network", android.R.drawable.ic_menu_delete)
-        };
+        // [Variables] isChild: boolean, actionsList: List<UiArchitect.OptionItem>, actions: UiArchitect.OptionItem[], actLabel: String
+        // [Constants] OptionItem descriptions and icons
+        // [Dependencies] UiArchitect, FirebaseComm, PairingRepository, DatabaseHelper, DevicePairingTable
+        // [Integration Points] MapActivity, HistoryActivity, PersonDetailsActivity, GeofenceActivity, showRoleChangeDialog, showLinkCoParentDialog, confirmUnlinkDevice
+        boolean isChild = node.getRoleTitle() != null && (
+            "Child".equalsIgnoreCase(node.getRoleTitle())
+            || node.getRoleTitle().toLowerCase().contains("child")
+            || node.getRoleTitle().toLowerCase().contains("ward")
+        );
+
+        List<UiArchitect.OptionItem> actionsList = new ArrayList<>();
+        actionsList.add(new UiArchitect.OptionItem("📍 Track on Live Map", "Open real-time GPS tracking stream", android.R.drawable.ic_dialog_map));
+        actionsList.add(new UiArchitect.OptionItem("⏱️ View Location History", "View past telemetry logs and timeline", android.R.drawable.ic_menu_recent_history));
+        actionsList.add(new UiArchitect.OptionItem("🔊 Ring Device (30s Acoustic Alarm)", "Override DND and trigger high-volume siren", android.R.drawable.ic_lock_idle_alarm));
+        actionsList.add(new UiArchitect.OptionItem("✏️ Rename Device (Custom Callsign)", "Assign an identifiable custom name or nickname to this node", android.R.drawable.ic_menu_edit));
+        actionsList.add(new UiArchitect.OptionItem("📝 View / Edit Dossier & Role", "Inspect full profile, permissions, and contacts", com.jdroidx.jfindme.R.drawable.ic_user_profile));
+        actionsList.add(new UiArchitect.OptionItem("🛡️ Assign Safe Zone", "Configure geofence boundary perimeter", com.jdroidx.jfindme.R.drawable.ic_safe_zone));
+        actionsList.add(new UiArchitect.OptionItem("👑 Change Relationship Category", "Reclassify as Guardian, Spouse, Child, or Friend", com.jdroidx.jfindme.R.drawable.ic_family_friends));
+        if (isChild) {
+            actionsList.add(new UiArchitect.OptionItem("👨‍👩‍👧 Link Other Parent / Co-Guardian", "Assign a second parent/guardian (Spouse or Co-Guardian) to co-manage this child", com.jdroidx.jfindme.R.drawable.ic_family_friends));
+        }
+        actionsList.add(new UiArchitect.OptionItem("🗑️ Unlink Device from Group", "Revoke authorization and remove from network", android.R.drawable.ic_menu_delete));
+
+        UiArchitect.OptionItem[] actions = actionsList.toArray(new UiArchitect.OptionItem[0]);
 
         UiArchitect.showRichOptionsDialog(this, node.getDisplayName() + " (" + node.getRoleTitle() + ")", actions, (which, label) -> {
-            switch (which) {
-                case 0: // Map
-                    FirebaseComm.triggerRemoteLocateDevice(node.getUid());
-                    Intent mapIntent = new Intent(this, MapActivity.class);
-                    mapIntent.putExtra("TARGET_UID", node.getUid());
-                    mapIntent.putExtra("target_uid", node.getUid());
-                    startActivity(mapIntent);
-                    break;
-                case 1: // History
-                    Intent historyIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
-                    historyIntent.putExtra("TARGET_UID", node.getUid());
-                    historyIntent.putExtra("TARGET_NAME", node.getDisplayName());
-                    startActivity(historyIntent);
-                    break;
-                case 2: // Ring
-                    if (!node.isOnline()) {
-                        Toast.makeText(this, "⚠️ Device is currently offline — siren may not reach it", Toast.LENGTH_LONG).show();
-                    }
-                    int sirenDur = RegistryManager.getSirenDurationSec(this);
-                    FirebaseComm.triggerRemoteRingDevice(node.getUid(), sirenDur);
-                    Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (" + sirenDur + "s)", Toast.LENGTH_LONG).show();
-                    break;
-                case 3: // Rename
-                    showRenameNodeDialog(node);
-                    break;
-                case 4: // Dossier
-                    Intent intent = new Intent(this, PersonDetailsActivity.class);
-                    intent.putExtra("TARGET_UID", node.getUid());
-                    intent.putExtra("TARGET_ROLE", node.getRoleTitle());
-                    startActivity(intent);
-                    break;
-                case 5: // Safe Zone
-                    Intent safeZoneIntent = new Intent(this, GeofenceActivity.class);
-                    safeZoneIntent.putExtra("TARGET_UID", node.getUid());
-                    safeZoneIntent.putExtra("TARGET_NAME", node.getDisplayName());
-                    startActivity(safeZoneIntent);
-                    break;
-                case 6: // Role Change
-                    showRoleChangeDialog(node);
-                    break;
-                case 7: // Unlink
-                    confirmUnlinkDevice(node);
-                    break;
+            String actLabel = label != null ? label : "";
+            if (actLabel.contains("Live Map")) {
+                FirebaseComm.triggerRemoteLocateDevice(node.getUid());
+                Intent mapIntent = new Intent(this, MapActivity.class);
+                mapIntent.putExtra("TARGET_UID", node.getUid());
+                mapIntent.putExtra("target_uid", node.getUid());
+                startActivity(mapIntent);
+            } else if (actLabel.contains("Location History")) {
+                Intent historyIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
+                historyIntent.putExtra("TARGET_UID", node.getUid());
+                historyIntent.putExtra("TARGET_NAME", node.getDisplayName());
+                startActivity(historyIntent);
+            } else if (actLabel.contains("Ring Device")) {
+                if (!node.isOnline()) {
+                    Toast.makeText(this, "⚠️ Device is currently offline — siren may not reach it", Toast.LENGTH_LONG).show();
+                }
+                int sirenDur = RegistryManager.getSirenDurationSec(this);
+                FirebaseComm.triggerRemoteRingDevice(node.getUid(), sirenDur);
+                Toast.makeText(this, "🔊 Acoustic siren triggered for " + node.getDisplayName() + " (" + sirenDur + "s)", Toast.LENGTH_LONG).show();
+            } else if (actLabel.contains("Rename Device")) {
+                showRenameNodeDialog(node);
+            } else if (actLabel.contains("View / Edit Dossier")) {
+                Intent intent = new Intent(this, PersonDetailsActivity.class);
+                intent.putExtra("TARGET_UID", node.getUid());
+                intent.putExtra("TARGET_ROLE", node.getRoleTitle());
+                startActivity(intent);
+            } else if (actLabel.contains("Assign Safe Zone")) {
+                Intent safeZoneIntent = new Intent(this, GeofenceActivity.class);
+                safeZoneIntent.putExtra("TARGET_UID", node.getUid());
+                safeZoneIntent.putExtra("TARGET_NAME", node.getDisplayName());
+                startActivity(safeZoneIntent);
+            } else if (actLabel.contains("Change Relationship")) {
+                showRoleChangeDialog(node);
+            } else if (actLabel.contains("Link Other Parent")) {
+                showLinkCoParentDialog(node);
+            } else if (actLabel.contains("Unlink Device")) {
+                confirmUnlinkDevice(node);
             }
         });
     }
@@ -1013,6 +1021,118 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 default: newRole = "Friend"; isFriend = true; break;
             }
             updateTargetRole(node.getUid(), newRole, !isFriend);
+            if ("Child".equals(newRole)) {
+                promptAddOtherParentDialog(node);
+            }
+        });
+    }
+
+    /**
+     * 👨‍👩‍👧 Prompt to link a secondary parent/co-guardian when a member is marked as a Child
+     */
+    private void promptAddOtherParentDialog(RosterNode childNode) {
+        new AlertDialog.Builder(this)
+            .setTitle("👨‍👩‍👧 Link Other Parent / Co-Guardian")
+            .setMessage("Child role assigned to " + childNode.getDisplayName() + "!\n\nWould you like to link a second parent or co-guardian (such as your spouse) to co-manage this child?\n\nThis assigns shared parental oversight so both parents can track and protect this child with the same device identity.")
+            .setPositiveButton("Link Co-Parent", (d, w) -> showLinkCoParentDialog(childNode))
+            .setNegativeButton("Skip for Now", null)
+            .show();
+    }
+
+    /**
+     * 👨‍👩‍👧 Co-Parent Link Selection Sheet: Lists existing circle guardians or offers invite/manual entry
+     */
+    private void showLinkCoParentDialog(RosterNode childNode) {
+        String myAgentId = DeviceIdentityHelper.getOrGenerateAgentId(this);
+        List<RosterNode> coParentCandidates = new ArrayList<>();
+        if (viewModel != null && viewModel.getRosterLiveData().getValue() != null) {
+            for (RosterNode n : viewModel.getRosterLiveData().getValue()) {
+                if (n == null) continue;
+                String uid = n.getUid();
+                if (uid.equalsIgnoreCase(myAgentId) || uid.equalsIgnoreCase(childNode.getUid())) continue;
+                String r = n.getRoleTitle() != null ? n.getRoleTitle().toLowerCase() : "";
+                if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin")) {
+                    coParentCandidates.add(n);
+                }
+            }
+        }
+
+        List<UiArchitect.OptionItem> optionsList = new ArrayList<>();
+        for (RosterNode cand : coParentCandidates) {
+            optionsList.add(new UiArchitect.OptionItem(
+                "👨‍👩‍👧 Link " + cand.getDisplayName(),
+                "Assign " + cand.getDisplayName() + " (" + cand.getRoleTitle() + ") as Co-Parent for " + childNode.getDisplayName(),
+                com.jdroidx.jfindme.R.drawable.ic_user_profile
+            ));
+        }
+        optionsList.add(new UiArchitect.OptionItem(
+            "🔑 Generate Co-Guardian Invite Code",
+            "Generate a 6-character code for the second parent to join circle and co-manage this child",
+            com.jdroidx.jfindme.R.drawable.ic_family_friends
+        ));
+        optionsList.add(new UiArchitect.OptionItem(
+            "⌨️ Enter Co-Parent Agent ID Manually",
+            "Manually link an existing 8-character hardware/agent token as co-parent",
+            com.jdroidx.jfindme.R.drawable.ic_settings_gears
+        ));
+
+        UiArchitect.OptionItem[] options = optionsList.toArray(new UiArchitect.OptionItem[0]);
+
+        UiArchitect.showRichOptionsDialog(this, "Co-Parent for " + childNode.getDisplayName(), options, (which, label) -> {
+            if (which < coParentCandidates.size()) {
+                RosterNode chosen = coParentCandidates.get(which);
+                executeCoParentLink(chosen.getUid(), chosen.getDisplayName(), childNode);
+            } else if (label != null && label.contains("Invite Code")) {
+                generateAndShowCircleCodeDialog();
+            } else {
+                UiArchitect.showInputPromptDialog(this,
+                    "Link Co-Parent",
+                    "Enter the 8-character Agent ID / Hardware Token of the other parent / co-guardian:",
+                    "",
+                    inputToken -> {
+                        if (inputToken != null && !inputToken.trim().isEmpty()) {
+                            String cleanToken = inputToken.trim().toUpperCase();
+                            executeCoParentLink(cleanToken, "Co-Parent (" + cleanToken + ")", childNode);
+                        } else {
+                            UiArchitect.showValidationDialog(this, "Invalid ID", "Co-Parent Agent ID cannot be empty.", null);
+                        }
+                    });
+            }
+        });
+    }
+
+    /**
+     * ⚡ Executes Co-Parent atomic relationship binding across Firebase and local SQLite
+     */
+    private void executeCoParentLink(String coParentId, String coParentName, RosterNode childNode) {
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        AngelLoader.show(this);
+        AngelLoader.setStatus(this, "Linking Co-Parent to Child...");
+        PairingRepository.linkCoParentToChild(myGrp, coParentId, childNode.getUid(), coParentName, childNode.getDisplayName(), (success, errorMsg) -> {
+            runOnUiThread(() -> {
+                AngelLoader.hide(this);
+                if (Boolean.TRUE.equals(success)) {
+                    try {
+                        DatabaseHelper localDb = DatabaseHelper.getInstance(this);
+                        com.jdroidx.jfindme.data.local.tables.DevicePairingTable.INSTANCE.logPairing(
+                            localDb.getWritableDatabase(),
+                            "PAIR_" + coParentId + "_" + childNode.getUid(),
+                            coParentId,
+                            childNode.getUid(),
+                            "PAIRED"
+                        );
+                    } catch (Exception ignored) { }
+
+                    UiArchitect.showSlideNotificationBanner(this, "CO-PARENT LINKED",
+                        coParentName + " is now linked as co-guardian for " + childNode.getDisplayName() + "!",
+                        false, 4000, null, null);
+                    Toast.makeText(this, "✅ Co-Parent relationship established with same Child ID (" + childNode.getUid() + ")!", Toast.LENGTH_LONG).show();
+                    if (viewModel != null) viewModel.initializeCloudSync(this);
+                } else {
+                    UiArchitect.showValidationDialog(this, "Link Failed",
+                        "Unable to link co-parent: " + (errorMsg != null ? errorMsg : "Unknown error"), null);
+                }
+            });
         });
     }
 

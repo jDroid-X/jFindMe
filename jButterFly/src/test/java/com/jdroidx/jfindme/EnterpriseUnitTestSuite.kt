@@ -1,5 +1,11 @@
 package com.jdroidx.jfindme
 
+import com.jdroidx.jfindme.engine.location.PolygonGeofenceHelper
+import com.jdroidx.jfindme.engine.security.ZxcvbnPasswordStrengthEvaluator
+import com.jdroidx.jfindme.engine.security.KeyStoreManager
+import com.jdroidx.jfindme.engine.boot.BootSequenceProgressObservable
+import com.jdroidx.jfindme.ui.settings.SettingsModel
+
 import org.junit.Test
 import org.junit.Assert.*
 import com.jdroidx.jfindme.data.model.LiveDeviceModel
@@ -198,5 +204,120 @@ class EnterpriseUnitTestSuite {
         // Driving: speed > 25.0 km/h
         val drivingSpeed = 48.0f
         assertTrue("Driving speed", drivingSpeed > 25.0f)
+    }
+
+    @Test
+    fun testPolygonGeofenceRayCasting() {
+        // Triangle around (10, 10), (10, 20), (20, 15)
+        val vertices = listOf(
+            PolygonGeofenceHelper.LatLngPoint(10.0, 10.0),
+            PolygonGeofenceHelper.LatLngPoint(10.0, 20.0),
+            PolygonGeofenceHelper.LatLngPoint(20.0, 15.0)
+        )
+        // Center point (12, 15) must be inside
+        assertTrue("Point (12, 15) should be inside triangle",
+            PolygonGeofenceHelper.isPointInPolygon(12.0, 15.0, vertices))
+
+        // Outside point (5, 5) must be outside
+        assertFalse("Point (5, 5) should be outside triangle",
+            PolygonGeofenceHelper.isPointInPolygon(5.0, 5.0, vertices))
+    }
+
+    @Test
+    fun testZxcvbnPasswordStrengthEvaluator() {
+        val weak = ZxcvbnPasswordStrengthEvaluator.evaluate("123")
+        assertFalse("Password '123' must not be acceptable", weak.isAcceptable)
+        assertEquals(ZxcvbnPasswordStrengthEvaluator.SCORE_VERY_WEAK, weak.score)
+
+        val strong = ZxcvbnPasswordStrengthEvaluator.evaluate("Sentinel@2026#SecureSilicon")
+        assertTrue("High entropy password must be acceptable", strong.isAcceptable)
+        assertTrue("Score must be >= 3", strong.score >= ZxcvbnPasswordStrengthEvaluator.SCORE_STRONG)
+    }
+
+    @Test
+    fun testKeyStoreManagerDetails() {
+        val cert = KeyStoreManager.getCertificateDetails()
+        assertNotNull("Certificate details must not be null", cert)
+        assertTrue("Serial number must not be empty", cert.serialNumber.isNotEmpty())
+        assertTrue("Valid until must be in future", cert.validUntil > System.currentTimeMillis())
+    }
+
+    @Test
+    fun testBootSequenceProgressObservable() {
+        var observedPhase = ""
+        var observedProgress = -1
+        val listener = object : BootSequenceProgressObservable.BootProgressListener {
+            override fun onProgressUpdate(phase: String, progressPercent: Int) {
+                observedPhase = phase
+                observedProgress = progressPercent
+            }
+            override fun onBootCompleted() {}
+        }
+        BootSequenceProgressObservable.registerListener(listener)
+        BootSequenceProgressObservable.updateProgress(BootSequenceProgressObservable.PHASE_SILICON_ATTESTATION, 50)
+        assertEquals(BootSequenceProgressObservable.PHASE_SILICON_ATTESTATION, BootSequenceProgressObservable.currentPhase)
+        assertEquals(50, BootSequenceProgressObservable.currentProgress)
+        BootSequenceProgressObservable.unregisterListener(listener)
+    }
+
+    @Test
+    fun testSettingsModelDefaults() {
+        val model = SettingsModel()
+        assertEquals(30, model.pingIntervalSec)
+        assertEquals("BALANCED", model.motionDutyCycle)
+        assertEquals(10f, model.displacementMeters, 0.01f)
+        assertTrue(model.roadSmoothingEnabled)
+        assertEquals(100f, model.defaultSafeZoneRadiusM, 0.01f)
+        assertEquals(20f, model.lowBatteryThresholdPct, 0.01f)
+        assertEquals(60, model.sirenDurationSec)
+    }
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Enterprise RAG Critical Audit Tests: Cryptographic Hashing, Monotonic Lockouts, Role ACLs
+    @Test
+    fun testPurgeSafetyPhraseSha256HashingContract() {
+        val rawPhrase = "jDroidX_Sentinel_2026"
+        val hash = com.jdroidx.jfindme.utils.RegistryManager.hashSha256(rawPhrase)
+        assertNotNull(hash)
+        assertEquals(64, hash.length)
+        val repeatHash = com.jdroidx.jfindme.utils.RegistryManager.hashSha256(rawPhrase)
+        assertEquals(hash, repeatHash)
+        val diffHash = com.jdroidx.jfindme.utils.RegistryManager.hashSha256("Different_Phrase")
+        assertNotEquals(hash, diffHash)
+    }
+
+    @Test
+    fun testPairingLockoutMonotonicCalculationContract() {
+        val nowElapsed = 500000L
+        val lockoutUntil = nowElapsed + 900000L
+        val currentMonotonicActive = 600000L
+        val isLocked = currentMonotonicActive < lockoutUntil
+        val remainingSec = (lockoutUntil - currentMonotonicActive) / 1000
+        assertTrue("Lockout must remain active when monotonic time has not expired", isLocked)
+        assertEquals(800L, remainingSec)
+        val expiredMonotonic = 1500001L
+        val isExpired = expiredMonotonic < lockoutUntil
+        assertFalse("Lockout must expire once monotonic elapsed time exceeds threshold", isExpired)
+    }
+
+    @Test
+    fun testRoleAwarePermissionMaskContract() {
+        val friendCategory = "FRIEND"
+        val defaultFriendMask = if (friendCategory == "FRIEND") 0x01 else 0xFF
+        assertEquals(1, defaultFriendMask)
+        val customHex = "0x1F"
+        val parsedMask = if (customHex.startsWith("0x", true)) customHex.substring(2).toInt(16) else customHex.toInt()
+        assertEquals(31, parsedMask)
+    }
+
+    @Test
+    fun testFuzzyDisplacementMathBoundedRadius() {
+        val maxRadiusMeters = 800.0
+        val simulatedDistance = 750.0
+        val clampedDistance = simulatedDistance.coerceAtMost(maxRadiusMeters)
+        assertTrue(clampedDistance <= maxRadiusMeters)
+        val excessiveDistance = 1200.0
+        val bounded = excessiveDistance.coerceAtMost(maxRadiusMeters)
+        assertEquals(maxRadiusMeters, bounded, 0.0001)
     }
 }

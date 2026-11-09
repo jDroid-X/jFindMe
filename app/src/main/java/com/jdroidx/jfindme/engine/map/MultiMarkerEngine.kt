@@ -229,10 +229,11 @@ object MultiMarkerEngine {
                 continue
             }
 
-            val modelIcon = if (!ul.avatar_id.isNullOrBlank()) {
+            val modelIcon = if (!ul.avatar_id.isNullOrBlank() && ul.avatar_id != "butterfly" && ul.avatar_id != "1") {
                 ul.avatar_id
             } else {
-                db.getDeviceCentricAvatar(deviceId)
+                val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() && it != "butterfly" && it != "1" }
+                rAv ?: db.getDeviceCentricAvatar(deviceId)
             }
 
             candidates.add(
@@ -520,7 +521,7 @@ object MultiMarkerEngine {
         val originalBitmap = if (isSelf) {
             AvatarLoader.getCurrentUserAvatarBitmap(context, targetSize)
         } else {
-            AvatarLoader.getRemoteAvatarBitmap(context, candidate.avatarId, targetSize)
+            AvatarLoader.getRemoteAvatarBitmap(context, deviceId, candidate.avatarId, targetSize)
         }
 
         var calculatedRole = userRoleCache[deviceId]

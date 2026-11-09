@@ -9,6 +9,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.location.Location;
 import android.os.Bundle;
+import android.util.Pair;
+import java.util.Collections;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -123,6 +125,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     private String lastTimedOutTargetUid = null;
     private String lastTimedOutTargetName = null;
     private long lastTimedOutInitialTs = 0L;
+
+    // ⚡ Map Render Throttle Handler (Eliminates UI-thread rendering lag)
+    private final android.os.Handler mapRenderHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pendingRenderRunnable = null;
     private long lastTimedOutEpoch = 0L;
     private final String TAG = "MapActivity_Enterprise";
 
@@ -201,6 +207,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         com.jdroidx.jfindme.engine.EngineRegistry.INSTANCE.heartbeat(com.jdroidx.jfindme.engine.EngineRegistry.ENGINE_LOCATION);
         if (closedLoopAvatarCallback != null) {
             com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.unregisterClosedLoopCallback(closedLoopAvatarCallback);
+        }
+        if (mapRenderHandler != null) {
+            mapRenderHandler.removeCallbacksAndMessages(null);
         }
     }
 
@@ -436,6 +445,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     @Override
     protected void onUiRebuilt(android.os.Bundle savedState) {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Variables: restoredCamLat, restoredCamLng, restoredCamZoom, restoredCamTilt, restoredCamBearing, selectedUserId, activeLocateTargetUid, activeLocateTargetName, initialTargetTs
+        // Constants: saved_cam_lat, saved_cam_lng, saved_cam_zoom, saved_cam_tilt, saved_cam_bearing, saved_selected_user_id, saved_active_locate_uid, saved_active_locate_name, saved_active_locate_initial_ts
+        // Dependencies: android.os.Bundle, SystemLogger
+        // Integration Points: BaseActivityJava.onCreate lifecycle contract, MapViewModel, SupportMapFragment
         SystemLogger.i(TAG, "L7 Lifecycle: Map Dashboard Re-Synchronizing after Rotation.");
         
         if (savedState != null) {
@@ -446,7 +460,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             restoredCamBearing = savedState.getFloat("saved_cam_bearing", 0f);
             String selId = savedState.getString("saved_selected_user_id", null);
             if (selId != null) selectedUserId = selId;
-        }
+
             String restoredLocateUid = savedState.getString("saved_active_locate_uid", null);
             if (restoredLocateUid != null) {
                 activeLocateTargetUid = restoredLocateUid;
@@ -457,6 +471,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     tvAddressMarquee.setSelected(true);
                 }
             }
+        }
 
         // 1. Re-Target and Re-Sync Map Fragment only if uninitialized
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(com.jdroidx.jfindme.R.id.map_container);
@@ -947,6 +962,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         final int sirenDuration = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
 
+        // [Variables] targetActions: UiArchitect.OptionItem[], sirenDuration: int, finalTargetName: String, roleTag: String, targetUid: String
+        // [Constants] OptionItem descriptions and icons
+        // [Dependencies] UiArchitect, FirebaseComm, PairingRepository, DatabaseHelper, DevicePairingTable, AngelLoader
+        // [Integration Points] MapActivity, HistoryActivity, GeofenceActivity, PersonDetailsActivity, refreshTargetProfileData, showAddAnotherParentDialog
         UiArchitect.OptionItem[] targetActions = new UiArchitect.OptionItem[]{
             new UiArchitect.OptionItem("📍 Find Current Location (Center & Track Live)", "Lock camera directly on target's live coordinate stream", android.R.drawable.ic_menu_mylocation),
             new UiArchitect.OptionItem("🧭 Turn-by-Turn Navigation", "Launch Google Maps directions to target", android.R.drawable.ic_dialog_map),
@@ -954,62 +973,230 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             new UiArchitect.OptionItem("🛡️ Assign / Create Safe Zone", "Configure geofence boundary perimeter for this member", com.jdroidx.jfindme.R.drawable.ic_safe_zone),
             new UiArchitect.OptionItem("🔊 Ring Device (Acoustic Siren)", "Trigger high-volume emergency siren (" + sirenDuration + "s) on target device", android.R.drawable.ic_lock_idle_alarm),
             new UiArchitect.OptionItem("👤 View Member Details & Roles", "Open dossier, ACL permissions, and contact details", com.jdroidx.jfindme.R.drawable.ic_user_profile),
+            new UiArchitect.OptionItem("🔄 Refresh Latest Profile Data", "Pull and re-sync latest profile dossier, avatar, and callsign from Cloud SSOT", android.R.drawable.ic_popup_sync),
+            new UiArchitect.OptionItem("👨‍👩‍👧 Add Another Parent / Guardian", "Link a secondary parent/co-guardian to share oversight with variable selections", com.jdroidx.jfindme.R.drawable.ic_family_friends),
             new UiArchitect.OptionItem("📋 Copy GPS Coordinates", "Copy exact latitude and longitude to clipboard", android.R.drawable.ic_menu_save),
             new UiArchitect.OptionItem("❌ Unlink / Remove Device", "Uncouple this device from your active tracking network", android.R.drawable.ic_menu_delete)
         };
 
         UiArchitect.showRichOptionsDialog(this, "🎯 TARGET: " + finalTargetName.toUpperCase() + roleTag, targetActions, (actIdx, actLabel) -> {
-            switch (actIdx) {
-                case 0: // Find Current Location (Center & Track Live + Remote GPS Wakeup)
-                    initiateRemoteLocateStateMachine(target, finalTargetName);
-                    break;
-                case 1: // Navigate
-                    navigateToTarget(target.getLatitude(), target.getLongitude(), finalTargetName);
-                    break;
-                case 2: // History
-                    Intent hIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
-                    hIntent.putExtra("target_uid", targetUid);
-                    hIntent.putExtra("TARGET_UID", targetUid);
-                    hIntent.putExtra("target_name", finalTargetName);
-                    hIntent.putExtra("TARGET_NAME", finalTargetName);
-                    startActivity(hIntent);
-                    break;
-                case 3: // Safe Zone
-                    Intent zIntent = new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
-                    zIntent.putExtra("target_uid", targetUid);
-                    zIntent.putExtra("TARGET_UID", targetUid);
-                    zIntent.putExtra("target_name", finalTargetName);
-                    zIntent.putExtra("TARGET_NAME", finalTargetName);
-                    zIntent.putExtra("TARGET_LAT", target.getLatitude());
-                    zIntent.putExtra("TARGET_LNG", target.getLongitude());
-                    startActivity(zIntent);
-                    break;
-                case 4: // Acoustic Ring Siren
-                    sendAcousticPing(targetUid, finalTargetName);
-                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", sirenDuration + "-second emergency siren sent to " + finalTargetName + ".", false, 4000, null, null);
-                    break;
-                case 5: // Person Details
-                    Intent pIntent = new Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
-                    pIntent.putExtra("TARGET_UID", targetUid);
-                    pIntent.putExtra("target_uid", targetUid);
-                    pIntent.putExtra("TARGET_NAME", finalTargetName);
-                    pIntent.putExtra("target_name", finalTargetName);
-                    pIntent.putExtra("TARGET_ROLE_FAMILY", target.getRole_family());
-                    pIntent.putExtra("TARGET_ROLE_FRIEND", target.getRole_friend());
-                    pIntent.putExtra("TARGET_ROLE", role);
-                    pIntent.putExtra("target_role", role);
-                    startActivity(pIntent);
-                    break;
-                case 6: // Copy Coordinates
-                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                    String coordStr = String.format(java.util.Locale.US, "%.6f, %.6f", target.getLatitude(), target.getLongitude());
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Coordinates", coordStr));
-                    Toast.makeText(this, "📋 Coordinates Copied: " + coordStr, Toast.LENGTH_SHORT).show();
-                    break;
-                case 7: // Unlink / Delete
-                    showUnlinkDeviceDialog(targetUid, finalTargetName);
-                    break;
+            String label = actLabel != null ? actLabel : "";
+            if (label.contains("Find Current Location")) {
+                initiateRemoteLocateStateMachine(target, finalTargetName);
+            } else if (label.contains("Turn-by-Turn Navigation")) {
+                navigateToTarget(target.getLatitude(), target.getLongitude(), finalTargetName);
+            } else if (label.contains("Location History")) {
+                Intent hIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
+                hIntent.putExtra("target_uid", targetUid);
+                hIntent.putExtra("TARGET_UID", targetUid);
+                hIntent.putExtra("target_name", finalTargetName);
+                hIntent.putExtra("TARGET_NAME", finalTargetName);
+                startActivity(hIntent);
+            } else if (label.contains("Safe Zone")) {
+                Intent zIntent = new Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
+                zIntent.putExtra("target_uid", targetUid);
+                zIntent.putExtra("TARGET_UID", targetUid);
+                zIntent.putExtra("target_name", finalTargetName);
+                zIntent.putExtra("TARGET_NAME", finalTargetName);
+                zIntent.putExtra("TARGET_LAT", target.getLatitude());
+                zIntent.putExtra("TARGET_LNG", target.getLongitude());
+                startActivity(zIntent);
+            } else if (label.contains("Ring Device")) {
+                sendAcousticPing(targetUid, finalTargetName);
+                UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", sirenDuration + "-second emergency siren sent to " + finalTargetName + ".", false, 4000, null, null);
+            } else if (label.contains("Member Details")) {
+                Intent pIntent = new Intent(this, com.jdroidx.jfindme.ui.group.PersonDetailsActivity.class);
+                pIntent.putExtra("TARGET_UID", targetUid);
+                pIntent.putExtra("target_uid", targetUid);
+                pIntent.putExtra("TARGET_NAME", finalTargetName);
+                pIntent.putExtra("target_name", finalTargetName);
+                pIntent.putExtra("TARGET_ROLE_FAMILY", target.getRole_family());
+                pIntent.putExtra("TARGET_ROLE_FRIEND", target.getRole_friend());
+                pIntent.putExtra("TARGET_ROLE", role);
+                pIntent.putExtra("target_role", role);
+                startActivity(pIntent);
+            } else if (label.contains("Refresh Latest Profile")) {
+                refreshTargetProfileData(targetUid, finalTargetName);
+            } else if (label.contains("Add Another Parent")) {
+                showAddAnotherParentDialog(targetUid, finalTargetName, target);
+            } else if (label.contains("Copy GPS Coordinates")) {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                String coordStr = String.format(java.util.Locale.US, "%.6f, %.6f", target.getLatitude(), target.getLongitude());
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Coordinates", coordStr));
+                Toast.makeText(this, "📋 Coordinates Copied: " + coordStr, Toast.LENGTH_SHORT).show();
+            } else if (label.contains("Unlink / Remove Device")) {
+                showUnlinkDeviceDialog(targetUid, finalTargetName);
             }
+        });
+    }
+
+    /**
+     * 🔄 Pulls latest profile & callsign data from Firebase Cloud SSOT into local SQLite and refreshes viewport
+     */
+    private void refreshTargetProfileData(String targetUid, String targetName) {
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Fetching latest Cloud Profile for " + targetName + "...");
+
+        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetUid).get().addOnSuccessListener(snapshot -> {
+            com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+            if (snapshot.exists()) {
+                String cloudName = snapshot.child("name").getValue(String.class);
+                if (cloudName == null || cloudName.isEmpty()) cloudName = snapshot.child("full_name").getValue(String.class);
+                if (cloudName == null || cloudName.isEmpty()) cloudName = snapshot.child("userName").getValue(String.class);
+                String cloudAvatar = snapshot.child("avatar_id").getValue(String.class);
+                
+                com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                if (cloudName != null && !cloudName.isEmpty()) {
+                    localDb.updateDeviceIdentityAndAvatar(targetUid, cloudName, cloudAvatar);
+                }
+                
+                if (viewModel != null) {
+                    viewModel.refreshAllData();
+                }
+                UiArchitect.showSlideNotificationBanner(this, "PROFILE RE-SYNCED", "Refreshed latest dossier for " + (cloudName != null ? cloudName : targetName) + " from Cloud SSOT.", false, 3500, null, null);
+                Toast.makeText(this, "✅ Latest profile data re-synchronized!", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Profile is already up to date.", Toast.LENGTH_SHORT).show();
+            }
+        }).addOnFailureListener(e -> {
+            com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+            Toast.makeText(this, "Failed to refresh profile: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    /**
+     * 👨‍👩‍👧 Variable Right Selections for linking a Co-Parent or Secondary Guardian to target
+     */
+    private void showAddAnotherParentDialog(String targetUid, String targetName, UserLocation target) {
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        List<UserLocation> allLocations = (viewModel != null && viewModel.getUserLocations().getValue() != null) ? viewModel.getUserLocations().getValue() : new ArrayList<>();
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+        List<Pair<String, String>> coParentCandidates = new ArrayList<>();
+        for (UserLocation ul : allLocations) {
+            if (ul == null) continue;
+            String uid = ul.getResolvedUserId();
+            if (uid.equalsIgnoreCase(selfAgentId) || uid.equalsIgnoreCase(targetUid)) continue;
+            String r = ul.getRole_family() != null ? ul.getRole_family().toLowerCase() : "";
+            if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin")) {
+                String dName = localDb.getDeviceCentricName(uid);
+                if (dName.isEmpty()) dName = ul.getUserName();
+                coParentCandidates.add(new Pair<>(uid, dName));
+            }
+        }
+
+        List<UiArchitect.OptionItem> optionsList = new ArrayList<>();
+        for (Pair<String, String> cand : coParentCandidates) {
+            optionsList.add(new UiArchitect.OptionItem(
+                "👨‍👩‍👧 Link " + cand.second,
+                "Assign " + cand.second + " as Co-Parent/Guardian for " + targetName,
+                com.jdroidx.jfindme.R.drawable.ic_user_profile
+            ));
+        }
+        optionsList.add(new UiArchitect.OptionItem(
+            "🔑 Generate Co-Guardian Circle Invite Code",
+            "Create shareable 6-character code (SMS / WhatsApp) for the second parent",
+            com.jdroidx.jfindme.R.drawable.ic_family_friends
+        ));
+        optionsList.add(new UiArchitect.OptionItem(
+            "⌨️ Enter Co-Parent Agent ID Manually",
+            "Manually link an existing 8-character hardware/agent ID as co-parent",
+            com.jdroidx.jfindme.R.drawable.ic_settings_gears
+        ));
+
+        UiArchitect.OptionItem[] options = optionsList.toArray(new UiArchitect.OptionItem[0]);
+
+        UiArchitect.showRichOptionsDialog(this, "Co-Guardian for " + targetName, options, (which, label) -> {
+            if (which < coParentCandidates.size()) {
+                Pair<String, String> chosen = coParentCandidates.get(which);
+                executeCoParentLinkFromMap(chosen.first, chosen.second, targetUid, targetName);
+            } else if (label != null && label.contains("Invite Code")) {
+                generateAndShowCoParentInviteDialog(targetName);
+            } else {
+                UiArchitect.showInputPromptDialog(this,
+                    "Link Co-Parent",
+                    "Enter the 8-character Agent ID / Hardware Token of the other parent / co-guardian:",
+                    "",
+                    inputToken -> {
+                        if (inputToken != null && !inputToken.trim().isEmpty()) {
+                            String cleanToken = inputToken.trim().toUpperCase();
+                            executeCoParentLinkFromMap(cleanToken, "Co-Parent (" + cleanToken + ")", targetUid, targetName);
+                        } else {
+                            UiArchitect.showValidationDialog(this, "Invalid ID", "Co-Parent Agent ID cannot be empty.", null);
+                        }
+                    });
+            }
+        });
+    }
+
+    private void executeCoParentLinkFromMap(String coParentId, String coParentName, String targetUid, String targetName) {
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Linking Co-Parent to " + targetName + "...");
+
+        com.jdroidx.jfindme.data.repository.PairingRepository.linkCoParentToChild(
+            myGrp,
+            coParentId,
+            targetUid,
+            coParentName,
+            targetName,
+            (success, errorMsg) -> {
+                runOnUiThread(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    if (Boolean.TRUE.equals(success)) {
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                            com.jdroidx.jfindme.data.local.tables.DevicePairingTable.INSTANCE.logPairing(
+                                localDb.getWritableDatabase(),
+                                "PAIR_" + coParentId + "_" + targetUid,
+                                coParentId,
+                                targetUid,
+                                "PAIRED"
+                            );
+                        } catch (Exception ignored) { }
+                        UiArchitect.showSlideNotificationBanner(this, "CO-GUARDIAN LINKED",
+                            coParentName + " is now linked as co-guardian for " + targetName + "!",
+                            false, 4000, null, null);
+                        Toast.makeText(this, "✅ Co-Guardian relationship established for " + targetName + "!", Toast.LENGTH_LONG).show();
+                        if (viewModel != null) viewModel.refreshAllData();
+                    } else {
+                        UiArchitect.showValidationDialog(this, "Link Failed",
+                            "Unable to link co-parent: " + (errorMsg != null ? errorMsg : "Unknown error"), null);
+                    }
+                });
+            }
+        );
+    }
+
+    private void generateAndShowCoParentInviteDialog(String targetName) {
+        String hostAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String hostGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+
+        Toast.makeText(this, "Generating Co-Guardian Invite Code...", Toast.LENGTH_SHORT).show();
+        com.jdroidx.jfindme.data.repository.PairingRepository.createCircleInviteCode(hostAgentId, hostGroup, "GUARDIAN", code -> {
+            runOnUiThread(() -> {
+                android.app.AlertDialog codeDialog = new android.app.AlertDialog.Builder(this)
+                    .setTitle("👨‍👩‍👧 Co-Guardian Invite Code")
+                    .setMessage("Share this 6-character code with the other parent/guardian to co-manage " + targetName + " (Valid for 48 Hours):\n\n" +
+                                "🔑 CODE: " + code + "\n\n" +
+                                "They can enter this code in Network Gateway to join circle and share oversight.")
+                    .setPositiveButton("COPY CODE", (d, w) -> {
+                        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        android.content.ClipData clip = android.content.ClipData.newPlainText("jFindMe Co-Guardian Code", code);
+                        clipboard.setPrimaryClip(clip);
+                        Toast.makeText(this, "Code " + code + " copied to clipboard!", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNeutralButton("SHARE", (d, w) -> {
+                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                        shareIntent.setType("text/plain");
+                        shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Join as Co-Guardian on jFindMe");
+                        shareIntent.putExtra(Intent.EXTRA_TEXT, "Join as Co-Guardian to co-manage " + targetName + " on jFindMe! Use this invite code: " + code);
+                        startActivity(Intent.createChooser(shareIntent, "Share Co-Guardian Invite Code"));
+                    })
+                    .setNegativeButton("Done", null)
+                    .create();
+                codeDialog.show();
+            });
         });
     }
 
@@ -1402,9 +1589,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
 
         viewModel.getUserLocations().observe(this, locations -> {
-            // ≡ƒÜÇ QA Fix: Strict MVVM Execution bypassing rogue Firebase Listeners
+            // ⚡ Optimized Throttled Marker Rendering & Floating Side Panel Refresh
             if (googleMap != null) {
-                com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(this, googleMap, locations);
+                scheduleThrottledMarkerRender(locations);
+            }
+            if (viewModel != null) {
+                updateFloatingDevicePanel(locations, viewModel.getMyLocation().getValue());
             }
             
             // 🚀 Tactical Zoom Lock for Friend / Peer Locate
@@ -1535,12 +1725,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         this.googleMap.getUiSettings().setTiltGesturesEnabled(true);
         UiArchitect.applyMapStyle(this, this.googleMap);
         
-        // 🚀 Dynamic Anti-Overlap Zoom Hook: Recomputes screen-space spiderfication as map zooms/pans
+        // 🚀 Dynamic Anti-Overlap Zoom Hook: Recomputes screen-space spiderfication as map zooms/pans (Throttled)
         this.googleMap.setOnCameraIdleListener(() -> {
             if (viewModel != null && viewModel.getUserLocations().getValue() != null && this.googleMap != null) {
-                com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(
-                    this, this.googleMap, viewModel.getUserLocations().getValue()
-                );
+                scheduleThrottledMarkerRender(viewModel.getUserLocations().getValue());
             }
         });
         
@@ -1956,6 +2144,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
         if (viewModel != null && viewModel.getUserLocations() != null && viewModel.getUserLocations().getValue() != null) {
             updateRadarScanner(viewModel.getUserLocations().getValue());
+            updateFloatingDevicePanel(viewModel.getUserLocations().getValue(), location);
         }
     }
 
@@ -2550,6 +2739,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (binding.tvAddressMarquee != null) binding.tvAddressMarquee.setVisibility(View.GONE);
             if (binding.sideActionPanel != null) binding.sideActionPanel.setVisibility(View.GONE);
             if (binding.expandIcon != null) binding.expandIcon.setVisibility(View.GONE);
+            if (binding.floatingDeviceScroll != null) binding.floatingDeviceScroll.setVisibility(View.GONE);
             if (binding.btnPipClose != null) {
                 binding.btnPipClose.setVisibility(View.VISIBLE);
                 binding.btnPipClose.setColorFilter(Color.WHITE);
@@ -2564,6 +2754,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (binding.bottomNavZone != null) binding.bottomNavZone.setVisibility(View.VISIBLE);
             if (binding.tvAddressMarquee != null) binding.tvAddressMarquee.setVisibility(View.VISIBLE);
             if (binding.expandIcon != null) binding.expandIcon.setVisibility(View.VISIBLE);
+            if (binding.floatingDeviceScroll != null && binding.floatingDevicePanel != null && binding.floatingDevicePanel.getChildCount() > 0) {
+                binding.floatingDeviceScroll.setVisibility(View.VISIBLE);
+            }
             if (binding.btnPipClose != null) binding.btnPipClose.setVisibility(View.GONE);
         }
     }
@@ -2623,6 +2816,170 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             Toast.makeText(this, "Target is offline. Showing latest recorded history (" + timeStr + ")", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, "Target " + targetUid + " is currently offline. No location history recorded.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * [Variables] locations | [Constants] THROTTLE_WINDOW_MS = 60ms | [Dependencies] Handler, MultiMarkerEngine | [Integration Points] Map Pan, Zoom, and GPS Telemetry
+     * Smooths rapid GPS and camera idle events into a high-performance 60fps refresh window to eliminate map lag.
+     */
+    private void scheduleThrottledMarkerRender(List<UserLocation> locations) {
+        if (locations == null) return;
+        if (pendingRenderRunnable != null) {
+            mapRenderHandler.removeCallbacks(pendingRenderRunnable);
+        }
+        pendingRenderRunnable = () -> {
+            if (googleMap != null && !isFinishing() && !isDestroyed()) {
+                com.jdroidx.jfindme.engine.map.MultiMarkerEngine.INSTANCE.processViewModelLocations(MapActivity.this, googleMap, locations);
+            }
+        };
+        mapRenderHandler.postDelayed(pendingRenderRunnable, 60);
+    }
+
+    /**
+     * [Variables] locations, myLoc, panel, scroll | [Constants] 50.0f PROXIMITY_THRESHOLD | [Dependencies] Location, AvatarLoader, DatabaseHelper | [Integration Points] Live Map HUD
+     * Renders floating side cards for peer devices ONLY if they are strictly > 50 meters away.
+     */
+    private void updateFloatingDevicePanel(List<UserLocation> locations, Location myLoc) {
+        if (binding == null || binding.floatingDevicePanel == null || binding.floatingDeviceScroll == null) return;
+        if (locations == null || locations.isEmpty() || myLoc == null) {
+            binding.floatingDeviceScroll.setVisibility(View.GONE);
+            binding.floatingDevicePanel.removeAllViews();
+            return;
+        }
+
+        String selfUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+        String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+        List<Pair<UserLocation, Float>> distantDevices = new ArrayList<>();
+        float[] distRes = new float[1];
+
+        for (UserLocation ul : locations) {
+            if (ul == null) continue;
+            String dId = ul.getResolvedUserId();
+            if (dId.isEmpty()) continue;
+            if (dId.equals(selfUid) || dId.equals(selfAgent) || dId.equals("SELF_USER") || "You".equalsIgnoreCase(dId)) {
+                continue; // Skip self device
+            }
+            if (ul.getLatitude() == 0.0 && ul.getLongitude() == 0.0) continue;
+
+            Location.distanceBetween(myLoc.getLatitude(), myLoc.getLongitude(), ul.getLatitude(), ul.getLongitude(), distRes);
+            float distMeters = distRes[0];
+
+            // 🛡️ 50m PROXIMITY FILTER: Devices within 50m are NOT rendered in the floating panel
+            if (distMeters > 50.0f) {
+                distantDevices.add(new Pair<>(ul, distMeters));
+            }
+        }
+
+        if (distantDevices.isEmpty()) {
+            binding.floatingDeviceScroll.setVisibility(View.GONE);
+            binding.floatingDevicePanel.removeAllViews();
+            return;
+        }
+
+        // Sort by distance ascending (nearest distant device first)
+        Collections.sort(distantDevices, (a, b) -> Float.compare(a.second, b.second));
+
+        binding.floatingDeviceScroll.setVisibility(View.VISIBLE);
+        binding.floatingDevicePanel.removeAllViews();
+
+        int maxCards = 6;
+        int count = 0;
+
+        for (Pair<UserLocation, Float> entry : distantDevices) {
+            if (count++ >= maxCards) break;
+            UserLocation ul = entry.first;
+            float distMeters = entry.second;
+            String dId = ul.getResolvedUserId();
+
+            String displayName = ul.getUserName();
+            if (displayName == null || displayName.isEmpty() || displayName.startsWith("Agent_") || "Target Node".equalsIgnoreCase(displayName)) {
+                String ssot = localDb.getDeviceCentricName(dId);
+                displayName = (!ssot.isEmpty() && !ssot.startsWith("Agent_")) ? ssot : "Device";
+            }
+            if (displayName.length() > 10) {
+                displayName = displayName.substring(0, 9) + "…";
+            }
+
+            String distText;
+            if (distMeters >= 1000f) {
+                distText = String.format(java.util.Locale.US, "%.1f km", distMeters / 1000f);
+            } else {
+                distText = Math.round(distMeters) + " m";
+            }
+
+            // Outer card container
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setPadding(scale(6), scale(4), scale(8), scale(4));
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            lp.bottomMargin = scale(6);
+            card.setLayoutParams(lp);
+
+            // Modern cybernetic frosted background
+            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+            bg.setColor(0xE6141923); // Deep translucent slate
+            bg.setCornerRadius(scale(16));
+            bg.setStroke(scale(1), 0x3300E5FF); // Cyber cyan subtle border
+            card.setBackground(bg);
+            card.setElevation(scale(4));
+
+            // Avatar ImageView
+            ImageView ivAvatar = new ImageView(this);
+            int avSize = scale(28);
+            LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(avSize, avSize);
+            avLp.rightMargin = scale(6);
+            ivAvatar.setLayoutParams(avLp);
+
+            String avId = ul.getAvatar_id();
+            if (avId == null || avId.isEmpty() || avId.equals("butterfly") || avId.equals("1")) {
+                avId = localDb.getDeviceCentricAvatar(dId);
+            }
+            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, avId);
+            card.addView(ivAvatar);
+
+            // Text Info Container (Name + Distance)
+            LinearLayout textLayout = new LinearLayout(this);
+            textLayout.setOrientation(LinearLayout.VERTICAL);
+
+            TextView tvName = new TextView(this);
+            tvName.setText(displayName);
+            tvName.setTextSize(10.5f);
+            tvName.setTextColor(0xFFFFFFFF);
+            tvName.setTypeface(null, Typeface.BOLD);
+            tvName.setMaxLines(1);
+            textLayout.addView(tvName);
+
+            TextView tvDist = new TextView(this);
+            tvDist.setText(distText);
+            tvDist.setTextSize(9f);
+            tvDist.setTextColor(0xFF00E5FF); // Accent cyan
+            tvDist.setTypeface(null, Typeface.BOLD);
+            textLayout.addView(tvDist);
+
+            card.addView(textLayout);
+
+            final String finalDisplayName = displayName;
+            final String finalDistText = distText;
+
+            // Click listener: Pan camera to distant device smoothly
+            card.setOnClickListener(v -> {
+                if (googleMap != null) {
+                    LatLng target = new LatLng(ul.getLatitude(), ul.getLongitude());
+                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 17.5f));
+                    updateAddressMarquee(ul);
+                    Toast.makeText(MapActivity.this, "📍 Focused on " + finalDisplayName + " (" + finalDistText + " away)", Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            binding.floatingDevicePanel.addView(card);
         }
     }
 

@@ -41,6 +41,8 @@ class FamilyFriendsViewModel : ViewModel() {
     private val _rosterLiveData = MutableLiveData<List<RosterNode>>()
     val rosterLiveData: LiveData<List<RosterNode>> = _rosterLiveData
 
+    fun getRosterNodes(): LiveData<List<RosterNode>> = rosterLiveData
+
     private var rosterListener: ValueEventListener? = null
     private var activeGroupId: String? = null
 
@@ -255,6 +257,29 @@ class FamilyFriendsViewModel : ViewModel() {
         db.child(com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS).child(groupId).child("signals").child("refresh_roster").addValueEventListener(signalListener!!)
     }
 
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Helper to safely extract Long from DataSnapshot (handles String, Number, or ISO/formatted timestamps)
+    private fun safeLong(snap: DataSnapshot?): Long? {
+        val v = snap?.value ?: return null
+        return when (v) {
+            is Number -> v.toLong()
+            is String -> v.toLongOrNull() ?: try {
+                com.jdroidx.jfindme.data.model.UserLocation(timestamp = v).getLongTimestamp()
+            } catch (_: Exception) { null }
+            else -> null
+        }
+    }
+
+    // Helper to safely extract Int from DataSnapshot (handles String or Number)
+    private fun safeInt(snap: DataSnapshot?): Int? {
+        val v = snap?.value ?: return null
+        return when (v) {
+            is Number -> v.toInt()
+            is String -> v.toIntOrNull()
+            else -> null
+        }
+    }
+
     private fun resolveRosterIdentities(rosterSnap: DataSnapshot, context: android.content.Context) {
         val resolvedNodes = mutableListOf<RosterNode>()
         val seenAgentIds = mutableSetOf<String>()
@@ -336,19 +361,19 @@ class FamilyFriendsViewModel : ViewModel() {
             }
 
             // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-            // Direct Multi-Path Heartbeat Resolution (Unified Cloud Fan-Out)
-            val directHb = nodeSnap.child("last_heartbeat").getValue(Long::class.java)
-                ?: nodeSnap.child("last_seen").getValue(Long::class.java)
-                ?: nodeSnap.child("timestamp").getValue(Long::class.java)
-            val directBattery = nodeSnap.child("battery").getValue(Long::class.java)?.toInt()
-                ?: nodeSnap.child("battery_pct").getValue(Long::class.java)?.toInt()
-                ?: telemetrySnap?.child("battery_pct")?.getValue(Long::class.java)?.toInt()
+            // Direct Multi-Path Heartbeat Resolution (Unified Cloud Fan-Out) with Type-Safe Deserialization
+            val directHb = safeLong(nodeSnap.child("last_heartbeat"))
+                ?: safeLong(nodeSnap.child("last_seen"))
+                ?: safeLong(nodeSnap.child("timestamp"))
+            val directBattery = safeInt(nodeSnap.child("battery"))
+                ?: safeInt(nodeSnap.child("battery_pct"))
+                ?: safeInt(telemetrySnap?.child("battery_pct"))
                 ?: 100
 
             val lastHeartbeat = directHb
-                ?: telemetrySnap?.child("last_heartbeat")?.getValue(Long::class.java)
-                ?: telemetrySnap?.child("last_seen")?.getValue(Long::class.java)
-                ?: nodeSnap.child("ts_updated")?.getValue(Long::class.java)
+                ?: safeLong(telemetrySnap?.child("last_heartbeat"))
+                ?: safeLong(telemetrySnap?.child("last_seen"))
+                ?: safeLong(nodeSnap.child("ts_updated"))
                 ?: 0L
 
             val batteryPct = directBattery
@@ -411,8 +436,8 @@ class FamilyFriendsViewModel : ViewModel() {
                 val liveListener = object : ValueEventListener {
                     override fun onDataChange(liveSnap: DataSnapshot) {
                         if (!liveSnap.exists()) return
-                        var liveTs = liveSnap.child("last_heartbeat").getValue(Long::class.java)
-                            ?: liveSnap.child("timestamp").getValue(Long::class.java)
+                        var liveTs = safeLong(liveSnap.child("last_heartbeat"))
+                            ?: safeLong(liveSnap.child("timestamp"))
                         if (liveTs == null || liveTs == 0L) {
                             val upAtObj = liveSnap.child("updated_at").getValue()
                             if (upAtObj is Number) liveTs = upAtObj.toLong()
@@ -421,7 +446,7 @@ class FamilyFriendsViewModel : ViewModel() {
                                 liveTs = ul.getLongTimestamp()
                             }
                         }
-                        val liveBattery = liveSnap.child("battery").getValue(Long::class.java)?.toInt() ?: batteryPct
+                        val liveBattery = safeInt(liveSnap.child("battery")) ?: batteryPct
                         val liveSos = liveSnap.child("isSosActive").getValue(Boolean::class.java)
                             ?: liveSnap.child("sos").getValue(Boolean::class.java)
                             ?: false

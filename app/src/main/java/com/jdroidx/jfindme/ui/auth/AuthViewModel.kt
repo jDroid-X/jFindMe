@@ -92,6 +92,19 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                         var finalEmail = cleanEmail
                         val defaultPersonalGroup = "GRP_" + agentId
                         var activeGroup = defaultPersonalGroup
+                        var cloudAvatar = ""
+                        var cloudEquippedId = -1
+                        var cloudPhone = ""
+                        var cloudDob = ""
+                        var cloudGender = ""
+                        var cloudAddress = ""
+                        var cloudOrg = ""
+                        var cloudDept = ""
+                        var cloudCity = ""
+                        var cloudState = ""
+                        var cloudCountry = ""
+                        var cloudPincode = ""
+                        var cloudNote = ""
 
                         if (profileTask.isSuccessful && profileTask.result != null && profileTask.result!!.exists()) {
                             val snap = profileTask.result!!
@@ -109,26 +122,35 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             }
 
                             // 🧬 REHYDRATE MASTER PROFILE DOSSIER (Avatar, Phone, Address, Org, DOB, Gender)
-                            val cloudAvatar = snap.child("avatar_id").getValue(String::class.java)
-                            val cloudEquippedId = snap.child("equipped_avatar_id").getValue(Int::class.java) ?: -1
-                            val cloudPhone = snap.child("phone").getValue(String::class.java) ?: ""
-                            val cloudDob = snap.child("dob").getValue(String::class.java) ?: ""
-                            val cloudGender = snap.child("gender").getValue(String::class.java) ?: ""
-                            val cloudAddress = snap.child("address").getValue(String::class.java) ?: ""
-                            val cloudOrg = snap.child("org_name").getValue(String::class.java) ?: ""
-                            val cloudDept = snap.child("dept_name").getValue(String::class.java) ?: ""
-                            val cloudCity = snap.child("city").getValue(String::class.java) ?: ""
-                            val cloudState = snap.child("state").getValue(String::class.java) ?: ""
-                            val cloudCountry = snap.child("country").getValue(String::class.java) ?: ""
-                            val cloudPincode = snap.child("pincode").getValue(String::class.java) ?: ""
-                            val cloudNote = snap.child("emergency_note").getValue(String::class.java) ?: ""
+                            cloudAvatar = snap.child("avatar_id").getValue(String::class.java) ?: ""
+                            cloudEquippedId = snap.child("equipped_avatar_id").getValue(Int::class.java) ?: -1
+                            cloudPhone = snap.child("phone").getValue(String::class.java) ?: ""
+                            cloudDob = snap.child("dob").getValue(String::class.java) ?: ""
+                            cloudGender = snap.child("gender").getValue(String::class.java) ?: ""
+                            cloudAddress = snap.child("address").getValue(String::class.java) ?: ""
+                            cloudOrg = snap.child("org_name").getValue(String::class.java) ?: ""
+                            cloudDept = snap.child("dept_name").getValue(String::class.java) ?: ""
+                            cloudCity = snap.child("city").getValue(String::class.java) ?: ""
+                            cloudState = snap.child("state").getValue(String::class.java) ?: ""
+                            cloudCountry = snap.child("country").getValue(String::class.java) ?: ""
+                            cloudPincode = snap.child("pincode").getValue(String::class.java) ?: ""
+                            cloudNote = snap.child("emergency_note").getValue(String::class.java) ?: ""
 
                             val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                             prefs.edit().apply {
                                 if (!cloudAvatar.isNullOrEmpty()) putString("avatar_id", cloudAvatar)
                                 putInt("equipped_avatar_id", cloudEquippedId)
                                 if (cloudPhone.isNotEmpty()) putString("user_phone", cloudPhone)
+                                if (cloudDob.isNotEmpty()) putString("user_dob", cloudDob)
+                                if (cloudGender.isNotEmpty()) putString("user_gender", cloudGender)
                                 if (cloudAddress.isNotEmpty()) putString("user_address", cloudAddress)
+                                if (cloudOrg.isNotEmpty()) putString("user_org", cloudOrg)
+                                if (cloudDept.isNotEmpty()) putString("user_dept", cloudDept)
+                                if (cloudCity.isNotEmpty()) putString("user_city", cloudCity)
+                                if (cloudState.isNotEmpty()) putString("user_state", cloudState)
+                                if (cloudCountry.isNotEmpty()) putString("user_country", cloudCountry)
+                                if (cloudPincode.isNotEmpty()) putString("user_pincode", cloudPincode)
+                                if (cloudNote.isNotEmpty()) putString("user_note", cloudNote)
                                 apply()
                             }
 
@@ -194,7 +216,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
 
                         // 📡 STEP 3: One-Click Cloud Matrix Parity (Waterfall Heartbeat)
                         val forensicTs = FirebaseComm.getForensicTimestamp()
-                        val cloudPayload = mapOf(
+                        val cloudPayload = mutableMapOf<String, Any>(
                             "name" to finalName,
                             "email" to finalEmail,
                             "model" to hwSpecs.model,
@@ -210,6 +232,18 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             "active_group" to activeGroup,
                             "updated_at" to forensicTs
                         )
+                        if (cloudPhone.isNotEmpty()) cloudPayload["phone"] = cloudPhone
+                        if (cloudDob.isNotEmpty()) cloudPayload["dob"] = cloudDob
+                        if (cloudGender.isNotEmpty()) cloudPayload["gender"] = cloudGender
+                        if (cloudAddress.isNotEmpty()) cloudPayload["address"] = cloudAddress
+                        if (cloudOrg.isNotEmpty()) cloudPayload["org_name"] = cloudOrg
+                        if (cloudDept.isNotEmpty()) cloudPayload["dept_name"] = cloudDept
+                        if (cloudCity.isNotEmpty()) cloudPayload["city"] = cloudCity
+                        if (cloudState.isNotEmpty()) cloudPayload["state"] = cloudState
+                        if (cloudCountry.isNotEmpty()) cloudPayload["country"] = cloudCountry
+                        if (cloudPincode.isNotEmpty()) cloudPayload["pincode"] = cloudPincode
+                        if (cloudNote.isNotEmpty()) cloudPayload["emergency_note"] = cloudNote
+                        if (!cloudAvatar.isNullOrEmpty()) cloudPayload["avatar_id"] = cloudAvatar
 
                         FirebaseComm.syncForensicHeartbeat(authUid, agentId, hardwareUid, cloudPayload, activeGroup)
 

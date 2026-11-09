@@ -647,6 +647,28 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(DeviceVitalsTable.CREATE_TABLE)
         } catch (e: Exception) { }
 
+        // 🚀 Self-Healing: Verify group_members has agent_id, status, member_name, avatar_id, permissions_mask, phone_number, circle_type, is_muted
+        val groupMemberCols = mapOf(
+            GroupMemberTable.COL_AGENT_ID to "TEXT DEFAULT ''",
+            GroupMemberTable.COL_STATUS to "TEXT DEFAULT 'ACTIVE'",
+            GroupMemberTable.COL_MEMBER_NAME to "TEXT DEFAULT ''",
+            GroupMemberTable.COL_AVATAR_ID to "TEXT DEFAULT ''",
+            GroupMemberTable.COL_PERMISSIONS_MASK to "TEXT DEFAULT '0xFF'",
+            GroupMemberTable.COL_PHONE_NUMBER to "TEXT DEFAULT ''",
+            GroupMemberTable.COL_CIRCLE_TYPE to "TEXT DEFAULT 'FAMILY'",
+            GroupMemberTable.COL_IS_MUTED to "INTEGER DEFAULT 0",
+            GroupMemberTable.COL_ALLOW_DEPENDENTS to "INTEGER DEFAULT 0",
+            GroupMemberTable.COL_CREATED_ON to "TEXT DEFAULT ''",
+            GroupMemberTable.COL_JOINED_AT to "INTEGER DEFAULT 0"
+        )
+        for ((col, def) in groupMemberCols) {
+            try {
+                db.rawQuery("SELECT $col FROM ${GroupMemberTable.TABLE_NAME} LIMIT 0", null).use { }
+            } catch (e: Exception) {
+                try { db.execSQL("ALTER TABLE ${GroupMemberTable.TABLE_NAME} ADD COLUMN $col $def") } catch (ex: Exception) { }
+            }
+        }
+
         // 🚀 Self-Healing: Verify ChangeLogTable presence
         try {
             db.execSQL(ChangeLogTable.CREATE_TABLE)
@@ -675,8 +697,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         try {
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS stealth_schedule_config (
-                    config_key TEXT PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    identity_id INTEGER DEFAULT 0,
+                    config_key TEXT UNIQUE NOT NULL,
                     config_value TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    is_enabled INTEGER DEFAULT 1,
                     updated_at INTEGER NOT NULL
                 )
             """.trimIndent())
@@ -745,9 +771,30 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      */
     private fun createLatestDataCompatibilityViews(db: SQLiteDatabase) {
         // [Variables]: db, views, viewName, selectSql
-        // [Constants]: 13 Compatibility Views
+        // [Constants]: Compatibility Views
         // [Dependencies]: SQLiteDatabase, SystemLogger, Table contracts
         // [Integration Points]: onOpen, onCreate, onUpgrade, ForensicVaultExplorerActivity
+        
+        // 🛡️ Migration: Check if legacy physical table sync_queue exists, migrate to pending_sync_queue, and drop table so it can become a VIEW
+        try {
+            var isTable = false
+            db.rawQuery("SELECT type FROM sqlite_master WHERE name = 'sync_queue'", null).use { c ->
+                if (c.moveToFirst()) {
+                    isTable = "table".equals(c.getString(0), ignoreCase = true)
+                }
+            }
+            if (isTable) {
+                try {
+                    db.execSQL("""
+                        INSERT OR IGNORE INTO ${PendingSyncQueueTable.TABLE_NAME} (
+                            ${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, ${PendingSyncQueueTable.COL_TARGET_UID}, ${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_CREATED_ON}
+                        ) SELECT entity_type, entity_id, status, created_on FROM sync_queue
+                    """.trimIndent())
+                } catch (_: Exception) {}
+                db.execSQL("DROP TABLE IF EXISTS sync_queue")
+            }
+        } catch (_: Exception) {}
+
         val views = listOf(
             Pair("devices", "SELECT * FROM ${DeviceTable.TABLE_NAME} ORDER BY ${DeviceTable.COL_UPDATED_AT} DESC, ${DeviceTable.COL_DEVICE_ID} DESC"),
             Pair("safe_zones", "SELECT * FROM ${SafeZoneTable.TABLE_NAME} ORDER BY ${SafeZoneTable.COL_UPDATED_AT} DESC, ${SafeZoneTable.COL_ZONE_ID} DESC"),
@@ -756,7 +803,6 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             Pair("security_evasion_audit_log", "SELECT * FROM security_audit_log ORDER BY timestamp DESC, log_id DESC"),
             Pair("watchdog_resurrection_ledger", "SELECT * FROM ${WatchdogResurrectionTable.TABLE_NAME} ORDER BY ${WatchdogResurrectionTable.COL_TIMESTAMP} DESC, ${WatchdogResurrectionTable.COL_ID} DESC"),
             Pair("device_policy", "SELECT * FROM ${DevicePolicyTable.TABLE_NAME} ORDER BY ${DevicePolicyTable.COL_UPDATED_AT} DESC, ${DevicePolicyTable.COL_ID} DESC"),
-            Pair("device_policy_state", "SELECT * FROM ${DevicePolicyTable.TABLE_NAME} ORDER BY ${DevicePolicyTable.COL_UPDATED_AT} DESC, ${DevicePolicyTable.COL_ID} DESC"),
             Pair("device_pairings", "SELECT * FROM ${DevicePairingTable.TABLE_NAME} ORDER BY ${DevicePairingTable.COL_UPDATED_AT} DESC, ${DevicePairingTable.COL_PAIR_ID} DESC"),
             Pair("alerts", "SELECT * FROM ${AlertHistoryTable.TABLE_NAME} ORDER BY ${AlertHistoryTable.COL_TIMESTAMP} DESC, ${AlertHistoryTable.COL_ID} DESC"),
             Pair("locations", "SELECT * FROM ${LocationEventTable.TABLE_NAME} ORDER BY ${LocationEventTable.COL_TIMESTAMP} DESC, ${LocationEventTable.COL_ID} DESC"),
@@ -768,6 +814,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         )
         for ((viewName, selectSql) in views) {
             try {
+                var isPhysicalTable = false
+                db.rawQuery("SELECT type FROM sqlite_master WHERE name = ?", arrayOf(viewName)).use { c ->
+                    if (c.moveToFirst()) {
+                        isPhysicalTable = "table".equals(c.getString(0), ignoreCase = true)
+                    }
+                }
+                if (isPhysicalTable) {
+                    // Do not attempt to drop or replace physical master tables
+                    continue
+                }
                 db.execSQL("DROP VIEW IF EXISTS $viewName")
                 db.execSQL("CREATE VIEW IF NOT EXISTS $viewName AS $selectSql")
             } catch (ex: Exception) {
@@ -875,6 +931,28 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * Seeds human-editable dynamic TTLs, retention limits, and cache ceilings so no hardcoded values govern runtime operations.
      */
     fun seedDefaultDynamicConfigs(db: SQLiteDatabase) {
+        // 🛡️ Self-Healing Schema Verification: Ensure stealth_schedule_config has all required columns before querying/inserting
+        try {
+            val existingCols = mutableSetOf<String>()
+            db.rawQuery("PRAGMA table_info(stealth_schedule_config)", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(1)
+                    if (name != null) existingCols.add(name.lowercase())
+                }
+            }
+            if (existingCols.isNotEmpty()) {
+                if (!existingCols.contains("description")) {
+                    db.execSQL("ALTER TABLE stealth_schedule_config ADD COLUMN description TEXT DEFAULT ''")
+                }
+                if (!existingCols.contains("is_enabled")) {
+                    db.execSQL("ALTER TABLE stealth_schedule_config ADD COLUMN is_enabled INTEGER DEFAULT 1")
+                }
+                if (!existingCols.contains("identity_id")) {
+                    db.execSQL("ALTER TABLE stealth_schedule_config ADD COLUMN identity_id INTEGER DEFAULT 0")
+                }
+            }
+        } catch (_: Exception) {}
+
         val defaults = mapOf(
             "p2p_mesh_ttl_hours" to Triple("24", "P2P Mesh Packet TTL in Hours", 0L),
             "invitation_ttl_days" to Triple("7", "Device Pairing Invitation Expiry in Days", 0L),
@@ -3385,12 +3463,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 }
             }
             // 3. GroupMemberTable (Active circle / group members)
-            val grpSql = "SELECT ${GroupMemberTable.COL_AGENT_ID} FROM ${GroupMemberTable.TABLE_NAME} WHERE (${GroupMemberTable.COL_STATUS} IS NULL OR ${GroupMemberTable.COL_STATUS} != 'DELETED')"
-            db.rawQuery(grpSql, null).use { cursor ->
-                while (cursor.moveToNext()) {
-                    sanitizeAndAdd(cursor.getString(0))
+            try {
+                val grpSql = "SELECT ${GroupMemberTable.COL_AGENT_ID} FROM ${GroupMemberTable.TABLE_NAME} WHERE (${GroupMemberTable.COL_STATUS} IS NULL OR ${GroupMemberTable.COL_STATUS} != 'DELETED')"
+                db.rawQuery(grpSql, null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        sanitizeAndAdd(cursor.getString(0))
+                    }
                 }
-            }
+            } catch (ignored: Exception) { }
         } catch (e: Exception) {
             SystemLogger.e("DatabaseHelper", "getAllPairedDeviceIds failed: ${e.message}")
         }

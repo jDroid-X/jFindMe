@@ -20,8 +20,11 @@ object DeviceIdentityHelper {
     private const val TAG = "DeviceIdentityHelper"
     private const val HW_PREFIX = "HW_"
     private const val FALLBACK_RAW = "UNKNOWN_NODE"
+    private const val KEY_CACHED_RAW_HARDWARE_ID = "cached_raw_hardware_id"
     @Volatile
     private var agentIdCache: String? = null // Thread-safe cache for generated IDs
+    @Volatile
+    private var rawAndroidIdCache: String? = null // Thread-safe cache for raw Android ID
 
     /**
      * Reads a system property via reflection (SELinux allowed properties).
@@ -38,49 +41,75 @@ object DeviceIdentityHelper {
 
     /**
      * Returns the raw hardware silicon serial or Android ID from secure settings.
+     * Thread-safe and cached to prevent SELinux audit denials and telephony identifier checks.
      */
     @JvmStatic
     fun getRawAndroidId(context: Context): String {
-        val oemProps = listOf("ro.ril.oem.sno", "ro.boot.serialno", "ro.serialno", "ro.ril.oem.psno")
-        for (prop in oemProps) {
-            val valStr = getSystemProperty(prop)
-            if (!valStr.isNullOrBlank()) {
-                val clean = valStr.uppercase().filter { it.isLetterOrDigit() }
-                if (clean.length >= 8 && clean != "UNKNOWN") {
-                    return clean
+        // [Variables] rawAndroidIdCache, cached, resolved, cleanFinal | [Constants] FALLBACK_RAW, KEY_CACHED_RAW_HARDWARE_ID | [Dependencies] Settings.Secure, RegistryManager | [Integration Points] MultiMarkerEngine, LocationRepository SSOT
+        rawAndroidIdCache?.let { if (it.isNotBlank() && it != FALLBACK_RAW) return it }
+
+        val cached = RegistryManager.getString(context, KEY_CACHED_RAW_HARDWARE_ID, "")
+        if (cached.isNotBlank() && cached != FALLBACK_RAW) {
+            rawAndroidIdCache = cached
+            return cached
+        }
+
+        var resolved: String? = null
+
+        // On Android 10+ (API 29+), untrusted apps cannot read ro.* serial properties or Build.getSerial().
+        // Settings.Secure.ANDROID_ID is the official, fast, zero-denial standard.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            val oemProps = listOf("ro.ril.oem.sno", "ro.boot.serialno", "ro.serialno", "ro.ril.oem.psno")
+            for (prop in oemProps) {
+                val valStr = getSystemProperty(prop)
+                if (!valStr.isNullOrBlank()) {
+                    val clean = valStr.uppercase().filter { it.isLetterOrDigit() }
+                    if (clean.length >= 8 && clean != "UNKNOWN") {
+                        resolved = clean
+                        break
+                    }
+                }
+            }
+
+            if (resolved == null) {
+                try {
+                    val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try { Build.getSerial() } catch (e: SecurityException) { Build.SERIAL }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        Build.SERIAL
+                    }
+                    if (!serial.isNullOrBlank() && serial != "UNKNOWN") {
+                        val cleanSerial = serial.uppercase().filter { it.isLetterOrDigit() }
+                        if (cleanSerial.length >= 8) {
+                            resolved = cleanSerial
+                        }
+                    }
+                } catch (e: Exception) {
+                    SystemLogger.w(TAG, "Serial probe fallback: ${e.message}")
                 }
             }
         }
 
-        try {
-            val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try { Build.getSerial() } catch (e: SecurityException) { Build.SERIAL }
-            } else {
-                @Suppress("DEPRECATION")
-                Build.SERIAL
+        if (resolved == null) {
+            resolved = try {
+                Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ANDROID_ID
+                )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
+                    ?: FALLBACK_RAW
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Failed to read ANDROID_ID", e)
+                FALLBACK_RAW
             }
-            if (!serial.isNullOrBlank() && serial != "UNKNOWN") {
-                val cleanSerial = serial.uppercase().filter { it.isLetterOrDigit() }
-                if (cleanSerial.length >= 8) {
-                    return cleanSerial
-                }
-            }
-        } catch (e: Exception) {
-            SystemLogger.w(TAG, "Serial probe fallback: ${e.message}")
         }
 
-        val raw = try {
-            Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ANDROID_ID
-            )?.takeIf { it.isNotBlank() && it != "9774d56d682e549c" }
-                ?: FALLBACK_RAW
-        } catch (e: Exception) {
-            SystemLogger.e(TAG, "Failed to read ANDROID_ID", e)
-            FALLBACK_RAW
+        val cleanFinal = resolved.uppercase().filter { it.isLetterOrDigit() }
+        if (cleanFinal.isNotBlank() && cleanFinal != FALLBACK_RAW) {
+            rawAndroidIdCache = cleanFinal
+            RegistryManager.putString(context, KEY_CACHED_RAW_HARDWARE_ID, cleanFinal)
         }
-
-        return raw.uppercase().filter { it.isLetterOrDigit() }
+        return cleanFinal
     }
 
     @JvmStatic

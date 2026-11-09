@@ -971,22 +971,42 @@ object FirebaseComm {
         atomicPayload["$idPath/updated_at"] = now
 
         // 2. PROFILE NODE (Single Source of Truth: Persona & Organization Dossier)
+        // 🛡️ Data Preservation Gate: Only update fields that are explicitly provided in payload to prevent wiping cloud dossier on partial heartbeats!
         val profPath = "$NODE_DEVICES/$agentId/profile"
-        atomicPayload["$profPath/name"] = payload["name"] ?: payload["userName"] ?: ""
-        atomicPayload["$profPath/email"] = payload["email"] ?: payload["userEmail"] ?: ""
-        atomicPayload["$profPath/phone"] = payload["phone"] ?: ""
-        atomicPayload["$profPath/dob"] = payload["dob"] ?: ""
-        atomicPayload["$profPath/gender"] = payload["gender"] ?: ""
-        atomicPayload["$profPath/country"] = payload["country"] ?: ""
-        atomicPayload["$profPath/state"] = payload["state"] ?: ""
-        atomicPayload["$profPath/city"] = payload["city"] ?: ""
-        atomicPayload["$profPath/pincode"] = payload["pincode"] ?: ""
-        atomicPayload["$profPath/address"] = payload["address"] ?: ""
-        atomicPayload["$profPath/org_name"] = payload["org_name"] ?: ""
-        atomicPayload["$profPath/dept_name"] = payload["dept_name"] ?: ""
-        atomicPayload["$profPath/avatar_id"] = payload["avatar_id"] ?: "1"
-        atomicPayload["$profPath/active_group"] = activeGroupId ?: payload["active_group"] ?: "GRP_$agentId"
-        atomicPayload["$profPath/note"] = payload["emergency_note"] ?: payload["note"] ?: ""
+        val pName = payload["name"] ?: payload["userName"]
+        if (pName != null && pName.toString().isNotBlank()) atomicPayload["$profPath/name"] = pName
+        val pEmail = payload["email"] ?: payload["userEmail"]
+        if (pEmail != null && pEmail.toString().isNotBlank()) atomicPayload["$profPath/email"] = pEmail
+        val pPhone = payload["phone"] ?: payload["userPhone"]
+        if (pPhone != null && pPhone.toString().isNotBlank()) atomicPayload["$profPath/phone"] = pPhone
+        val pDob = payload["dob"]
+        if (pDob != null && pDob.toString().isNotBlank()) atomicPayload["$profPath/dob"] = pDob
+        val pGender = payload["gender"]
+        if (pGender != null && pGender.toString().isNotBlank()) atomicPayload["$profPath/gender"] = pGender
+        val pCountry = payload["country"]
+        if (pCountry != null && pCountry.toString().isNotBlank()) atomicPayload["$profPath/country"] = pCountry
+        val pState = payload["state"]
+        if (pState != null && pState.toString().isNotBlank()) atomicPayload["$profPath/state"] = pState
+        val pCity = payload["city"]
+        if (pCity != null && pCity.toString().isNotBlank()) atomicPayload["$profPath/city"] = pCity
+        val pPincode = payload["pincode"]
+        if (pPincode != null && pPincode.toString().isNotBlank()) atomicPayload["$profPath/pincode"] = pPincode
+        val pAddress = payload["address"] ?: payload["userAddress"]
+        if (pAddress != null && pAddress.toString().isNotBlank()) atomicPayload["$profPath/address"] = pAddress
+        val pOrg = payload["org_name"] ?: payload["org"]
+        if (pOrg != null && pOrg.toString().isNotBlank()) atomicPayload["$profPath/org_name"] = pOrg
+        val pDept = payload["dept_name"] ?: payload["dept"]
+        if (pDept != null && pDept.toString().isNotBlank()) atomicPayload["$profPath/dept_name"] = pDept
+        val pAvatar = payload["avatar_id"] ?: payload["equipped_avatar_id"]
+        if (pAvatar != null && pAvatar.toString().isNotBlank() && pAvatar.toString() != "butterfly" && pAvatar.toString() != "1") {
+            atomicPayload["$profPath/avatar_id"] = pAvatar
+        } else if (payload.containsKey("avatar_id")) {
+            atomicPayload["$profPath/avatar_id"] = payload["avatar_id"] ?: "1"
+        }
+        val pGroup = activeGroupId ?: payload["active_group"]
+        if (pGroup != null) atomicPayload["$profPath/active_group"] = pGroup
+        val pNote = payload["emergency_note"] ?: payload["note"]
+        if (pNote != null && pNote.toString().isNotBlank()) atomicPayload["$profPath/note"] = pNote
         atomicPayload["$profPath/updated_at"] = now
 
         // 3. DEVICE NODE (Tier 2 Hardware Specifications & Fingerprints)

@@ -55,45 +55,97 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
             val db = DatabaseHelper.getInstance(context)
             val localDossier = db.getLocalDossier(safeUid)
             
-            if (localDossier.isNotEmpty()) {
+            if (localDossier.isNotEmpty() && !localDossier["fullName"].isNullOrEmpty()) {
                 _profileData.postValue(localDossier)
                 SystemLogger.i("IdentityHub", "Local Tier 1 Truth Verified for $safeUid")
+                auditHardwareSignature(context)
             } else {
-                // 🛡️ TIER 2 FALLBACK: Pre-populate from Hardware Identity
+                // 🛡️ TIER 2 FALLBACK: Pre-populate from Hardware Identity & Registry
                 val fallback = db.getIdentityProfileFallback(safeUid).toMutableMap()
                 
-                // 🧪 Inject Email from Registry if missing
+                // 🧪 Inject from SharedPreferences Registry if available
                 val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                 val regEmail = prefs.getString("email", "")
                 if (!regEmail.isNullOrEmpty()) {
                     fallback["email"] = regEmail
                     fallback["userEmail"] = regEmail
                 }
+                val regPhone = prefs.getString("user_phone", "")
+                if (!regPhone.isNullOrEmpty()) fallback["phone"] = regPhone
+                val regAddress = prefs.getString("user_address", "")
+                if (!regAddress.isNullOrEmpty()) fallback["address"] = regAddress
+                val regDob = prefs.getString("user_dob", "")
+                if (!regDob.isNullOrEmpty()) fallback["dob"] = regDob
+                val regGender = prefs.getString("user_gender", "")
+                if (!regGender.isNullOrEmpty()) fallback["gender"] = regGender
+                val regCity = prefs.getString("user_city", "")
+                if (!regCity.isNullOrEmpty()) fallback["city"] = regCity
+                val regState = prefs.getString("user_state", "")
+                if (!regState.isNullOrEmpty()) fallback["state"] = regState
+                val regCountry = prefs.getString("user_country", "")
+                if (!regCountry.isNullOrEmpty()) fallback["country"] = regCountry
+                val regPincode = prefs.getString("user_pincode", "")
+                if (!regPincode.isNullOrEmpty()) fallback["pincode"] = regPincode
+                val regOrg = prefs.getString("user_org", "")
+                if (!regOrg.isNullOrEmpty()) fallback["org_name"] = regOrg
+                val regDept = prefs.getString("user_dept", "")
+                if (!regDept.isNullOrEmpty()) fallback["dept_name"] = regDept
 
                 if (fallback.isNotEmpty()) {
                     _profileData.postValue(fallback)
                     SystemLogger.i("IdentityHub", "Tier 2 Fallback Active for $safeUid")
                 }
-            }
 
-            auditHardwareSignature(context)
-
-            // 🧬 FALLBACK: Deep-Cloud Lookup if local dossier is sparse
-            if (localDossier.isEmpty() || localDossier["fullName"].isNullOrEmpty()) {
+                // 🧬 FALLBACK: Deep-Cloud Lookup FIRST to prevent blanking cloud dossier on fresh installs
                 FirebaseComm.devicesRef.child(safeUid).child("profile").get().addOnSuccessListener { snapshot ->
                     if (snapshot.exists()) {
                         @Suppress("UNCHECKED_CAST")
                         val cloudMap = snapshot.value as? Map<String, Any> ?: return@addOnSuccessListener
                         val mergedMap = _profileData.value?.toMutableMap() ?: mutableMapOf()
-                        cloudMap.forEach { (k, v) -> mergedMap[k] = v.toString() }
+                        cloudMap.forEach { (k, v) -> 
+                            if (v != null && v.toString().isNotBlank()) {
+                                mergedMap[k] = v.toString()
+                            }
+                        }
                         
                         _profileData.postValue(mergedMap)
                         viewModelScope.launch(Dispatchers.IO) { 
                             val dossier = mergedMap.mapValues { (_, value) -> value.toString() }
-                            val finalName = (mergedMap["userName"] ?: mergedMap["fullName"])?.toString()
+                            val finalName = (mergedMap["userName"] ?: mergedMap["fullName"] ?: mergedMap["name"])?.toString()
                             db.commitAnalyticalDossier(safeUid, dossier, name = finalName) 
+                            // Update SharedPreferences registry
+                            prefs.edit().apply {
+                                val av = mergedMap["avatar_id"]?.toString()
+                                if (!av.isNullOrEmpty()) putString("avatar_id", av)
+                                val ph = mergedMap["phone"]?.toString()
+                                if (!ph.isNullOrEmpty()) putString("user_phone", ph)
+                                val addr = mergedMap["address"]?.toString()
+                                if (!addr.isNullOrEmpty()) putString("user_address", addr)
+                                val dob = mergedMap["dob"]?.toString()
+                                if (!dob.isNullOrEmpty()) putString("user_dob", dob)
+                                val gen = mergedMap["gender"]?.toString()
+                                if (!gen.isNullOrEmpty()) putString("user_gender", gen)
+                                val ct = mergedMap["city"]?.toString()
+                                if (!ct.isNullOrEmpty()) putString("user_city", ct)
+                                val st = mergedMap["state"]?.toString()
+                                if (!st.isNullOrEmpty()) putString("user_state", st)
+                                val cntry = mergedMap["country"]?.toString()
+                                if (!cntry.isNullOrEmpty()) putString("user_country", cntry)
+                                val pin = mergedMap["pincode"]?.toString()
+                                if (!pin.isNullOrEmpty()) putString("user_pincode", pin)
+                                val org = mergedMap["org_name"]?.toString()
+                                if (!org.isNullOrEmpty()) putString("user_org", org)
+                                val dpt = mergedMap["dept_name"]?.toString()
+                                if (!dpt.isNullOrEmpty()) putString("user_dept", dpt)
+                                apply()
+                            }
+                            auditHardwareSignature(context)
                         }
+                    } else {
+                        auditHardwareSignature(context)
                     }
+                }.addOnFailureListener {
+                    auditHardwareSignature(context)
                 }
             }
         }
@@ -215,11 +267,25 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     "updated_at" to FirebaseComm.getForensicTimestamp()
                 ))
 
+                // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                // Variables: nameVal, phoneVal, dobVal, genderVal, cVal, sVal, cityVal, pincodeVal, addressVal, orgName, deptName
+                // Dependencies: SharedPreferences, system_registry
+                // Integration Points: fetchProfile Tier 2 Fallback, AuthViewModel rehydration SSOT
                 prefs.edit()
                     .putString("user_nickname", nameVal)
                     .putString("fullName", nameVal)
                     .putString("userName", nameVal)
                     .putString("owner_name", nameVal)
+                    .putString("user_phone", phoneVal)
+                    .putString("user_dob", dobVal)
+                    .putString("user_gender", genderVal)
+                    .putString("user_country", cVal)
+                    .putString("user_state", sVal)
+                    .putString("user_city", cityVal)
+                    .putString("user_pincode", pincodeVal)
+                    .putString("user_address", addressVal)
+                    .putString("user_org", orgName)
+                    .putString("user_dept", deptName)
                     .apply()
 
                 val activeGrp = _profileData.value?.get("active_group") as? String

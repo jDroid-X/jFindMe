@@ -224,6 +224,97 @@ class PairingRepository {
         }
 
         /**
+         * [Variables] cleanCoParent: String, cleanChild: String, now: String, effectiveGroup: String, updates: HashMap<String, Any>, newSecureCsv: String, currentCsv: String, approvedIds: MutableList<String>
+         * [Constants] NODE_DEVICES, NODE_RELATIONSHIPS, LOG_ITEM_FAMILY_FRIENDS
+         * [Dependencies] FirebaseComm, SystemLogger
+         * [Integration Points] FamilyFriendsActivity, DevicePairingTable, GroupMemberTable
+         * 👨‍👩‍👧 Link Other Parent / Co-Guardian to Child
+         * Establishes mutual parent-child relationship between coParentAgentId and childAgentId
+         * with the exact same Child ID so both parents share guardianship.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun linkCoParentToChild(
+            hostGroupId: String,
+            coParentAgentId: String,
+            childAgentId: String,
+            coParentName: String = "",
+            childName: String = "",
+            onComplete: ((Boolean, String?) -> Unit)? = null
+        ) {
+            val cleanCoParent = FirebaseComm.sanitizeAgentId(coParentAgentId)
+            val cleanChild = FirebaseComm.sanitizeAgentId(childAgentId)
+            if (!FirebaseComm.isAgentIdValid(cleanCoParent) || !FirebaseComm.isAgentIdValid(cleanChild)) {
+                onComplete?.invoke(false, "Invalid Parent or Child Agent ID.")
+                return
+            }
+            val now = FirebaseComm.getForensicTimestamp()
+            val effectiveGroup = if (hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP") hostGroupId else "GRP_$cleanCoParent"
+
+            // 1. Fetch co-parent's valid_linked_agents to append childAgentId
+            db.child(FirebaseComm.NODE_DEVICES).child(cleanCoParent).child("identity").child("valid_linked_agents").get()
+                .addOnSuccessListener { snapshot ->
+                    val currentCsv = snapshot.getValue(String::class.java) ?: ""
+                    val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    if (!approvedIds.contains(cleanChild)) {
+                        approvedIds.add(cleanChild)
+                    }
+                    val newSecureCsv = approvedIds.joinToString(",")
+
+                    val updates = hashMapOf<String, Any>(
+                        // Device-Centric Relationships Mesh
+                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/relationships/$cleanChild" to mapOf(
+                            "role" to "Child",
+                            "group" to effectiveGroup,
+                            "linked_at" to now
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanChild/relationships/$cleanCoParent" to mapOf(
+                            "role" to "GUARDIAN",
+                            "group" to effectiveGroup,
+                            "linked_at" to now
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/dependents/$cleanChild" to true,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanChild/guardians/$cleanCoParent" to true,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/identity/valid_linked_agents" to newSecureCsv,
+
+                        // Circle-level device pairing
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/paired_with/$cleanChild" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanChild/paired_with/$cleanCoParent" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/members/$cleanChild/co_guardians/$cleanCoParent" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
+                    )
+
+                    db.updateChildren(updates).addOnSuccessListener {
+                        SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
+                        val logDetails = mapOf("co_parent" to cleanCoParent, "child" to cleanChild, "group" to effectiveGroup)
+                        FirebaseComm.logChange(cleanCoParent, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "CO_PARENT_LINK", cleanChild, logDetails)
+                        FirebaseComm.logChange(cleanChild, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "GUARDIAN_LINK", cleanCoParent, logDetails)
+                        onComplete?.invoke(true, null)
+                    }.addOnFailureListener { e ->
+                        SystemLogger.e("PairingRepo", "Failed to update co-parent relationship: ${e.message}", e)
+                        onComplete?.invoke(false, e.message)
+                    }
+                }.addOnFailureListener { e ->
+                    SystemLogger.e("PairingRepo", "Failed reading co-parent linked agents: ${e.message}", e)
+                    onComplete?.invoke(false, e.message)
+                }
+        }
+
+        @JvmStatic
+        fun linkCoParentToChild(
+            hostGroupId: String,
+            coParentAgentId: String,
+            childAgentId: String,
+            coParentName: String,
+            childName: String,
+            callback: ResultCallback
+        ) {
+            linkCoParentToChild(hostGroupId, coParentAgentId, childAgentId, coParentName, childName) { success, msg ->
+                callback.onResult(success, msg)
+            }
+        }
+
+        /**
          * 🔑 Generate 6-Character Dynamic Circle Invite Code (48-hour validity).
          */
         @JvmStatic

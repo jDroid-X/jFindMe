@@ -174,9 +174,14 @@ public class AvatarLoader {
      * 🚀 High-Fidelity Remote Avatar Bitmap Resolver (2x Double Resolution & Smart Fit)
      */
     public static Bitmap getRemoteAvatarBitmap(Context context, String avatarIdStr, int targetSize) {
+        return getRemoteAvatarBitmap(context, null, avatarIdStr, targetSize);
+    }
+
+    public static Bitmap getRemoteAvatarBitmap(Context context, String deviceId, String avatarIdStr, int targetSize) {
         if (context == null) return null;
         int doubleSize = targetSize * 2;
-        String cacheKey = "REMOTE_HQ_" + avatarIdStr + "_S_" + doubleSize;
+        String devKey = (deviceId != null && !deviceId.isEmpty()) ? deviceId : "GLOBAL";
+        String cacheKey = "REMOTE_HQ_" + devKey + "_" + (avatarIdStr != null ? avatarIdStr : "") + "_S_" + doubleSize;
         Bitmap cached = bitmapCache.get(cacheKey);
         if (cached != null) return cached;
 
@@ -212,19 +217,22 @@ public class AvatarLoader {
                     }
                 } catch (Exception ignored) {}
             } else if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.startsWith("AV_")) {
-                // If it's a local custom photo and exists on this device
-                File localCustom = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
-                if (localCustom.exists()) {
-                    try {
-                        Bitmap b = BitmapFactory.decodeFile(localCustom.getAbsolutePath());
-                        if (b != null) {
-                            Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
-                            bitmapCache.put(cacheKey, customRes);
-                            return customRes;
-                        }
-                    } catch (Exception ignored) {}
+                // 🛡️ Peer Isolation: Check if a peer-specific cached photo exists, but NEVER load host user's custom_photo.png for remote peers!
+                if (deviceId != null && !deviceId.isEmpty()) {
+                    File peerCustom = new File(context.getFilesDir() + "/avatars", deviceId + "_custom.png");
+                    if (peerCustom.exists()) {
+                        try {
+                            Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
+                            if (b != null) {
+                                Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
+                                bitmapCache.put(cacheKey, customRes);
+                                return customRes;
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 }
-                int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
+                int seed = (deviceId != null && !deviceId.isEmpty()) ? deviceId.hashCode() : avatarIdStr.hashCode();
+                int dynamicIdx = Math.abs(seed) % 50 + 1;
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             } else if (avatarIdStr.matches("^\\d+$")) {
                 int idVal = Integer.parseInt(avatarIdStr);
