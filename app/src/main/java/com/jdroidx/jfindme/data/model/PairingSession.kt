@@ -19,5 +19,6 @@ data class PairingSession(
     val attached_devices: Map<String, Any>? = null,
     val max_attachments: Int = 5,
     val role: String = "MEMBER",
+    val group_id: String = "DEFAULT_GROUP",
     val timestamp: Long = System.currentTimeMillis()
 )

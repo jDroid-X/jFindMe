@@ -487,7 +487,11 @@ public class PersonDetailsActivity extends BaseActivityJava {
     private void rebuildTaggingUI(java.util.List<java.util.Map<String, Object>> roster) {
         if (dynamicTaggingContainer == null) return;
         dynamicTaggingContainer.removeAllViews();
-        if (!isSelf) return; // Only allow tagging locally on your own profile
+        if (!isSelf) {
+            // 🛡️ Scoped Connected Device SSOT: For non-self targets, render connected peers & roles hierarchy
+            renderNonSelfConnectedDevices(targetAgentId != null ? targetAgentId : targetUid, roster);
+            return;
+        }
         
         java.util.Map<String, String> pairedSpouses = new java.util.HashMap<>();
         java.util.Map<String, String> pairedChildren = new java.util.HashMap<>();
@@ -519,6 +523,87 @@ public class PersonDetailsActivity extends BaseActivityJava {
         dynamicTaggingContainer.addView(createTaggedTreeItem("SPOUSE", pairedSpouses));
         dynamicTaggingContainer.addView(createTaggedTreeItem("CHILD", pairedChildren));
         dynamicTaggingContainer.addView(createTaggedTreeItem("FRIEND", pairedFriends));
+    }
+
+    /**
+     * [Variables] resolvedFocal: String, connectedIds: Set<String>, nameMap: Map<String, String>, roleMap: Map<String, String> | [Constants] UiArchitect | [Dependencies] DatabaseHelper, FirebaseComm | [Integration Points] PersonDetailsActivity, DatabaseHelper.getConnectedDeviceIds
+     * 🛡️ Scoped Connected Device SSOT: Displays target member's connected peers and roles in read-only tree format when viewing other circle members.
+     */
+    private void renderNonSelfConnectedDevices(String focalTargetId, java.util.List<java.util.Map<String, Object>> roster) {
+        if (dynamicTaggingContainer == null) return;
+        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        String resolvedFocal = (targetAgentId != null && !targetAgentId.trim().isEmpty()) ? targetAgentId : focalTargetId;
+        if (resolvedFocal == null || resolvedFocal.trim().isEmpty()) {
+            resolvedFocal = targetUid;
+        }
+        
+        dynamicTaggingContainer.addView(createSectionHeader("CONNECTED DEVICES & ROLES (" + (resolvedFocal != null ? resolvedFocal : "PEER") + ")"));
+        
+        java.util.Set<String> connectedIds = (resolvedFocal != null && !resolvedFocal.trim().isEmpty()) 
+                ? db.getConnectedDeviceIds(resolvedFocal) 
+                : java.util.Collections.emptySet();
+        if (connectedIds == null || connectedIds.isEmpty()) {
+            TextView emptyTv = new TextView(this);
+            emptyTv.setText("   └── 🔒 No direct isolated device connections configured for this profile.");
+            emptyTv.setTextColor(getSecondaryTextColor());
+            emptyTv.setTextSize(13);
+            emptyTv.setPadding(30, 10, 10, 15);
+            dynamicTaggingContainer.addView(emptyTv);
+            return;
+        }
+
+        java.util.Map<String, String> nameMap = new java.util.HashMap<>();
+        java.util.Map<String, String> roleMap = new java.util.HashMap<>();
+        if (roster != null) {
+            for (java.util.Map<String, Object> node : roster) {
+                String u1 = (String) node.get("uid_1");
+                String name = (String) node.get("fullName");
+                String rType = (String) node.get("role_type");
+                if (u1 != null) {
+                    if (name != null) nameMap.put(u1, name);
+                    if (rType != null) roleMap.put(u1, rType);
+                }
+            }
+        }
+
+        for (String peerId : connectedIds) {
+            String peerName = nameMap.get(peerId);
+            if (peerName == null || peerName.trim().isEmpty()) {
+                java.util.Map<String, String> dossier = db.getLocalDossier(peerId);
+                peerName = dossier.get("full_name");
+                if (peerName == null || peerName.trim().isEmpty()) {
+                    peerName = "Device " + peerId;
+                }
+            }
+            String peerRole = roleMap.get(peerId);
+            if (peerRole == null || peerRole.trim().isEmpty()) {
+                peerRole = db.getRoleForDevice(peerId);
+                if (peerRole == null || peerRole.trim().isEmpty()) {
+                    peerRole = "MEMBER";
+                }
+            }
+
+            LinearLayout peerRow = new LinearLayout(this);
+            peerRow.setOrientation(LinearLayout.VERTICAL);
+            peerRow.setPadding(20, 8, 20, 8);
+
+            TextView branchTv = new TextView(this);
+            branchTv.setText("   └── 📱 " + peerName + " [" + peerId + "]");
+            branchTv.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green locked
+            branchTv.setTextSize(14);
+            branchTv.setTypeface(null, android.graphics.Typeface.BOLD);
+            branchTv.setPadding(40, 4, 10, 2);
+
+            TextView roleTv = new TextView(this);
+            roleTv.setText("         Role: " + peerRole + "  |  Status: ACTIVE_SCOPED_PAIR");
+            roleTv.setTextColor(getTextColor());
+            roleTv.setTextSize(12);
+            roleTv.setPadding(40, 0, 10, 6);
+
+            peerRow.addView(branchTv);
+            peerRow.addView(roleTv);
+            dynamicTaggingContainer.addView(peerRow);
+        }
     }
 
     private android.view.View createTaggedTreeItem(String roleName, java.util.Map<String, String> assignedNodes) {

@@ -3492,7 +3492,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
-     * [Variables] result: MutableSet<String>, cleanFocal: String, query: String | [Constants] DevicePairingTable | [Dependencies] FirebaseComm, RegistryManager, SystemLogger | [Integration Points] MapActivity, LocationRepository, FamilyFriendsViewModel
+     * [Variables] result: MutableSet<String>, cleanFocal: String, query: String, queryIdentity: String | [Constants] DevicePairingTable, UserIdentityTable | [Dependencies] FirebaseComm, RegistryManager, SystemLogger | [Integration Points] MapActivity, LocationRepository, FamilyFriendsViewModel, PersonDetailsActivity, NetworkGatewayActivity
      * 🛡️ Scoped Connected Device SSOT: Retrieves only devices explicitly paired or connected to the focal device.
      */
     fun getConnectedDeviceIds(focalDeviceId: String): Set<String> {
@@ -3520,6 +3520,45 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanPeer) && 
                         !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeer)) {
                         result.add(cleanPeer)
+                    }
+                }
+            }
+
+            // 🛡️ UserIdentityTable SSOT: capture legacy pairings, dual uids, and multi-linked agent relationships
+            val queryIdentity = """
+                SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}, ${UserIdentityTable.COL_VALID_LINKED_AGENTS}
+                FROM ${UserIdentityTable.TABLE_NAME}
+                WHERE ${UserIdentityTable.COL_UID_1} = ? 
+                   OR ${UserIdentityTable.COL_UID_2} = ? 
+                   OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
+            """.trimIndent()
+            db.rawQuery(queryIdentity, arrayOf(cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val u1 = cursor.getString(0)?.let { com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(it) }
+                    val u2 = cursor.getString(1)?.let { com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(it) }
+                    val conn = cursor.getString(2)?.let { com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(it) }
+                    val linked = cursor.getString(3)
+
+                    val candidates = mutableListOf<String?>()
+                    if (u1 == cleanFocal) {
+                        candidates.add(u2)
+                        candidates.add(conn)
+                    } else {
+                        candidates.add(u1)
+                    }
+                    if (!linked.isNullOrBlank()) {
+                        linked.split(",", ";", "|").forEach { part ->
+                            val s = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(part.trim())
+                            if (s != cleanFocal) candidates.add(s)
+                        }
+                    }
+
+                    for (cand in candidates) {
+                        if (!cand.isNullOrBlank() && cand != cleanFocal &&
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cand) &&
+                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cand)) {
+                            result.add(cand)
+                        }
                     }
                 }
             }

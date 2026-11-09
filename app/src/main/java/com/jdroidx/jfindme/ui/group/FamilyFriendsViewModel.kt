@@ -54,13 +54,16 @@ class FamilyFriendsViewModel : ViewModel() {
         val selfAgentId = prefs.getString("agent_id", "") ?: ""
         val selfDevUid = prefs.getString("device_uid", "") ?: ""
         val resolvedLocalAgentId = if (selfAuthUid.isNotEmpty()) localDb.resolveAgentIdLocally(selfAuthUid) else null
+        val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
+        val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
 
         if (offlineNodes.isNotEmpty()) {
             val cached = offlineNodes.filterNot { item ->
                 val u1 = item["uid_1"] as? String ?: ""
                 val u2 = item["uid_2"] as? String ?: ""
                 (u1.isNotEmpty() && (u1 == selfAuthUid || u1 == selfAgentId || u1 == selfDevUid || (resolvedLocalAgentId != null && u1 == resolvedLocalAgentId))) ||
-                (u2.isNotEmpty() && (u2 == selfDevUid || u2 == selfAgentId || (resolvedLocalAgentId != null && u2 == resolvedLocalAgentId)))
+                (u2.isNotEmpty() && (u2 == selfDevUid || u2 == selfAgentId || (resolvedLocalAgentId != null && u2 == resolvedLocalAgentId))) ||
+                (scopedIds.isNotEmpty() && !scopedIds.contains(u1) && !scopedIds.contains(u2))
             }.map { item ->
                 val role = item["role_type"] as? String ?: "Unknown"
                 val isFriend = when (val fr = item["is_friend"]) {
@@ -314,6 +317,13 @@ class FamilyFriendsViewModel : ViewModel() {
             if (canonicalAgentId == selfAgentId || canonicalAgentId == selfDevUid || canonicalAgentId == selfAuthUid ||
                 (resolvedLocalAgentId != null && canonicalAgentId == resolvedLocalAgentId) ||
                 rawKey == selfAgentId || rawKey == selfDevUid || rawKey == selfAuthUid) {
+                continue
+            }
+
+            // 🛡️ Scoped connected device visibility: strictly isolate to respective connected peers
+            val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
+            val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
+            if (scopedIds.isNotEmpty() && !scopedIds.contains(canonicalAgentId) && !scopedIds.contains(rawKey)) {
                 continue
             }
 

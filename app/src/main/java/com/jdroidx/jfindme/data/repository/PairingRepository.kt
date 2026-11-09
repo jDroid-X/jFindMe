@@ -182,6 +182,26 @@ class PairingRepository {
                 db.updateChildren(updates).addOnSuccessListener {
                     SystemLogger.w("PairingRepo", "V68.0 Handshake: Target Agent Matrix Constructed under $hostAgentId")
                     
+                    // 🛡️ Local SQLite SSOT Logging
+                    JFindMeApplication.getContext()?.let { ctx ->
+                        try {
+                            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                            val pairId = "PAIR_${hostAgentId}_${targetAgentId}"
+                            com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                localDb.writableDatabase,
+                                pairId,
+                                hostAgentId,
+                                targetAgentId,
+                                "ADMIN",
+                                roleFam,
+                                null,
+                                "PAIRED"
+                            )
+                        } catch (ex: Exception) {
+                            SystemLogger.e("PairingRepo", "executeFamilyHandshake SQLite log warning: ${ex.message}")
+                        }
+                    }
+
                     // 📝 AUDIT CHANGE LOGS: Record Pairing and Family/Friends mutations
                     val pairingDetails = mapOf("target_agent" to targetAgentId, "host_group" to hostGroupId, "role" to roleFam)
                     FirebaseComm.logChange(hostAgentId, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", targetAgentId, pairingDetails)
@@ -286,6 +306,27 @@ class PairingRepository {
 
                     db.updateChildren(updates).addOnSuccessListener {
                         SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
+                        
+                        // Local SQLite commit
+                        JFindMeApplication.getContext()?.let { ctx ->
+                            try {
+                                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                val pairId = "COPARENT_${cleanCoParent}_${cleanChild}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    localDb.writableDatabase,
+                                    pairId,
+                                    cleanCoParent,
+                                    cleanChild,
+                                    "Child",
+                                    "GUARDIAN",
+                                    null,
+                                    "PAIRED"
+                                )
+                            } catch (ex: Exception) {
+                                SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
+                            }
+                        }
+
                         val logDetails = mapOf("co_parent" to cleanCoParent, "child" to cleanChild, "group" to effectiveGroup)
                         FirebaseComm.logChange(cleanCoParent, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "CO_PARENT_LINK", cleanChild, logDetails)
                         FirebaseComm.logChange(cleanChild, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "GUARDIAN_LINK", cleanCoParent, logDetails)
@@ -521,6 +562,7 @@ class PairingRepository {
         fun startMultiDevicePairingSession(
             userId: String,
             primaryDeviceId: String,
+            groupId: String = "DEFAULT_GROUP",
             role: String = "MEMBER",
             maxAttachments: Int = 5,
             onCodeReady: (String) -> Unit
@@ -528,6 +570,7 @@ class PairingRepository {
             val pairCode = (100000..999999).random().toString()
             val sessionId = UUID.randomUUID().toString().take(6)
             val timeoutMs = 30 * 60 * 1000L // 30 minutes
+            val effectiveGroup = if (groupId.isNotBlank() && groupId != "DEFAULT_GROUP") groupId else "GRP_$primaryDeviceId"
             val session = PairingSession(
                 sessionId = sessionId,
                 userId = userId,
@@ -538,11 +581,12 @@ class PairingRepository {
                 secondaryDevice = null,
                 attached_devices = emptyMap(),
                 max_attachments = maxAttachments,
-                role = role
+                role = role,
+                group_id = effectiveGroup
             )
             FirebaseComm.database.getReference("pairing_sessions").child(pairCode).setValue(session)
                 .addOnSuccessListener {
-                    SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode (Max $maxAttachments devices)")
+                    SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode in Group $effectiveGroup (Max $maxAttachments devices)")
                     onCodeReady(pairCode)
                 }
                 .addOnFailureListener { e ->
@@ -552,7 +596,12 @@ class PairingRepository {
 
         @JvmStatic
         fun startMultiDevicePairingSession(userId: String, primaryDeviceId: String, role: String, maxAttachments: Int, callback: CodeCallback) {
-            startMultiDevicePairingSession(userId, primaryDeviceId, role, maxAttachments) { callback.onCodeReady(it) }
+            startMultiDevicePairingSession(userId, primaryDeviceId, "DEFAULT_GROUP", role, maxAttachments) { callback.onCodeReady(it) }
+        }
+
+        @JvmStatic
+        fun startMultiDevicePairingSession(userId: String, primaryDeviceId: String, groupId: String, role: String, maxAttachments: Int, callback: CodeCallback) {
+            startMultiDevicePairingSession(userId, primaryDeviceId, groupId, role, maxAttachments) { callback.onCodeReady(it) }
         }
 
         /**
@@ -605,7 +654,11 @@ class PairingRepository {
 
                     ref.updateChildren(updates).addOnSuccessListener {
                         // Automatically link joining device with primary device
-                        val hostGrp = "GRP_${session.primaryDevice}"
+                        val hostGrp = if (!session.group_id.isNullOrBlank() && session.group_id != "DEFAULT_GROUP") {
+                            session.group_id
+                        } else {
+                            "GRP_${session.primaryDevice}"
+                        }
                         linkDevicesWithRoles(hostGrp, session.primaryDevice, joiningDeviceId, session.role, requestedRole, cleanCode) { success, err ->
                             if (success) {
                                 SystemLogger.i("PairingRepo", "Device $joiningDeviceId successfully attached via Code $cleanCode")

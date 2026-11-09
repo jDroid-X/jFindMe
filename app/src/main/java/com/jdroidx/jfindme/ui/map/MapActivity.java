@@ -1141,7 +1141,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
 
     private void executeBatchDeviceConnection(String sourceUid, String sourceName, List<String> targetIds, List<String> roles) {
-        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        String selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfDevId);
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Connecting " + targetIds.size() + " devices...");
 
@@ -1180,18 +1181,20 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     private void generateMultiDevicePairingCode(String targetUid, String targetName) {
         String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfAgentId);
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Generating Multi-Device Pairing Code...");
 
         com.jdroidx.jfindme.data.repository.PairingRepository.startMultiDevicePairingSession(
             selfAgentId,
             targetUid,
+            myGrp,
             "MEMBER",
             5,
             code -> {
                 runOnUiThread(() -> {
                     com.jdroidx.jfindme.utils.AngelLoader.hide(this);
-                    String msg = "6-Digit Pairing Code: " + code + "\n\nAll 3/4/5 devices can enter this exact same code simultaneously to attach closely to " + targetName + ".\n\nCode valid for 30 minutes.";
+                    String msg = "6-Digit Pairing Code: " + code + "\n\nAll 3/4/5 devices can enter this exact same code simultaneously to attach closely to " + targetName + " in group [" + myGrp + "].\n\nCode valid for 30 minutes.";
                     UiArchitect.showConfirmationDialog(this, "Multi-Device Pairing Code", msg, "Copy Code", "Done", () -> {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                         cm.setPrimaryClip(android.content.ClipData.newPlainText("Pairing Code", code));

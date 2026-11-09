@@ -1293,6 +1293,11 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         List<Map<String, Object>> children = new ArrayList<>();
         List<Map<String, Object>> friends = new ArrayList<>();
 
+        DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
+        java.util.Set<String> scopedIds = (forensicAgentId != null && !forensicAgentId.isEmpty()) 
+                ? dbLocal.getConnectedDeviceIds(forensicAgentId) 
+                : java.util.Collections.emptySet();
+
         for (Map<String, Object> node : currentCachedRoster) {
             String uid = (String) node.get("uid_1");
             if (uid == null) uid = (String) node.get("uid");
@@ -1301,6 +1306,14 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
             if (isSelfNode(uid, node)) {
                 continue; // Skip self in member list (rendered via Root Guardian Anchor)
+            }
+
+            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers
+            if (scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
+                String canon = dbLocal.resolveAgentIdLocally(uid);
+                if (canon == null || !scopedIds.contains(canon)) {
+                    continue;
+                }
             }
 
             String name = (String) node.get("fullName");
