@@ -278,7 +278,19 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
 
         // 2. Identity & Message (Dynamic Color Gradient Matrix - V49.2)
         TextView tvMsg = new TextView(this);
-        String agentName = (n.getAvatarName() == null || n.getAvatarName().isEmpty() || n.getAvatarName().equals("Unknown")) ? "MISSION ASSET" : n.getAvatarName().toUpperCase();
+        // [Variables] agentName, n | [Constants] "MISSION ASSET", "Unknown" | [Dependencies] DatabaseHelper | [Integration Points] SSOT Geofence Notification Identity
+        String agentName = n.getAvatarName();
+        if (agentName == null || agentName.isEmpty() || agentName.equalsIgnoreCase("Unknown") || agentName.startsWith("Agent_")) {
+            String ssot = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(n.getAgentId());
+            if (ssot != null && !ssot.trim().isEmpty() && !ssot.startsWith("Agent_")) {
+                agentName = ssot;
+            }
+        }
+        if (agentName == null || agentName.isEmpty() || agentName.equalsIgnoreCase("Unknown")) {
+            agentName = "MISSION ASSET";
+        } else {
+            agentName = agentName.toUpperCase();
+        }
         
         String action;
         int statusColor;

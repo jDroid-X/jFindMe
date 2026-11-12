@@ -1776,9 +1776,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         ImageView avatarView = new ImageView(this);
         int cSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
+        // [Variables] name, avId, avatarView | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Geofence Node Avatar
         String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
         if (avId.isEmpty()) avId = "butterfly";
-        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarView, avId);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarView, name, avId);
         
         android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
         g.setShape(android.graphics.drawable.GradientDrawable.OVAL);
@@ -2020,9 +2021,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         // Profile Avatar Icon
         ImageView ivAvatar = new ImageView(this);
+        // [Variables] name, avId, ivAvatar | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Geofence Profile Avatar
         String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
         if (avId.isEmpty()) avId = "butterfly";
-        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, avId);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, name, avId);
         android.graphics.drawable.GradientDrawable gRing = new android.graphics.drawable.GradientDrawable();
         gRing.setShape(android.graphics.drawable.GradientDrawable.OVAL);
         gRing.setStroke(scale(1), getGradientStart());

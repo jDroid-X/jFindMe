@@ -872,16 +872,18 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         updateTrackLabel();
 
         // Clean up stale map fragment to support robust landscape/portrait rotation
-        SupportMapFragment oldFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
-        if (oldFragment != null) {
-            getSupportFragmentManager().beginTransaction().remove(oldFragment).commitNowAllowingStateLoss();
-        }
+        if (!isFinishing() && !isDestroyed()) {
+            SupportMapFragment oldFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(ID_MAP_FRAGMENT);
+            if (oldFragment != null) {
+                getSupportFragmentManager().beginTransaction().remove(oldFragment).commitAllowingStateLoss();
+            }
 
-        SupportMapFragment mapFragment = SupportMapFragment.newInstance();
-        getSupportFragmentManager().beginTransaction()
-                .add(ID_MAP_FRAGMENT, mapFragment)
-                .commitNowAllowingStateLoss();
-        mapFragment.getMapAsync(this);
+            SupportMapFragment mapFragment = SupportMapFragment.newInstance();
+            getSupportFragmentManager().beginTransaction()
+                    .add(ID_MAP_FRAGMENT, mapFragment)
+                    .commitAllowingStateLoss();
+            mapFragment.getMapAsync(this);
+        }
     }
 
     private void updateTrackLabel() {
@@ -917,7 +919,8 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
             if (isSelf) {
                 com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, targetAvatarView);
             } else {
-                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, targetAvatarView, currentTargetAvatarId);
+                // [Variables] currentTargetUid, currentTargetAvatarId | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT History Target Avatar
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, targetAvatarView, currentTargetUid, currentTargetAvatarId);
             }
         }
     }

@@ -3,12 +3,15 @@ package com.jdroidx.jfindme.ui.group
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.jdroidx.jfindme.utils.SystemLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * 📡 STRICT MVVM ORCHESTRATOR FOR RELATIONAL ROSTER
@@ -47,55 +50,64 @@ class FamilyFriendsViewModel : ViewModel() {
     private var activeGroupId: String? = null
 
     fun initializeCloudSync(context: android.content.Context) {
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val offlineNodes = localDb.getOfflineRoster()
-        val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
-        val selfAuthUid = FirebaseAuth.getInstance().uid ?: ""
-        val selfAgentId = prefs.getString("agent_id", "") ?: ""
-        val selfDevUid = prefs.getString("device_uid", "") ?: ""
-        val resolvedLocalAgentId = if (selfAuthUid.isNotEmpty()) localDb.resolveAgentIdLocally(selfAuthUid) else null
-        val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
-        val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
+        viewModelScope.launch(Dispatchers.IO) {
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val offlineNodes = localDb.getOfflineRoster()
+            val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+            val selfAuthUid = FirebaseAuth.getInstance().uid ?: ""
+            val selfAgentId = prefs.getString("agent_id", "") ?: ""
+            val selfDevUid = prefs.getString("device_uid", "") ?: ""
+            val resolvedLocalAgentId = if (selfAuthUid.isNotEmpty()) localDb.resolveAgentIdLocally(selfAuthUid) else null
+            val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
+            val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
 
-        if (offlineNodes.isNotEmpty()) {
-            val cached = offlineNodes.filterNot { item ->
-                val u1 = item["uid_1"] as? String ?: ""
-                val u2 = item["uid_2"] as? String ?: ""
-                (u1.isNotEmpty() && (u1 == selfAuthUid || u1 == selfAgentId || u1 == selfDevUid || (resolvedLocalAgentId != null && u1 == resolvedLocalAgentId))) ||
-                (u2.isNotEmpty() && (u2 == selfDevUid || u2 == selfAgentId || (resolvedLocalAgentId != null && u2 == resolvedLocalAgentId))) ||
-                (scopedIds.isNotEmpty() && !scopedIds.contains(u1) && !scopedIds.contains(u2))
-            }.map { item ->
-                val role = item["role_type"] as? String ?: "Unknown"
-                val isFriend = when (val fr = item["is_friend"]) {
-                    is Boolean -> fr
-                    is Number -> fr.toInt() == 1
-                    is String -> fr == "1" || fr.equals("true", ignoreCase = true)
-                    else -> false
+            if (offlineNodes.isNotEmpty()) {
+                val cached = offlineNodes.filterNot { item ->
+                    val u1 = item["uid_1"] as? String ?: ""
+                    val u2 = item["uid_2"] as? String ?: ""
+                    (u1.isNotEmpty() && (u1 == selfAuthUid || u1 == selfAgentId || u1 == selfDevUid || (resolvedLocalAgentId != null && u1 == resolvedLocalAgentId))) ||
+                    (u2.isNotEmpty() && (u2 == selfDevUid || u2 == selfAgentId || (resolvedLocalAgentId != null && u2 == resolvedLocalAgentId))) ||
+                    (scopedIds.isNotEmpty() && !scopedIds.contains(u1) && !scopedIds.contains(u2))
+                }.map { item ->
+                    val role = item["role_type"] as? String ?: "Unknown"
+                    val isFriend = when (val fr = item["is_friend"]) {
+                        is Boolean -> fr
+                        is Number -> fr.toInt() == 1
+                        is String -> fr == "1" || fr.equals("true", ignoreCase = true)
+                        else -> false
+                    }
+                    val isAdmin = when (val adm = item["is_admin"]) {
+                        is Boolean -> adm
+                        is Number -> adm.toInt() == 1
+                        is String -> adm == "1" || adm.equals("true", ignoreCase = true)
+                        else -> false
+                    }
+                    val pMaskStr = item["permissions_mask"]?.toString() ?: "0xFF"
+                    val pMask = try {
+                        if (pMaskStr.startsWith("0x", ignoreCase = true)) pMaskStr.substring(2).toInt(16)
+                        else pMaskStr.toInt()
+                    } catch (e: Exception) { 0xFF }
+                    val batteryPct = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                    val lastSeenMs = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
+                    val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batteryPct, false)
+                    val isOnline = (rag.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN)
+                    RosterNode(
+                        uid = item["uid_1"] as? String ?: "",
+                        displayName = item["fullName"] as? String ?: "Unknown",
+                        roleTitle = role,
+                        statusText = rag.statusText,
+                        isAdministrator = isAdmin,
+                        isFriend = isFriend,
+                        avatarId = item["avatar_id"] as? String,
+                        category = classifyCategory(role, isAdmin, isFriend),
+                        batteryPercent = batteryPct,
+                        isOnline = isOnline,
+                        lastSeenTimestamp = lastSeenMs,
+                        permissionsMask = pMask
+                    ) 
                 }
-                val isAdmin = when (val adm = item["is_admin"]) {
-                    is Boolean -> adm
-                    is Number -> adm.toInt() == 1
-                    is String -> adm == "1" || adm.equals("true", ignoreCase = true)
-                    else -> false
-                }
-                val pMaskStr = item["permissions_mask"]?.toString() ?: "0xFF"
-                val pMask = try {
-                    if (pMaskStr.startsWith("0x", ignoreCase = true)) pMaskStr.substring(2).toInt(16)
-                    else pMaskStr.toInt()
-                } catch (e: Exception) { 0xFF }
-                RosterNode(
-                    uid = item["uid_1"] as? String ?: "",
-                    displayName = item["fullName"] as? String ?: "Unknown",
-                    roleTitle = role,
-                    statusText = item["st_session_state"] as? String ?: "Cached",
-                    isAdministrator = isAdmin,
-                    isFriend = isFriend,
-                    avatarId = item["avatar_id"] as? String,
-                    category = classifyCategory(role, isAdmin, isFriend),
-                    permissionsMask = pMask
-                ) 
+                _rosterLiveData.postValue(cached) // Zero-Latency Boot with REAL RAG Vitals
             }
-            _rosterLiveData.postValue(cached) // Zero-Latency Boot
         }
 
         // 🛡️ Zero-Trust Offline Gate: If unauthenticated, remain strictly offline using local SQLite cache
@@ -284,12 +296,13 @@ class FamilyFriendsViewModel : ViewModel() {
     }
 
     private fun resolveRosterIdentities(rosterSnap: DataSnapshot, context: android.content.Context) {
-        val resolvedNodes = mutableListOf<RosterNode>()
-        val seenAgentIds = mutableSetOf<String>()
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val now = System.currentTimeMillis()
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolvedNodes = mutableListOf<RosterNode>()
+            val seenAgentIds = mutableSetOf<String>()
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val now = System.currentTimeMillis()
 
-        for (nodeSnap in rosterSnap.children) {
+            for (nodeSnap in rosterSnap.children) {
             val rawKey = nodeSnap.key ?: continue
             val profileSnap = if (nodeSnap.hasChild("profile")) nodeSnap.child("profile") else nodeSnap
             val telemetrySnap = if (nodeSnap.hasChild("telemetry")) nodeSnap.child("telemetry") else null
@@ -348,26 +361,39 @@ class FamilyFriendsViewModel : ViewModel() {
                 ?: nodeSnap.child("name").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("userName").getValue(String::class.java)
                 
-            val name = cloudName?.takeIf { it.isNotEmpty() && !it.startsWith("Agent_", true) }
-                ?: ssotName.takeIf { it.isNotEmpty() && !it.startsWith("Agent_", true) }
-                ?: cloudName?.takeIf { it.isNotEmpty() }
-                ?: "Agent_$canonicalAgentId"
+            val name = if (ssotName.isNotEmpty() && !ssotName.startsWith("Agent_", true)) {
+                ssotName
+            } else if (!cloudName.isNullOrEmpty() && !cloudName.startsWith("Agent_", true)) {
+                cloudName
+            } else {
+                "Agent_$canonicalAgentId"
+            }
                 
             val roleTitle = nodeSnap.child("membership").child("role").getValue(String::class.java)
                 ?: nodeSnap.child("role").getValue(String::class.java)
                 ?: profileSnap.child("role_title").getValue(String::class.java)
                 ?: "Member"
 
-            val avatarId = profileSnap.child("avatar_id").getValue(String::class.java)
+            val rawAvatar = profileSnap.child("avatar_id").getValue(String::class.java)
                 ?: profileSnap.child("equipped_avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("identity").child("avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("avatar_id").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("avatar_id").getValue(String::class.java)
-                ?: ssotAvatar.takeIf { it.isNotEmpty() }
-                ?: "butterfly"
 
-            if (!cloudName.isNullOrBlank() || !avatarId.isNullOrBlank()) {
-                localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName ?: name, avatarId)
+            // 🛡️ ANTI-CONTAMINATION SSOT: Prioritize verified local SSOT avatar over stale group snapshot ("1", "butterfly")
+            val avatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly" && ssotAvatar != "1") {
+                ssotAvatar
+            } else if (!rawAvatar.isNullOrBlank() && rawAvatar != "butterfly" && rawAvatar != "1") {
+                rawAvatar
+            } else if (ssotAvatar.isNotEmpty()) {
+                ssotAvatar
+            } else {
+                "butterfly"
+            }
+
+            // Only update local DB if we have a verified new avatar from live cloud, not an obsolete group snapshot!
+            if (!cloudName.isNullOrBlank() && !rawAvatar.isNullOrBlank() && rawAvatar != "1" && rawAvatar != "butterfly") {
+                localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName, avatarId)
             }
 
             // [Variables] | [Constants] | [Dependencies] | [Integration Points]
@@ -481,6 +507,20 @@ class FamilyFriendsViewModel : ViewModel() {
                             )
                             currentList[idx] = updated
                             _rosterLiveData.postValue(currentList)
+
+                            // 🚀 Dual-Engine Closed-Loop: Persist latest peer vitals to local SQLite DeviceVitalsTable
+                            viewModelScope.launch(Dispatchers.IO) {
+                                localDb.upsertDeviceVitals(
+                                    canonicalAgentId,
+                                    liveBattery,
+                                    isCharging = false,
+                                    networkType = "UNKNOWN",
+                                    signalDbm = 0,
+                                    isMockGps = false,
+                                    isRooted = false,
+                                    timestamp = effectiveTs
+                                )
+                            }
                         }
                     }
                     override fun onCancelled(error: DatabaseError) {}
@@ -489,15 +529,23 @@ class FamilyFriendsViewModel : ViewModel() {
                 peerLiveListeners[canonicalAgentId] = liveListener
             }
 
-            // 🚀 REAL-TIME PROFILE SYNC: High-Performance Cache Check
-            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-            // O(1) Scalability Gate: Only execute individual cloud .get() if profile or avatar is missing from the parent group snapshot!
-            val hasCompleteIdentity = !cloudName.isNullOrBlank() && !avatarId.isNullOrBlank() && avatarId != "butterfly" && avatarId != "1"
-            if (!hasCompleteIdentity) {
+            // 🚀 REAL-TIME PROFILE SYNC: Authoritative Device Root SSOT Resolution
+            // [Variables] devSnap, pSnap, lSnap, liveAv, liveNm, liveSz, liveSzAddr, currentList, idx, old, finalNm, finalAv, updated | [Constants] None | [Dependencies] FirebaseComm, DatabaseHelper | [Integration Points] FamilyFriendsActivity, Roster RecyclerView
             com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(canonicalAgentId).get().addOnSuccessListener { devSnap ->
                 if (devSnap.exists()) {
                     val pSnap = devSnap.child("profile")
                     val lSnap = devSnap.child("device").child("live")
+                    val avatarData = pSnap.child("avatar_data").getValue(String::class.java)
+                        ?: lSnap.child("avatar_data").getValue(String::class.java)
+                    if (!avatarData.isNullOrEmpty()) {
+                        try {
+                            val cleanB64 = if (avatarData.contains(",")) avatarData.substringAfter(",") else avatarData
+                            val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
+                            val dir = java.io.File(context.filesDir, "avatars")
+                            if (!dir.exists()) dir.mkdirs()
+                            java.io.File(dir, "${canonicalAgentId}_custom.png").writeBytes(bytes)
+                        } catch (_: Exception) {}
+                    }
                     val liveAv = pSnap.child("avatar_id").getValue(String::class.java)
                         ?: pSnap.child("equipped_avatar_id").getValue(String::class.java)
                         ?: lSnap.child("avatar_id").getValue(String::class.java)
@@ -513,30 +561,45 @@ class FamilyFriendsViewModel : ViewModel() {
                     val idx = currentList.indexOfFirst { it.uid == canonicalAgentId }
                     if (idx != -1) {
                         val old = currentList[idx]
+                        val finalNm = liveNm?.takeIf { it.isNotEmpty() && !it.startsWith("Agent_") } ?: old.displayName
+                        val finalAv = liveAv?.takeIf { it.isNotEmpty() && it != "butterfly" && it != "1" } ?: old.avatarId
                         val updated = old.copy(
-                            displayName = liveNm?.takeIf { it.isNotEmpty() } ?: old.displayName,
-                            avatarId = liveAv?.takeIf { it.isNotEmpty() } ?: old.avatarId,
+                            displayName = finalNm,
+                            avatarId = finalAv,
                             safeZoneName = liveSz?.takeIf { it.isNotEmpty() } ?: old.safeZoneName,
                             safeZoneAddress = liveSzAddr?.takeIf { it.isNotEmpty() } ?: old.safeZoneAddress
                         )
                         currentList[idx] = updated
                         _rosterLiveData.postValue(currentList)
 
-                        localDb.saveRosterNode(
-                            canonicalAgentId, updated.displayName, updated.roleTitle, updated.statusText,
-                            updated.isAdministrator, updated.isFriend,
-                            avatarId = updated.avatarId, activeGroupId = activeGroupId
-                        )
+                        viewModelScope.launch(Dispatchers.IO) {
+                            localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, finalNm, finalAv)
+                            localDb.saveRosterNode(
+                                canonicalAgentId, updated.displayName, updated.roleTitle, updated.statusText,
+                                updated.isAdministrator, updated.isFriend,
+                                avatarId = updated.avatarId, activeGroupId = activeGroupId,
+                                permissionsMask = cloudMaskStr
+                            )
+                        }
                     }
                 }
-            }
             }
 
             // 🚀 PRIME DIRECTIVE: Backup explicitly verified Firebase Target locally with active group!
             localDb.saveRosterNode(
                 canonicalAgentId, name, roleTitle, statusLabel, isAdmin, isFriend, 
                 ownerName = "Cloud Roster Mirror", uid2 = null, connectedDeviceId = canonicalAgentId, qrCode = avatarId,
-                avatarId = avatarId, activeGroupId = activeGroupId
+                avatarId = avatarId, activeGroupId = activeGroupId, permissionsMask = cloudMaskStr
+            )
+            localDb.upsertDeviceVitals(
+                canonicalAgentId,
+                batteryPct,
+                isCharging = false,
+                networkType = "UNKNOWN",
+                signalDbm = 0,
+                isMockGps = false,
+                isRooted = false,
+                timestamp = lastHeartbeat
             )
         }
 
@@ -571,24 +634,29 @@ class FamilyFriendsViewModel : ViewModel() {
                     if (pMaskStr2.startsWith("0x", ignoreCase = true)) pMaskStr2.substring(2).toInt(16)
                     else pMaskStr2.toInt()
                 } catch (e: Exception) { 0xFF }
+                val batteryPct2 = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                val lastSeenMs2 = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
+                val rag2 = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs2, batteryPct2, false)
 
                 resolvedNodes.add(RosterNode(
                     uid = u1,
                     displayName = item["fullName"] as? String ?: "Cached Device",
                     roleTitle = role,
-                    statusText = item["st_session_state"] as? String ?: "Offline",
+                    statusText = rag2.statusText,
                     isAdministrator = isAdmin,
                     isFriend = isFriend,
                     avatarId = item["avatar_id"] as? String,
                     category = classifyCategory(role, isAdmin, isFriend),
-                    isOnline = false,
-                    batteryPercent = 100,
+                    isOnline = (rag2.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN),
+                    batteryPercent = batteryPct2,
+                    lastSeenTimestamp = lastSeenMs2,
                     permissionsMask = pMask2
                 ))
             }
         }
 
         _rosterLiveData.postValue(resolvedNodes)
+        }
     }
 
     /**

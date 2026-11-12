@@ -205,40 +205,44 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     }
 
     private void renderSnapshot(DataSnapshot cloudSnapshot) {
-        contentMatrix.removeAllViews();
-        List<String> columns = db.getTableColumns(tableName);
-        List<Map<String, String>> localRows = db.getPagedData(tableName, 30, 0, null);
-        
-        tvTableMeta.setText("VAULT: [" + tableName + "] | MODE: " + (isGridView ? "GRID" : "LIST") + " | LOCAL: " + localRows.size());
+        new Thread(() -> {
+            List<String> columns = db.getTableColumns(tableName);
+            List<Map<String, String>> localRows = db.getPagedData(tableName, 30, 0, null);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                contentMatrix.removeAllViews();
+                tvTableMeta.setText("VAULT: [" + tableName + "] | MODE: " + (isGridView ? "GRID" : "LIST") + " | LOCAL: " + localRows.size());
 
-        if (isGridView) {
-            renderSectionHeader("OFFLINE LEDGER (GRID)");
-            renderTable(localRows, columns, true);
-            if (cloudSnapshot != null) {
-                renderSectionHeader("ONLINE REGISTRY (FIREBASE)");
-                // [Variables]: cloudRows, ds, row, v, m, e
-                // [Constants]: None
-                // [Dependencies]: java.util.Collections, DataSnapshot
-                // [Integration Points]: Master Temporal Invariant (Descending Latest First)
-                List<Map<String, String>> cloudRows = new ArrayList<>();
-                for (DataSnapshot ds : cloudSnapshot.getChildren()) {
-                    Map<String, String> row = new HashMap<>();
-                    row.put("_LOG_ID", ds.getKey());
-                    Object v = ds.getValue();
-                    if (v instanceof Map) {
-                        Map<?, ?> m = (Map<?, ?>) v;
-                        for (Map.Entry<?, ?> e : m.entrySet()) row.put(e.getKey().toString(), String.valueOf(e.getValue()));
+                if (isGridView) {
+                    renderSectionHeader("OFFLINE LEDGER (GRID)");
+                    renderTable(localRows, columns, true);
+                    if (cloudSnapshot != null) {
+                        renderSectionHeader("ONLINE REGISTRY (FIREBASE)");
+                        // [Variables]: cloudRows, ds, row, v, m, e
+                        // [Constants]: None
+                        // [Dependencies]: java.util.Collections, DataSnapshot
+                        // [Integration Points]: Master Temporal Invariant (Descending Latest First)
+                        List<Map<String, String>> cloudRows = new ArrayList<>();
+                        for (DataSnapshot ds : cloudSnapshot.getChildren()) {
+                            Map<String, String> row = new HashMap<>();
+                            row.put("_LOG_ID", ds.getKey());
+                            Object v = ds.getValue();
+                            if (v instanceof Map) {
+                                Map<?, ?> m = (Map<?, ?>) v;
+                                for (Map.Entry<?, ?> e : m.entrySet()) row.put(e.getKey().toString(), String.valueOf(e.getValue()));
+                            }
+                            cloudRows.add(row);
+                        }
+                        // Reverse to display newest records first (DESC) matching offline ledger
+                        Collections.reverse(cloudRows);
+                        renderTable(cloudRows, columns, false);
                     }
-                    cloudRows.add(row);
+                } else {
+                    renderSectionHeader("FORENSIC STRUCTURE (TRANSPOSED)");
+                    renderTransposedMatrix(localRows, columns);
                 }
-                // Reverse to display newest records first (DESC) matching offline ledger
-                Collections.reverse(cloudRows);
-                renderTable(cloudRows, columns, false);
-            }
-        } else {
-            renderSectionHeader("FORENSIC STRUCTURE (TRANSPOSED)");
-            renderTransposedMatrix(localRows, columns);
-        }
+            });
+        }).start();
     }
 
     private void renderSectionHeader(String title) {

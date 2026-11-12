@@ -873,7 +873,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             avatarImg.setLayoutParams(avLp);
             avatarImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
 
-            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarImg, ssotAvatar);
+            // [Variables] uid, ssotAvatar, avatarImg | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Bottom Sheet Roster Avatar
+            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarImg, uid, ssotAvatar);
             card.addView(avatarImg);
 
             // Info Column
@@ -970,6 +971,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         // [Dependencies] UiArchitect, FirebaseComm, PairingRepository, DatabaseHelper, DevicePairingTable, AngelLoader
         // [Integration Points] MapActivity, HistoryActivity, GeofenceActivity, PersonDetailsActivity, refreshTargetProfileData, showAddAnotherParentDialog
         UiArchitect.OptionItem[] targetActions = new UiArchitect.OptionItem[]{
+            new UiArchitect.OptionItem("🔗 Connect with Device C (Family / Friends)", "Auto-connect " + finalTargetName + " to another peer device with mutual Family or Friends relationship", com.jdroidx.jfindme.R.drawable.ic_family_friends),
             new UiArchitect.OptionItem("📍 Find Current Location (Center & Track Live)", "Lock camera directly on target's live coordinate stream", android.R.drawable.ic_menu_mylocation),
             new UiArchitect.OptionItem("🧭 Turn-by-Turn Navigation", "Launch Google Maps directions to target", android.R.drawable.ic_dialog_map),
             new UiArchitect.OptionItem("⏱️ View Location History", "Inspect chronological path timeline and telemetry logs", com.jdroidx.jfindme.R.drawable.ic_location_history),
@@ -1022,6 +1024,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 startActivity(pIntent);
             } else if (label.contains("Refresh Latest Profile")) {
                 refreshTargetProfileData(targetUid, finalTargetName);
+            } else if (label.contains("Connect with Device C")) {
+                showConnectBToCDialog(targetUid, finalTargetName, target);
             } else if (label.contains("Connect Another Device")) {
                 showConnectAnotherDeviceDialog(targetUid, finalTargetName, target);
             } else if (label.contains("Add Another Parent")) {
@@ -1073,11 +1077,247 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
     }
 
+    // [Variables] devBUid, devBName, devB, candidates, seenIds, displayList, items, chosen | [Constants] None | [Dependencies] DatabaseHelper, UiArchitect, AlertDialog, UserLocation | [Integration Points] MapActivity, PairingRepository
+    /**
+     * 🔗 Connect Device B to Device C:
+     * Step 1: Select Device C from other fleet devices.
+     * Step 2: Choose Family vs Friends relationship.
+     * Step 3: Auto-connect both devices bidirectionally across SQLite and Firebase RTDB.
+     */
+    private void showConnectBToCDialog(String devBUid, String devBName, UserLocation devB) {
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String selfUid = FirebaseAuth.getInstance().getUid();
+        List<UserLocation> allLocations = (viewModel != null && viewModel.getUserLocations().getValue() != null) ? viewModel.getUserLocations().getValue() : new ArrayList<>();
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+        List<Pair<String, String>> candidates = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        seenIds.add(devBUid.toUpperCase());
+        if (selfAgentId != null && !selfAgentId.isEmpty()) seenIds.add(selfAgentId.toUpperCase());
+        if (selfUid != null && !selfUid.isEmpty()) seenIds.add(selfUid.toUpperCase());
+
+        // 1. From live locations
+        for (UserLocation ul : allLocations) {
+            if (ul == null) continue;
+            String uid = ul.getResolvedUserId();
+            if (uid == null || uid.isEmpty()) continue;
+            String upper = uid.toUpperCase();
+            if (!seenIds.contains(upper)) {
+                seenIds.add(upper);
+                String dName = localDb.getDeviceCentricName(uid);
+                if (dName.isEmpty()) dName = ul.getUserName();
+                if (dName.isEmpty()) dName = "Device " + uid;
+                candidates.add(new Pair<>(uid, dName));
+            }
+        }
+
+        // 2. From offline roster / known nodes
+        List<Map<String, Object>> offlineNodes = localDb.getOfflineRoster();
+        for (Map<String, Object> node : offlineNodes) {
+            String uid1 = (String) node.get("uid_1");
+            if (uid1 != null && !uid1.isEmpty() && !seenIds.contains(uid1.toUpperCase())) {
+                seenIds.add(uid1.toUpperCase());
+                String name = (String) node.get("name_alias");
+                if (name == null || name.isEmpty()) name = (String) node.get("device_name");
+                if (name == null || name.isEmpty()) name = "Node " + uid1;
+                candidates.add(new Pair<>(uid1, name));
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            UiArchitect.showInputPromptDialog(this, "Connect to Device C", "Enter Device C Agent ID to pair with " + devBName + ":", "", manualId -> {
+                if (manualId != null && !manualId.trim().isEmpty()) {
+                    String cleanCId = manualId.trim();
+                    showRelationshipChoiceDialog(devBUid, devBName, cleanCId, "Device " + cleanCId);
+                }
+            });
+            return;
+        }
+
+        List<String> displayList = new ArrayList<>();
+        for (Pair<String, String> c : candidates) {
+            displayList.add("📱 " + c.second + " (" + c.first + ")");
+        }
+        displayList.add("⌨️ Enter Device C ID Manually...");
+
+        String[] items = displayList.toArray(new String[0]);
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🔗 Select Device C to Connect with " + devBName)
+            .setItems(items, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == items.length - 1) {
+                    UiArchitect.showInputPromptDialog(this, "Manual Device C Entry", "Enter Device C Agent ID:", "", manualId -> {
+                        if (manualId != null && !manualId.trim().isEmpty()) {
+                            String cleanCId = manualId.trim();
+                            showRelationshipChoiceDialog(devBUid, devBName, cleanCId, "Device " + cleanCId);
+                        }
+                    });
+                } else {
+                    Pair<String, String> chosen = candidates.get(which);
+                    showRelationshipChoiceDialog(devBUid, devBName, chosen.first, chosen.second);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    /**
+     * [Variables] devBUid, devBName, devCUid, devCName, catOptions, familyRoles, friendRoles, roleB, roleC, confirmMsg | [Constants] None | [Dependencies] UiArchitect, AlertDialog | [Integration Points] MapActivity, PairingRepository
+     * Step 2: Choose Family vs Friends relationship with role selection.
+     */
+    private void showRelationshipChoiceDialog(String devBUid, String devBName, String devCUid, String devCName) {
+        String[] catOptions = new String[]{
+            "👨‍👩‍👧 Family Relationship (Guardian, Child, Spouse, Sibling)",
+            "🤝 Friends Relationship (Best Friend, Close Friend, Peer)"
+        };
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Relationship: " + devBName + " ↔ " + devCName)
+            .setItems(catOptions, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == 0) {
+                    // Family Selection
+                    String[] familyRoles = new String[]{
+                        "🛡️ Parent / Guardian (" + devBName + " is Guardian ↔ " + devCName + " is Child)",
+                        "👶 Child / Dependent (" + devBName + " is Child ↔ " + devCName + " is Guardian)",
+                        "💍 Spouse / Partner (Mutual Spouses)",
+                        "👨‍👩‍👧 Sibling / Family Member (Mutual Family)"
+                    };
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("👨‍👩‍👧 Family Role: " + devBName)
+                        .setItems(familyRoles, (famDialog, famWhich) -> {
+                            famDialog.dismiss();
+                            String roleB;
+                            String roleC;
+                            switch (famWhich) {
+                                case 0: roleB = "Guardian"; roleC = "Child"; break;
+                                case 1: roleB = "Child"; roleC = "Guardian"; break;
+                                case 2: roleB = "Spouse"; roleC = "Spouse"; break;
+                                default: roleB = "Family"; roleC = "Family"; break;
+                            }
+                            String confirmMsg = "Auto-connect " + devBName + " and " + devCName + " as Family (" + roleB + " ↔ " + roleC + ")?\n\nBoth devices will immediately see their mutual relationship across all screens.";
+                            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                                executeDirectBToCConnection(devBUid, devBName, devCUid, devCName, roleB, roleC, true);
+                            }, null);
+                        })
+                        .setNegativeButton("BACK", (d, w) -> showRelationshipChoiceDialog(devBUid, devBName, devCUid, devCName))
+                        .show();
+                } else {
+                    // Friends Selection
+                    String[] friendRoles = new String[]{
+                        "🌟 Best Friends (Mutual)",
+                        "🤝 Close Friends (Mutual)",
+                        "👥 Friends / Peers (Mutual)",
+                        "🏢 Colleagues / Work (Mutual)"
+                    };
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("🤝 Friends Role: " + devBName)
+                        .setItems(friendRoles, (frDialog, frWhich) -> {
+                            frDialog.dismiss();
+                            String roleB;
+                            String roleC;
+                            switch (frWhich) {
+                                case 0: roleB = "Best Friend"; roleC = "Best Friend"; break;
+                                case 1: roleB = "Close Friend"; roleC = "Close Friend"; break;
+                                case 2: roleB = "Friend"; roleC = "Friend"; break;
+                                default: roleB = "Colleague"; roleC = "Colleague"; break;
+                            }
+                            String confirmMsg = "Auto-connect " + devBName + " and " + devCName + " as Friends (" + roleB + " ↔ " + roleC + ")?\n\nBoth devices will immediately see their mutual relationship across all screens.";
+                            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                                executeDirectBToCConnection(devBUid, devBName, devCUid, devCName, roleB, roleC, false);
+                            }, null);
+                        })
+                        .setNegativeButton("BACK", (d, w) -> showRelationshipChoiceDialog(devBUid, devBName, devCUid, devCName))
+                        .show();
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    /**
+     * [Variables] devBUid, devBName, devCUid, devCName, roleB, roleC, isFamily, selfDevId, myGrp, famRoleB, frRoleB, famRoleC, frRoleC, profUpdateB, profUpdateC, msg | [Constants] None | [Dependencies] PairingRepository, DatabaseHelper, FirebaseComm, UiArchitect, AngelLoader | [Integration Points] MapActivity, FamilyFriendsActivity, PersonDetailsActivity
+     * Step 3: Establish bidirectional connection in Firebase and SQLite with role metadata.
+     */
+    private void executeDirectBToCConnection(String devBUid, String devBName, String devCUid, String devCName, String roleB, String roleC, boolean isFamily) {
+        String selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfDevId);
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Auto-connecting " + devBName + " ↔ " + devCName + "...");
+
+        com.jdroidx.jfindme.data.repository.PairingRepository.linkDevicesWithRoles(
+            myGrp,
+            devBUid,
+            devCUid,
+            roleB,
+            roleC,
+            null,
+            (success, errMsg) -> {
+                runOnUiThread(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    if (Boolean.TRUE.equals(success)) {
+                        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+                        String famRoleB = isFamily ? roleB : "None";
+                        String frRoleB = isFamily ? "None" : roleB;
+                        String famRoleC = isFamily ? roleC : "None";
+                        String frRoleC = isFamily ? "None" : roleC;
+
+                        localDb.updateCitizenRole(devBUid, famRoleB, frRoleB, !isFamily, myGrp);
+                        localDb.updateCitizenRole(devCUid, famRoleC, frRoleC, !isFamily, myGrp);
+
+                        localDb.saveRosterNode(devBUid, devBName, roleB, "LIVE", false, !isFamily);
+                        localDb.saveRosterNode(devCUid, devCName, roleC, "LIVE", false, !isFamily);
+
+                        // Sync profiles in RTDB
+                        java.util.Map<String, Object> profUpdateB = new java.util.HashMap<>();
+                        profUpdateB.put("role_family", famRoleB);
+                        profUpdateB.put("role_friend", frRoleB);
+                        profUpdateB.put("role_title", roleB);
+                        profUpdateB.put("is_friend", !isFamily);
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(devBUid).updateChildren(profUpdateB);
+
+                        java.util.Map<String, Object> profUpdateC = new java.util.HashMap<>();
+                        profUpdateC.put("role_family", famRoleC);
+                        profUpdateC.put("role_friend", frRoleC);
+                        profUpdateC.put("role_title", roleC);
+                        profUpdateC.put("is_friend", !isFamily);
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(devCUid).updateChildren(profUpdateC);
+
+                        // Broadcast refresh signal
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+
+                        if (viewModel != null) {
+                            viewModel.refreshAllData();
+                        }
+
+                        String msg = devBName + " is now connected to " + devCName + " as " + (isFamily ? "Family (" : "Friend (") + roleB + " ↔ " + roleC + ").";
+                        UiArchitect.showSlideNotificationBanner(this, "RELATIONSHIP ESTABLISHED", msg, false, 4500, null, null);
+                        Toast.makeText(this, "✅ " + msg, Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "Failed to connect: " + errMsg, Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        );
+    }
+
     /**
      * [Variables] selfAgentId, allLocations, localDb, candidates, seenIds, roles, roleJoined, confirmMsg
      * [Constants] None
      * [Dependencies] UiArchitect, DatabaseHelper, PairingRepository, AngelLoader, UserLocation
      * [Integration Points] MapActivity, PairingRepository, DatabaseHelper, DevicePairingTable
+     * 🔗 Displays Compound Device & Role Connector Modal Dialog:
+     * - Header: Selected Device 1
+     * - To Connect Device List (Tickboxes)
+     * - Role List (Tickboxes)
+     * On Confirm: Establishes bidirectional connections in SQLite & Firebase SSOT.
+     */
+    // [Variables] selfAgentId, allLocations, localDb, candidates, seenIds, roles, roleJoined, confirmMsg, pairedIds
+    // [Constants] None
+    // [Dependencies] UiArchitect, DatabaseHelper, PairingRepository, AngelLoader, UserLocation
+    // [Integration Points] MapActivity, PairingRepository, DatabaseHelper, DevicePairingTable
+    /**
      * 🔗 Displays Compound Device & Role Connector Modal Dialog:
      * - Header: Selected Device 1
      * - To Connect Device List (Tickboxes)
@@ -1115,9 +1355,22 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             if (uid1 != null && !uid1.isEmpty() && !seenIds.contains(uid1.toUpperCase())) {
                 seenIds.add(uid1.toUpperCase());
                 String name = (String) node.get("name_alias");
+                if (name == null || name.isEmpty()) name = (String) node.get("fullName");
                 if (name == null || name.isEmpty()) name = (String) node.get("device_name");
-                if (name == null || name.isEmpty()) name = "Node " + uid1;
+                if (name == null || name.isEmpty()) name = localDb.getDeviceCentricName(uid1);
+                if (name.isEmpty()) name = "Node " + uid1;
                 candidates.add(new Pair<>(uid1, name));
+            }
+        }
+
+        // 3. From all paired device IDs
+        Set<String> pairedIds = localDb.getAllPairedDeviceIds();
+        for (String pId : pairedIds) {
+            if (pId != null && !pId.isEmpty() && !seenIds.contains(pId.toUpperCase())) {
+                seenIds.add(pId.toUpperCase());
+                String name = localDb.getDeviceCentricName(pId);
+                if (name.isEmpty()) name = "Device " + pId;
+                candidates.add(new Pair<>(pId, name));
             }
         }
 
@@ -1129,6 +1382,22 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             "🤝 Friend / Peer Member",
             "🚨 Emergency Contact"
         };
+
+        if (candidates.isEmpty()) {
+            UiArchitect.showInputPromptDialog(this, "Connect Another Device", "Enter Agent ID / Hardware Token of device to connect with " + targetName + ":", "", manualId -> {
+                if (manualId != null && !manualId.trim().isEmpty()) {
+                    String cleanId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(manualId);
+                    List<String> manualList = new ArrayList<>();
+                    manualList.add(cleanId);
+                    List<String> defRoleList = new ArrayList<>();
+                    defRoleList.add("Member");
+                    executeBatchDeviceConnection(targetUid, targetName, manualList, defRoleList);
+                } else {
+                    UiArchitect.showValidationDialog(this, "Invalid ID", "Target Agent ID cannot be empty.", null);
+                }
+            });
+            return;
+        }
 
         UiArchitect.showCompoundDeviceRoleDialog(this, targetUid, targetName, candidates, roles, (selectedDeviceIds, selectedRoles) -> {
             String roleJoined = android.text.TextUtils.join(", ", selectedRoles);
@@ -1179,6 +1448,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         }
     }
 
+    // [Variables] selfAgentId, myGrp, code, msg | [Constants] None | [Dependencies] PairingRepository, AngelLoader, UiArchitect | [Integration Points] MapActivity, NetworkGatewayActivity
     private void generateMultiDevicePairingCode(String targetUid, String targetName) {
         String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfAgentId);
@@ -1194,7 +1464,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             code -> {
                 runOnUiThread(() -> {
                     com.jdroidx.jfindme.utils.AngelLoader.hide(this);
-                    String msg = "6-Digit Pairing Code: " + code + "\n\nAll 3/4/5 devices can enter this exact same code simultaneously to attach closely to " + targetName + " in group [" + myGrp + "].\n\nCode valid for 30 minutes.";
+                    if (code == null || code.trim().isEmpty()) {
+                        UiArchitect.showValidationDialog(this, "Generation Failed", "Unable to generate pairing code. Please check network connection.", null);
+                        return;
+                    }
+                    String msg = "6-Digit Pairing Code: " + code + "\n\nAll 3/4/5 devices can enter this exact same code simultaneously in Network Gateway to attach closely to " + targetName + " in circle [" + myGrp + "].\n\nCode valid for 30 minutes.";
                     UiArchitect.showConfirmationDialog(this, "Multi-Device Pairing Code", msg, "Copy Code", "Done", () -> {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
                         cm.setPrimaryClip(android.content.ClipData.newPlainText("Pairing Code", code));
@@ -1206,6 +1480,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
 
     /**
+     * [Variables] selfAgentId, allLocations, localDb, coParentCandidates, seenIds, offlineNodes, optionsList, options
+     * [Constants] None
+     * [Dependencies] DatabaseHelper, UiArchitect, PairingRepository
+     * [Integration Points] MapActivity, FamilyFriendsActivity
      * 👨‍👩‍👧 Variable Right Selections for linking a Co-Parent or Secondary Guardian to target
      */
     private void showAddAnotherParentDialog(String targetUid, String targetName, UserLocation target) {
@@ -1214,15 +1492,39 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
 
         List<Pair<String, String>> coParentCandidates = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        seenIds.add(selfAgentId.toUpperCase());
+        seenIds.add(targetUid.toUpperCase());
+
+        // 1. From live locations
         for (UserLocation ul : allLocations) {
             if (ul == null) continue;
             String uid = ul.getResolvedUserId();
-            if (uid.equalsIgnoreCase(selfAgentId) || uid.equalsIgnoreCase(targetUid)) continue;
+            if (uid == null || uid.isEmpty() || seenIds.contains(uid.toUpperCase())) continue;
             String r = ul.getRole_family() != null ? ul.getRole_family().toLowerCase() : "";
             if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin")) {
+                seenIds.add(uid.toUpperCase());
                 String dName = localDb.getDeviceCentricName(uid);
                 if (dName.isEmpty()) dName = ul.getUserName();
                 coParentCandidates.add(new Pair<>(uid, dName));
+            }
+        }
+
+        // 2. From offline roster / known nodes
+        List<Map<String, Object>> offlineNodes = localDb.getOfflineRoster();
+        for (Map<String, Object> node : offlineNodes) {
+            String uid1 = (String) node.get("uid_1");
+            if (uid1 != null && !uid1.isEmpty() && !seenIds.contains(uid1.toUpperCase())) {
+                String role = (String) node.get("role_type");
+                String r = role != null ? role.toLowerCase() : "";
+                if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin") || r.contains("member")) {
+                    seenIds.add(uid1.toUpperCase());
+                    String name = (String) node.get("fullName");
+                    if (name == null || name.isEmpty()) name = (String) node.get("display_name");
+                    if (name == null || name.isEmpty()) name = localDb.getDeviceCentricName(uid1);
+                    if (name.isEmpty()) name = "Node " + uid1;
+                    coParentCandidates.add(new Pair<>(uid1, name));
+                }
             }
         }
 
@@ -1260,7 +1562,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                     "",
                     inputToken -> {
                         if (inputToken != null && !inputToken.trim().isEmpty()) {
-                            String cleanToken = inputToken.trim().toUpperCase();
+                            String cleanToken = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(inputToken);
                             executeCoParentLinkFromMap(cleanToken, "Co-Parent (" + cleanToken + ")", targetUid, targetName);
                         } else {
                             UiArchitect.showValidationDialog(this, "Invalid ID", "Co-Parent Agent ID cannot be empty.", null);
@@ -1271,7 +1573,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
     }
 
     private void executeCoParentLinkFromMap(String coParentId, String coParentName, String targetUid, String targetName) {
-        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfAgentId);
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
         com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Linking Co-Parent to " + targetName + "...");
 
@@ -1294,6 +1597,10 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                                 targetUid,
                                 "PAIRED"
                             );
+                            localDb.appendValidLinkedAgent(coParentId, targetUid);
+                            localDb.appendValidLinkedAgent(targetUid, coParentId);
+                            localDb.appendValidLinkedAgent(selfAgentId, coParentId);
+                            localDb.appendValidLinkedAgent(selfAgentId, targetUid);
                         } catch (Exception ignored) { }
                         UiArchitect.showSlideNotificationBanner(this, "CO-GUARDIAN LINKED",
                             coParentName + " is now linked as co-guardian for " + targetName + "!",
@@ -1311,11 +1618,15 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
     private void generateAndShowCoParentInviteDialog(String targetName) {
         String hostAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-        String hostGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
+        String hostGroup = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + hostAgentId);
 
         Toast.makeText(this, "Generating Co-Guardian Invite Code...", Toast.LENGTH_SHORT).show();
         com.jdroidx.jfindme.data.repository.PairingRepository.createCircleInviteCode(hostAgentId, hostGroup, "GUARDIAN", code -> {
             runOnUiThread(() -> {
+                if (code == null || code.trim().isEmpty()) {
+                    Toast.makeText(this, "Failed to generate invite code. Please retry.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 android.app.AlertDialog codeDialog = new android.app.AlertDialog.Builder(this)
                     .setTitle("👨‍👩‍👧 Co-Guardian Invite Code")
                     .setMessage("Share this 6-character code with the other parent/guardian to co-manage " + targetName + " (Valid for 48 Hours):\n\n" +
@@ -1730,6 +2041,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         });
 
         viewModel.getUserLocations().observe(this, locations -> {
+            // 🔄 Step 1: Bidirectional Reconciliation with Local DB (Unified Avatar SSOT)
+            reconcileDeviceAvatarsWithLocalDb(locations);
+
             // ⚡ Optimized Throttled Marker Rendering & Floating Side Panel Refresh
             if (googleMap != null) {
                 scheduleThrottledMarkerRender(locations);
@@ -2377,6 +2691,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             }
             if (viewModel.getUserLocations().getValue() != null) {
                 updateRadarScanner(viewModel.getUserLocations().getValue());
+                updateFloatingDevicePanel(viewModel.getUserLocations().getValue(), lastKnownLocation);
             }
         }
     }
@@ -2977,24 +3292,130 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         mapRenderHandler.postDelayed(pendingRenderRunnable, 60);
     }
 
+    // [Variables] locations, localDb, cacheEvicted, dId, onlineAvatar, localAvatar, isOnlineCustom, isLocalCustom | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] MapActivity, LocationRepository
     /**
-     * [Variables] locations, myLoc, panel, scroll | [Constants] 50.0f PROXIMITY_THRESHOLD | [Dependencies] Location, AvatarLoader, DatabaseHelper | [Integration Points] Live Map HUD
-     * Renders floating side cards for peer devices ONLY if they are strictly > 50 meters away.
+     * 🔄 UNIFIED AVATAR RECONCILIATION:
+     * Compares the avatars of all online devices with the local database.
+     * If an online device has a newer/custom avatar not yet in the local DB, updates the local DB.
+     * If local DB has a custom avatar and online is empty or default, unifies online UserLocation.
+     * Automatically invalidates stale caches for immediate map and HUD refresh.
+     */
+    private void reconcileDeviceAvatarsWithLocalDb(List<UserLocation> locations) {
+        if (locations == null || locations.isEmpty()) return;
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        boolean cacheEvicted = false;
+
+        for (UserLocation ul : locations) {
+            if (ul == null) continue;
+            String dId = ul.getResolvedUserId();
+            if (dId.isEmpty()) continue;
+
+            String onlineAvatar = ul.getAvatar_id();
+            String localAvatar = localDb.getDeviceCentricAvatar(dId);
+
+            boolean isOnlineCustom = onlineAvatar != null && !onlineAvatar.isEmpty() && !onlineAvatar.equals("butterfly") && !onlineAvatar.equals("1");
+            boolean isLocalCustom = localAvatar != null && !localAvatar.isEmpty() && !localAvatar.equals("butterfly") && !localAvatar.equals("1");
+
+            if (isOnlineCustom && !onlineAvatar.equals(localAvatar)) {
+                // Online device has an updated custom avatar -> Persist to local database
+                localDb.updateDeviceIdentityAndAvatar(dId, ul.getUserName(), onlineAvatar);
+                cacheEvicted = true;
+            } else if (!isOnlineCustom && isLocalCustom) {
+                // Local database has the unified avatar -> Unify online model object
+                ul.setAvatar_id(localAvatar);
+                cacheEvicted = true;
+            }
+        }
+        if (cacheEvicted) {
+            com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
+        }
+    }
+
+    private final java.util.Set<String> distantDeviceHysteresisSet = new java.util.HashSet<>();
+    private final java.util.Map<String, Float> lastDistantDeviceDistances = new java.util.HashMap<>();
+    private final java.util.Set<String> expandedFloatingDeviceIds = new java.util.HashSet<>();
+
+    // [Variables] timestamp, now, deltaMs | [Constants] NONE | [Dependencies] System.currentTimeMillis | [Integration Points] Floating Device HUD
+    private String formatLastUpdateDuration(long timestamp) {
+        if (timestamp <= 0) return "Recent";
+        long now = System.currentTimeMillis();
+        long deltaMs = now - timestamp;
+        if (deltaMs < 0 || deltaMs < 15_000L) {
+            return "Live";
+        } else if (deltaMs < 60_000L) {
+            return (deltaMs / 1000L) + "s ago";
+        } else if (deltaMs < 3_600_000L) {
+            return (deltaMs / 60_000L) + "m ago";
+        } else if (deltaMs < 86_400_000L) {
+            return (deltaMs / 3_600_000L) + "h ago";
+        } else {
+            return (deltaMs / 86_400_000L) + "d ago";
+        }
+    }
+
+    // [Variables] locations, myLoc, refLoc, thresholdMeters, panel, scroll, distantDevices, distRes, card, roundContainer, roundBg, ivAvatar, textLayout, tvName, tvDist, tvMeta, tvClose, isExpanded, durationText, headerPill, tvHeader, hystLower, hystUpper, wasDistant, isDistant | [Constants] DEFAULT_DISTANT_METERS = 50, HYSTERESIS_BUFFER_RATIO = 0.10f | [Dependencies] Location, AvatarLoader, DatabaseHelper, RegistryManager, CameraUpdateFactory | [Integration Points] Live Map HUD, SettingsActivity
+    /**
+     * Renders floating side cards for peer devices ONLY if they are strictly > threshold distance (default 50m) away.
+     * Includes interactive HUD settings trigger to adjust threshold (less or greater).
+     * Incorporates a ±10% distance hysteresis band to prevent visual jitter / fluttering caused by indoor GPS drift.
      */
     private void updateFloatingDevicePanel(List<UserLocation> locations, Location myLoc) {
         if (binding == null || binding.floatingDevicePanel == null || binding.floatingDeviceScroll == null) return;
-        if (locations == null || locations.isEmpty() || myLoc == null) {
-            binding.floatingDeviceScroll.setVisibility(View.GONE);
-            binding.floatingDevicePanel.removeAllViews();
-            return;
-        }
 
         String selfUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
 
+        // 🛡️ Robust SSOT Location Fallback: Ensures floating HUD is never blocked by null myLoc
+        Location refLoc = myLoc;
+        if (refLoc == null && lastKnownLocation != null) {
+            refLoc = lastKnownLocation;
+        }
+        if (refLoc == null && viewModel != null && viewModel.getMyLocation() != null) {
+            refLoc = viewModel.getMyLocation().getValue();
+        }
+        if (refLoc == null) {
+            android.content.SharedPreferences regPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+            double savedLat = (double) regPrefs.getFloat("last_known_lat", 0f);
+            double savedLng = (double) regPrefs.getFloat("last_known_lng", 0f);
+            if (savedLat != 0.0 || savedLng != 0.0) {
+                refLoc = new Location("fallback");
+                refLoc.setLatitude(savedLat);
+                refLoc.setLongitude(savedLng);
+            }
+        }
+        if (refLoc == null && locations != null) {
+            for (UserLocation u : locations) {
+                if (u == null) continue;
+                String uid = u.getResolvedUserId();
+                if (uid.equals(selfUid) || uid.equals(selfAgent) || uid.equals("SELF_USER") || "You".equalsIgnoreCase(uid)) {
+                    refLoc = new Location("self_loc");
+                    refLoc.setLatitude(u.getLatitude());
+                    refLoc.setLongitude(u.getLongitude());
+                    break;
+                }
+            }
+        }
+
+        if (locations == null || locations.isEmpty() || refLoc == null) {
+            binding.floatingDeviceScroll.setVisibility(View.GONE);
+            binding.floatingDevicePanel.removeAllViews();
+            return;
+        }
+
+        int thresholdMeters = com.jdroidx.jfindme.utils.RegistryManager.getDistantDeviceThresholdMeters(this);
+        if (thresholdMeters <= 0) thresholdMeters = 50;
+
+        // 🛡️ ANTI-JITTER HYSTERESIS: A device enters distant floating panel at > threshold,
+        // and stays in the floating panel until it approaches closer than (threshold - hysteresisBuffer).
+        // For 50m: enters at >50m, exits at <45m (10% buffer, clamped between 5m and 25m).
+        float hystBuffer = Math.max(5.0f, Math.min(25.0f, thresholdMeters * 0.10f));
+        float exitThreshold = (float) thresholdMeters - hystBuffer;
+        float enterThreshold = (float) thresholdMeters;
+
         List<Pair<UserLocation, Float>> distantDevices = new ArrayList<>();
         float[] distRes = new float[1];
+        Set<String> newDistantSet = new HashSet<>();
 
         for (UserLocation ul : locations) {
             if (ul == null) continue;
@@ -3005,14 +3426,28 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             }
             if (ul.getLatitude() == 0.0 && ul.getLongitude() == 0.0) continue;
 
-            Location.distanceBetween(myLoc.getLatitude(), myLoc.getLongitude(), ul.getLatitude(), ul.getLongitude(), distRes);
+            Location.distanceBetween(refLoc.getLatitude(), refLoc.getLongitude(), ul.getLatitude(), ul.getLongitude(), distRes);
             float distMeters = distRes[0];
+            lastDistantDeviceDistances.put(dId, distMeters);
 
-            // 🛡️ 50m PROXIMITY FILTER: Devices within 50m are NOT rendered in the floating panel
-            if (distMeters > 50.0f) {
+            boolean wasDistant = distantDeviceHysteresisSet.contains(dId);
+            boolean isDistant;
+            if (wasDistant) {
+                // Must come significantly closer than threshold to exit panel (anti-flicker)
+                isDistant = distMeters > exitThreshold;
+            } else {
+                // Must exceed threshold to enter panel
+                isDistant = distMeters > enterThreshold;
+            }
+
+            if (isDistant) {
+                newDistantSet.add(dId);
                 distantDevices.add(new Pair<>(ul, distMeters));
             }
         }
+
+        distantDeviceHysteresisSet.clear();
+        distantDeviceHysteresisSet.addAll(newDistantSet);
 
         if (distantDevices.isEmpty()) {
             binding.floatingDeviceScroll.setVisibility(View.GONE);
@@ -3026,8 +3461,39 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
         binding.floatingDeviceScroll.setVisibility(View.VISIBLE);
         binding.floatingDevicePanel.removeAllViews();
 
+        // ⚙️ Header Pill: Shows active threshold and opens setting dialog on tap
+        LinearLayout headerPill = new LinearLayout(this);
+        headerPill.setOrientation(LinearLayout.HORIZONTAL);
+        headerPill.setGravity(Gravity.CENTER_VERTICAL);
+        headerPill.setPadding(scale(8), scale(4), scale(8), scale(4));
+
+        LinearLayout.LayoutParams hLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        hLp.bottomMargin = scale(6);
+        headerPill.setLayoutParams(hLp);
+
+        android.graphics.drawable.GradientDrawable hBg = new android.graphics.drawable.GradientDrawable();
+        hBg.setColor(0xF00F172A); // Dark frosted slate
+        hBg.setCornerRadius(scale(14));
+        hBg.setStroke(scale(1), 0x9900E5FF); // Neon cyan border
+        headerPill.setBackground(hBg);
+        headerPill.setElevation(scale(6));
+
+        TextView tvHeader = new TextView(this);
+        tvHeader.setText("📡 Distant (>" + thresholdMeters + "m) ⚙️");
+        tvHeader.setTextSize(9.5f);
+        tvHeader.setTextColor(0xFF00E5FF);
+        tvHeader.setTypeface(null, Typeface.BOLD);
+        headerPill.addView(tvHeader);
+
+        headerPill.setOnClickListener(v -> showFloatingDistanceThresholdDialog());
+        binding.floatingDevicePanel.addView(headerPill);
+
         int maxCards = 6;
         int count = 0;
+        final Location finalRefLoc = refLoc;
 
         for (Pair<UserLocation, Float> entry : distantDevices) {
             if (count++ >= maxCards) break;
@@ -3051,77 +3517,212 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 distText = Math.round(distMeters) + " m";
             }
 
-            // Outer card container
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.HORIZONTAL);
-            card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setPadding(scale(6), scale(4), scale(8), scale(4));
+            final String finalDisplayName = displayName;
+            final String finalDistText = distText;
+            final String durationText = formatLastUpdateDuration(ul.getLongTimestamp());
+            final boolean isExpanded = expandedFloatingDeviceIds.contains(dId);
 
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            lp.bottomMargin = scale(6);
-            card.setLayoutParams(lp);
-
-            // Modern cybernetic frosted background
-            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-            bg.setColor(0xE6141923); // Deep translucent slate
-            bg.setCornerRadius(scale(16));
-            bg.setStroke(scale(1), 0x3300E5FF); // Cyber cyan subtle border
-            card.setBackground(bg);
-            card.setElevation(scale(4));
-
-            // Avatar ImageView
-            ImageView ivAvatar = new ImageView(this);
-            int avSize = scale(28);
-            LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(avSize, avSize);
-            avLp.rightMargin = scale(6);
-            ivAvatar.setLayoutParams(avLp);
+            String roleStr = (ul.getRole_family() != null && !ul.getRole_family().equals("None")) ? ul.getRole_family() : ul.getRole_friend();
+            int roleCol = com.jdroidx.jfindme.utils.AvatarCalloutGenerator.INSTANCE.getRoleColor(roleStr, false);
 
             String avId = ul.getAvatar_id();
             if (avId == null || avId.isEmpty() || avId.equals("butterfly") || avId.equals("1")) {
                 avId = localDb.getDeviceCentricAvatar(dId);
             }
-            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, avId);
-            card.addView(ivAvatar);
 
-            // Text Info Container (Name + Distance)
-            LinearLayout textLayout = new LinearLayout(this);
-            textLayout.setOrientation(LinearLayout.VERTICAL);
+            if (!isExpanded) {
+                // =========================================================================
+                // 🔘 STATE 1 (DEFAULT / COLLAPSED): Compact Round Circular Avatar
+                // =========================================================================
+                FrameLayout roundContainer = new FrameLayout(this);
+                int roundSize = scale(44);
+                LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(roundSize, roundSize);
+                rLp.bottomMargin = scale(8);
+                rLp.gravity = Gravity.CENTER_HORIZONTAL;
+                roundContainer.setLayoutParams(rLp);
 
-            TextView tvName = new TextView(this);
-            tvName.setText(displayName);
-            tvName.setTextSize(10.5f);
-            tvName.setTextColor(0xFFFFFFFF);
-            tvName.setTypeface(null, Typeface.BOLD);
-            tvName.setMaxLines(1);
-            textLayout.addView(tvName);
+                android.graphics.drawable.GradientDrawable roundBg = new android.graphics.drawable.GradientDrawable();
+                roundBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                roundBg.setColor(0xEE141923); // Deep translucent slate
+                roundBg.setStroke(scale(2), roleCol); // Role-accented circular ring
+                roundContainer.setBackground(roundBg);
+                roundContainer.setElevation(scale(4));
 
-            TextView tvDist = new TextView(this);
-            tvDist.setText(distText);
-            tvDist.setTextSize(9f);
-            tvDist.setTextColor(0xFF00E5FF); // Accent cyan
-            tvDist.setTypeface(null, Typeface.BOLD);
-            textLayout.addView(tvDist);
+                ImageView ivAvatar = new ImageView(this);
+                int avSize = scale(34);
+                FrameLayout.LayoutParams avLp = new FrameLayout.LayoutParams(avSize, avSize);
+                avLp.gravity = Gravity.CENTER;
+                ivAvatar.setLayoutParams(avLp);
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, dId, avId);
+                roundContainer.addView(ivAvatar);
 
-            card.addView(textLayout);
+                // Step 1 -> On click of round avatar: expand to rectangle card
+                roundContainer.setOnClickListener(v -> {
+                    expandedFloatingDeviceIds.add(dId);
+                    updateFloatingDevicePanel(locations, finalRefLoc);
+                });
 
-            final String finalDisplayName = displayName;
-            final String finalDistText = distText;
+                // Long-click: quick-pan to target location
+                roundContainer.setOnLongClickListener(v -> {
+                    if (googleMap != null) {
+                        LatLng target = new LatLng(ul.getLatitude(), ul.getLongitude());
+                        googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 17.5f));
+                        updateAddressMarquee(ul);
+                        Toast.makeText(MapActivity.this, "📍 Focused on " + finalDisplayName + " (" + finalDistText + ")", Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                });
 
-            // Click listener: Pan camera to distant device smoothly
-            card.setOnClickListener(v -> {
-                if (googleMap != null) {
-                    LatLng target = new LatLng(ul.getLatitude(), ul.getLongitude());
-                    googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 17.5f));
-                    updateAddressMarquee(ul);
-                    Toast.makeText(MapActivity.this, "📍 Focused on " + finalDisplayName + " (" + finalDistText + " away)", Toast.LENGTH_SHORT).show();
-                }
-            });
+                binding.floatingDevicePanel.addView(roundContainer);
+            } else {
+                // =========================================================================
+                // 🔲 STATE 2 (EXPANDED): Rounded-Corner Rectangle Card
+                // Showing distance and duration of last update
+                // =========================================================================
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.HORIZONTAL);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                card.setPadding(scale(8), scale(6), scale(10), scale(6));
 
-            binding.floatingDevicePanel.addView(card);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                );
+                lp.bottomMargin = scale(8);
+                card.setLayoutParams(lp);
+
+                android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                bg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+                bg.setColor(0xEE141923); // Deep translucent slate
+                bg.setCornerRadius(scale(16)); // Rounded corners
+                bg.setStroke(scale(2), roleCol); // Role-accented border
+                card.setBackground(bg);
+                card.setElevation(scale(6));
+
+                // Avatar inside card (Click avatar toggles collapse back to round)
+                ImageView ivAvatar = new ImageView(this);
+                int avSize = scale(34);
+                LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(avSize, avSize);
+                avLp.rightMargin = scale(8);
+                ivAvatar.setLayoutParams(avLp);
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, dId, avId);
+                ivAvatar.setOnClickListener(v -> {
+                    expandedFloatingDeviceIds.remove(dId);
+                    updateFloatingDevicePanel(locations, finalRefLoc);
+                });
+                card.addView(ivAvatar);
+
+                // Text Info Container (Name + Distance + Duration of last update)
+                LinearLayout textLayout = new LinearLayout(this);
+                textLayout.setOrientation(LinearLayout.VERTICAL);
+
+                TextView tvName = new TextView(this);
+                tvName.setText(displayName);
+                tvName.setTextSize(11f);
+                tvName.setTextColor(0xFFFFFFFF);
+                tvName.setTypeface(null, Typeface.BOLD);
+                tvName.setMaxLines(1);
+                textLayout.addView(tvName);
+
+                // Subtitle: Distance + Duration of last update
+                TextView tvMeta = new TextView(this);
+                tvMeta.setText(distText + " • " + durationText);
+                tvMeta.setTextSize(9f);
+                tvMeta.setTextColor(0xFF00E5FF); // Neon cyan
+                tvMeta.setTypeface(null, Typeface.BOLD);
+                textLayout.addView(tvMeta);
+
+                card.addView(textLayout);
+
+                // Close / Collapse icon
+                TextView tvClose = new TextView(this);
+                tvClose.setText(" ✕");
+                tvClose.setTextSize(10f);
+                tvClose.setTextColor(0x88FFFFFF);
+                tvClose.setPadding(scale(6), scale(2), scale(2), scale(2));
+                tvClose.setOnClickListener(v -> {
+                    expandedFloatingDeviceIds.remove(dId);
+                    updateFloatingDevicePanel(locations, finalRefLoc);
+                });
+                card.addView(tvClose);
+
+                // Step 2 -> On click of that rectangle: takes directly to the current active location!
+                card.setOnClickListener(v -> {
+                    if (googleMap != null) {
+                        LatLng target = new LatLng(ul.getLatitude(), ul.getLongitude());
+                        googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 17.5f));
+                        updateAddressMarquee(ul);
+                        Toast.makeText(MapActivity.this, "📍 Focused on " + finalDisplayName + " (" + finalDistText + " away)", Toast.LENGTH_SHORT).show();
+                    }
+                });
+
+                // Long-click listener: opens tactical action sheet
+                card.setOnLongClickListener(v -> {
+                    showTacticalTargetActionSheet(ul);
+                    return true;
+                });
+
+                binding.floatingDevicePanel.addView(card);
+            }
         }
+    }
+
+    // [Variables] current, values, customLabel, options, selected, chosen | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] RegistryManager, AlertDialog, UiArchitect | [Integration Points] MapActivity, SettingsActivity
+    /**
+     * ⚙️ Allows setting distant device panel threshold (less or greater than 50m) directly from Map HUD.
+     */
+    private void showFloatingDistanceThresholdDialog() {
+        int rawCurrent = com.jdroidx.jfindme.utils.RegistryManager.getDistantDeviceThresholdMeters(this);
+        final int current = (rawCurrent <= 0) ? 50 : rawCurrent;
+        int[] values = {25, 50, 100, 200, 500, 1000};
+        String customLabel = "✏️ Custom Distance (" + current + "m)...";
+        String[] options = {
+            "25m (Immediate Vicinity)",
+            "50m (Standard Proximity — Default)",
+            "100m (Close Proximity — Tight Clustering)",
+            "200m (Medium Range)",
+            "500m (Wide Area — Campus / Fleet)",
+            "1000m (Extended — City-Scale)",
+            customLabel
+        };
+        int selected = options.length - 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📡 Distant Device HUD Threshold")
+            .setMessage("Devices farther than this distance appear in the left Floating Avatar Panel. Set distance threshold:")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    UiArchitect.showInputPromptDialog(this, "📡 Custom Distant Threshold", "Enter meters (10 - 50000):", String.valueOf(current), input -> {
+                        if (input != null && !input.trim().isEmpty()) {
+                            try {
+                                int val = Integer.parseInt(input.trim());
+                                val = Math.max(10, Math.min(50000, val));
+                                com.jdroidx.jfindme.utils.RegistryManager.setDistantDeviceThresholdMeters(this, val);
+                                UiArchitect.showSlideNotificationBanner(this, "Threshold Updated", "Floating avatar activates at >" + val + "m", false, 2500, null, null);
+                                if (viewModel != null && viewModel.getUserLocations().getValue() != null) {
+                                    updateFloatingDevicePanel(viewModel.getUserLocations().getValue(), lastKnownLocation);
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    });
+                } else {
+                    int chosen = values[which];
+                    com.jdroidx.jfindme.utils.RegistryManager.setDistantDeviceThresholdMeters(this, chosen);
+                    UiArchitect.showSlideNotificationBanner(this, "Threshold Updated", "Floating avatar activates at >" + chosen + "m", false, 2500, null, null);
+                    if (viewModel != null && viewModel.getUserLocations().getValue() != null) {
+                        updateFloatingDevicePanel(viewModel.getUserLocations().getValue(), lastKnownLocation);
+                    }
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
     }
 
     @Override

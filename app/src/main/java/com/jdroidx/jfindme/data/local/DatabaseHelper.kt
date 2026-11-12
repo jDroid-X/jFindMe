@@ -324,6 +324,34 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return null
     }
 
+    // [Variables] cleanFocal: String, cleanPeer: String, db: SQLiteDatabase, currentCsv: String, set: MutableSet<String>, newCsv: String | [Constants] TABLE_NAME, COL_VALID_LINKED_AGENTS, COL_UID_1, COL_UID_2 | [Dependencies] FirebaseComm, SystemLogger | [Integration Points] PairingRepository, LocationRepository
+    /**
+     * 🛡️ Appends peerAgentId to focalAgentId's valid_linked_agents in UserIdentityTable
+     * ensuring scopedIds and LocationRepository tracking include newly connected peers.
+     */
+    fun appendValidLinkedAgent(focalAgentId: String, peerAgentId: String) {
+        val cleanFocal = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(focalAgentId)
+        val cleanPeer = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(peerAgentId)
+        if (!com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanFocal) ||
+            !com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanPeer) ||
+            cleanFocal == cleanPeer) return
+        try {
+            val db = writableDatabase
+            var currentCsv = ""
+            db.rawQuery("SELECT ${UserIdentityTable.COL_VALID_LINKED_AGENTS} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ?", arrayOf(cleanFocal, cleanFocal)).use {
+                if (it.moveToFirst()) currentCsv = it.getString(0) ?: ""
+            }
+            val set = currentCsv.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+            if (!set.contains(cleanPeer)) {
+                set.add(cleanPeer)
+                val newCsv = set.joinToString(",")
+                db.execSQL("UPDATE ${UserIdentityTable.TABLE_NAME} SET ${UserIdentityTable.COL_VALID_LINKED_AGENTS} = ? WHERE ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ?", arrayOf(newCsv, cleanFocal, cleanFocal))
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "appendValidLinkedAgent note: ${e.message}")
+        }
+    }
+
     /**
      * [Variables] db, cursor, auth | [Constants] UserIdentityTable | [Dependencies] UserIdentityTable.kt | [Integration Points] decommissionDevice, hardDeleteDevice
      * Resolves the transient Auth UID from the 8-character Agent ID (uid_1) using the local ledger.
@@ -2368,8 +2396,23 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
+    // [Variables] uid1, name, role, status, isAdmin, isFriend, ownerName, uid2, connectedDeviceId, qrCode, avatarId, activeGroupId, permissionsMask | [Constants] None | [Dependencies] UserIdentityTable, GroupMemberTable, UserProfileTable | [Integration Points] FamilyFriendsViewModel, MasterDataSyncSentinel
     @JvmOverloads
-    fun saveRosterNode(uid1: String, name: String, role: String, status: String, isAdmin: Boolean, isFriend: Boolean, ownerName: String? = null, uid2: String? = null, connectedDeviceId: String? = null, qrCode: String? = null, avatarId: String? = null, activeGroupId: String? = null) {
+    fun saveRosterNode(
+        uid1: String,
+        name: String,
+        role: String,
+        status: String,
+        isAdmin: Boolean,
+        isFriend: Boolean,
+        ownerName: String? = null,
+        uid2: String? = null,
+        connectedDeviceId: String? = null,
+        qrCode: String? = null,
+        avatarId: String? = null,
+        activeGroupId: String? = null,
+        permissionsMask: String? = null
+    ) {
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -2399,8 +2442,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             // 🔧 FIX DB-05: Use real groupId, never hardcode DEFAULT_GROUP for real roster
             val realGroupId = if (!activeGroupId.isNullOrBlank()) activeGroupId else "DEFAULT_GROUP"
 
-            // Write to V57 Relationships (GroupMember)
-            GroupMemberTable.upsert(db, realGroupId, iId, role)
+            // Write to V57 Relationships (GroupMember) with permissionsMask & agentId parity
+            GroupMemberTable.upsert(
+                db, realGroupId, iId, role,
+                permissionsMask = permissionsMask,
+                agentId = uid1
+            )
 
             // Write to Profile (Tier 1) for name/avatar parity (Dual-Write for V60 backwards compatibility)
             val rosterProfile = mapOf<String, String>(
@@ -3730,11 +3777,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         updateCitizenRole(uid1, famRole, frRole, isFriend, groupId)
     }
 
+    // [Variables] list, db, sql, cursor, cols, map | [Constants] TABLE_NAME, COL_* | [Dependencies] UserIdentityTable, GroupMemberTable, UserProfileTable, DeviceVitalsTable | [Integration Points] FamilyFriendsViewModel, NetworkGatewayActivity
     @JvmOverloads fun getOfflineRoster(groupId: String? = null): List<Map<String, Any>> {
         val list = mutableListOf<Map<String, Any>>()
         try {
             val db = readableDatabase
-            // Logic: Comprehensive SSOT Join across UserIdentity, GroupMember, and UserProfile
+            // Logic: Comprehensive SSOT Join across UserIdentity, GroupMember, UserProfile, and DeviceVitals
             val sql = """
                 SELECT 
                     i.${UserIdentityTable.COL_UID_1} as uid_1,
@@ -3757,10 +3805,18 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         WHEN UPPER(COALESCE(m.${GroupMemberTable.COL_ROLE}, '')) LIKE '%NEIGHBOR%' THEN 1
                         ELSE 0 
                     END as is_friend,
+                    COALESCE(v.${DeviceVitalsTable.COL_BATTERY_LEVEL}, 100) as battery_pct,
+                    COALESCE(v.${DeviceVitalsTable.COL_LAST_SEEN}, 0) as last_seen_ts,
                     'LIVE' as st_session_state
                 FROM ${UserIdentityTable.TABLE_NAME} i
                 ${if (!groupId.isNullOrBlank()) "JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID} AND m.${GroupMemberTable.COL_GROUP_ID} = '$groupId'" else "LEFT JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID}"}
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} u ON i.${UserIdentityTable.COL_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
+                LEFT JOIN ${DeviceVitalsTable.TABLE_NAME} v ON (
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_UID_1} OR 
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_UID_2} OR 
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_UID_1} OR 
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_UID_2}
+                )
                 WHERE i.${UserIdentityTable.COL_UID_1} IS NOT NULL 
                   AND i.${UserIdentityTable.COL_UID_1} != '' 
                   AND (i.${UserIdentityTable.COL_STATUS} IS NULL OR i.${UserIdentityTable.COL_STATUS} != 'DELETED')
@@ -4441,10 +4497,21 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
 
     // 🔋 DEVICE VITALS HELPERS
-    fun upsertDeviceVitals(hardwareId: String, battery: Int, isCharging: Boolean, networkType: String, signalDbm: Int, isMockGps: Boolean, isRooted: Boolean) {
+    // [Variables] hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted, timestamp | [Constants] None | [Dependencies] DeviceVitalsTable | [Integration Points] FamilyFriendsViewModel, TrackingService
+    @JvmOverloads
+    fun upsertDeviceVitals(
+        hardwareId: String,
+        battery: Int,
+        isCharging: Boolean = false,
+        networkType: String = "UNKNOWN",
+        signalDbm: Int = 0,
+        isMockGps: Boolean = false,
+        isRooted: Boolean = false,
+        timestamp: Long = System.currentTimeMillis()
+    ) {
         try {
             val db = writableDatabase
-            DeviceVitalsTable.upsertVitals(db, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted)
+            DeviceVitalsTable.upsertVitals(db, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted, timestamp)
         } catch (e: Exception) { }
     }
 

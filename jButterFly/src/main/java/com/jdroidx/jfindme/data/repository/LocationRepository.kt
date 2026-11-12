@@ -100,18 +100,32 @@ class LocationRepository(internal val context: Context) {
             loc.userName = resolvedId
         }
 
-        // 🚀 STABLE AVATAR RESOLUTION: Custom assigned avatar takes top precedence over fallback default
+        // [Variables] liveAvatar, ssotAvatar, isLiveCustom, isSsotCustom, finalAvatar | [Constants] "butterfly", "1" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] MapActivity, LocationRepository
+        // 🚀 STABLE UNIFIED AVATAR RESOLUTION & BIDIRECTIONAL LOCAL DB SYNC
         val liveAvatar = loc.avatar_id
         val ssotAvatar = db.getDeviceCentricAvatar(resolvedId)
 
-        if (!liveAvatar.isNullOrEmpty() && liveAvatar != "butterfly") {
-            loc.avatar_id = liveAvatar
-        } else if (ssotAvatar.isNotEmpty()) {
-            loc.avatar_id = ssotAvatar
-        } else if (!liveAvatar.isNullOrEmpty()) {
-            loc.avatar_id = liveAvatar
-        } else {
-            loc.avatar_id = "butterfly"
+        val isLiveCustom = !liveAvatar.isNullOrBlank() && liveAvatar != "butterfly" && liveAvatar != "1"
+        val isSsotCustom = ssotAvatar.isNotBlank() && ssotAvatar != "butterfly" && ssotAvatar != "1"
+
+        val finalAvatar = when {
+            isLiveCustom -> liveAvatar
+            isSsotCustom -> ssotAvatar
+            !liveAvatar.isNullOrBlank() -> liveAvatar
+            ssotAvatar.isNotBlank() -> ssotAvatar
+            else -> "butterfly"
+        }
+        loc.avatar_id = finalAvatar
+
+        // 🔄 Compare online device avatar with local DB: update local DB when online has updated avatar
+        if (isLiveCustom && liveAvatar != ssotAvatar && !isSelf) {
+            try {
+                db.updateDeviceIdentityAndAvatar(resolvedId, cloudName.takeIf { it.isNotBlank() }, liveAvatar)
+                db.commitAnalyticalDossier(resolvedId, mapOf("avatar_id" to liveAvatar, "equipped_avatar_id" to liveAvatar))
+                com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Avatar SSOT Local DB Update Failed for $resolvedId", e)
+            }
         }
         
         if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name") && !isSelf) {
@@ -334,16 +348,30 @@ class LocationRepository(internal val context: Context) {
             if (!profileListeners.containsKey(uid)) {
                 val profRef = FirebaseComm.devicesRef.child(uid).child("profile")
                 val profListener = object : ValueEventListener {
+                    // [Variables] profAvatar, profName, db, cur | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader, SystemLogger | [Integration Points] MapActivity, LocationRepository
                     override fun onDataChange(snapshot: DataSnapshot) {
-                        val profAvatar = snapshot.child("avatar_id").getValue(String::class.java)
-                            ?: snapshot.child("equipped_avatar_id").getValue(String::class.java)
-                        val profName = snapshot.child("name").getValue(String::class.java)
-                            ?: snapshot.child("fullName").getValue(String::class.java)
-                            ?: snapshot.child("userName").getValue(String::class.java)
+                        val profAvatar = snapshot.child("avatar_id").value?.toString()
+                            ?: snapshot.child("equipped_avatar_id").value?.toString()
+                            ?: snapshot.child("appearance").child("avatar_id").value?.toString()
+                        val profName = snapshot.child("name").value?.toString()
+                            ?: snapshot.child("fullName").value?.toString()
+                            ?: snapshot.child("userName").value?.toString()
 
-                        if (!profAvatar.isNullOrEmpty()) {
+                        val avatarData = snapshot.child("avatar_data").value?.toString()
+                        if (!avatarData.isNullOrEmpty()) {
+                            try {
+                                val cleanB64 = if (avatarData.contains(",")) avatarData.substringAfter(",") else avatarData
+                                val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
+                                val dir = java.io.File(context.filesDir, "avatars")
+                                if (!dir.exists()) dir.mkdirs()
+                                java.io.File(dir, "${uid}_custom.png").writeBytes(bytes)
+                            } catch (_: Exception) {}
+                        }
+
+                        if (!profAvatar.isNullOrEmpty() && profAvatar != "butterfly") {
                             try {
                                 val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                                db.updateDeviceIdentityAndAvatar(uid, profName, profAvatar)
                                 db.commitAnalyticalDossier(uid, mapOf("avatar_id" to profAvatar, "equipped_avatar_id" to profAvatar))
                                 com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                                 
@@ -531,6 +559,42 @@ class LocationRepository(internal val context: Context) {
             }
             friendRef.addValueEventListener(friendListener)
             activeListeners[friendRef] = friendListener
+
+            // 🚀 RELATIONSHIP MESH LISTENER: Listen to self device's direct relationships node
+            // When another device pairs Device B to this device or updates roles, sync directly to local SQLite
+            val selfRelRef = FirebaseComm.devicesRef.child(finalId).child("relationships")
+            val selfRelListener = object : ValueEventListener {
+                // [Variables] selfRelSnap, peerId, role, group, localDb, changed | [Constants] None | [Dependencies] DatabaseHelper, SystemLogger | [Integration Points] LocationRepository, MapActivity, FamilyFriendsActivity
+                override fun onDataChange(selfRelSnap: DataSnapshot) {
+                    try {
+                        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                        var changed = false
+                        for (relChild in selfRelSnap.children) {
+                            val peerId = relChild.key ?: continue
+                            if (peerId.isBlank()) continue
+                            val role = relChild.child("role").value?.toString() ?: "Member"
+                            val group = relChild.child("group").value?.toString() ?: ("GRP_" + finalId)
+                            val isFriend = role.contains("Friend", ignoreCase = true) || role.contains("Peer", ignoreCase = true) || role.contains("Colleague", ignoreCase = true)
+                            val famRole = if (isFriend) "None" else role
+                            val frRole = if (isFriend) role else "None"
+
+                            localDb.updateCitizenRole(peerId, famRole, frRole, isFriend, group)
+                            localDb.saveRosterNode(peerId, localDb.getDeviceCentricName(peerId).ifEmpty { "Node $peerId" }, role, "LIVE", false, isFriend)
+                            changed = true
+                        }
+                        if (changed) {
+                            updateTargetListeners()
+                        }
+                    } catch (e: Exception) {
+                        SystemLogger.e("LocationRepository", "Self relationships sync failed", e)
+                    }
+                }
+                override fun onCancelled(err: DatabaseError) {
+                    SystemLogger.e("LocationRepository", "Self relationships listener cancelled: ${err.message}")
+                }
+            }
+            selfRelRef.addValueEventListener(selfRelListener)
+            activeListeners[selfRelRef] = selfRelListener
         }
     }
 

@@ -42,6 +42,7 @@ class TrackingService : Service() {
     @Volatile private var lastPresencePulseEpoch: Long = 0L
     private val PING_INTERVAL_MS = 60000L // 60 Second Forensic Cycle
     private var serviceStartEpoch: Long = System.currentTimeMillis()
+    private var avatarClosedLoopCallback: ((String, Map<String, Any>) -> Unit)? = null
 
     private fun hasLocationPermission(): Boolean {
         return androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
@@ -83,6 +84,19 @@ class TrackingService : Service() {
         } catch (e: Exception) {
             SystemLogger.w(TAG, "Presence Sentinel Init Deferred: ${e.message}")
         }
+
+        // 🚀 LIVE SSOT BINDING: Synchronize TrackingService telemetry immediately when profile edits occur
+        avatarClosedLoopCallback = { agentId, payload ->
+            try {
+                val newAv = payload["avatar_id"]?.toString()
+                val newName = payload["name"]?.toString() ?: payload["fullName"]?.toString()
+                SystemLogger.i(TAG, "Closed-loop: TrackingService notified of SSOT update for $agentId -> av=$newAv, name=$newName")
+                requestImmediateLocationAndPublish()
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Closed-loop avatar callback error: ${e.message}")
+            }
+        }
+        com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.registerClosedLoopCallback(avatarClosedLoopCallback!!)
     }
 
     private fun ensureLocationEngineInitialized() {
@@ -122,14 +136,20 @@ class TrackingService : Service() {
             val db = DatabaseHelper.getInstance(applicationContext)
             val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
             val ssotAvatar = db.getDeviceCentricAvatar(myAgentId)
+            val ssotName = db.getDeviceCentricName(myAgentId)
             val rawBaseId = p.getInt("equipped_avatar_id", 1)
             val dynamicIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
-            val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") {
+            val resolvedAvatarId = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly" && ssotAvatar != "1") {
                 ssotAvatar
             } else if (dynamicIdx > 0) {
                 "avatar_custom_$dynamicIdx"
             } else {
                 "butterfly"
+            }
+            val resolvedUserName = if (ssotName.isNotEmpty() && !ssotName.startsWith("Agent_", true)) {
+                ssotName
+            } else {
+                p.getString("user_nickname", p.getString("fullName", "Active Tracker")) ?: "Active Tracker"
             }
 
             // Cache Device Vitals in local SQLite for offline health inspection
@@ -180,7 +200,8 @@ class TrackingService : Service() {
                 speedMps = location.speed,
                 batteryPct = p.getInt("last_known_battery", 100),
                 isCharging = p.getBoolean("last_known_charging", false),
-                isStationary = isPhysicallyStationary
+                isStationary = isPhysicallyStationary,
+                context = applicationContext
             )
             
             if (currentTime - lastPulseTime < adaptiveInterval) {
@@ -227,7 +248,7 @@ class TrackingService : Service() {
                         allowDependents = p.getBoolean("allow_dependents", true),
                         active_group = p.getString("active_group", "") ?: "",
                         isForensicAudit = true,
-                        userName = p.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
+                        userName = resolvedUserName,
                         avatar_id = resolvedAvatarId
                     )
                     com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(applicationContext, userLocation)
@@ -792,6 +813,9 @@ class TrackingService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         SystemLogger.w(TAG, "Service Destroyed")
+        avatarClosedLoopCallback?.let {
+            com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.unregisterClosedLoopCallback(it)
+        }
         locationEngine?.stopTracking()
         locationEngine = null
         batteryPingJob?.cancel()

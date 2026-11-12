@@ -140,7 +140,9 @@ public class HelpSupportActivity extends BaseActivityJava {
                 if (desc.isEmpty()) {
                     com.jdroidx.jfindme.ui.base.UiArchitect.showActionableValidationDialog(this, "Empty Description", "Please enter a brief description of the issue.", "OK", "DISMISS", null, null);
                 } else {
-                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).saveSysLog("I", "SUPPORT_TICKET", desc);
+                    new Thread(() -> {
+                        com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(HelpSupportActivity.this).saveSysLog("I", "SUPPORT_TICKET", desc);
+                    }).start();
                     com.jdroidx.jfindme.ui.base.UiArchitect.showActionableValidationDialog(this, "Ticket Submitted", "Diagnostic ticket archived successfully! Ticket Reference ID: #" + System.currentTimeMillis() % 100000, "CONFIRMED", "CLOSE", null, null);
                 }
             });

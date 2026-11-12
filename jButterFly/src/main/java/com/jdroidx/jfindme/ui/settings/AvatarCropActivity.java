@@ -215,12 +215,19 @@ public class AvatarCropActivity extends BaseActivityJava {
                 java.io.FileOutputStream fos = new java.io.FileOutputStream(cf);
                 scaledFinal.compress(Bitmap.CompressFormat.PNG, 100, fos);
                 fos.flush(); fos.close();
+
+                String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getContext());
+                if (agentId != null && !agentId.isEmpty()) {
+                    java.io.File cfAgent = new java.io.File(getFilesDir() + "/avatars", agentId + "_custom.png");
+                    java.io.FileOutputStream fosAgent = new java.io.FileOutputStream(cfAgent);
+                    scaledFinal.compress(Bitmap.CompressFormat.PNG, 100, fosAgent);
+                    fosAgent.flush(); fosAgent.close();
+                }
                 
                 // 🚀 QA Fix: Atomic Preference Sync (Set to Custom Identity -1)
                 android.content.SharedPreferences prefs = getContext().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
                 prefs.edit().putInt("equipped_avatar_id", -1).apply();
                 
-                String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getContext());
                 String nickname = prefs.getString("user_nickname", "Active Tracker");
                 
                 // 🎨 Institutionalized Naming Standard: AV_{DeviceID}_01 (increment for new photo)

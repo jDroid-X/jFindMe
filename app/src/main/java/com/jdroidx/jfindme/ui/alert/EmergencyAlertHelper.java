@@ -157,7 +157,8 @@ public class EmergencyAlertHelper {
 
                 ImageView av = new ImageView(activity);
                 int aSize = (int) (36 * activity.getResources().getDisplayMetrics().density);
-                AvatarLoader.bindAvatar(activity, av, target.avatarId);
+                // [Variables] target, av, activity | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Emergency Target Avatar
+                AvatarLoader.bindAvatar(activity, av, target.uid, target.avatarId);
                 row.addView(av, new LinearLayout.LayoutParams(aSize, aSize));
 
                 LinearLayout meta = new LinearLayout(activity);

@@ -1512,6 +1512,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         card.setClickable(true);
 
         // Member Avatar
+        // [Variables] avatar, db, avatarRef, finalUid | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Network Card Rendering
         // Member Avatar with SSOT Lookup & Smart Fallback
         ImageView avatar = new ImageView(this);
         com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
@@ -1522,7 +1523,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (avatarRef == null || avatarRef.isEmpty()) {
             avatarRef = "butterfly";
         }
-        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, avatarRef);
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, finalUid, avatarRef);
 
         avatar.setPadding(3, 3, 3, 3);
         GradientDrawable avBg = new GradientDrawable();
@@ -1634,8 +1635,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     if (avId == null) avId = prof.child("equipped_avatar_id").getValue(String.class);
                     if (avId == null) avId = live.child("avatar_id").getValue(String.class);
                     if (avId == null) avId = locSnap.child("avatar_id").getValue(String.class);
+                    if (avId == null || avId.isEmpty() || avId.equals("1")) {
+                        avId = db.getDeviceCentricAvatar(finalUid);
+                    }
                     if (avId == null || avId.isEmpty()) avId = "butterfly";
-                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, avId);
+                    // [Variables] finalUid, avId | [Constants] "butterfly" | [Dependencies] AvatarLoader | [Integration Points] SSOT Live Gateway Avatar
+                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, finalUid, avId);
 
                     String cloudName = prof.child("fullName").getValue(String.class);
                     if (cloudName == null) cloudName = prof.child("full_name").getValue(String.class);
@@ -1681,7 +1686,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     tvStatus.setTextColor(rag.getStatusColor());
                     card.setAlpha(rag.getCardAlpha());
                     avBg.setStroke(2, rag.getStrokeColor());
-                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, avId, rag.isDesaturated());
+                    // [Variables] finalUid, avId, rag | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Desaturated Live Gateway Avatar
+                    AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, finalUid, avId, rag.isDesaturated());
                 }
             }
 
@@ -2024,6 +2030,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
     }
 
+    // [Variables] inputMatrix, selectedRole, myAgentId, success, message, multiSuccess, multiMsg, pinSuccess, pinMessage
+    // [Constants] None
+    // [Dependencies] DeviceIdentityHelper, PairingRepository, FirebasePairingManager, MapActivity, DatabaseHelper
+    // [Integration Points] NetworkGatewayActivity, MapActivity, PairingRepository
     private void executeChildJoinRequest(String inputMatrix, String selectedRole) {
         if (inputMatrix != null && inputMatrix.length() == 6) {
             Toast.makeText(this, "Connecting to Circle [" + selectedRole + "]...", Toast.LENGTH_SHORT).show();
@@ -2031,6 +2041,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             PairingRepository.joinCircleWithInviteCode(inputMatrix, myAgentId, (success, message) -> {
                 runOnUiThread(() -> {
                     if (success) {
+                        if (message != null && !message.isEmpty()) {
+                            getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", message).apply();
+                        }
+                        if (viewModel != null) {
+                            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(NetworkGatewayActivity.this));
+                        }
                         Toast.makeText(NetworkGatewayActivity.this, "🎉 Joined Circle! Opening Map...", Toast.LENGTH_LONG).show();
                         startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
                         finish();
@@ -2039,6 +2055,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         PairingRepository.joinMultiDevicePairingSession(inputMatrix, myAgentId, selectedRole, (multiSuccess, multiMsg) -> {
                             runOnUiThread(() -> {
                                 if (Boolean.TRUE.equals(multiSuccess)) {
+                                    if (viewModel != null) {
+                                        viewModel.refreshLocalRoster(DatabaseHelper.getInstance(NetworkGatewayActivity.this));
+                                    }
                                     Toast.makeText(NetworkGatewayActivity.this, "🎉 Multi-Device Close Attachment Complete! Opening Map...", Toast.LENGTH_LONG).show();
                                     startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
                                     finish();

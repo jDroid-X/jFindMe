@@ -967,8 +967,9 @@ object RegistryManager {
         putInt(context, "pref_default_safe_zone_radius_meters", meters)
     }
 
+    // [Variables] context, meters | [Constants] KEY_DISTANT_DEVICE_THRESHOLD_METERS (default: 50m) | [Dependencies] SharedPreferences | [Integration Points] MapActivity, SettingsActivity
     @JvmStatic fun getDistantDeviceThresholdMeters(context: Context): Int =
-        getInt(context, "pref_distant_device_threshold_meters", 200)
+        getInt(context, "pref_distant_device_threshold_meters", 50)
 
     @JvmStatic fun setDistantDeviceThresholdMeters(context: Context, meters: Int) {
         putInt(context, "pref_distant_device_threshold_meters", meters)

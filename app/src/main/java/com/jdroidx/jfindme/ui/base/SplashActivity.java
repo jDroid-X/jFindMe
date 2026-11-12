@@ -197,9 +197,21 @@ public class SplashActivity extends Activity {
         com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Starting background profile recovery for UID: " + authUid);
         com.jdroidx.jfindme.data.remote.FirebaseComm.purgeLegacyAuthUidNodes();
         
-        String canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-        com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Using canonical hardware agent ID for profile recovery: " + canonicalAgentId);
-        fetchCloudProfile(authUid, canonicalAgentId);
+        // 🛡️ Post-Reinstall Recovery: First resolve canonical hardware agent ID from lookup_indices/auth_to_device
+        com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(authUid, resolvedCloudId -> {
+            String canonicalAgentId;
+            if (resolvedCloudId != null && !resolvedCloudId.isEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
+                canonicalAgentId = resolvedCloudId;
+                com.jdroidx.jfindme.utils.RegistryManager.putString(SplashActivity.this, com.jdroidx.jfindme.utils.RegistryManager.KEY_AGENT_ID, canonicalAgentId);
+                com.jdroidx.jfindme.utils.DeviceIdentityHelper.setCustomAgentId(SplashActivity.this, canonicalAgentId);
+                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Restored registered canonical Agent ID from Cloud Lookup: " + canonicalAgentId);
+            } else {
+                canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Using derived hardware agent ID for profile recovery: " + canonicalAgentId);
+            }
+            fetchCloudProfile(authUid, canonicalAgentId);
+            return null;
+        });
     }
 
     private void fetchCloudProfile(String authUid, String agentId) {
@@ -301,8 +313,17 @@ public class SplashActivity extends Activity {
                          .putString("user_state", state != null ? state : "")
                          .putString("user_city", city != null ? city : "")
                          .putString("user_pincode", pincode != null ? pincode : "")
+                         .putString("user_address", address != null ? address : "")
+                         .putString("user_note", emergencyNote != null ? emergencyNote : "")
+                         .putString("avatar_id", avatarId != null ? avatarId : "1")
+                         .putString("active_group", activeGroup)
                          .apply();
                     
+                    // 🔄 Also trigger background sync & metadata reconciliation to restore relationships and roster
+                    try {
+                        com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(SplashActivity.this).reconcileMetadataWithCloud();
+                    } catch (Exception ignored) {}
+
                     com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Startup profile recovery successfully saved locally!");
                 } else {
                     com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "No profile exists in cloud for agent ID: " + agentId);

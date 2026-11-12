@@ -124,78 +124,137 @@ class PairingRepository {
     companion object {
         private val db = FirebaseDatabase.getInstance().reference
 
+        // [Variables] hostAgentId: String, hostGroupId: String, targetAgentId: String, roleFam: String, onSuccess: () -> Unit, currentCsv: String, approvedIds: MutableList<String>, newSecureCsv: String, updates: HashMap<String, Any>, localDb: DatabaseHelper, pairId: String, prefs: SharedPreferences
+        // [Constants] NODE_DEVICES, NODE_RELATIONSHIPS, LOG_ITEM_PAIRING, LOG_ITEM_FAMILY_FRIENDS
+        // [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable, UserIdentityTable, MasterDataSyncSentinel
+        // [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity, MapActivity, LocationRepository
         @JvmStatic
         fun executeFamilyHandshake(hostAgentId: String, hostGroupId: String, targetAgentId: String, roleFam: String, onSuccess: () -> Unit) {
-            if (!FirebaseComm.isAgentIdValid(hostAgentId) || !FirebaseComm.isAgentIdValid(targetAgentId)) {
-                SystemLogger.e("PairingRepo", "BLOCKED: Handshake with invalid Agent IDs: $hostAgentId -> $targetAgentId")
+            val cleanHost = FirebaseComm.sanitizeAgentId(hostAgentId)
+            val cleanTarget = FirebaseComm.sanitizeAgentId(targetAgentId)
+            if (!FirebaseComm.isAgentIdValid(cleanHost) || !FirebaseComm.isAgentIdValid(cleanTarget)) {
+                SystemLogger.e("PairingRepo", "BLOCKED: Handshake with invalid Agent IDs: $cleanHost -> $cleanTarget")
                 return
             }
             
             // 🚀 V59.7: Master Forensic Handshake (Anchored to Hub Agent)
-            db.child(FirebaseComm.NODE_DEVICES).child(hostAgentId).child("identity").child("valid_linked_agents").get().addOnSuccessListener { snapshot ->
-                val currentCsv = snapshot.getValue(String::class.java) ?: ""
-                val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-                
-                if (!approvedIds.contains(targetAgentId)) {
-                    approvedIds.add(targetAgentId)
-                }
-                val newSecureCsv = approvedIds.joinToString(",")
+            // Read both Identity (uppercase) and identity (lowercase fallback) for Host and Target reciprocally
+            val hostIdentityNode = db.child(FirebaseComm.NODE_DEVICES).child(cleanHost).child("Identity").child("valid_linked_agents")
+            hostIdentityNode.get().addOnCompleteListener { taskHost ->
+                val snapshotHost = if (taskHost.isSuccessful) taskHost.result else null
+                val currentCsvHost = snapshotHost?.getValue(String::class.java) ?: ""
+                val approvedHost = currentCsvHost.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                approvedHost.add(cleanTarget)
 
-                val updates = hashMapOf<String, Any>(
-                    "${FirebaseComm.NODE_DEVICES}/$targetAgentId/Identity/active_group" to hostGroupId,
-                    "${FirebaseComm.NODE_DEVICES}/$hostAgentId/Identity/valid_linked_agents" to newSecureCsv,
-                    
-                    // 🧬 V68.0 Device-Centric Relationships Sub-Group Mesh
-                    "${FirebaseComm.NODE_DEVICES}/$hostAgentId/relationships/$targetAgentId" to mapOf(
-                        "role" to roleFam,
-                        "group" to hostGroupId,
-                        "linked_at" to FirebaseComm.getForensicTimestamp()
-                    ),
-                    "${FirebaseComm.NODE_DEVICES}/$targetAgentId/relationships/$hostAgentId" to mapOf(
-                        "role" to "GUARDIAN",
-                        "group" to hostGroupId,
-                        "linked_at" to FirebaseComm.getForensicTimestamp()
-                    ),
+                val targetIdentityNode = db.child(FirebaseComm.NODE_DEVICES).child(cleanTarget).child("Identity").child("valid_linked_agents")
+                targetIdentityNode.get().addOnCompleteListener { taskTarget ->
+                    val snapshotTarget = if (taskTarget.isSuccessful) taskTarget.result else null
+                    val currentCsvTarget = snapshotTarget?.getValue(String::class.java) ?: ""
+                    val approvedTarget = currentCsvTarget.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                    approvedTarget.add(cleanHost)
 
-                    // Uniform devices/ + group_info standard
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/host_device_id" to hostAgentId,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/group_name" to "Primary Circle",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/created_at" to FirebaseComm.getForensicTimestamp(),
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/identity/name" to (JFindMeApplication.getContext()?.let { RegistryManager.getUserNickname(it) } ?: hostAgentId),
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/identity/full_name" to (JFindMeApplication.getContext()?.let { RegistryManager.getUserNickname(it) } ?: hostAgentId),
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role" to "ADMIN",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role_family" to "Parent",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/role_friend" to "None",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/status" to "Active",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/membership/ts_joined" to FirebaseComm.getForensicTimestamp(),
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$hostAgentId/paired_with/$targetAgentId" to true,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/identity/name" to targetAgentId,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/identity/full_name" to targetAgentId,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role" to roleFam,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role_family" to roleFam,
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/role_friend" to "None",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/status" to "Active",
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/membership/ts_joined" to FirebaseComm.getForensicTimestamp(),
-                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$targetAgentId/paired_with/$hostAgentId" to true
-                )
-                
-                db.updateChildren(updates).addOnSuccessListener {
-                    SystemLogger.w("PairingRepo", "V68.0 Handshake: Target Agent Matrix Constructed under $hostAgentId")
-                    
-                    // 🛡️ Local SQLite SSOT Logging
+                    // Merge local SQLite connected IDs as safety fallback
                     JFindMeApplication.getContext()?.let { ctx ->
                         try {
                             val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
-                            val pairId = "PAIR_${hostAgentId}_${targetAgentId}"
+                            approvedHost.addAll(localDb.getConnectedDeviceIds(cleanHost))
+                            approvedTarget.addAll(localDb.getConnectedDeviceIds(cleanTarget))
+                        } catch (ignored: Exception) {}
+                    }
+
+                    val newSecureCsvHost = approvedHost.joinToString(",")
+                    val newSecureCsvTarget = approvedTarget.joinToString(",")
+
+                    val nowForensic = FirebaseComm.getForensicTimestamp()
+                    val nowEpoch = System.currentTimeMillis()
+                    val hostNickname = JFindMeApplication.getContext()?.let { RegistryManager.getUserNickname(it) } ?: cleanHost
+
+                    val updates = hashMapOf<String, Any>(
+                        "${FirebaseComm.NODE_DEVICES}/$cleanTarget/Identity/active_group" to hostGroupId,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanTarget/profile/active_group" to hostGroupId,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanHost/Identity/valid_linked_agents" to newSecureCsvHost,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanHost/identity/valid_linked_agents" to newSecureCsvHost,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanTarget/Identity/valid_linked_agents" to newSecureCsvTarget,
+                        "${FirebaseComm.NODE_DEVICES}/$cleanTarget/identity/valid_linked_agents" to newSecureCsvTarget,
+                    
+                    // 🧬 V68.0 Device-Centric Relationships Sub-Group Mesh
+                    "${FirebaseComm.NODE_DEVICES}/$cleanHost/relationships/$cleanTarget" to mapOf(
+                        "role" to roleFam,
+                        "name" to cleanTarget,
+                        "group" to hostGroupId,
+                        "linked_at" to nowForensic
+                    ),
+                    "${FirebaseComm.NODE_DEVICES}/$cleanTarget/relationships/$cleanHost" to mapOf(
+                        "role" to "GUARDIAN",
+                        "name" to hostNickname,
+                        "group" to hostGroupId,
+                        "linked_at" to nowForensic
+                    ),
+
+                    // Uniform devices/ + group_info standard
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/host_device_id" to cleanHost,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/group_name" to "Primary Circle",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/group_info/created_at" to nowForensic,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/identity/name" to hostNickname,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/identity/full_name" to hostNickname,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/membership/role" to "ADMIN",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/membership/role_family" to "Parent",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/membership/role_friend" to "None",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/membership/status" to "Active",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/membership/ts_joined" to nowForensic,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanHost/paired_with/$cleanTarget" to true,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/identity/name" to cleanTarget,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/identity/full_name" to cleanTarget,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/membership/role" to roleFam,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/membership/role_family" to roleFam,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/membership/role_friend" to "None",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/membership/status" to "Active",
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/membership/ts_joined" to nowForensic,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/devices/$cleanTarget/paired_with/$cleanHost" to true,
+
+                    // Direct Pairs reciprocal SSOT
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/direct_pairs/$cleanHost/$cleanTarget" to true,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/direct_pairs/$cleanTarget/$cleanHost" to true,
+                    "users/$cleanHost/joined_circles/$hostGroupId" to true,
+                    "users/$cleanTarget/joined_circles/$hostGroupId" to true,
+                    "${FirebaseComm.NODE_RELATIONSHIPS}/$hostGroupId/signals/refresh_roster" to nowEpoch
+                )
+                
+                db.updateChildren(updates).addOnCompleteListener { updTask ->
+                    SystemLogger.w("PairingRepo", "V68.0 Handshake: Target Agent Matrix Constructed under $cleanHost")
+                    
+                    // 🛡️ Local SQLite SSOT Logging & SharedPreferences Update
+                    JFindMeApplication.getContext()?.let { ctx ->
+                        try {
+                            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                            val pairId = "PAIR_${cleanHost}_${cleanTarget}"
                             com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
                                 localDb.writableDatabase,
                                 pairId,
-                                hostAgentId,
-                                targetAgentId,
+                                cleanHost,
+                                cleanTarget,
                                 "ADMIN",
                                 roleFam,
                                 null,
                                 "PAIRED"
+                            )
+
+                            // Save roster nodes locally for offline and immediate rendering
+                            val isFriend = roleFam.contains("Friend", ignoreCase = true)
+                            localDb.saveRosterNode(cleanTarget, cleanTarget, roleFam, "ACTIVE", false, isFriend, activeGroupId = hostGroupId)
+                            localDb.saveRosterNode(cleanHost, hostNickname, "ADMIN", "ACTIVE", true, false, activeGroupId = hostGroupId)
+                            localDb.appendValidLinkedAgent(cleanHost, cleanTarget)
+                            localDb.appendValidLinkedAgent(cleanTarget, cleanHost)
+                            localDb.updateCitizenRole(cleanTarget, if (isFriend) "None" else roleFam, if (isFriend) roleFam else "None", isFriend, hostGroupId)
+
+                            val prefs = ctx.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                            prefs.edit().putString("active_group", hostGroupId).apply()
+
+                            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                ctx,
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                cleanTarget
                             )
                         } catch (ex: Exception) {
                             SystemLogger.e("PairingRepo", "executeFamilyHandshake SQLite log warning: ${ex.message}")
@@ -203,15 +262,16 @@ class PairingRepository {
                     }
 
                     // 📝 AUDIT CHANGE LOGS: Record Pairing and Family/Friends mutations
-                    val pairingDetails = mapOf("target_agent" to targetAgentId, "host_group" to hostGroupId, "role" to roleFam)
-                    FirebaseComm.logChange(hostAgentId, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", targetAgentId, pairingDetails)
-                    FirebaseComm.logChange(hostAgentId, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "MEMBER_LINK", targetAgentId, pairingDetails)
-                    FirebaseComm.logChange(targetAgentId, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", hostAgentId, mapOf("host_agent" to hostAgentId, "role" to "GUARDIAN"))
+                    val pairingDetails = mapOf("target_agent" to cleanTarget, "host_group" to hostGroupId, "role" to roleFam)
+                    FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanTarget, pairingDetails)
+                    FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "MEMBER_LINK", cleanTarget, pairingDetails)
+                    FirebaseComm.logChange(cleanTarget, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanHost, mapOf("host_agent" to cleanHost, "role" to "GUARDIAN"))
                     
                     onSuccess()
                 }
             }
         }
+    }
 
         /**
          * 🏆 Claim Primary Emitter: Ensures only 1 physical device broadcasts live telemetry per Agent ID.
@@ -252,6 +312,12 @@ class PairingRepository {
          * Establishes mutual parent-child relationship between coParentAgentId and childAgentId
          * with the exact same Child ID so both parents share guardianship.
          */
+        // [Variables] cleanCoParent: String, cleanChild: String, now: String, effectiveGroup: String, updates: HashMap<String, Any>, currentCsv: String, approvedIds: MutableList<String>, newSecureCsv: String, ctx: Context, localDb: DatabaseHelper, pairId: String | [Constants] NODE_DEVICES, NODE_RELATIONSHIPS, LOG_ITEM_FAMILY_FRIENDS | [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable, MasterDataSyncSentinel | [Integration Points] FamilyFriendsActivity, MapActivity, DevicePairingTable, GroupMemberTable
+        /**
+         * 👨‍👩‍👧 Link Other Parent / Co-Guardian to Child
+         * Establishes mutual parent-child relationship between coParentAgentId and childAgentId
+         * with the exact same Child ID so both parents share guardianship.
+         */
         @JvmStatic
         @JvmOverloads
         fun linkCoParentToChild(
@@ -269,42 +335,84 @@ class PairingRepository {
                 return
             }
             val now = FirebaseComm.getForensicTimestamp()
-            val effectiveGroup = if (hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP") hostGroupId else "GRP_$cleanCoParent"
+            val resolvedCtx = JFindMeApplication.getContext()
+            val selfDevId = resolvedCtx?.let { com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(it) } ?: ""
+            val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
+            val effectiveGroup = when {
+                hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP" -> hostGroupId
+                !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
+                else -> "GRP_$cleanCoParent"
+            }
 
-            // 1. Fetch co-parent's valid_linked_agents to append childAgentId
-            db.child(FirebaseComm.NODE_DEVICES).child(cleanCoParent).child("identity").child("valid_linked_agents").get()
-                .addOnSuccessListener { snapshot ->
-                    val currentCsv = snapshot.getValue(String::class.java) ?: ""
-                    val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-                    if (!approvedIds.contains(cleanChild)) {
-                        approvedIds.add(cleanChild)
-                    }
-                    val newSecureCsv = approvedIds.joinToString(",")
+            // 1. Fetch co-parent's and child's valid_linked_agents reciprocally
+            db.child(FirebaseComm.NODE_DEVICES).child(cleanCoParent).child("Identity").child("valid_linked_agents").get()
+                .addOnCompleteListener { taskCoParent ->
+                    val snapshotCoParent = if (taskCoParent.isSuccessful) taskCoParent.result else null
+                    val currentCsvCoParent = snapshotCoParent?.getValue(String::class.java) ?: ""
+                    val approvedCoParent = currentCsvCoParent.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                    approvedCoParent.add(cleanChild)
 
-                    val updates = hashMapOf<String, Any>(
-                        // Device-Centric Relationships Mesh
-                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/relationships/$cleanChild" to mapOf(
-                            "role" to "Child",
-                            "group" to effectiveGroup,
-                            "linked_at" to now
-                        ),
-                        "${FirebaseComm.NODE_DEVICES}/$cleanChild/relationships/$cleanCoParent" to mapOf(
-                            "role" to "GUARDIAN",
-                            "group" to effectiveGroup,
-                            "linked_at" to now
-                        ),
-                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/dependents/$cleanChild" to true,
-                        "${FirebaseComm.NODE_DEVICES}/$cleanChild/guardians/$cleanCoParent" to true,
-                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/identity/valid_linked_agents" to newSecureCsv,
+                    db.child(FirebaseComm.NODE_DEVICES).child(cleanChild).child("Identity").child("valid_linked_agents").get()
+                        .addOnCompleteListener { taskChild ->
+                            val snapshotChild = if (taskChild.isSuccessful) taskChild.result else null
+                            val currentCsvChild = snapshotChild?.getValue(String::class.java) ?: ""
+                            val approvedChild = currentCsvChild.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                            approvedChild.add(cleanCoParent)
+
+                            // Safety fallback: merge local SQLite connected device IDs
+                            JFindMeApplication.getContext()?.let { ctx ->
+                                try {
+                                    val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                    approvedCoParent.addAll(localDb.getConnectedDeviceIds(cleanCoParent))
+                                    approvedChild.addAll(localDb.getConnectedDeviceIds(cleanChild))
+                                } catch (ignored: Exception) {}
+                            }
+
+                            val newSecureCsvCoParent = approvedCoParent.joinToString(",")
+                            val newSecureCsvChild = approvedChild.joinToString(",")
+
+                            val coParentDisplayName = if (coParentName.isNotBlank()) coParentName else cleanCoParent
+                            val childDisplayName = if (childName.isNotBlank()) childName else cleanChild
+
+                            val updates = hashMapOf<String, Any>(
+                                // Device-Centric Relationships Mesh
+                                "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/relationships/$cleanChild" to mapOf(
+                                    "role" to "Child",
+                                    "name" to childDisplayName,
+                                    "group" to effectiveGroup,
+                                    "linked_at" to now
+                                ),
+                                "${FirebaseComm.NODE_DEVICES}/$cleanChild/relationships/$cleanCoParent" to mapOf(
+                                    "role" to "GUARDIAN",
+                                    "name" to coParentDisplayName,
+                                    "group" to effectiveGroup,
+                                    "linked_at" to now
+                                ),
+                                "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/dependents/$cleanChild" to true,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanChild/guardians/$cleanCoParent" to true,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/Identity/valid_linked_agents" to newSecureCsvCoParent,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/identity/valid_linked_agents" to newSecureCsvCoParent,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanChild/Identity/valid_linked_agents" to newSecureCsvChild,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanChild/identity/valid_linked_agents" to newSecureCsvChild,
 
                         // Circle-level device pairing
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/identity/name" to coParentDisplayName,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/identity/full_name" to coParentDisplayName,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/membership/role" to "GUARDIAN",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/membership/role_family" to "Parent",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/membership/role_friend" to "None",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/membership/status" to "Active",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/membership/ts_joined" to now,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanCoParent/paired_with/$cleanChild" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanChild/paired_with/$cleanCoParent" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanCoParent/$cleanChild" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanChild/$cleanCoParent" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/members/$cleanChild/co_guardians/$cleanCoParent" to true,
+                        "users/$cleanCoParent/joined_circles/$effectiveGroup" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
                     )
 
-                    db.updateChildren(updates).addOnSuccessListener {
+                    db.updateChildren(updates).addOnCompleteListener { updTask ->
                         SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
                         
                         // Local SQLite commit
@@ -317,10 +425,23 @@ class PairingRepository {
                                     pairId,
                                     cleanCoParent,
                                     cleanChild,
+                                    "Guardian",
                                     "Child",
-                                    "GUARDIAN",
                                     null,
                                     "PAIRED"
+                                )
+
+                                localDb.saveRosterNode(cleanCoParent, coParentDisplayName, "Guardian", "ACTIVE", false, false, activeGroupId = effectiveGroup)
+                                localDb.saveRosterNode(cleanChild, childDisplayName, "Child", "ACTIVE", false, false, activeGroupId = effectiveGroup)
+                                localDb.appendValidLinkedAgent(cleanCoParent, cleanChild)
+                                localDb.appendValidLinkedAgent(cleanChild, cleanCoParent)
+                                localDb.updateCitizenRole(cleanCoParent, "Guardian", "None", false, effectiveGroup)
+
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                    ctx,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                    cleanCoParent
                                 )
                             } catch (ex: Exception) {
                                 SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
@@ -331,14 +452,9 @@ class PairingRepository {
                         FirebaseComm.logChange(cleanCoParent, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "CO_PARENT_LINK", cleanChild, logDetails)
                         FirebaseComm.logChange(cleanChild, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "GUARDIAN_LINK", cleanCoParent, logDetails)
                         onComplete?.invoke(true, null)
-                    }.addOnFailureListener { e ->
-                        SystemLogger.e("PairingRepo", "Failed to update co-parent relationship: ${e.message}", e)
-                        onComplete?.invoke(false, e.message)
                     }
-                }.addOnFailureListener { e ->
-                    SystemLogger.e("PairingRepo", "Failed reading co-parent linked agents: ${e.message}", e)
-                    onComplete?.invoke(false, e.message)
                 }
+            }
         }
 
         @JvmStatic
@@ -355,18 +471,24 @@ class PairingRepository {
             }
         }
 
+        // [Variables] hostAgentId: String, hostGroupId: String, role: String, onCodeReady: (String) -> Unit, chars: String, inviteCode: String, expiryMs: Long, payload: Map<String, Any> | [Constants] None | [Dependencies] FirebaseComm, SystemLogger | [Integration Points] MapActivity, FamilyFriendsActivity
         /**
          * 🔑 Generate 6-Character Dynamic Circle Invite Code (48-hour validity).
+         * Dual-mirrored to circle_invites and pairing_requests for zero-loss routing.
          */
         @JvmStatic
         fun createCircleInviteCode(hostAgentId: String, hostGroupId: String, role: String = "MEMBER", onCodeReady: (String) -> Unit) {
             val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
             val inviteCode = (1..6).map { chars.random() }.joinToString("")
             val expiryMs = System.currentTimeMillis() + (48 * 60 * 60 * 1000L) // 48 Hours Expiry
+            val cleanHost = FirebaseComm.sanitizeAgentId(hostAgentId)
             
             val payload = mapOf(
                 "code" to inviteCode,
-                "host_agent" to hostAgentId,
+                "invite_code" to inviteCode,
+                "host_agent" to cleanHost,
+                "hostDeviceId" to cleanHost,
+                "creator_device_id" to cleanHost,
                 "group_id" to hostGroupId,
                 "role" to role,
                 "expires_at" to expiryMs,
@@ -374,13 +496,14 @@ class PairingRepository {
                 "status" to "ACTIVE"
             )
             
-            FirebaseComm.database.getReference("circle_invites").child(inviteCode).setValue(payload)
-                .addOnSuccessListener {
+            val updates = mapOf<String, Any>(
+                "circle_invites/$inviteCode" to payload,
+                "pairing_requests/$inviteCode" to payload
+            )
+            FirebaseComm.database.reference.updateChildren(updates)
+                .addOnCompleteListener {
                     SystemLogger.i("PairingRepo", "🔑 Circle Invite Code Generated: $inviteCode for Group $hostGroupId")
                     onCodeReady(inviteCode)
-                }
-                .addOnFailureListener { e ->
-                    SystemLogger.e("PairingRepo", "Failed to generate Circle Invite Code", e)
                 }
         }
 
@@ -389,8 +512,10 @@ class PairingRepository {
             createCircleInviteCode(hostAgentId, hostGroupId, role) { callback.onCodeReady(it) }
         }
 
+        // [Variables] inviteCode: String, joiningAgentId: String, onResult: (Boolean, String?) -> Unit, cleanCode: String | [Constants] None | [Dependencies] FirebaseComm, SystemLogger | [Integration Points] NetworkGatewayActivity
         /**
          * 👥 Join Circle using 6-Character Dynamic Code.
+         * Dual-evaluates circle_invites with fallback to pairing_requests.
          */
         @JvmStatic
         fun joinCircleWithInviteCode(inviteCode: String, joiningAgentId: String, onResult: (Boolean, String?) -> Unit) {
@@ -399,25 +524,22 @@ class PairingRepository {
             
             inviteRef.addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    if (!snapshot.exists()) {
-                        onResult(false, "Invalid Invite Code")
-                        return
-                    }
-                    val status = snapshot.child("status").getValue(String::class.java) ?: "EXPIRED"
-                    val expiresAt = snapshot.child("expires_at").getValue(Long::class.java) ?: 0L
-                    val hostAgent = snapshot.child("host_agent").getValue(String::class.java) ?: ""
-                    val groupId = snapshot.child("group_id").getValue(String::class.java) ?: ""
-                    val role = snapshot.child("role").getValue(String::class.java) ?: "MEMBER"
-                    
-                    if (status != "ACTIVE" || expiresAt < System.currentTimeMillis()) {
-                        onResult(false, "This invite code has expired or is no longer active")
-                        return
-                    }
-                    
-                    // Execute handshake
-                    executeFamilyHandshake(hostAgent, groupId, joiningAgentId, role) {
-                        SystemLogger.i("PairingRepo", "🎉 Joined Circle via Code $cleanCode: $joiningAgentId -> $groupId")
-                        onResult(true, groupId)
+                    if (snapshot.exists()) {
+                        processInviteSnapshot(snapshot, cleanCode, joiningAgentId, onResult)
+                    } else {
+                        // Fallback check under pairing_requests
+                        FirebaseComm.database.getReference("pairing_requests").child(cleanCode).addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(reqSnap: DataSnapshot) {
+                                if (reqSnap.exists()) {
+                                    processInviteSnapshot(reqSnap, cleanCode, joiningAgentId, onResult)
+                                } else {
+                                    onResult(false, "Invalid Invite Code")
+                                }
+                            }
+                            override fun onCancelled(error: DatabaseError) {
+                                onResult(false, error.message)
+                            }
+                        })
                     }
                 }
 
@@ -427,16 +549,36 @@ class PairingRepository {
             })
         }
 
+        private fun processInviteSnapshot(snapshot: DataSnapshot, cleanCode: String, joiningAgentId: String, onResult: (Boolean, String?) -> Unit) {
+            val status = snapshot.child("status").getValue(String::class.java) ?: "EXPIRED"
+            val expiresAt = snapshot.child("expires_at").getValue(Long::class.java) ?: 0L
+            val hostAgent = snapshot.child("host_agent").getValue(String::class.java)
+                ?: snapshot.child("hostDeviceId").getValue(String::class.java) ?: ""
+            val groupId = snapshot.child("group_id").getValue(String::class.java) ?: ""
+            val role = snapshot.child("role").getValue(String::class.java) ?: "MEMBER"
+            
+            if (status != "ACTIVE" || (expiresAt > 0 && expiresAt < System.currentTimeMillis())) {
+                onResult(false, "This invite code has expired or is no longer active")
+                return
+            }
+            
+            // Execute handshake
+            executeFamilyHandshake(hostAgent, groupId, joiningAgentId, role) {
+                SystemLogger.i("PairingRepo", "🎉 Joined Circle via Code $cleanCode: $joiningAgentId -> $groupId")
+                onResult(true, groupId)
+            }
+        }
+
         @JvmStatic
         fun joinCircleWithInviteCode(inviteCode: String, joiningAgentId: String, callback: ResultCallback) {
             joinCircleWithInviteCode(inviteCode, joiningAgentId) { success, msg -> callback.onResult(success, msg) }
         }
 
         /**
-         * [Variables] cleanDevA: String, cleanDevB: String, now: String, effectiveGroup: String, computedRoleB: String, updates: HashMap<String, Any>
+         * [Variables] cleanDevA: String, cleanDevB: String, now: String, effectiveGroup: String, computedRoleB: String, updates: HashMap<String, Any>, currentCsv: String, approvedIds: MutableList<String>, newSecureCsv: String, selfDevId: String, localDb: DatabaseHelper
          * [Constants] NODE_DEVICES, NODE_RELATIONSHIPS, LOG_ITEM_PAIRING, LOG_ITEM_FAMILY_FRIENDS
-         * [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable
-         * [Integration Points] MapActivity, FamilyFriendsActivity, DevicePairingTable
+         * [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable, MasterDataSyncSentinel
+         * [Integration Points] MapActivity, FamilyFriendsActivity, DevicePairingTable, LocationRepository
          * 🔗 Connect two devices bidirectionally with reciprocal roles and pairing code.
          */
         @JvmStatic
@@ -457,7 +599,14 @@ class PairingRepository {
                 return
             }
             val now = FirebaseComm.getForensicTimestamp()
-            val effectiveGroup = if (hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP") hostGroupId else "GRP_$cleanDevA"
+            val resolvedCtx = JFindMeApplication.getContext()
+            val selfDevId = resolvedCtx?.let { com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(it) } ?: ""
+            val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
+            val effectiveGroup = when {
+                hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP" -> hostGroupId
+                !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
+                else -> "GRP_$cleanDevA"
+            }
 
             // Compute reciprocal role if roleB is unspecified
             val computedRoleB = if (!roleB.isNullOrBlank() && roleB != "None") {
@@ -472,46 +621,90 @@ class PairingRepository {
                 }
             }
 
-            // 1. Fetch Dev A's valid_linked_agents to append Dev B
-            db.child(FirebaseComm.NODE_DEVICES).child(cleanDevA).child("identity").child("valid_linked_agents").get()
-                .addOnSuccessListener { snapshot ->
-                    val currentCsv = snapshot.getValue(String::class.java) ?: ""
-                    val approvedIds = currentCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-                    if (!approvedIds.contains(cleanDevB)) {
-                        approvedIds.add(cleanDevB)
-                    }
-                    val newSecureCsv = approvedIds.joinToString(",")
+            // 1. Fetch Dev A's and Dev B's valid_linked_agents reciprocally
+            db.child(FirebaseComm.NODE_DEVICES).child(cleanDevA).child("Identity").child("valid_linked_agents").get()
+                .addOnCompleteListener { taskA ->
+                    val snapshotA = if (taskA.isSuccessful) taskA.result else null
+                    val currentCsvA = snapshotA?.getValue(String::class.java) ?: ""
+                    val approvedA = currentCsvA.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                    approvedA.add(cleanDevB)
+                    if (selfDevId.isNotBlank() && selfDevId != cleanDevA) approvedA.add(selfDevId)
 
-                    val updates = hashMapOf<String, Any>(
-                        // Device-Centric Relationships Mesh
-                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/relationships/$cleanDevB" to mapOf(
-                            "role" to roleA,
-                            "group" to effectiveGroup,
-                            "linked_at" to now
-                        ),
-                        "${FirebaseComm.NODE_DEVICES}/$cleanDevB/relationships/$cleanDevA" to mapOf(
-                            "role" to computedRoleB,
-                            "group" to effectiveGroup,
-                            "linked_at" to now
-                        ),
-                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/identity/valid_linked_agents" to newSecureCsv,
+                    db.child(FirebaseComm.NODE_DEVICES).child(cleanDevB).child("Identity").child("valid_linked_agents").get()
+                        .addOnCompleteListener { taskB ->
+                            val snapshotB = if (taskB.isSuccessful) taskB.result else null
+                            val currentCsvB = snapshotB?.getValue(String::class.java) ?: ""
+                            val approvedB = currentCsvB.split(",", ";", "|").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toMutableSet()
+                            approvedB.add(cleanDevA)
+                            if (selfDevId.isNotBlank() && selfDevId != cleanDevB) approvedB.add(selfDevId)
+
+                            val localDb = resolvedCtx?.let { com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(it) }
+                            if (localDb != null) {
+                                try {
+                                    approvedA.addAll(localDb.getConnectedDeviceIds(cleanDevA))
+                                    approvedB.addAll(localDb.getConnectedDeviceIds(cleanDevB))
+                                } catch (ignored: Exception) {}
+                            }
+
+                            val newSecureCsvA = approvedA.joinToString(",")
+                            val newSecureCsvB = approvedB.joinToString(",")
+
+                            val nameA = localDb?.getDeviceCentricName(cleanDevA)?.ifEmpty { cleanDevA } ?: cleanDevA
+                            val nameB = localDb?.getDeviceCentricName(cleanDevB)?.ifEmpty { cleanDevB } ?: cleanDevB
+
+                            val updates = hashMapOf<String, Any>(
+                                // Device-Centric Relationships Mesh
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevA/relationships/$cleanDevB" to mapOf(
+                                    "role" to roleA,
+                                    "name" to nameB,
+                                    "group" to effectiveGroup,
+                                    "linked_at" to now
+                                ),
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevB/relationships/$cleanDevA" to mapOf(
+                                    "role" to computedRoleB,
+                                    "name" to nameA,
+                                    "group" to effectiveGroup,
+                                    "linked_at" to now
+                                ),
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevA/Identity/valid_linked_agents" to newSecureCsvA,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevA/identity/valid_linked_agents" to newSecureCsvA,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevB/Identity/valid_linked_agents" to newSecureCsvB,
+                                "${FirebaseComm.NODE_DEVICES}/$cleanDevB/identity/valid_linked_agents" to newSecureCsvB,
 
                         // Circle-level device pairing
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/identity/name" to nameA,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/identity/full_name" to nameA,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/membership/role" to roleA,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/membership/status" to "Active",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/membership/ts_joined" to now,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/paired_with/$cleanDevB" to true,
+
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/identity/name" to nameB,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/identity/full_name" to nameB,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/membership/role" to computedRoleB,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/membership/status" to "Active",
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/membership/ts_joined" to now,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/paired_with/$cleanDevA" to true,
+
+                        // Direct pairs bidirectional entry
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevA/$cleanDevB" to true,
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevB/$cleanDevA" to true,
+                        "users/$cleanDevA/joined_circles/$effectiveGroup" to true,
+                        "users/$cleanDevB/joined_circles/$effectiveGroup" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
                     )
 
-                    db.updateChildren(updates).addOnSuccessListener {
+                    db.updateChildren(updates).addOnCompleteListener { updTask ->
                         SystemLogger.i("PairingRepo", "🔗 Devices Connected: $cleanDevA ($roleA) <-> $cleanDevB ($computedRoleB) in $effectiveGroup")
                         
                         // Local SQLite commit
-                        JFindMeApplication.getContext()?.let { ctx ->
+                        resolvedCtx?.let { ctx ->
                             try {
-                                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(ctx)
                                 val pairId = "PAIR_${cleanDevA}_${cleanDevB}"
                                 com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
-                                    localDb.writableDatabase,
+                                    sLocalDb.writableDatabase,
                                     pairId,
                                     cleanDevA,
                                     cleanDevB,
@@ -519,6 +712,39 @@ class PairingRepository {
                                     computedRoleB,
                                     pairingCode,
                                     "PAIRED"
+                                )
+
+                                val isDevAFriend = roleA.contains("Friend", ignoreCase = true)
+                                val isDevBFriend = computedRoleB.contains("Friend", ignoreCase = true)
+                                sLocalDb.saveRosterNode(cleanDevA, nameA, roleA, "ACTIVE", false, isDevAFriend, activeGroupId = effectiveGroup)
+                                sLocalDb.saveRosterNode(cleanDevB, nameB, computedRoleB, "ACTIVE", false, isDevBFriend, activeGroupId = effectiveGroup)
+                                sLocalDb.appendValidLinkedAgent(cleanDevA, cleanDevB)
+                                sLocalDb.appendValidLinkedAgent(cleanDevB, cleanDevA)
+
+                                sLocalDb.updateCitizenRole(cleanDevA, if (isDevAFriend) "None" else roleA, if (isDevAFriend) roleA else "None", isDevAFriend, effectiveGroup)
+                                sLocalDb.updateCitizenRole(cleanDevB, if (isDevBFriend) "None" else computedRoleB, if (isDevBFriend) computedRoleB else "None", isDevBFriend, effectiveGroup)
+
+                                // If the current initiating device is linking two peers, also ensure mutual pairing is saved locally so scopedIds doesn't exclude them
+                                if (selfDevId != cleanDevA && selfDevId != cleanDevB) {
+                                    com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                        sLocalDb.writableDatabase,
+                                        "PAIR_${selfDevId}_${cleanDevB}",
+                                        selfDevId,
+                                        cleanDevB,
+                                        "Member",
+                                        computedRoleB,
+                                        pairingCode,
+                                        "PAIRED"
+                                    )
+                                    sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevB)
+                                    sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevA)
+                                }
+
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                    ctx,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                    cleanDevB
                                 )
                             } catch (ex: Exception) {
                                 SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
@@ -529,14 +755,9 @@ class PairingRepository {
                         FirebaseComm.logChange(cleanDevA, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevB, logDetails)
                         FirebaseComm.logChange(cleanDevB, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevA, logDetails)
                         onComplete?.invoke(true, null)
-                    }.addOnFailureListener { e ->
-                        SystemLogger.e("PairingRepo", "Failed to update device relationship: ${e.message}", e)
-                        onComplete?.invoke(false, e.message)
                     }
-                }.addOnFailureListener { e ->
-                    SystemLogger.e("PairingRepo", "Failed reading linked agents: ${e.message}", e)
-                    onComplete?.invoke(false, e.message)
                 }
+            }
         }
 
         @JvmStatic
@@ -555,7 +776,11 @@ class PairingRepository {
         }
 
         /**
+         * [Variables] pairCode: String, sessionId: String, timeoutMs: Long, effectiveGroup: String, session: PairingSession, cleanPrimary: String, payloadRequests: Map<String, Any>
+         * [Constants] None | [Dependencies] FirebaseComm, SystemLogger, PairingSession
+         * [Integration Points] MapActivity, NetworkGatewayActivity, PairingSession
          * 🔑 Start Multi-Device Pairing Session (Supports attaching up to 5 devices using 1 pairing code).
+         * Dual-mirrored across pairing_sessions and pairing_requests for zero-permission-block delivery.
          */
         @JvmStatic
         @JvmOverloads
@@ -570,27 +795,57 @@ class PairingRepository {
             val pairCode = (100000..999999).random().toString()
             val sessionId = UUID.randomUUID().toString().take(6)
             val timeoutMs = 30 * 60 * 1000L // 30 minutes
-            val effectiveGroup = if (groupId.isNotBlank() && groupId != "DEFAULT_GROUP") groupId else "GRP_$primaryDeviceId"
+            val cleanPrimary = FirebaseComm.sanitizeAgentId(primaryDeviceId)
+            val resolvedCtx = JFindMeApplication.getContext()
+            val selfDevId = resolvedCtx?.let { com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(it) } ?: ""
+            val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
+            val effectiveGroup = when {
+                groupId.isNotBlank() && groupId != "DEFAULT_GROUP" -> groupId
+                !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
+                else -> "GRP_$cleanPrimary"
+            }
+            
             val session = PairingSession(
                 sessionId = sessionId,
                 userId = userId,
                 pairCode = pairCode,
                 expiresAt = System.currentTimeMillis() + timeoutMs,
                 status = "ACTIVE",
-                primaryDevice = primaryDeviceId,
+                primaryDevice = cleanPrimary,
                 secondaryDevice = null,
                 attached_devices = emptyMap(),
                 max_attachments = maxAttachments,
                 role = role,
                 group_id = effectiveGroup
             )
-            FirebaseComm.database.getReference("pairing_sessions").child(pairCode).setValue(session)
-                .addOnSuccessListener {
-                    SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode in Group $effectiveGroup (Max $maxAttachments devices)")
+
+            val payloadRequests = mapOf(
+                "pairCode" to pairCode,
+                "invite_code" to pairCode,
+                "sessionId" to sessionId,
+                "hostDeviceId" to cleanPrimary,
+                "creator_device_id" to cleanPrimary,
+                "group_id" to effectiveGroup,
+                "role" to role,
+                "status" to "ACTIVE",
+                "max_attachments" to maxAttachments,
+                "expires_at" to (System.currentTimeMillis() + timeoutMs),
+                "is_multi_device" to true
+            )
+
+            val updates = mapOf<String, Any>(
+                "pairing_sessions/$pairCode" to session,
+                "pairing_requests/$pairCode" to payloadRequests
+            )
+
+            FirebaseComm.database.reference.updateChildren(updates)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode in Group $effectiveGroup (Max $maxAttachments devices)")
+                    } else {
+                        SystemLogger.w("PairingRepo", "Notice: pairing session update: ${task.exception?.message}")
+                    }
                     onCodeReady(pairCode)
-                }
-                .addOnFailureListener { e ->
-                    SystemLogger.e("PairingRepo", "Failed starting multi-device pairing session", e)
                 }
         }
 
@@ -605,7 +860,11 @@ class PairingRepository {
         }
 
         /**
+         * [Variables] cleanCode: String, cleanJoiner: String, ref: DatabaseReference, session: PairingSession, attachedMap: Map, now: String, newAttachment: Map, updates: HashMap, hostGrp: String, ctx: Context, localDb: DatabaseHelper, prefs: SharedPreferences
+         * [Constants] None | [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable, MasterDataSyncSentinel
+         * [Integration Points] NetworkGatewayActivity, MapActivity
          * 👥 Join Multi-Device Pairing Session (1 code for close attachment across 3/4/5 devices).
+         * Dual-evaluates pairing_sessions with fallback to pairing_requests.
          */
         @JvmStatic
         @JvmOverloads
@@ -616,59 +875,39 @@ class PairingRepository {
             onResult: (Boolean, String?) -> Unit
         ) {
             val cleanCode = pairCode.trim()
+            val cleanJoiner = FirebaseComm.sanitizeAgentId(joiningDeviceId)
             val ref = FirebaseComm.database.getReference("pairing_sessions").child(cleanCode)
+            
             ref.addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    if (!snapshot.exists()) {
-                        onResult(false, "Invalid Pair Code")
-                        return
-                    }
-                    val session = snapshot.getValue(PairingSession::class.java)
-                    if (session == null) {
-                        onResult(false, "Corrupted Pairing Session")
-                        return
-                    }
-                    if (session.expiresAt < System.currentTimeMillis() || (session.status != "ACTIVE" && session.status != "pending")) {
-                        onResult(false, "Pairing code has expired or session is sealed.")
-                        return
-                    }
-                    val attachedMap = session.attached_devices ?: emptyMap()
-                    if (attachedMap.size >= session.max_attachments) {
-                        onResult(false, "Maximum device limit (${session.max_attachments}) reached for this pairing code.")
-                        return
-                    }
-
-                    val now = FirebaseComm.getForensicTimestamp()
-                    val newAttachment = mapOf(
-                        "role" to requestedRole,
-                        "status" to "LINKED",
-                        "joined_at" to now
-                    )
-                    val updates = hashMapOf<String, Any>(
-                        "attached_devices/$joiningDeviceId" to newAttachment,
-                        "secondaryDevice" to joiningDeviceId
-                    )
-                    if (attachedMap.size + 1 >= session.max_attachments) {
-                        updates["status"] = "SEALED"
-                    }
-
-                    ref.updateChildren(updates).addOnSuccessListener {
-                        // Automatically link joining device with primary device
-                        val hostGrp = if (!session.group_id.isNullOrBlank() && session.group_id != "DEFAULT_GROUP") {
-                            session.group_id
-                        } else {
-                            "GRP_${session.primaryDevice}"
-                        }
-                        linkDevicesWithRoles(hostGrp, session.primaryDevice, joiningDeviceId, session.role, requestedRole, cleanCode) { success, err ->
-                            if (success) {
-                                SystemLogger.i("PairingRepo", "Device $joiningDeviceId successfully attached via Code $cleanCode")
-                                onResult(true, session.primaryDevice)
-                            } else {
-                                onResult(false, err)
+                    if (snapshot.exists()) {
+                        processMultiDeviceSession(snapshot, cleanCode, cleanJoiner, requestedRole, onResult)
+                    } else {
+                        // Fallback check under pairing_requests
+                        FirebaseComm.database.getReference("pairing_requests").child(cleanCode).addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(reqSnap: DataSnapshot) {
+                                if (reqSnap.exists()) {
+                                    val primaryDev = reqSnap.child("hostDeviceId").getValue(String::class.java)
+                                        ?: reqSnap.child("creator_device_id").getValue(String::class.java) ?: ""
+                                    val grp = reqSnap.child("group_id").getValue(String::class.java) ?: "GRP_$primaryDev"
+                                    val r = reqSnap.child("role").getValue(String::class.java) ?: "MEMBER"
+                                    
+                                    linkDevicesWithRoles(grp, primaryDev, cleanJoiner, r, requestedRole, cleanCode) { success, err ->
+                                        if (success) {
+                                            finalizeJoiningDeviceState(primaryDev, cleanJoiner, requestedRole, grp)
+                                            onResult(true, primaryDev)
+                                        } else {
+                                            onResult(false, err)
+                                        }
+                                    }
+                                } else {
+                                    onResult(false, "Invalid Pair Code")
+                                }
                             }
-                        }
-                    }.addOnFailureListener { e ->
-                        onResult(false, e.message)
+                            override fun onCancelled(error: DatabaseError) {
+                                onResult(false, error.message)
+                            }
+                        })
                     }
                 }
 
@@ -676,6 +915,93 @@ class PairingRepository {
                     onResult(false, error.message)
                 }
             })
+        }
+
+        private fun processMultiDeviceSession(
+            snapshot: DataSnapshot,
+            cleanCode: String,
+            cleanJoiner: String,
+            requestedRole: String,
+            onResult: (Boolean, String?) -> Unit
+        ) {
+            val session = snapshot.getValue(PairingSession::class.java)
+            if (session == null) {
+                onResult(false, "Corrupted Pairing Session")
+                return
+            }
+            if (session.expiresAt < System.currentTimeMillis() || (session.status != "ACTIVE" && session.status != "pending")) {
+                onResult(false, "Pairing code has expired or session is sealed.")
+                return
+            }
+            val attachedMap = session.attached_devices ?: emptyMap()
+            if (attachedMap.size >= session.max_attachments) {
+                onResult(false, "Maximum device limit (${session.max_attachments}) reached for this pairing code.")
+                return
+            }
+
+            val now = FirebaseComm.getForensicTimestamp()
+            val newAttachment = mapOf(
+                "role" to requestedRole,
+                "status" to "LINKED",
+                "joined_at" to now
+            )
+            val updates = hashMapOf<String, Any>(
+                "attached_devices/$cleanJoiner" to newAttachment,
+                "secondaryDevice" to cleanJoiner
+            )
+            if (attachedMap.size + 1 >= session.max_attachments) {
+                updates["status"] = "SEALED"
+            }
+
+            snapshot.ref.updateChildren(updates).addOnCompleteListener {
+                val hostGrp = if (!session.group_id.isNullOrBlank() && session.group_id != "DEFAULT_GROUP") {
+                    session.group_id
+                } else {
+                    "GRP_${session.primaryDevice}"
+                }
+                linkDevicesWithRoles(hostGrp, session.primaryDevice, cleanJoiner, session.role, requestedRole, cleanCode) { success, err ->
+                    if (success) {
+                        finalizeJoiningDeviceState(session.primaryDevice, cleanJoiner, requestedRole, hostGrp)
+                        // 🌐 Full Mesh: Reciprocally link new joiner to all other sibling devices attached in this session
+                        for (peerJoiner in attachedMap.keys) {
+                            val cleanPeer = FirebaseComm.sanitizeAgentId(peerJoiner)
+                            if (FirebaseComm.isAgentIdValid(cleanPeer) && cleanPeer != cleanJoiner) {
+                                linkDevicesWithRoles(hostGrp, cleanPeer, cleanJoiner, "MEMBER", requestedRole, cleanCode) { _, _ -> }
+                            }
+                        }
+                        SystemLogger.i("PairingRepo", "Device $cleanJoiner successfully attached via Code $cleanCode")
+                        onResult(true, session.primaryDevice)
+                    } else {
+                        onResult(false, err)
+                    }
+                }
+            }
+        }
+
+        private fun finalizeJoiningDeviceState(primaryDev: String, cleanJoiner: String, requestedRole: String, hostGrp: String) {
+            JFindMeApplication.getContext()?.let { ctx ->
+                try {
+                    val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                    val prefs = ctx.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                    prefs.edit().putString("active_group", hostGrp).apply()
+
+                    val isFriend = requestedRole.contains("Friend", ignoreCase = true)
+                    localDb.saveRosterNode(primaryDev, "Primary Hub ($primaryDev)", "ADMIN", "ACTIVE", true, false, activeGroupId = hostGrp)
+                    localDb.saveRosterNode(cleanJoiner, cleanJoiner, requestedRole, "ACTIVE", false, isFriend, activeGroupId = hostGrp)
+                    localDb.appendValidLinkedAgent(primaryDev, cleanJoiner)
+                    localDb.appendValidLinkedAgent(cleanJoiner, primaryDev)
+                    localDb.updateCitizenRole(cleanJoiner, if (isFriend) "None" else requestedRole, if (isFriend) requestedRole else "None", isFriend, hostGrp)
+
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                        ctx,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                        primaryDev
+                    )
+                } catch (e: Exception) {
+                    SystemLogger.e("PairingRepo", "Failed finalizing joining device state: ${e.message}")
+                }
+            }
         }
 
         @JvmStatic

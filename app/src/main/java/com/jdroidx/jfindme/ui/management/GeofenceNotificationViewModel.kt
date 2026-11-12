@@ -21,7 +21,8 @@ data class GeofenceNotification(
     val zoneName: String = "",
     val readableTime: String = "",
     val date: String = "",
-    val time: String = ""
+    val time: String = "",
+    val agentId: String = ""
 )
 
 /**
@@ -133,7 +134,8 @@ class GeofenceNotificationViewModel(application: Application) : AndroidViewModel
                 zoneName = map["zone_name"]?.toString() ?: "Unknown",
                 readableTime = map["readable_time"]?.toString() ?: "",
                 date = dateStr,
-                time = timeStr
+                time = timeStr,
+                agentId = map["user_id"]?.toString() ?: map["target_agent_id"]?.toString() ?: ""
             )
         }
         _notifications.postValue(list)

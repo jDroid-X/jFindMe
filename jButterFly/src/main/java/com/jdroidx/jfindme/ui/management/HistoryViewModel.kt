@@ -172,69 +172,71 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
      * Rule: Roster Table is the absolute Forensic SSOT (V36).
      */
     fun fetchTrackingTargets(context: Context) {
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
-        val myUid = FirebaseAuth.getInstance().uid ?: ""
-        
-        _isLoading.value = true
-        
-        // 1. Resolve Local Mirror (SSOT)
-        val offlineNodes = dbHelper.getOfflineRoster()
-        val targets = mutableListOf<TrackingTarget>()
-        
-        // Include Self-Target for personal travel history inspection
-        val myNick = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(context)
-        val selfLabel = if (myNick.isNotBlank()) "👑 $myNick (My Device)" else "👑 My Device (Host)"
-        val selfAvatarId = "avatar_custom_" + com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(
-            context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getInt("equipped_avatar_id", 1)
-        )
-        targets.add(TrackingTarget(selfLabel, selfAgentId, "Host", selfAvatarId))
-        
-        // ≡ƒÜÇ PILLAR 2: Validated P2P Matrix
-        offlineNodes.forEach { row ->
-            val uid = row["uid_1"] as? String ?: row["uid"] as? String ?: ""
-            val ssotName = dbHelper.getDeviceCentricName(uid)
-            val name = if (ssotName.isNotBlank() && !ssotName.startsWith("Agent_", true)) ssotName else ((row["fullName"] as? String) ?: "Target ($uid)")
-            val role = row["role_type"] as? String ?: "PEER"
-            val avId = dbHelper.getDeviceCentricAvatar(uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val myUid = FirebaseAuth.getInstance().uid ?: ""
             
-            if (uid.isNotEmpty() && uid != selfAgentId && uid != myUid && !uid.contains("OWNER")) {
-                targets.add(TrackingTarget("$name ($role)", uid, role, avId))
+            _isLoading.postValue(true)
+            
+            // 1. Resolve Local Mirror (SSOT)
+            val offlineNodes = dbHelper.getOfflineRoster()
+            val targets = mutableListOf<TrackingTarget>()
+            
+            // Include Self-Target for personal travel history inspection
+            val myNick = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(context)
+            val selfLabel = if (myNick.isNotBlank()) "👑 $myNick (My Device)" else "👑 My Device (Host)"
+            val selfAvatarId = "avatar_custom_" + com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(
+                context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getInt("equipped_avatar_id", 1)
+            )
+            targets.add(TrackingTarget(selfLabel, selfAgentId, "Host", selfAvatarId))
+            
+            // ≡ƒÜÇ PILLAR 2: Validated P2P Matrix
+            offlineNodes.forEach { row ->
+                val uid = row["uid_1"] as? String ?: row["uid"] as? String ?: ""
+                val ssotName = dbHelper.getDeviceCentricName(uid)
+                val name = if (ssotName.isNotBlank() && !ssotName.startsWith("Agent_", true)) ssotName else ((row["fullName"] as? String) ?: "Target ($uid)")
+                val role = row["role_type"] as? String ?: "PEER"
+                val avId = dbHelper.getDeviceCentricAvatar(uid)
+                
+                if (uid.isNotEmpty() && uid != selfAgentId && uid != myUid && !uid.contains("OWNER")) {
+                    targets.add(TrackingTarget("$name ($role)", uid, role, avId))
+                }
             }
-        }
-        
-        if (targets.isNotEmpty() || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
-            _trackingTargets.postValue(targets)
-            _isLoading.postValue(false)
-        } else {
-            // 🛡️ EMERGENCY FALLBACK: Local table is unpopulated, trigger forensic network scavenge
-            com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef
-                .addListenerForSingleValueEvent(object : ValueEventListener {
-                    override fun onDataChange(snapshot: DataSnapshot) {
-                        snapshot.children.forEach { child ->
-                            val childUid = child.key ?: return@forEach
-                            if (childUid != myUid) {
-                                val liveSnap = child.child("device").child("live")
-                                val profSnap = child.child("profile")
-                                val targetName = profSnap.child("name").getValue(String::class.java)
-                                    ?: liveSnap.child("userName").getValue(String::class.java)
-                                    ?: "Target ($childUid)"
-                                val avatarId = liveSnap.child("avatar_id").getValue(String::class.java) ?: "butterfly"
-                                
-                                // If found remotely, save back to SSOT (Persistence Loop)
-                                dbHelper.saveRosterNode(childUid, targetName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,
-                                    ownerName = "P2P Mirror Recovery", connectedDeviceId = childUid, qrCode = avatarId)
-                                targets.add(TrackingTarget("$targetName (P2P MIRROR)", childUid, "Peer", avatarId))
+            
+            if (targets.isNotEmpty() || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
+                _trackingTargets.postValue(targets)
+                _isLoading.postValue(false)
+            } else {
+                // 🛡️ EMERGENCY FALLBACK: Local table is unpopulated, trigger forensic network scavenge
+                com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef
+                    .addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(snapshot: DataSnapshot) {
+                            snapshot.children.forEach { child ->
+                                val childUid = child.key ?: return@forEach
+                                if (childUid != myUid) {
+                                    val liveSnap = child.child("device").child("live")
+                                    val profSnap = child.child("profile")
+                                    val targetName = profSnap.child("name").getValue(String::class.java)
+                                        ?: liveSnap.child("userName").getValue(String::class.java)
+                                        ?: "Target ($childUid)"
+                                    val avatarId = liveSnap.child("avatar_id").getValue(String::class.java) ?: "butterfly"
+                                    
+                                    // If found remotely, save back to SSOT (Persistence Loop)
+                                    dbHelper.saveRosterNode(childUid, targetName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,
+                                        ownerName = "P2P Mirror Recovery", connectedDeviceId = childUid, qrCode = avatarId)
+                                    targets.add(TrackingTarget("$targetName (P2P MIRROR)", childUid, "Peer", avatarId))
+                                }
                             }
+                            _trackingTargets.postValue(targets)
+                            _isLoading.postValue(false)
                         }
-                        _trackingTargets.postValue(targets)
-                        _isLoading.postValue(false)
-                    }
-                    override fun onCancelled(error: DatabaseError) {
-                        _trackingTargets.postValue(targets)
-                        _isLoading.postValue(false)
-                    }
-                })
+                        override fun onCancelled(error: DatabaseError) {
+                            _trackingTargets.postValue(targets)
+                            _isLoading.postValue(false)
+                        }
+                    })
+            }
         }
     }
 

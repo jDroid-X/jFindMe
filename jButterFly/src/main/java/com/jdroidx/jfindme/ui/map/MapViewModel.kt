@@ -6,6 +6,7 @@ import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.repository.LocationRepository
@@ -16,6 +17,8 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.jdroidx.jfindme.utils.SystemLogger
 import com.jdroidx.jfindme.data.remote.FirebaseComm
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * MapViewModel: Handles business logic for map tracking.
@@ -38,6 +41,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     // ≡ƒÅ╖∩╕Å Filter State Matrix
     private var currentFilterMode = "ALL" // Default
     private val rawLocationCache = mutableListOf<UserLocation>()
+    private val deletedDeviceCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val pairedDeviceCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val roleDeviceCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // ≡ƒÜÇ Geofence Sentinel Engine: Natively pushes dependent alerts back to the Guardian UI
     private val _geofenceAlertTrigger = MutableLiveData<String>()
@@ -106,59 +112,69 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadLocalDossier() {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
-        _userDossier.postValue(db.getLocalDossier(auth.uid ?: ""))
+        viewModelScope.launch(Dispatchers.IO) {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+            val dossier = db.getLocalDossier(auth.uid ?: "")
+            _userDossier.postValue(dossier)
+        }
     }
 
     fun loadSafeZones() {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
-        val localZones = db.getActiveSafeZones()
-        if (localZones.isNotEmpty()) {
-            _safeZones.postValue(localZones)
-        }
-        
-        val currentGroupId = getApplication<Application>()
-            .getSharedPreferences("system_registry", Application.MODE_PRIVATE)
-            .getString("current_group_id", null) ?: "DEFAULT_GROUP"
+        viewModelScope.launch(Dispatchers.IO) {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+            val localZones = db.getActiveSafeZones()
+            if (localZones.isNotEmpty()) {
+                _safeZones.postValue(localZones)
+            }
+            
+            val currentGroupId = getApplication<Application>()
+                .getSharedPreferences("system_registry", Application.MODE_PRIVATE)
+                .getString("current_group_id", null) ?: "DEFAULT_GROUP"
 
-        FirebaseDatabase.getInstance().reference.child("safe_zones").child(currentGroupId)
-            .addListenerForSingleValueEvent(object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    val cloudZones = mutableListOf<com.jdroidx.jfindme.data.model.SafeZoneModel>()
-                    for (child in snapshot.children) {
-                        try {
-                            val model = child.getValue(com.jdroidx.jfindme.data.model.SafeZoneModel::class.java)
-                            if (model != null && (model.lat != 0.0 || model.lng != 0.0 || model.isPolygon)) {
-                                if (model.zoneId.isEmpty()) model.zoneId = child.key ?: ""
-                                if (model.polygonPointsJson.isBlank()) {
-                                    val polyRaw = child.child("polygon_points").value?.toString() ?: ""
-                                    if (polyRaw.isNotBlank()) model.polygonPointsJson = polyRaw
-                                }
-                                if (model.dwellThresholdMinutes == 0) {
-                                    val dwellRaw = child.child("dwell_minutes").value?.toString()?.toIntOrNull() ?: 0
-                                    model.dwellThresholdMinutes = dwellRaw
-                                }
-                                cloudZones.add(model)
-                                db.writableDatabase.let { sdb ->
-                                    com.jdroidx.jfindme.data.local.tables.SafeZoneTable.save(
-                                        sdb, model.zoneId, model.name, model.lat, model.lng,
-                                        model.radius.toDouble(), null, model.assignedName,
-                                        model.alertsEnabled, model.isZoneActive,
-                                        false, model.polygonPointsJson, model.dwellThresholdMinutes
-                                    )
-                                }
+            FirebaseDatabase.getInstance().reference.child("safe_zones").child(currentGroupId)
+                .addListenerForSingleValueEvent(object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val cloudZones = mutableListOf<com.jdroidx.jfindme.data.model.SafeZoneModel>()
+                            for (child in snapshot.children) {
+                                try {
+                                    val model = child.getValue(com.jdroidx.jfindme.data.model.SafeZoneModel::class.java)
+                                    if (model != null && (model.lat != 0.0 || model.lng != 0.0 || model.isPolygon)) {
+                                        if (model.zoneId.isEmpty()) model.zoneId = child.key ?: ""
+                                        if (model.polygonPointsJson.isBlank()) {
+                                            val polyRaw = child.child("polygon_points").value?.toString() ?: ""
+                                            if (polyRaw.isNotBlank()) model.polygonPointsJson = polyRaw
+                                        }
+                                        if (model.dwellThresholdMinutes == 0) {
+                                            val dwellRaw = child.child("dwell_minutes").value?.toString()?.toIntOrNull() ?: 0
+                                            model.dwellThresholdMinutes = dwellRaw
+                                        }
+                                        cloudZones.add(model)
+                                        db.writableDatabase.let { sdb ->
+                                            com.jdroidx.jfindme.data.local.tables.SafeZoneTable.save(
+                                                sdb, model.zoneId, model.name, model.lat, model.lng,
+                                                model.radius.toDouble(), null, model.assignedName,
+                                                model.alertsEnabled, model.isZoneActive,
+                                                false, model.polygonPointsJson, model.dwellThresholdMinutes
+                                            )
+                                        }
+                                    }
+                                } catch (e: Exception) {}
                             }
-                        } catch (e: Exception) {}
+                            if (cloudZones.isNotEmpty()) {
+                                _safeZones.postValue(cloudZones)
+                            }
+                        }
                     }
-                    if (cloudZones.isNotEmpty()) {
-                        _safeZones.postValue(cloudZones)
-                    }
-                }
-                override fun onCancelled(error: DatabaseError) {}
-            })
+                    override fun onCancelled(error: DatabaseError) {}
+                })
+        }
     }
 
     fun refreshLocations() {
+        deletedDeviceCache.clear()
+        pairedDeviceCache.clear()
+        roleDeviceCache.clear()
         syncLocalMeshIds()
         com.jdroidx.jfindme.engine.map.MultiMarkerEngine.invalidateRoleAndNameCaches()
         fetchCurrentUserRole()
@@ -196,8 +212,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         // Step 1: Baseline Group Mesh Isolation (Cloud Mesh OR Local SQLite Handshake)
         val authorized = rawLocationCache.filter { loc ->
             val uid = loc.getResolvedUserId()
-            !db.isDeviceDeleted(uid) && (
-                familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || db.isDevicePaired(uid) || familyMeshIds.isEmpty()
+            val isDel = deletedDeviceCache.getOrPut(uid) { db.isDeviceDeleted(uid) }
+            val isPair = pairedDeviceCache.getOrPut(uid) { db.isDevicePaired(uid) }
+            !isDel && (
+                familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || isPair || familyMeshIds.isEmpty()
             )
         }
         
@@ -205,17 +223,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val filtered = when (currentFilterMode) {
             "FAMILY" -> authorized.filter { 
                 val uid = it.getResolvedUserId()
-                val role = db.getRoleForDevice(uid)
+                val role = roleDeviceCache.getOrPut(uid) { db.getRoleForDevice(uid) ?: "" }
                 uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || 
                     (!it.role_family.equals("None", true) && it.role_family.isNotBlank()) ||
                     (!role.isNullOrBlank() && !role.contains("Friend", true))
             }
             "FRIENDS" -> authorized.filter { 
                 val uid = it.getResolvedUserId()
-                val role = db.getRoleForDevice(uid)
+                val role = roleDeviceCache.getOrPut(uid) { db.getRoleForDevice(uid) ?: "" }
                 uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || 
                     (!it.role_friend.equals("None", true) && it.role_friend.isNotBlank()) ||
-                    (role?.contains("Friend", true) == true)
+                    (role.contains("Friend", true))
             }
             else -> authorized // ALL
         }.sortedWith(
@@ -452,58 +470,60 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateMyLocation(context: Context, location: Location) {
         _myLocation.postValue(location)
-        val currentUser = auth.currentUser
-        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
-        val userId = currentUser?.uid ?: selfAgentId
-        
-        // ≡ƒºá QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
-        val dossier = db.getLocalDossier(userId)
-        val fullName = dossier["fullName"]
-        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-        val customName = prefs.getString("user_nickname", null)
-        
-        val userName = if (!fullName.isNullOrBlank()) fullName else (customName ?: currentUser?.displayName ?: currentUser?.email ?: "User Identity")
-        
-        // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
-        val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
-        val genderStr = prefs.getString("user_gender", "Male") ?: "Male"
-        
-        // ≡ƒÜÇ QA Fix: Dynamic Gender-Based Proxy for Cloud Sync (V8 Fallback)
-        val safeBaseId = if (rawBaseId == -1) {
-             if (genderStr.contains("Female", true)) 4 else 1 // Fallback to 'Student' (F) or 'Walker' (M)
-        } else {
-             rawBaseId 
-        }
-        
-        val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
-        val resolvedAvatarId = "avatar_custom_$dynamicIdx"
-        
-        val publish = { finalAgentId: String ->
-            val userLocation = UserLocation(
-                userId = finalAgentId,
-                userName = userName,
-                avatar_id = resolvedAvatarId,
-                latitude = location.latitude,
-                longitude = location.longitude,
-                geohash = GeohashHelper.encode(location.latitude, location.longitude),
-                bearing = location.bearing,
-                speed = location.speed,
-                timestamp = System.currentTimeMillis(),
-                active_group = prefs.getString("active_group", "") ?: "",
-                role_family = prefs.getString("role_family", "None") ?: "None",
-                role_friend = prefs.getString("role_friend", "None") ?: "None"
-            )
-            repository.updateMyLocation(userLocation)
-        }
-
-        if (currentUser != null) {
-            FirebaseComm.resolveHardwareIdentity(currentUser.uid) { agentId: String? ->
-                val finalAgentId = agentId ?: selfAgentId
-                publish(finalAgentId)
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentUser = auth.currentUser
+            val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val userId = currentUser?.uid ?: selfAgentId
+            
+            // ≡ƒºá QA Request: Unified DB Pointer. Must strictly target the Main Profile Engine Storage!
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+            val dossier = db.getLocalDossier(userId)
+            val fullName = dossier["fullName"]
+            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            val customName = prefs.getString("user_nickname", null)
+            
+            val userName = if (!fullName.isNullOrBlank()) fullName else (customName ?: currentUser?.displayName ?: currentUser?.email ?: "User Identity")
+            
+            // Fix Firebase Broadcast Overwrite Bug: Must strictly enforce positive integer modulo math mathematically.
+            val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
+            val genderStr = prefs.getString("user_gender", "Male") ?: "Male"
+            
+            // ≡ƒÜÇ QA Fix: Dynamic Gender-Based Proxy for Cloud Sync (V8 Fallback)
+            val safeBaseId = if (rawBaseId == -1) {
+                 if (genderStr.contains("Female", true)) 4 else 1 // Fallback to 'Student' (F) or 'Walker' (M)
+            } else {
+                 rawBaseId 
             }
-        } else {
-            publish(selfAgentId)
+            
+            val dynamicIdx = if (safeBaseId % 22 == 0) 22 else Math.abs(safeBaseId % 22)
+            val resolvedAvatarId = "avatar_custom_$dynamicIdx"
+            
+            val publish = { finalAgentId: String ->
+                val userLocation = UserLocation(
+                    userId = finalAgentId,
+                    userName = userName,
+                    avatar_id = resolvedAvatarId,
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    geohash = GeohashHelper.encode(location.latitude, location.longitude),
+                    bearing = location.bearing,
+                    speed = location.speed,
+                    timestamp = System.currentTimeMillis(),
+                    active_group = prefs.getString("active_group", "") ?: "",
+                    role_family = prefs.getString("role_family", "None") ?: "None",
+                    role_friend = prefs.getString("role_friend", "None") ?: "None"
+                )
+                repository.updateMyLocation(userLocation)
+            }
+
+            if (currentUser != null) {
+                FirebaseComm.resolveHardwareIdentity(currentUser.uid) { agentId: String? ->
+                    val finalAgentId = agentId ?: selfAgentId
+                    publish(finalAgentId)
+                }
+            } else {
+                publish(selfAgentId)
+            }
         }
     }
 

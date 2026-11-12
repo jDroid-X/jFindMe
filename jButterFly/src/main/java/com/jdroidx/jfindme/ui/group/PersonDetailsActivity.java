@@ -62,8 +62,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
             if (isSelf) {
                 com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
             } else if (targetAgentId != null) {
+                // [Variables] targetAgentId, av | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] Local SSOT & Avatar Engine
                 String av = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
-                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, av);
+                com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, av);
             }
         }
     }
@@ -140,12 +141,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
         ownerTile.setPadding(sideMargin, sideMargin, sideMargin, sideMargin);
         
         // 🚀 Premium Avatar (Double Size & Smart Fit)
+        // [Variables] targetAgentId, initialAv | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Avatar Resolution
         headerAvatar = new android.widget.ImageView(this);
         if (isSelf) {
             com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
         } else {
-            String initialAv = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
-            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, initialAv);
+            String initialAv = (targetAgentId != null) ? com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId) : "butterfly";
+            com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, initialAv);
         }
         headerAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
@@ -432,22 +434,24 @@ public class PersonDetailsActivity extends BaseActivityJava {
             View saveDossierBtn = createIconButton("Save Profile", android.R.drawable.ic_menu_edit, true, v -> saveCitizenData());
             formBox.addView(saveDossierBtn, btnLp);
             
-            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger")
-                .addChildEventListener(new com.google.firebase.database.ChildEventListener() {
-                    @Override
-                    public void onChildAdded(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {
-                        if (snapshot.getValue() != null) {
-                            saveCitizenData();
-                            android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeEventListener(this);
-                            syncTriggerListener = null; // 🔧 Mark as consumed
+            if (targetAgentId != null && !targetAgentId.isEmpty()) {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger")
+                    .addChildEventListener(new com.google.firebase.database.ChildEventListener() {
+                        @Override
+                        public void onChildAdded(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {
+                            if (snapshot.getValue() != null) {
+                                saveCitizenData();
+                                android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeEventListener(this);
+                                syncTriggerListener = null; // 🔧 Mark as consumed
+                            }
                         }
-                    }
-                    @Override public void onChildChanged(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
-                    @Override public void onChildRemoved(com.google.firebase.database.DataSnapshot snapshot) {}
-                    @Override public void onChildMoved(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
-                    @Override public void onCancelled(com.google.firebase.database.DatabaseError error) {}
-                });
+                        @Override public void onChildChanged(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
+                        @Override public void onChildRemoved(com.google.firebase.database.DataSnapshot snapshot) {}
+                        @Override public void onChildMoved(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {}
+                        @Override public void onCancelled(com.google.firebase.database.DatabaseError error) {}
+                    });
+            }
             syncTriggerListener = null; // Store reference for cleanup (no-op removed; listener auto-nulls after trigger)
         }
         
@@ -947,6 +951,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
 
         // 🚀 LIVE OBSERVATION PROTOCOL: UI reacts natively to Data Source (Offline SQL & Cloud)
+        // [Variables] avId, dName, targetAgentId | [Constants] "1" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Roster & Name Resolution
         viewModel.getDossierLiveData().observe(this, data -> {
             if (data == null) return;
             String avId = data.get("avatar_id");
@@ -957,10 +962,13 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     if (avId == null || avId.isEmpty() || avId.equals("1")) {
                         avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
                     }
-                    com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, avId);
+                    com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, avId);
                 }
             }
             String dName = data.get("fullName");
+            if ((dName == null || dName.trim().isEmpty()) && targetAgentId != null) {
+                dName = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(targetAgentId);
+            }
             etFullName.setText(dName != null ? dName : "");
             
             // Dynamic Header Title Update
@@ -1421,7 +1429,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
     }
 
     private void showTargetAvatarPreviewDialog() {
-        String devAvatar = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+        String devAvatar = (targetAgentId != null) ? com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId) : "butterfly";
         String personName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : "Target Node";
         
         android.widget.LinearLayout dialogView = new android.widget.LinearLayout(this);
@@ -1431,7 +1439,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
         dialogView.setPadding(pad, pad, pad, pad);
         
         android.widget.ImageView preview = new android.widget.ImageView(this);
-        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, preview, devAvatar);
+        // [Variables] preview, targetAgentId, devAvatar | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Dialog Preview
+        com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, preview, targetAgentId, devAvatar);
         int aSize = (int)(UiArchitect.getUniversalAvatarSize(this) * 1.5f);
         dialogView.addView(preview, new android.widget.LinearLayout.LayoutParams(aSize, aSize));
         

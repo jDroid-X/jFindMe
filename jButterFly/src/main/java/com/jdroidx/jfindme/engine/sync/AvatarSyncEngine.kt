@@ -157,6 +157,7 @@ object AvatarSyncEngine {
      * @param newAvatarId The new avatar resource identifier
      * @param newName     The updated display name
      */
+    // [Variables] agentId, newAvatarId, newName, update, updateCircle, grpSnap, groupId, snap, gid, relSnap, groupChild | [Constants] None | [Dependencies] FirebaseDatabase, ServerValue, FirebaseComm, AvatarLoader, SystemLogger | [Integration Points] ProfileViewModel, MasterDataSyncSentinel, FamilyFriendsViewModel, MapActivity
     fun propagateAvatarUpdate(agentId: String, newAvatarId: String, newName: String) {
         if (agentId.isBlank()) return
         val update = mapOf(
@@ -173,12 +174,13 @@ object AvatarSyncEngine {
                 devicesRef.child(agentId).child("device").child("live").child("avatar_id").setValue(newAvatarId)
                 devicesRef.child(agentId).child("device").child("live").child("userName").setValue(newName)
                 devicesRef.child(agentId).child("Identity").child("avatar_id").setValue(newAvatarId)
+                devicesRef.child(agentId).child("Identity").child("name").setValue(newName)
+                devicesRef.child(agentId).child("Identity").child("fullName").setValue(newName)
                 com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                 
-                // 2. Cascade update to all active Group Hubs where this agent belongs
-                devicesRef.child(agentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
-                    val groupId = grpSnap.getValue(String::class.java)
-                    if (!groupId.isNullOrEmpty()) {
+                // Helper to update a specific relationship group
+                val updateCircle = { groupId: String ->
+                    if (groupId.isNotBlank()) {
                         val relRef = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.child(groupId)
                         // 1. Unified `devices/` Structure
                         relRef.child("devices").child(agentId).child("identity").updateChildren(mapOf(
@@ -199,8 +201,39 @@ object AvatarSyncEngine {
                         ))
                     }
                 }
+
+                // 2. Cascade update to ALL active & historical Group Hubs where this agent belongs
+                // A. Active group
+                devicesRef.child(agentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
+                    val groupId = grpSnap.getValue(String::class.java)
+                    if (!groupId.isNullOrEmpty()) updateCircle(groupId)
+                }
+
+                // B. Default self group
+                updateCircle("GRP_$agentId")
+
+                // C. Scan users/{agentId}/joined_circles
+                FirebaseDatabase.getInstance().reference.child("users").child(agentId).child("joined_circles")
+                    .get().addOnSuccessListener { snap ->
+                        for (child in snap.children) {
+                            val gid = child.key ?: child.getValue(String::class.java)
+                            if (!gid.isNullOrBlank()) updateCircle(gid)
+                        }
+                    }
+
+                // D. Scan entire relationships root for groups where agentId is listed in members, devices, or dossiers
+                com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.get().addOnSuccessListener { relSnap ->
+                    for (groupChild in relSnap.children) {
+                        val gid = groupChild.key ?: continue
+                        if (groupChild.child("devices").hasChild(agentId) || 
+                            groupChild.child("members").hasChild(agentId) || 
+                            groupChild.child("citizen_dossiers").hasChild(agentId)) {
+                            updateCircle(gid)
+                        }
+                    }
+                }
                 
-                SystemLogger.i(TAG, "LOOP-001 Avatar propagation complete across cloud matrix: agentId=$agentId avatar=$newAvatarId")
+                SystemLogger.i(TAG, "LOOP-001 Avatar propagation complete across all cloud matrix circles: agentId=$agentId avatar=$newAvatarId")
                 closedLoopCallbacks.forEach { cb -> cb(agentId, update) }
             }
             .addOnFailureListener { e ->

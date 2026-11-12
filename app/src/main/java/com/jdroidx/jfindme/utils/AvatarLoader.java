@@ -230,14 +230,35 @@ public class AvatarLoader {
                             }
                         } catch (Exception ignored) {}
                     }
+                    String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context);
+                    String selfAuth = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                    if (deviceId.equals(selfAgent) || (selfAuth != null && deviceId.equals(selfAuth)) || "SELF_USER".equals(deviceId) || "You".equalsIgnoreCase(deviceId)) {
+                        File selfCustom = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
+                        if (selfCustom.exists()) {
+                            try {
+                                Bitmap b = BitmapFactory.decodeFile(selfCustom.getAbsolutePath());
+                                if (b != null) {
+                                    Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
+                                    bitmapCache.put(cacheKey, customRes);
+                                    return customRes;
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
                 }
                 int seed = (deviceId != null && !deviceId.isEmpty()) ? deviceId.hashCode() : avatarIdStr.hashCode();
-                int dynamicIdx = Math.abs(seed) % 50 + 1;
+                int dynamicIdx = Math.abs(seed % 50) + 1;
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             } else if (avatarIdStr.matches("^\\d+$")) {
-                int idVal = Integer.parseInt(avatarIdStr);
-                int dynamicIdx = getResolvedAvatarIndex(idVal);
-                if (dynamicIdx > 0) {
+                // [Variables] idVal, dynamicIdx, resId | [Constants] None | [Dependencies] NumberFormatException | [Integration Points] FamilyFriendsActivity, MapActivity
+                try {
+                    int idVal = Integer.parseInt(avatarIdStr);
+                    int dynamicIdx = getResolvedAvatarIndex(idVal);
+                    if (dynamicIdx > 0) {
+                        resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
+                    }
+                } catch (NumberFormatException nfe) {
+                    int dynamicIdx = Math.abs(avatarIdStr.hashCode() % 50) + 1;
                     resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
                 }
             } else {
@@ -264,12 +285,21 @@ public class AvatarLoader {
 
     /**
      * 🚀 Centralized Smart-Fit Avatar Binder with Proportional Scaling & Optional Grey Mode
+     * [Variables] context, targetView, deviceId, avatarIdStr, isGreyMode | [Constants] defaultRes, dynamicIdx | [Dependencies] ImageView, Bitmap, File | [Integration Points] MapActivity, FamilyFriendsActivity
      */
     public static void bindAvatar(Context context, ImageView targetView, String avatarIdStr) {
-        bindAvatar(context, targetView, avatarIdStr, false);
+        bindAvatar(context, targetView, null, avatarIdStr, false);
     }
 
     public static void bindAvatar(Context context, ImageView targetView, String avatarIdStr, boolean isGreyMode) {
+        bindAvatar(context, targetView, null, avatarIdStr, isGreyMode);
+    }
+
+    public static void bindAvatar(Context context, ImageView targetView, String deviceId, String avatarIdStr) {
+        bindAvatar(context, targetView, deviceId, avatarIdStr, false);
+    }
+
+    public static void bindAvatar(Context context, ImageView targetView, String deviceId, String avatarIdStr, boolean isGreyMode) {
         if (targetView == null || context == null) return;
         targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         targetView.setAdjustViewBounds(true);
@@ -292,6 +322,34 @@ public class AvatarLoader {
             return;
         }
 
+        if (deviceId != null && !deviceId.isEmpty()) {
+            File peerCustom = new File(context.getFilesDir() + "/avatars", deviceId + "_custom.png");
+            if (peerCustom.exists()) {
+                try {
+                    Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
+                    if (b != null) {
+                        targetView.setImageBitmap(b);
+                        return;
+                    }
+                } catch (Exception ignored) {}
+            }
+            // 🛡️ Self Hardware Identity Anchor: Check custom_photo.png if deviceId matches self
+            String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context);
+            String selfAuth = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+            if (deviceId.equals(selfAgent) || (selfAuth != null && deviceId.equals(selfAuth)) || "SELF_USER".equals(deviceId) || "You".equalsIgnoreCase(deviceId)) {
+                File selfCustom = new File(context.getFilesDir() + "/avatars", "custom_photo.png");
+                if (selfCustom.exists()) {
+                    try {
+                        Bitmap b = BitmapFactory.decodeFile(selfCustom.getAbsolutePath());
+                        if (b != null) {
+                            targetView.setImageBitmap(b);
+                            return;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
         if (avatarIdStr.startsWith("/") || avatarIdStr.contains("avatars/")) {
             File targetFile = new File(avatarIdStr);
             if (targetFile.exists()) {
@@ -309,13 +367,21 @@ public class AvatarLoader {
         if (avatarIdStr.equals("butterfly") || avatarIdStr.equalsIgnoreCase("butterfly_angel") || avatarIdStr.equalsIgnoreCase("AngleButterfly")) {
             resId = context.getResources().getIdentifier("butterfly", "drawable", context.getPackageName());
         } else if (avatarIdStr.matches("^\\d+$")) {
-            int idVal = Integer.parseInt(avatarIdStr);
-            int dynamicIdx = getResolvedAvatarIndex(idVal);
-            if (dynamicIdx > 0) {
+            // [Variables] idVal, dynamicIdx, resId | [Constants] None | [Dependencies] NumberFormatException | [Integration Points] FamilyFriendsActivity, MapActivity
+            try {
+                int idVal = Integer.parseInt(avatarIdStr);
+                int dynamicIdx = getResolvedAvatarIndex(idVal);
+                if (dynamicIdx > 0) {
+                    resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
+                }
+            } catch (NumberFormatException nfe) {
+                int seed = (deviceId != null && !deviceId.isEmpty()) ? deviceId.hashCode() : avatarIdStr.hashCode();
+                int dynamicIdx = Math.abs(seed % 50) + 1;
                 resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
             }
         } else if (avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.contains(".vrm") || avatarIdStr.startsWith("AV_")) {
-            int dynamicIdx = Math.abs(avatarIdStr.hashCode()) % 50 + 1;
+            int seed = (deviceId != null && !deviceId.isEmpty()) ? deviceId.hashCode() : avatarIdStr.hashCode();
+            int dynamicIdx = Math.abs(seed % 50) + 1;
             resId = context.getResources().getIdentifier("avatar_custom_" + dynamicIdx, "drawable", context.getPackageName());
         } else {
             resId = context.getResources().getIdentifier(avatarIdStr, "drawable", context.getPackageName());

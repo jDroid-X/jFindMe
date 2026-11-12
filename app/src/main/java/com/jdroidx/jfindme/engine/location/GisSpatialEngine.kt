@@ -177,20 +177,41 @@ object GisSpatialEngine {
     }
 
     /**
-     * Computes the adaptive telemetry polling interval in milliseconds.
+     * [Variables] context, isSosActive, speedMps, batteryPct, isCharging, isStationary, vehicleInterval, walkingInterval, stillInterval, lowBatThreshold, baseInterval | [Constants] None | [Dependencies] RegistryManager | [Integration Points] TrackingService, SettingsActivity
+     * Computes the adaptive telemetry polling interval in milliseconds using configured user and system settings.
      */
     @JvmStatic
+    @JvmOverloads
     fun computeAdaptivePollingInterval(
         isSosActive: Boolean,
         speedMps: Float,
         batteryPct: Int,
         isCharging: Boolean,
-        isStationary: Boolean
+        isStationary: Boolean,
+        context: android.content.Context? = null
     ): Long {
         if (isSosActive) return 1000L // 1 sec emergency stream
-        if (batteryPct <= 15 && !isCharging) return 600000L // 10 min battery saver
-        if (isStationary && speedMps < 0.5f) return 300000L // 5 min stationary heartbeat
-        if (speedMps > 1.5f) return 5000L // 5 sec active motion tracking
-        return 15000L // 15 sec standard tracking
+        
+        val ctx = context ?: com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val lowBatThreshold = if (ctx != null) com.jdroidx.jfindme.utils.RegistryManager.getLowBatteryThreshold(ctx) else 20
+        val vehicleInterval = if (ctx != null) com.jdroidx.jfindme.utils.RegistryManager.getMotionVehicleIntervalMs(ctx) else 10000L
+        val walkingInterval = if (ctx != null) com.jdroidx.jfindme.utils.RegistryManager.getMotionWalkingIntervalMs(ctx) else 20000L
+        val stillInterval = if (ctx != null) com.jdroidx.jfindme.utils.RegistryManager.getMotionStillIntervalMs(ctx) else 300000L
+        val baseInterval = if (ctx != null) com.jdroidx.jfindme.utils.RegistryManager.getTrackingInterval(ctx) else 15000L
+
+        // 🔋 Dynamic Battery Guardrail: Disables aggressive GPS when battery falls below configured threshold
+        if (batteryPct in 1..lowBatThreshold && !isCharging) {
+            return maxOf(stillInterval, 600000L) // Minimum 10 min low-battery guard
+        }
+
+        // 🔋 Pre-critical Battery Guardrail (Low battery threshold + 10%)
+        if (batteryPct in (lowBatThreshold + 1)..(lowBatThreshold + 10) && !isCharging) {
+            return maxOf(walkingInterval * 2, 60000L) // 60s conservative power mode
+        }
+
+        if (isStationary && speedMps < 0.5f) return stillInterval
+        if (speedMps > 5.5f) return vehicleInterval // Fast vehicular motion (> 20 km/h)
+        if (speedMps > 1.2f) return walkingInterval // Pedestrian motion (approx 4.3 km/h - 20 km/h)
+        return baseInterval
     }
 }

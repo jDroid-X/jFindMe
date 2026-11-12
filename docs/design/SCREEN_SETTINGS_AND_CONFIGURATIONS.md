@@ -2,9 +2,10 @@
 
 > **jFindMe Enterprise Location Tracking Ecosystem**  
 > *Dynamic OOPS-based MVC/MVVM Closed-Loop Waterfall Standard*  
-> Document Version: 1.0.0 (Enterprise Gold Master)  
+> Document Version: 3.2.0 (Enterprise Gold Master - Control Hub & Sentinel Matrix Synchronized)  
 > Target System: Android (Java / Kotlin Dual-Engine Architecture)  
-> Author: jDroid-X (Issued by JEET)
+> Author: jDroid-X (Issued by JEET)  
+> Master Matrix Companion: [CONTROL_HUB_SETTINGS_AND_EVENT_FREQUENCY_MATRIX.md](CONTROL_HUB_SETTINGS_AND_EVENT_FREQUENCY_MATRIX.md)
 
 ---
 
@@ -137,8 +138,27 @@ The application encompasses **32 functional screens and management consoles** st
 | **8. Critical Security OS Broadcast**| `pref_security_receiver_active`| N/A | Event-driven | Boot, Airplane mode, Shutdown | Test Broadcast dispatch |
 | **9. Acoustic Siren Engine** | `pref_acoustic_siren_active` | `pref_siren_duration_sec` | `30 secs` | 10s, 30s, 60s, 120s | Launch `AcousticSirenActivity` |
 | **10. FCM Push Cloud Messaging** | `pref_fcm_active` | N/A | Realtime push | Background push handler | Invalidate & refresh FCM Token |
-| **11. Realtime Map Stream Poller** | `pref_live_map_stream_active`| `pref_stream_poll_interval_sec` | `5 secs` | 1s, 5s, 10s | Poll remote database snapshot |
-| **12. Package Upgrade Watcher** | `pref_upgrade_watch_active` | N/A | Event-driven | `MY_PACKAGE_REPLACED` | Diagnostic package verification |
+| **11. Realtime Map Stream Poller** | `pref_live_map_stream_active`| `pref_stream_poll_interval_sec` | `5 secs` | 1s, 5s, 15s, 30s | Poll remote database snapshot |
+| **12. Package Upgrade Watcher** | `pref_upgrade_watch_active` | N/A | Event-driven | `MY_PACKAGE_REPLACED` | Auto-resurrects services post-update |
+| **13. Storage Prune & SQLite VACUUM** | `pref_storage_prune_active` | `pref_storage_prune_interval_days` | `7 days` | 3d, 7d, 14d, 30d | `DatabaseMaintenanceWorker.runNow()` |
+
+---
+
+### 2.2.1 Priority 7B & 7C: Cloud Quotas & Closed-Loop Failover Sentinels
+
+*For the full 10 Priority Cards, exhaustive dialog options, and the Complete Event-to-Frequency Refresh Matrix, refer to the master specification:* **[CONTROL_HUB_SETTINGS_AND_EVENT_FREQUENCY_MATRIX.md](CONTROL_HUB_SETTINGS_AND_EVENT_FREQUENCY_MATRIX.md)**.
+
+| Sentinel Setting | Registry Key | Type / Default | Configurable Options | Active Enforcement |
+|---|---|---|---|---|
+| **Firebase Plan Tier** | `pref_firebase_plan_tier` | String (`SPARK`) | `SPARK` (Free), `BLAZE` (Pay-as-you-go) | Bandwidth & reset policy gating |
+| **Daily Download Quota** | `pref_spark_daily_download_mb` | Int (`360`) | 100MB, 200MB, 360MB, 500MB, 1000MB | Resets ~12:30 PM IST (Midnight PT) |
+| **Monthly Download Quota** | `pref_spark_monthly_download_gb` | Int (`10`) | 5GB, 10GB, 15GB, 25GB | Resets 1st of calendar month |
+| **Bandwidth Sentinel Guard** | `pref_spark_bandwidth_saver_enabled` | Boolean (`true`) | `true` (Lean payload <80B) / `false` | Stationary GPS payload deduplication |
+| **Dead-Reckoning Noise Gate** | `pref_dead_reckoning_radius_meters` | Float (`15.0f`) | 5m, 10m, 15m, 25m, 50m | 97% bandwidth data cut for stationary nodes |
+| **Presence Pulse Interval** | `pref_presence_pulse_interval_sec` | Long (`180000`) | 60s, 120s, 180s, 300s, 600s | Lightweight 28-byte online state beacon |
+| **Server ACK Timeout** | `pref_closed_loop_ack_timeout_ms` | Long (`5000`) | 2000ms, 3000ms, 5000ms, 8000ms, 10000ms | Closed-loop round-trip response deadline |
+| **Circuit Breaker Failures** | `pref_max_ack_failures` | Int (`2`) | 1, 2, 3, 5 Missed ACKs | Trips failover route to offline queue / SMS |
+| **Baseband SOS SMS Target** | `pref_failover_sms_target` | String (`""`) | E.164 Phone Number | Level N3 zero-data baseband emergency beacon |
 
 ---
 

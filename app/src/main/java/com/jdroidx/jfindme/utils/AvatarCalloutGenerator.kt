@@ -212,20 +212,38 @@ object AvatarCalloutGenerator {
             canvas.drawText(displayName, cx, textY, textPaint)
         }
 
-        // 2. Render Clean Avatar Graphic directly (No artificial circular crop or glowing halo on map)
+        // 2. Render Avatar Graphic with High-Definition Circular Clip and Role Ring
         if (avatarBmp != null) {
-            val scaledAvatar = Bitmap.createScaledBitmap(avatarBmp, avatarSize, avatarSize, true)
-
-            if (ragResult.isDesaturated && !isSelf) {
-                val greyPaint = Paint(avatarPaint).apply {
-                    val cm = ColorMatrix()
-                    cm.setSaturation(0f)
-                    colorFilter = ColorMatrixColorFilter(cm)
-                    alpha = (ragResult.cardAlpha * 255).toInt()
+            val circularAvatar = AvatarLoader.createCircularBitmap(avatarBmp, avatarSize)
+            if (circularAvatar != null) {
+                // Background disc for avatar contrast
+                val discPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    color = Color.parseColor("#0F172A")
                 }
-                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, greyPaint)
-            } else {
-                canvas.drawBitmap(scaledAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
+                canvas.drawCircle(cx, cyAvatar, halfAv, discPaint)
+
+                // Avatar image bitmap with desaturation filter if offline
+                if (ragResult.isDesaturated && !isSelf) {
+                    val greyPaint = Paint(avatarPaint).apply {
+                        val cm = ColorMatrix()
+                        cm.setSaturation(0f)
+                        colorFilter = ColorMatrixColorFilter(cm)
+                        alpha = (ragResult.cardAlpha * 255).toInt()
+                    }
+                    canvas.drawBitmap(circularAvatar, cx - halfAv, cyAvatar - halfAv, greyPaint)
+                } else {
+                    canvas.drawBitmap(circularAvatar, cx - halfAv, cyAvatar - halfAv, avatarPaint)
+                }
+
+                // High-precision circular role ring border around circular avatar
+                val ringStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    strokeWidth = 2.5f * density
+                    color = if (isSos) Color.parseColor("#FF1744") else roleColor
+                }
+                val strokeRadius = halfAv - (ringStrokePaint.strokeWidth / 2f)
+                canvas.drawCircle(cx, cyAvatar, strokeRadius, ringStrokePaint)
             }
         }
 

@@ -2363,13 +2363,16 @@ public class SettingsActivity extends BaseActivityJava {
             .show();
     }
 
+    // [Variables] current, values, customLabel, options, selected, chosen | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] RegistryManager, AlertDialog, UiArchitect | [Integration Points] MapActivity, SettingsActivity
     private void showDistantDeviceThresholdDialog() {
         int current = RegistryManager.getDistantDeviceThresholdMeters(this);
-        int[] values = {100, 200, 500, 1000};
+        int[] values = {25, 50, 100, 200, 500, 1000};
         String customLabel = "✏️ Custom Distance (" + current + "m)...";
         String[] options = {
+            "25m (Immediate Vicinity)",
+            "50m (Standard Proximity — Default)",
             "100m (Close Proximity — Tight Clustering)",
-            "200m (Standard — Recommended / Default)",
+            "200m (Medium Range)",
             "500m (Wide Area — Campus / Fleet)",
             "1000m (Extended — City-Scale)",
             customLabel
@@ -2388,7 +2391,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 dialog.dismiss();
                 if (which == options.length - 1) {
-                    showCustomNumericInputDialog("📡 Custom Distant Device Threshold", "Meters (20 - 50000)", 20, 50000, current, "m", chosen -> {
+                    showCustomNumericInputDialog("📡 Custom Distant Device Threshold", "Meters (10 - 50000)", 10, 50000, current, "m", chosen -> {
                         RegistryManager.setDistantDeviceThresholdMeters(this, chosen);
                         if (tvDistantVal != null) {
                             tvDistantVal.setText("Panel Threshold: " + chosen + "m (Distance to float HUD panel)");

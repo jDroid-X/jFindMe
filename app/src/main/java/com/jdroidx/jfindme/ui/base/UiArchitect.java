@@ -379,14 +379,17 @@ public class UiArchitect {
     public static void showRichOptionsDialog(BaseActivityJava activity, String title, OptionItem[] items, OptionSelectedCallback callback) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed() || items == null) return;
 
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(activity);
+        scrollView.setFillViewport(true);
         LinearLayout listContainer = new LinearLayout(activity);
         listContainer.setOrientation(LinearLayout.VERTICAL);
         int pad = activity.getResponsivePaddingQuota();
         listContainer.setPadding(pad, pad / 2, pad, pad / 2);
+        scrollView.addView(listContainer);
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
             .setTitle(title != null ? title : "Select Action")
-            .setView(listContainer)
+            .setView(scrollView)
             .setNegativeButton("CANCEL", null)
             .create();
 

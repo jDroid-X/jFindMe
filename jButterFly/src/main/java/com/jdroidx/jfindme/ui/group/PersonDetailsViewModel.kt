@@ -37,78 +37,80 @@ class PersonDetailsViewModel : ViewModel() {
      * Executes the Dual-Pull Protocol: Intercepts SQLite instantly, then listens to Cloud Firebase.
      */
     fun fetchDossier(context: Context, groupId: String?, targetUid: String) {
-        // 🧬 Forensic Anchor: Resolve Auth UID to Agent ID early to prevent lookup failures
-        val localDb = DatabaseHelper.getInstance(context)
-        val resolvedAgentId = localDb.resolveAgentIdLocally(targetUid) ?: targetUid
-        
-        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-        // Step 1: Hot-path SharedPreferences pull for Self (Auth UID or Local Agent ID)
-        val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
-        val localAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(context)
-        val isSelf = (myUid != null && targetUid == myUid) || (localAgentId.isNotEmpty() && targetUid == localAgentId)
-        if (isSelf) {
-            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-            val prefsMap = mutableMapOf<String, String>()
-            prefsMap["fullName"] = prefs.getString("user_nickname", "") ?: ""
-            prefsMap["phone"] = prefs.getString("user_phone", "") ?: ""
-            prefsMap["email_id"] = prefs.getString("email", "") ?: ""
-            prefsMap["dob"] = prefs.getString("user_dob", "") ?: ""
-            prefsMap["gender"] = prefs.getString("user_gender", "") ?: ""
-            prefsMap["country"] = prefs.getString("user_country", "") ?: ""
-            prefsMap["state"] = prefs.getString("user_state", "") ?: ""
-            prefsMap["city"] = prefs.getString("user_city", "") ?: ""
-            prefsMap["pincode"] = prefs.getString("user_pincode", "") ?: ""
-            prefsMap["address"] = prefs.getString("user_address", "") ?: ""
-            prefsMap["emergencyNote"] = prefs.getString("user_emergency_note", "") ?: ""
-            prefsMap["orgName"] = prefs.getString("org_name", "") ?: ""
-            prefsMap["deptName"] = prefs.getString("department", "") ?: ""
-            prefsMap["role_family"] = prefs.getString("role_family", "None") ?: "None"
-            prefsMap["role_friend"] = prefs.getString("role_friend", "None") ?: "None"
+        viewModelScope.launch(Dispatchers.IO) {
+            // 🧬 Forensic Anchor: Resolve Auth UID to Agent ID early to prevent lookup failures
+            val localDb = DatabaseHelper.getInstance(context)
+            val resolvedAgentId = localDb.resolveAgentIdLocally(targetUid) ?: targetUid
             
-            val effectiveSelfUid = myUid ?: localAgentId ?: targetUid
-            val permMask = localDb.getMemberPermissionsMask(effectiveSelfUid)
-            prefsMap["acl_live_tracking"] = if ((permMask and 0x01) != 0) "GRANTED" else "DENIED"
-            prefsMap["acl_history_audit"] = if ((permMask and 0x02) != 0) "GRANTED" else "DENIED"
-            prefsMap["acl_geofence"] = if ((permMask and 0x04) != 0) "GRANTED" else "DENIED"
-            prefsMap["acl_admin"] = if ((permMask and 0x08) != 0) "GRANTED" else "DENIED"
-            prefsMap["acl_ghost_override"] = if ((permMask and 0x10) != 0) "GRANTED" else "DENIED"
-            prefsMap["acl_biometrics"] = if ((permMask and 0x20) != 0) "GRANTED" else "DENIED"
-            prefsMap["cloud_sync_enabled"] = if ((permMask and 0x40) != 0) "TRUE" else "FALSE"
+            // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+            // Step 1: Hot-path SharedPreferences pull for Self (Auth UID or Local Agent ID)
+            val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+            val localAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(context)
+            val isSelf = (myUid != null && targetUid == myUid) || (localAgentId.isNotEmpty() && targetUid == localAgentId)
+            if (isSelf) {
+                val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                val prefsMap = mutableMapOf<String, String>()
+                prefsMap["fullName"] = prefs.getString("user_nickname", "") ?: ""
+                prefsMap["phone"] = prefs.getString("user_phone", "") ?: ""
+                prefsMap["email_id"] = prefs.getString("email", "") ?: ""
+                prefsMap["dob"] = prefs.getString("user_dob", "") ?: ""
+                prefsMap["gender"] = prefs.getString("user_gender", "") ?: ""
+                prefsMap["country"] = prefs.getString("user_country", "") ?: ""
+                prefsMap["state"] = prefs.getString("user_state", "") ?: ""
+                prefsMap["city"] = prefs.getString("user_city", "") ?: ""
+                prefsMap["pincode"] = prefs.getString("user_pincode", "") ?: ""
+                prefsMap["address"] = prefs.getString("user_address", "") ?: ""
+                prefsMap["emergencyNote"] = prefs.getString("user_emergency_note", "") ?: ""
+                prefsMap["orgName"] = prefs.getString("org_name", "") ?: ""
+                prefsMap["deptName"] = prefs.getString("department", "") ?: ""
+                prefsMap["role_family"] = prefs.getString("role_family", "None") ?: "None"
+                prefsMap["role_friend"] = prefs.getString("role_friend", "None") ?: "None"
+                
+                val effectiveSelfUid = myUid ?: localAgentId ?: targetUid
+                val permMask = localDb.getMemberPermissionsMask(effectiveSelfUid)
+                prefsMap["acl_live_tracking"] = if ((permMask and 0x01) != 0) "GRANTED" else "DENIED"
+                prefsMap["acl_history_audit"] = if ((permMask and 0x02) != 0) "GRANTED" else "DENIED"
+                prefsMap["acl_geofence"] = if ((permMask and 0x04) != 0) "GRANTED" else "DENIED"
+                prefsMap["acl_admin"] = if ((permMask and 0x08) != 0) "GRANTED" else "DENIED"
+                prefsMap["acl_ghost_override"] = if ((permMask and 0x10) != 0) "GRANTED" else "DENIED"
+                prefsMap["acl_biometrics"] = if ((permMask and 0x20) != 0) "GRANTED" else "DENIED"
+                prefsMap["cloud_sync_enabled"] = if ((permMask and 0x40) != 0) "TRUE" else "FALSE"
 
-            if (prefsMap["fullName"]?.isNotEmpty() == true) {
-                _dossierLiveData.postValue(prefsMap)
-                SystemLogger.i(TAG, "Dossier Hot-path Pull (Prefs) Successful for Self")
+                if (prefsMap["fullName"]?.isNotEmpty() == true) {
+                    _dossierLiveData.postValue(prefsMap)
+                    SystemLogger.i(TAG, "Dossier Hot-path Pull (Prefs) Successful for Self")
+                }
             }
-        }
 
-        // 2. Query Local SQLite Fallback Engine using Resolved Identity
-        val localRaw = localDb.getLocalDossier(resolvedAgentId)
-        if (localRaw.isNotEmpty()) {
-            val localMapped = mutableMapOf<String, String>()
-            localMapped["fullName"] = localRaw["fullName"] ?: ""
-            localMapped["owner_name"] = localRaw["owner_name"] ?: ""
-            localMapped["phone"] = localRaw["phone"] ?: ""
-            localMapped["email_id"] = localRaw["email"] ?: ""
-            localMapped["dob"] = localRaw["dob"] ?: ""
-            localMapped["gender"] = localRaw["gender"] ?: ""
-            localMapped["address"] = localRaw["address"] ?: ""
-            localMapped["country"] = localRaw["country"] ?: ""
-            localMapped["state"] = localRaw["state"] ?: ""
-            localMapped["city"] = localRaw["city"] ?: ""
-            localMapped["pincode"] = localRaw["pincode"] ?: ""
-            localMapped["emergencyNote"] = localRaw["emergency_note"] ?: ""
-            localMapped["orgName"] = localRaw["org_name"] ?: ""
-            localMapped["deptName"] = localRaw["department"] ?: ""
-            localMapped["role_family"] = localRaw["role_family"] ?: ""
-            localMapped["role_friend"] = localRaw["role_friend"] ?: ""
-            
-            SystemLogger.i(TAG, "Dossier Local SQL Pull Normalized (Identity: $resolvedAgentId) & Pushed.")
-            _dossierLiveData.postValue(localMapped)
+            // 2. Query Local SQLite Fallback Engine using Resolved Identity
+            val localRaw = localDb.getLocalDossier(resolvedAgentId)
+            if (localRaw.isNotEmpty()) {
+                val localMapped = mutableMapOf<String, String>()
+                localMapped["fullName"] = localRaw["fullName"] ?: ""
+                localMapped["owner_name"] = localRaw["owner_name"] ?: ""
+                localMapped["phone"] = localRaw["phone"] ?: ""
+                localMapped["email_id"] = localRaw["email"] ?: ""
+                localMapped["dob"] = localRaw["dob"] ?: ""
+                localMapped["gender"] = localRaw["gender"] ?: ""
+                localMapped["address"] = localRaw["address"] ?: ""
+                localMapped["country"] = localRaw["country"] ?: ""
+                localMapped["state"] = localRaw["state"] ?: ""
+                localMapped["city"] = localRaw["city"] ?: ""
+                localMapped["pincode"] = localRaw["pincode"] ?: ""
+                localMapped["emergencyNote"] = localRaw["emergency_note"] ?: ""
+                localMapped["orgName"] = localRaw["org_name"] ?: ""
+                localMapped["deptName"] = localRaw["department"] ?: ""
+                localMapped["role_family"] = localRaw["role_family"] ?: ""
+                localMapped["role_friend"] = localRaw["role_friend"] ?: ""
+                
+                SystemLogger.i(TAG, "Dossier Local SQL Pull Normalized (Identity: $resolvedAgentId) & Pushed.")
+                _dossierLiveData.postValue(localMapped)
+            }
         }
 
         // 3. Resolve Cloud Identity and Query Cloud Matrix
         FirebaseComm.resolveHardwareIdentity(targetUid) { agentId ->
-            val cloudAgentId = agentId ?: resolvedAgentId
+            val cloudAgentId = agentId ?: targetUid
             
             // SSOT: Always read canonical profile directly from /devices/{cloudAgentId}/profile
             val citizenRef = FirebaseComm.getProfileRef(cloudAgentId)
@@ -150,13 +152,15 @@ class PersonDetailsViewModel : ViewModel() {
                     
                     SystemLogger.i(TAG, "Dossier Firebase Sync Successful for Agent: $cloudAgentId")
                     
-                    // 🚀 LIVE QA FIX: Instantly sync Cloud override down to SQLite using the correct Agent ID
-                    val fRole = (if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]) ?: "MEMBER"
-                    localDb.commitHandshakeDossier(cloudAgentId, cloudMap, fRole, cloudMap["fullName"] ?: "Asset Node", cloudAgentId, cloudAgentId, "CLOUD_SYNC", "CLOUD")
-                    val rFri = cloudMap["role_friend"] ?: "None"
-                    localDb.updateCitizenRole(cloudAgentId, cloudMap["role_family"] ?: "None", rFri, rFri.contains("Friend"))
-                    
-                    _dossierLiveData.postValue(cloudMap) // Overrides the Local payload with newest Cloud data!
+                    viewModelScope.launch(Dispatchers.IO) {
+                        // 🚀 LIVE QA FIX: Instantly sync Cloud override down to SQLite using the correct Agent ID
+                        val localDb = DatabaseHelper.getInstance(context)
+                        val fRole = (if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]) ?: "MEMBER"
+                        localDb.commitHandshakeDossier(cloudAgentId, cloudMap, fRole, cloudMap["fullName"] ?: "Asset Node", cloudAgentId, cloudAgentId, "CLOUD_SYNC", "CLOUD")
+                        val rFri = cloudMap["role_friend"] ?: "None"
+                        localDb.updateCitizenRole(cloudAgentId, cloudMap["role_family"] ?: "None", rFri, rFri.contains("Friend"))
+                        _dossierLiveData.postValue(cloudMap) // Overrides the Local payload with newest Cloud data!
+                    }
                 }
             }.addOnFailureListener {
                 SystemLogger.w(TAG, "Cloud Node Awaited for $cloudAgentId. Local DB remains current Truth.")

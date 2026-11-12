@@ -306,13 +306,22 @@ public class HealthActivity extends BaseActivityJava {
     private void loadHardwareDossier() {
         if (tvHwBody == null) return;
         if (isRemoteMember) {
-            // 1. Load from local SQLite cache
-            java.util.Map<String, Object> localDossier = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getForensicDossierComplete(targetAgentId);
-            renderHardwareMap(localDossier);
+            final String safeTarget = (targetAgentId != null && !targetAgentId.isEmpty()) ? targetAgentId : com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+            // 1. Load from local SQLite cache asynchronously
+            new Thread(() -> {
+                try {
+                    java.util.Map<String, Object> localDossier = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(HealthActivity.this).getForensicDossierComplete(safeTarget);
+                    runOnUiThread(() -> {
+                        if (!isFinishing() && !isDestroyed()) {
+                            renderHardwareMap(localDossier);
+                        }
+                    });
+                } catch (Exception ignored) {}
+            }).start();
 
             // 2. Query cloud device node
             com.jdroidx.jfindme.data.remote.FirebaseComm.getDevicesRef()
-                .child(targetAgentId)
+                .child(safeTarget)
                 .child("device")
                 .get()
                 .addOnSuccessListener(snapshot -> {
@@ -501,26 +510,33 @@ public class HealthActivity extends BaseActivityJava {
             if (tvCellTower != null) tvCellTower.setText("Unavailable");
         }
 
-        String lookupHwId = (isRemoteMember && targetAgentId != null && !targetAgentId.isEmpty())
+        final String lookupHwId = (isRemoteMember && targetAgentId != null && !targetAgentId.isEmpty())
                 ? targetAgentId 
                 : com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
-        java.util.Map<String, Object> myVitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(lookupHwId);
-        if (tvClosedLoopRoute != null) {
-            String route = (myVitals != null && myVitals.get("active_route") != null) ? myVitals.get("active_route").toString() : "N1_CELLULAR_FAST";
-            tvClosedLoopRoute.setText(route);
-            tvClosedLoopRoute.setTextColor(Color.parseColor("#00E5FF"));
-        }
-        if (tvClosedLoopAck != null) {
-            long ackTs = (myVitals != null && myVitals.get("ack_timestamp") instanceof Number) ? ((Number) myVitals.get("ack_timestamp")).longValue() : 0L;
-            long rtt = (myVitals != null && myVitals.get("ack_latency_ms") instanceof Number) ? ((Number) myVitals.get("ack_latency_ms")).longValue() : 0L;
-            if (ackTs > 0) {
-                tvClosedLoopAck.setText("CONFIRMED (RTT: " + rtt + " ms)");
-                tvClosedLoopAck.setTextColor(Color.parseColor("#4CAF50"));
-            } else {
-                tvClosedLoopAck.setText("STANDBY / INITIALIZING");
-                tvClosedLoopAck.setTextColor(Color.parseColor("#FFA000"));
-            }
-        }
+        new Thread(() -> {
+            try {
+                java.util.Map<String, Object> myVitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(HealthActivity.this).getDeviceVitals(lookupHwId);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (tvClosedLoopRoute != null) {
+                        String route = (myVitals != null && myVitals.get("active_route") != null) ? myVitals.get("active_route").toString() : "N1_CELLULAR_FAST";
+                        tvClosedLoopRoute.setText(route);
+                        tvClosedLoopRoute.setTextColor(Color.parseColor("#00E5FF"));
+                    }
+                    if (tvClosedLoopAck != null) {
+                        long ackTs = (myVitals != null && myVitals.get("ack_timestamp") instanceof Number) ? ((Number) myVitals.get("ack_timestamp")).longValue() : 0L;
+                        long rtt = (myVitals != null && myVitals.get("ack_latency_ms") instanceof Number) ? ((Number) myVitals.get("ack_latency_ms")).longValue() : 0L;
+                        if (ackTs > 0) {
+                            tvClosedLoopAck.setText("CONFIRMED (RTT: " + rtt + " ms)");
+                            tvClosedLoopAck.setTextColor(Color.parseColor("#4CAF50"));
+                        } else {
+                            tvClosedLoopAck.setText("STANDBY / INITIALIZING");
+                            tvClosedLoopAck.setTextColor(Color.parseColor("#FFA000"));
+                        }
+                    }
+                });
+            } catch (Exception ignored) {}
+        }).start();
 
         // 7. Human-in-The-Loop Transport Health Verification & Actionable Fix Banner
         if (containerActionableFix != null) {

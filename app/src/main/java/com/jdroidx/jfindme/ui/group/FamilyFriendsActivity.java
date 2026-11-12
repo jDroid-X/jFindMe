@@ -93,6 +93,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
     // Architectural MVVM
     private FamilyFriendsViewModel viewModel;
     private List<RosterNode> currentRoster = new ArrayList<>();
+    private boolean hasReceivedRosterData = false;
     private String searchFilter = "";
     private final Map<String, Boolean> collapsedBranches = new HashMap<>();
     private String requestedFocusCategory = null;
@@ -296,6 +297,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
         viewModel.getRosterLiveData().observe(this, rosterNodes -> {
             if (rosterNodes == null) return;
+            hasReceivedRosterData = true;
             currentRoster = new ArrayList<>(rosterNodes);
             updateTabBadges();
             if (activeTab == TAB_FAMILY) {
@@ -351,12 +353,12 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         rosterContainer.addView(buildSearchAndFilterCluster());
         rosterContainer.addView(buildRootGuardianAnchor());
 
-    // Show loading skeleton while data hasn't arrived yet
-    if (currentRoster == null || currentRoster.isEmpty()) {
-        View loading = buildLoadingSkeleton("SYNCING_ROSTER");
-        rosterContainer.addView(loading);
-        return;
-    }
+        // Show loading skeleton only on fresh start before any roster snapshot arrives
+        if (!hasReceivedRosterData && (currentRoster == null || currentRoster.isEmpty())) {
+            View loading = buildLoadingSkeleton("SYNCING_ROSTER");
+            rosterContainer.addView(loading);
+            return;
+        }
 
     List<RosterNode> admins = new ArrayList<>();
         List<RosterNode> spouses = new ArrayList<>();
@@ -407,8 +409,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         UiArchitect.applySelection(this, tabFriends, true);
         rosterContainer.removeAllViews();
 
-        // Show loading skeleton while data hasn't arrived yet
-        if (currentRoster == null || currentRoster.isEmpty()) {
+        // Show loading skeleton only on fresh start before any roster snapshot arrives
+        if (!hasReceivedRosterData && (currentRoster == null || currentRoster.isEmpty())) {
             View loading = buildLoadingSkeleton("SYNCING_FRIENDS");
             rosterContainer.addView(loading);
             return;
@@ -782,11 +784,15 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         logCard.setFocusable(true);
         logCard.setOnClickListener(v -> showNodeQuickActionsDialog(node));
 
+        // [Variables] node, avId, avatar, rag | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Family & Friends Roster Avatar
         String avId = node.getAvatarId();
-        if (avId == null || avId.isEmpty() || avId.equals("avatar_custom_1")) avId = "butterfly";
+        if (avId == null || avId.isEmpty() || avId.equals("1")) {
+            avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(node.getUid());
+        }
+        if (avId == null || avId.isEmpty()) avId = "butterfly";
 
         ImageView avatar = new ImageView(this);
-        AvatarLoader.bindAvatar(this, avatar, avId, rag.isDesaturated());
+        AvatarLoader.bindAvatar(this, avatar, node.getUid(), avId, rag.isDesaturated());
         GradientDrawable ringDrawable = new GradientDrawable();
         ringDrawable.setShape(GradientDrawable.OVAL);
         ringDrawable.setColor(Color.parseColor("#1A000000"));
@@ -802,6 +808,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         textBlock.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         String display = node.getDisplayName().trim();
+        // [Variables] display, node | [Constants] None | [Dependencies] DatabaseHelper | [Integration Points] SSOT Name Resolution Fallback
+        if (display.isEmpty() || display.startsWith("Agent_") || display.startsWith("HW_")) {
+            String ssotName = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(node.getUid());
+            if (ssotName != null && !ssotName.trim().isEmpty() && !ssotName.startsWith("Agent_")) {
+                display = ssotName.trim();
+            }
+        }
         boolean isRawToken = display.startsWith("HW_") || display.startsWith("Agent_") || display.length() > 18;
         String friendlyTitle = isRawToken ? "Paired Device (" + (display.length() > 10 ? display.substring(0, 10) + "..." : display) + ")" : display;
 
@@ -915,6 +928,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         );
 
         List<UiArchitect.OptionItem> actionsList = new ArrayList<>();
+        actionsList.add(new UiArchitect.OptionItem("🔗 Connect with Device C (Family / Friends)", "Auto-connect " + node.getDisplayName() + " to another peer device with mutual Family or Friends relationship", com.jdroidx.jfindme.R.drawable.ic_family_friends));
         actionsList.add(new UiArchitect.OptionItem("📍 Track on Live Map", "Open real-time GPS tracking stream", android.R.drawable.ic_dialog_map));
         actionsList.add(new UiArchitect.OptionItem("⏱️ View Location History", "View past telemetry logs and timeline", android.R.drawable.ic_menu_recent_history));
         actionsList.add(new UiArchitect.OptionItem("🔊 Ring Device (30s Acoustic Alarm)", "Override DND and trigger high-volume siren", android.R.drawable.ic_lock_idle_alarm));
@@ -932,7 +946,9 @@ public class FamilyFriendsActivity extends BaseActivityJava {
 
         UiArchitect.showRichOptionsDialog(this, node.getDisplayName() + " (" + node.getRoleTitle() + ")", actions, (which, label) -> {
             String actLabel = label != null ? label : "";
-            if (actLabel.contains("Live Map")) {
+            if (actLabel.contains("Connect with Device C")) {
+                showConnectBToCDialogForNode(node);
+            } else if (actLabel.contains("Live Map")) {
                 FirebaseComm.triggerRemoteLocateDevice(node.getUid());
                 Intent mapIntent = new Intent(this, MapActivity.class);
                 mapIntent.putExtra("TARGET_UID", node.getUid());
@@ -972,6 +988,210 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 confirmUnlinkDevice(node);
             }
         });
+    }
+
+    private void showConnectBToCDialogForNode(RosterNode node) {
+        if (node == null || node.getUid() == null) return;
+        String devBUid = node.getUid();
+        String devBName = (node.getDisplayName() != null) ? node.getDisplayName() : "Device " + devBUid;
+
+        String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String selfUid = FirebaseAuth.getInstance().getUid();
+        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+        List<Pair<String, String>> candidates = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        seenIds.add(devBUid.toUpperCase(Locale.getDefault()));
+        if (selfAgentId != null && !selfAgentId.isEmpty()) seenIds.add(selfAgentId.toUpperCase(Locale.getDefault()));
+        if (selfUid != null && !selfUid.isEmpty()) seenIds.add(selfUid.toUpperCase(Locale.getDefault()));
+
+        List<RosterNode> allNodes = (viewModel != null && viewModel.getRosterNodes().getValue() != null) ? viewModel.getRosterNodes().getValue() : new ArrayList<>();
+        for (RosterNode n : allNodes) {
+            if (n == null) continue;
+            String uid = n.getUid();
+            if (uid != null && !uid.isEmpty() && !seenIds.contains(uid.toUpperCase(Locale.getDefault()))) {
+                seenIds.add(uid.toUpperCase(Locale.getDefault()));
+                String dName = (n.getDisplayName() != null && !n.getDisplayName().isEmpty()) ? n.getDisplayName() : "Node " + uid;
+                candidates.add(new Pair<>(uid, dName));
+            }
+        }
+
+        List<Map<String, Object>> offlineNodes = localDb.getOfflineRoster();
+        for (Map<String, Object> offNode : offlineNodes) {
+            String uid1 = (String) offNode.get("uid_1");
+            if (uid1 != null && !uid1.isEmpty() && !seenIds.contains(uid1.toUpperCase(Locale.getDefault()))) {
+                seenIds.add(uid1.toUpperCase(Locale.getDefault()));
+                String name = (String) offNode.get("name_alias");
+                if (name == null || name.isEmpty()) name = (String) offNode.get("device_name");
+                if (name == null || name.isEmpty()) name = "Node " + uid1;
+                candidates.add(new Pair<>(uid1, name));
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            UiArchitect.showInputPromptDialog(this, "Connect to Device C", "Enter Device C Agent ID to pair with " + devBName + ":", "", manualId -> {
+                if (manualId != null && !manualId.trim().isEmpty()) {
+                    String cleanCId = manualId.trim();
+                    showRelationshipChoiceDialogForNode(devBUid, devBName, cleanCId, "Device " + cleanCId);
+                }
+            });
+            return;
+        }
+
+        List<String> displayList = new ArrayList<>();
+        for (Pair<String, String> c : candidates) {
+            displayList.add("📱 " + c.second + " (" + c.first + ")");
+        }
+        displayList.add("⌨️ Enter Device C ID Manually...");
+
+        String[] items = displayList.toArray(new String[0]);
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🔗 Select Device C to Connect with " + devBName)
+            .setItems(items, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == items.length - 1) {
+                    UiArchitect.showInputPromptDialog(this, "Manual Device C Entry", "Enter Device C Agent ID:", "", manualId -> {
+                        if (manualId != null && !manualId.trim().isEmpty()) {
+                            String cleanCId = manualId.trim();
+                            showRelationshipChoiceDialogForNode(devBUid, devBName, cleanCId, "Device " + cleanCId);
+                        }
+                    });
+                } else {
+                    Pair<String, String> chosen = candidates.get(which);
+                    showRelationshipChoiceDialogForNode(devBUid, devBName, chosen.first, chosen.second);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showRelationshipChoiceDialogForNode(String devBUid, String devBName, String devCUid, String devCName) {
+        String[] catOptions = new String[]{
+            "👨‍👩‍👧 Family Relationship (Guardian, Child, Spouse, Sibling)",
+            "🤝 Friends Relationship (Best Friend, Close Friend, Peer)"
+        };
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Relationship: " + devBName + " ↔ " + devCName)
+            .setItems(catOptions, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == 0) {
+                    String[] familyRoles = new String[]{
+                        "🛡️ Parent / Guardian (" + devBName + " is Guardian ↔ " + devCName + " is Child)",
+                        "👶 Child / Dependent (" + devBName + " is Child ↔ " + devCName + " is Guardian)",
+                        "💍 Spouse / Partner (Mutual Spouses)",
+                        "👨‍👩‍👧 Sibling / Family Member (Mutual Family)"
+                    };
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("👨‍👩‍👧 Family Role: " + devBName)
+                        .setItems(familyRoles, (famDialog, famWhich) -> {
+                            famDialog.dismiss();
+                            String roleB;
+                            String roleC;
+                            switch (famWhich) {
+                                case 0: roleB = "Guardian"; roleC = "Child"; break;
+                                case 1: roleB = "Child"; roleC = "Guardian"; break;
+                                case 2: roleB = "Spouse"; roleC = "Spouse"; break;
+                                default: roleB = "Family"; roleC = "Family"; break;
+                            }
+                            String confirmMsg = "Auto-connect " + devBName + " and " + devCName + " as Family (" + roleB + " ↔ " + roleC + ")?\n\nBoth devices will immediately see their mutual relationship across all screens.";
+                            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                                executeDirectBToCConnectionForNode(devBUid, devBName, devCUid, devCName, roleB, roleC, true);
+                            }, null);
+                        })
+                        .setNegativeButton("BACK", (d, w) -> showRelationshipChoiceDialogForNode(devBUid, devBName, devCUid, devCName))
+                        .show();
+                } else {
+                    String[] friendRoles = new String[]{
+                        "🌟 Best Friends (Mutual)",
+                        "🤝 Close Friends (Mutual)",
+                        "👥 Friends / Peers (Mutual)",
+                        "🏢 Colleagues / Work (Mutual)"
+                    };
+                    new android.app.AlertDialog.Builder(this)
+                        .setTitle("🤝 Friends Role: " + devBName)
+                        .setItems(friendRoles, (frDialog, frWhich) -> {
+                            frDialog.dismiss();
+                            String roleB;
+                            String roleC;
+                            switch (frWhich) {
+                                case 0: roleB = "Best Friend"; roleC = "Best Friend"; break;
+                                case 1: roleB = "Close Friend"; roleC = "Close Friend"; break;
+                                case 2: roleB = "Friend"; roleC = "Friend"; break;
+                                default: roleB = "Colleague"; roleC = "Colleague"; break;
+                            }
+                            String confirmMsg = "Auto-connect " + devBName + " and " + devCName + " as Friends (" + roleB + " ↔ " + roleC + ")?\n\nBoth devices will immediately see their mutual relationship across all screens.";
+                            UiArchitect.showConfirmationDialog(this, "Confirm Connection", confirmMsg, "Connect Now", "Cancel", () -> {
+                                executeDirectBToCConnectionForNode(devBUid, devBName, devCUid, devCName, roleB, roleC, false);
+                            }, null);
+                        })
+                        .setNegativeButton("BACK", (d, w) -> showRelationshipChoiceDialogForNode(devBUid, devBName, devCUid, devCName))
+                        .show();
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void executeDirectBToCConnectionForNode(String devBUid, String devBName, String devCUid, String devCName, String roleB, String roleC, boolean isFamily) {
+        String selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + selfDevId);
+        com.jdroidx.jfindme.utils.AngelLoader.show(this);
+        com.jdroidx.jfindme.utils.AngelLoader.setStatus(this, "Auto-connecting " + devBName + " ↔ " + devCName + "...");
+
+        com.jdroidx.jfindme.data.repository.PairingRepository.linkDevicesWithRoles(
+            myGrp,
+            devBUid,
+            devCUid,
+            roleB,
+            roleC,
+            null,
+            (success, errMsg) -> {
+                runOnUiThread(() -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.hide(this);
+                    if (Boolean.TRUE.equals(success)) {
+                        com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+
+                        String famRoleB = isFamily ? roleB : "None";
+                        String frRoleB = isFamily ? "None" : roleB;
+                        String famRoleC = isFamily ? roleC : "None";
+                        String frRoleC = isFamily ? "None" : roleC;
+
+                        localDb.updateCitizenRole(devBUid, famRoleB, frRoleB, !isFamily, myGrp);
+                        localDb.updateCitizenRole(devCUid, famRoleC, frRoleC, !isFamily, myGrp);
+
+                        localDb.saveRosterNode(devBUid, devBName, roleB, "LIVE", false, !isFamily);
+                        localDb.saveRosterNode(devCUid, devCName, roleC, "LIVE", false, !isFamily);
+
+                        java.util.Map<String, Object> profUpdateB = new java.util.HashMap<>();
+                        profUpdateB.put("role_family", famRoleB);
+                        profUpdateB.put("role_friend", frRoleB);
+                        profUpdateB.put("role_title", roleB);
+                        profUpdateB.put("is_friend", !isFamily);
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(devBUid).updateChildren(profUpdateB);
+
+                        java.util.Map<String, Object> profUpdateC = new java.util.HashMap<>();
+                        profUpdateC.put("role_family", famRoleC);
+                        profUpdateC.put("role_friend", frRoleC);
+                        profUpdateC.put("role_title", roleC);
+                        profUpdateC.put("is_friend", !isFamily);
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(devCUid).updateChildren(profUpdateC);
+
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+
+                        if (viewModel != null) {
+                            viewModel.initializeCloudSync(this);
+                        }
+
+                        String msg = devBName + " is now connected to " + devCName + " as " + (isFamily ? "Family (" : "Friend (") + roleB + " ↔ " + roleC + ").";
+                        UiArchitect.showSlideNotificationBanner(this, "RELATIONSHIP ESTABLISHED", msg, false, 4500, null, null);
+                        Toast.makeText(this, "✅ " + msg, Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "Failed to connect: " + errMsg, Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        );
     }
 
     /**
@@ -1130,18 +1350,47 @@ public class FamilyFriendsActivity extends BaseActivityJava {
      */
     private void showLinkCoParentDialog(RosterNode childNode) {
         String myAgentId = DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "DEFAULT_GROUP");
         List<RosterNode> coParentCandidates = new ArrayList<>();
+        java.util.Set<String> seenIds = new java.util.HashSet<>();
+        if (myAgentId != null) seenIds.add(myAgentId.toUpperCase());
+        if (childNode != null && childNode.getUid() != null) seenIds.add(childNode.getUid().toUpperCase());
+
         if (viewModel != null && viewModel.getRosterLiveData().getValue() != null) {
             for (RosterNode n : viewModel.getRosterLiveData().getValue()) {
                 if (n == null) continue;
                 String uid = n.getUid();
-                if (uid.equalsIgnoreCase(myAgentId) || uid.equalsIgnoreCase(childNode.getUid())) continue;
+                if (uid == null || seenIds.contains(uid.toUpperCase())) continue;
                 String r = n.getRoleTitle() != null ? n.getRoleTitle().toLowerCase() : "";
                 if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin")) {
                     coParentCandidates.add(n);
+                    seenIds.add(uid.toUpperCase());
                 }
             }
         }
+
+        // Merge candidates from local SQLite offline roster
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+            List<Map<String, Object>> offlineRoster = localDb.getOfflineRoster(myGrp);
+            if (offlineRoster != null) {
+                for (Map<String, Object> node : offlineRoster) {
+                    String uid = (String) node.get("uid_1");
+                    if (uid == null || uid.isEmpty() || seenIds.contains(uid.toUpperCase())) continue;
+                    String role = (String) node.get("role");
+                    String r = role != null ? role.toLowerCase() : "";
+                    if (r.contains("guardian") || r.contains("parent") || r.contains("spouse") || r.contains("admin")) {
+                        String name = (String) node.get("display_name");
+                        if (name == null || name.isEmpty()) name = "Guardian (" + uid + ")";
+                        coParentCandidates.add(new RosterNode(
+                            uid, name, role != null ? role : "Guardian", "Offline", false, false,
+                            null, "ROOT_GUARDIAN", 100, false, "Offline", 0L, null, null, null, 0xFF
+                        ));
+                        seenIds.add(uid.toUpperCase());
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
 
         List<UiArchitect.OptionItem> optionsList = new ArrayList<>();
         for (RosterNode cand : coParentCandidates) {
@@ -1207,6 +1456,13 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                             childNode.getUid(),
                             "PAIRED"
                         );
+                        localDb.appendValidLinkedAgent(coParentId, childNode.getUid());
+                        localDb.appendValidLinkedAgent(childNode.getUid(), coParentId);
+                        String selfId = DeviceIdentityHelper.getOrGenerateAgentId(this);
+                        if (selfId != null && !selfId.isEmpty()) {
+                            localDb.appendValidLinkedAgent(selfId, coParentId);
+                            localDb.appendValidLinkedAgent(selfId, childNode.getUid());
+                        }
                     } catch (Exception ignored) { }
 
                     UiArchitect.showSlideNotificationBanner(this, "CO-PARENT LINKED",
@@ -1247,6 +1503,10 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         Toast.makeText(this, "Generating time-limited Circle Invite Code...", Toast.LENGTH_SHORT).show();
         PairingRepository.createCircleInviteCode(hostAgentId, hostGroup, "MEMBER", code -> {
             runOnUiThread(() -> {
+                if (code == null || code.trim().isEmpty()) {
+                    UiArchitect.showValidationDialog(this, "Generation Failed", "Could not generate circle invite code. Please check your internet connection.", null);
+                    return;
+                }
                 AlertDialog codeDialog = new AlertDialog.Builder(this)
                     .setTitle("Circle Invite Code")
                     .setMessage("Share this 6-character code with your family member or friend to instantly join your circle (Valid for 48 Hours):\n\n" +

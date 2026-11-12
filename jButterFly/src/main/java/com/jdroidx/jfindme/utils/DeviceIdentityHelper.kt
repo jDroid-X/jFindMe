@@ -146,6 +146,15 @@ object DeviceIdentityHelper {
             return cached
         }
 
+        // 🛡️ Post-Reinstall Anchor: Try persistent anchor from external media directory
+        val anchorId = readPersistentAnchor(context)
+        if (isValidAgentId(anchorId)) {
+            RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, anchorId!!)
+            agentIdCache = anchorId
+            SystemLogger.i(TAG, "Restored Agent ID from persistent silicon anchor: $anchorId")
+            return anchorId
+        }
+
         val rawHw = getRawAndroidId(context).uppercase().filter { it.isLetterOrDigit() }
         val model = (Build.MODEL ?: "").uppercase()
         val brand = (Build.BRAND ?: "").uppercase()
@@ -170,6 +179,7 @@ object DeviceIdentityHelper {
         if (isValidAgentId(derivedId)) {
             RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, derivedId)
             agentIdCache = derivedId
+            savePersistentAnchor(context, derivedId)
             SystemLogger.i(TAG, "Deterministic Hardware Agent ID resolved: $derivedId (from raw: $rawHw)")
             return derivedId
         }
@@ -178,6 +188,7 @@ object DeviceIdentityHelper {
         val safeId = derivedId.replace(Regex("[^A-Z0-9]"), "").take(8).padEnd(8, '0').uppercase()
         RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, safeId)
         agentIdCache = safeId
+        savePersistentAnchor(context, safeId)
         SystemLogger.w(TAG, "Generated fallback agent ID: $safeId")
         return safeId
     }

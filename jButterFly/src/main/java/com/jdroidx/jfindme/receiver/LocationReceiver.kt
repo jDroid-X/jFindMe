@@ -24,6 +24,13 @@ class LocationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent == null) return
 
+        // 🔋 BATTERY & PERFORMANCE DEDUP: If TrackingService is actively running, its in-process callback
+        // processes location updates with full dead-reckoning and smoothing. Suppress duplicate execution.
+        if (WatchdogAlarmReceiver.isTrackingServiceRunning(context)) {
+            SystemLogger.d(TAG, "Suppressed redundant LocationReceiver callback (TrackingService foreground active).")
+            return
+        }
+
         try {
             if (LocationResult.hasResult(intent)) {
                 val locationResult = LocationResult.extractResult(intent) ?: return

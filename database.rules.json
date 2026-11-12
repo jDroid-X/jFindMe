@@ -19,6 +19,16 @@
       ".write": "auth != null",
       ".indexOn": ["invite_code", "hostDeviceId", "targetDeviceId", "status", "childDeviceId", "parentDeviceId", "pairCode", "creator_device_id"]
     },
+    "pairing_sessions": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["pairCode", "sessionId", "userId", "primaryDevice", "status", "expiresAt"]
+    },
+    "circle_invites": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["code", "host_agent", "group_id", "status", "expires_at"]
+    },
     "devices": {
       ".indexOn": [
         "Identity/auth_uid",
@@ -156,6 +166,14 @@
       ".read": "auth != null",
       ".write": "auth != null",
       ".indexOn": ["invite_code"]
+    },
+    "users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     },
     "locations": {
       ".read": "auth != null",
