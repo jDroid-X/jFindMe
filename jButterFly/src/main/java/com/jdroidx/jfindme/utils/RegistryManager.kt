@@ -245,10 +245,18 @@ object RegistryManager {
         get(context).getString(key, default) ?: default
 
     @JvmStatic fun getInt(context: Context, key: String, default: Int = 0): Int =
-        get(context).getInt(key, default)
+        try {
+            get(context).getInt(key, default)
+        } catch (_: ClassCastException) {
+            get(context).getLong(key, default.toLong()).toInt()
+        }
 
     @JvmStatic fun getLong(context: Context, key: String, default: Long = 0L): Long =
-        get(context).getLong(key, default)
+        try {
+            get(context).getLong(key, default)
+        } catch (_: ClassCastException) {
+            get(context).getInt(key, default.toInt()).toLong()
+        }
 
     @JvmStatic fun getFloat(context: Context, key: String, default: Float = 0f): Float =
         get(context).getFloat(key, default)

@@ -543,6 +543,12 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 com.jdroidx.jfindme.utils.AngelLoader.hide(this);
             }, 1000);
         }
+
+        // [Variables]: launchPanel | [Constants]: LAUNCH_PANEL, RADAR | [Dependencies]: Handler, Looper | [Integration Points]: Tactical Proximity Radar Deep-Link Handshake
+        if (getIntent() != null && "RADAR".equals(getIntent().getStringExtra("LAUNCH_PANEL"))) {
+            getIntent().removeExtra("LAUNCH_PANEL");
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::openLocateDrawer, 600);
+        }
     }
 
     private void checkPendingSilentUpdateNotification() {

@@ -594,6 +594,19 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             } catch (ex: Exception) { }
         }
 
+        // [Variables]: db | [Constants]: DevicePolicyTable.COL_DEVICE_ID, DevicePolicyTable.COL_CREATED_ON | [Dependencies]: DevicePolicyTable, SQLiteDatabase | [Integration Points]: Self-Healing Policy Schema Parity
+        // 🛡️ Self-Healing Schema Guard: Guarantee device_id and created_on exist in device_policy_state
+        try {
+            db.rawQuery("SELECT ${DevicePolicyTable.COL_DEVICE_ID} FROM ${DevicePolicyTable.TABLE_NAME} LIMIT 0", null).use { }
+        } catch (_: Exception) {
+            try { db.execSQL("ALTER TABLE ${DevicePolicyTable.TABLE_NAME} ADD COLUMN ${DevicePolicyTable.COL_DEVICE_ID} TEXT DEFAULT ''") } catch (_: Exception) { }
+        }
+        try {
+            db.rawQuery("SELECT ${DevicePolicyTable.COL_CREATED_ON} FROM ${DevicePolicyTable.TABLE_NAME} LIMIT 0", null).use { }
+        } catch (_: Exception) {
+            try { db.execSQL("ALTER TABLE ${DevicePolicyTable.TABLE_NAME} ADD COLUMN ${DevicePolicyTable.COL_CREATED_ON} TEXT DEFAULT ''") } catch (_: Exception) { }
+        }
+
         // 🚀 Self-Healing: Verify user_profile has 'name' and 'email' columns (V58.2 Patch)
         try {
             db.rawQuery("SELECT name FROM user_profile LIMIT 0", null).use { }
@@ -5024,19 +5037,20 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    fun setDevicePolicy(key: String, value: String, active: Boolean = true): Boolean {
+    // [Variables]: key, value, active, deviceId, db | [Constants]: DevicePolicyTable.TABLE_NAME | [Dependencies]: DevicePolicyTable, SQLiteDatabase | [Integration Points]: RegistryManager & Relative Group-By Hierarchy
+    fun setDevicePolicy(key: String, value: String, active: Boolean = true, deviceId: String = ""): Boolean {
         return try {
             val db = writableDatabase
-            DevicePolicyTable.setPolicy(db, key, value, active) > 0
+            DevicePolicyTable.setPolicy(db, key, value, active, deviceId) > 0
         } catch (e: Exception) {
             false
         }
     }
 
-    fun getDevicePolicy(key: String): String? {
+    fun getDevicePolicy(key: String, deviceId: String = ""): String? {
         return try {
             val db = readableDatabase
-            DevicePolicyTable.getPolicy(db, key)
+            DevicePolicyTable.getPolicyForDevice(db, key, deviceId)
         } catch (e: Exception) {
             null
         }

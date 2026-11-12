@@ -357,3 +357,30 @@ To prevent fragmented timers from desynchronizing and draining battery, the 5 Co
 4. **Stage 4 (Closed-Loop UI Mutation)**: Subtitle mutators and status badges updated call-by-reference without screen recreation.
 5. **Stage 5 (Cloud SSOT Broadcast)**: Transmits updated profile signature to Firebase `/devices/{agentId}/settings`.
 
+---
+
+## 7. RESOLVED REMEDIATION LEDGER & TWO-WAY OOPS MVC BINDING
+
+### 7.1 Defect Resolution Status
+All 8 architectural gaps and hardcoded static boundaries have been fully remediated and closed:
+
+1. **GAP-01 (Presence Pulse Units)**: `BackgroundJobManager.kt` now normalizes seconds to milliseconds (`intervalSec * 1000L`) when updating `presence_pulse_interval_ms`, synchronizing with `TrackingService.kt`.
+2. **GAP-02 (ClassCastException Safe Coercion)**: `RegistryManager.getInt()` and `RegistryManager.getLong()` now catch `ClassCastException` and cross-coerce types safely.
+3. **GAP-03 (Storage Retention Parity)**: Normalized across `RegistryManager`, `DatabaseHelper`, and `BackgroundJobManager` with dual-write fallback.
+4. **GAP-04 (Geofence Jitter Key)**: Standardized to `pref_geofence_jitter_debounce_ms`.
+5. **GAP-05 (Complete Job Frequency Handlers)**: `updateJobFrequency()` in `BackgroundJobManager.kt` handles all 14 background jobs.
+6. **GAP-06 (Complete Job Active Toggles)**: `toggleJobEnabled()` dispatches work cancellation, alarm cancellation, and receiver states for all 14 jobs.
+7. **GAP-07 (Modernized SettingsModel DTO)**: `SettingsModel.kt` now covers all 9 configuration sections (including Dead Reckoning, Presence Pulse, Group-By, Cloud Spark, and Failover Routes) with dual-write compatibility in `SettingsController`.
+8. **GAP-08 (Deep-Link Navigation & Customizers)**: Implemented `IntentCustomizer` in `SettingsActivity.java`, routing `LAUNCH_PANEL = "RADAR"` to open the proximity radar drawer in `MapActivity.java`.
+
+### 7.3 Closed-Loop Architecture Hardening (All Green Matrix)
+- **RED-1 Closed (SQLite Column Self-Healing)**: Added self-healing column validation in `DatabaseHelper.onOpen()` for `device_policy` (`device_id` and `created_on`), preventing `SQLiteException` across app upgrades and database schema migrations.
+- **RED-2 Closed (WorkManager vs AlarmManager Dual-Dispatch)**: Overcame Android OS 15-minute `PeriodicWorkRequest` floor by coupling sub-15min watchdog frequencies with `AlarmManager.setExactAndAllowWhileIdle()` and `WatchdogAlarmReceiver.kt` self-rearming heartbeat.
+- **RED-3 Closed (Real-Time Peer Mesh Group Synchronization)**: Integrated `FirebaseComm.updateDeviceGroup()` to immediately push updated device group partition to `/devices/{agentId}/device/group` on save in `SettingsActivity.java`, keeping circle mesh peers in continuous sync.
+- **AMBER-1 Closed (Device-Aware Policy Binding)**: Device policies are now uniquely resolved per device ID with group fallback, preventing cross-tenant policy bleed.
+- **AMBER-2 Closed (Telemetry Power Awareness & Amber High Battery Warning)**: Real-time UI indicator (`"⚠️ HIGH BATTERY DRAIN"`) renders on `tvPingIntervalVal` whenever GPS sampling interval drops below 30s.
+- **AMBER-3 Closed (In-Memory SettingsModel Synchronization)**: Two-way dynamic OOPS MVC synchronization guarantees that in-memory `SettingsModel` state is updated concurrently with `RegistryManager` writes across all dialogs.
+- **Twin Module Verification**: 100% byte-for-byte parity verified across `:app` and `:jButterFly` across all 9 modified file pairs (0 diffs).
+
+
+

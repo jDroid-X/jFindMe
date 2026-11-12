@@ -46,6 +46,8 @@ import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.utils.RegistryManager;
+import com.jdroidx.jfindme.data.remote.FirebaseComm;
+import com.google.firebase.auth.FirebaseAuth;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +109,20 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvMaxAckFailuresVal;
     private TextView tvFailoverSmsVal;
 
+    // [Variables]: settingsController, settingsModel, tvSparkPlanQuotaVal, tvDeadReckoningVal, tvPresencePulseVal, tvDeviceGroupVal, tvStorageRetentionVal, tvGeocodeCacheVal, tvDatabaseEngineTtlVal
+    // [Constants]: None
+    // [Dependencies]: SettingsController, SettingsModel, TextView
+    // [Integration Points]: Dynamic OOPS MVC Two-Way Data Binding for Cards 7, 7B, 7C
+    private SettingsController settingsController;
+    private SettingsModel settingsModel;
+    private TextView tvSparkPlanQuotaVal;
+    private TextView tvDeadReckoningVal;
+    private TextView tvPresencePulseVal;
+    private TextView tvDeviceGroupVal;
+    private TextView tvStorageRetentionVal;
+    private TextView tvGeocodeCacheVal;
+    private TextView tvDatabaseEngineTtlVal;
+
     // Live Badges (Tab 2 Screen Modules)
     private TextView badgeRosterTv;
     private TextView badgeZonesTv;
@@ -127,6 +143,12 @@ public class SettingsActivity extends BaseActivityJava {
 
     @Override
     protected View createLayout() {
+        // [Variables]: settingsController, settingsModel | [Constants]: None | [Dependencies]: SettingsController, SettingsModel | [Integration Points]: OOPS MVC Initialization
+        if (settingsController == null) {
+            settingsController = new SettingsController(this);
+            settingsModel = settingsController.loadSettings();
+        }
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(getPrimaryColor());
@@ -395,7 +417,8 @@ public class SettingsActivity extends BaseActivityJava {
         gpsCard.setOrientation(LinearLayout.VERTICAL);
 
         long currInterval = RegistryManager.getTrackingInterval(this) / 1000;
-        String pingSub = "Active Cadence: " + currInterval + "s | Preset/Stepper Mode";
+        String drainWarning = currInterval < 30 ? " ⚠️ HIGH BATTERY DRAIN" : "";
+        String pingSub = "Active Cadence: " + currInterval + "s" + drainWarning + " | Preset/Stepper Mode";
         gpsCard.addView(createSettingTile("BATTERY OPTIMIZER & PING HUB", pingSub, com.jdroidx.jfindme.R.drawable.ic_device_health, v -> showBatteryOptimizerDialog(), tv -> tvPingIntervalVal = tv), btnLp);
 
         // Hardware Motion Co-Processor (Parent Switch)
@@ -642,13 +665,13 @@ public class SettingsActivity extends BaseActivityJava {
         // [Constants]: Icon drawables
         // [Dependencies]: RegistryManager, BackgroundJobsConfigDialog
         // [Integration Points]: Card 7 Offline Vault & Sentinels, Database Vacuum & TTLs
-        View bgJobsLauncher = createIconButton("⚙️ 12 BACKGROUND JOBS & ENGINE SENTINELS", com.jdroidx.jfindme.R.drawable.ic_settings_gears, true, v -> BackgroundJobsConfigDialog.show(this));
-        vaultCard.addView(createSettingTile("DATABASE VACUUM & STORAGE RETENTION", "Rolling Retention: " + RegistryManager.getStorageRetentionDays(this) + " Days • WAL Compaction", android.R.drawable.ic_menu_manage, v -> showStorageRetentionDialog(), null), btnLp);
+        View bgJobsLauncher = createIconButton("⚙️ 14 BACKGROUND JOBS & ENGINE SENTINELS", com.jdroidx.jfindme.R.drawable.ic_settings_gears, true, v -> BackgroundJobsConfigDialog.show(this));
+        vaultCard.addView(createSettingTile("DATABASE VACUUM & STORAGE RETENTION", "Rolling Retention: " + RegistryManager.getStorageRetentionDays(this) + " Days • WAL Compaction", android.R.drawable.ic_menu_manage, v -> showStorageRetentionDialog(), tv -> tvStorageRetentionVal = tv), btnLp);
         int currentCacheCap = RegistryManager.getMaxGeocodeCacheSize(this);
         String cacheSub = "Max Cap: " + currentCacheCap + " Entries (L7 Reverse Geocode Cache)";
-        vaultCard.addView(createSettingTile("REVERSE GEOCODE CACHE CAPACITY", cacheSub, android.R.drawable.ic_menu_mapmode, v -> showGeocodeCacheCapDialog(), null), btnLp);
+        vaultCard.addView(createSettingTile("REVERSE GEOCODE CACHE CAPACITY", cacheSub, android.R.drawable.ic_menu_mapmode, v -> showGeocodeCacheCapDialog(), tv -> tvGeocodeCacheVal = tv), btnLp);
         String ttlSub = "Sync Queue: " + RegistryManager.getSyncQueueTtlHours(this) + "h • Logs: " + RegistryManager.getSysLogTtlHours(this) + "h • Page Limit: " + RegistryManager.getDefaultPageLimit(this);
-        vaultCard.addView(createSettingTile("DATABASE ENGINE TTL & QUERY LIMITS", ttlSub, android.R.drawable.ic_menu_preferences, v -> showDatabaseEngineTtlDialog(), null), btnLp);
+        vaultCard.addView(createSettingTile("DATABASE ENGINE TTL & QUERY LIMITS", ttlSub, android.R.drawable.ic_menu_preferences, v -> showDatabaseEngineTtlDialog(), tv -> tvDatabaseEngineTtlVal = tv), btnLp);
         vaultCard.addView(bgJobsLauncher, btnLp);
 
         content.addView(vaultCard, getCardParams());
@@ -671,7 +694,7 @@ public class SettingsActivity extends BaseActivityJava {
             planSub, 
             android.R.drawable.ic_dialog_info, 
             v -> showSparkPlanQuotaDialog(), 
-            null
+            tv -> tvSparkPlanQuotaVal = tv
         ), btnLp);
 
         boolean bwSaver = RegistryManager.isSparkBandwidthSaverEnabled(this);
@@ -705,7 +728,7 @@ public class SettingsActivity extends BaseActivityJava {
             deadReckoningSub,
             android.R.drawable.ic_menu_compass,
             v -> showDeadReckoningRadiusDialog(),
-            null
+            tv -> tvDeadReckoningVal = tv
         ), btnLp);
 
         long pulseIntervalMs = RegistryManager.getPresencePulseIntervalMs(this);
@@ -715,7 +738,7 @@ public class SettingsActivity extends BaseActivityJava {
             pulseSub,
             android.R.drawable.ic_menu_recent_history,
             v -> showPresencePulseIntervalDialog(),
-            null
+            tv -> tvPresencePulseVal = tv
         ), btnLp);
 
         String currentGroup = RegistryManager.getDeviceCorrespondingGroup(this);
@@ -725,7 +748,7 @@ public class SettingsActivity extends BaseActivityJava {
             groupSub,
             android.R.drawable.ic_menu_myplaces,
             v -> showDeviceGroupDialog(),
-            null
+            tv -> tvDeviceGroupVal = tv
         ), btnLp);
 
         content.addView(sparkCard, getCardParams());
@@ -851,7 +874,8 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         content.addView(createSectionHeader("🗺️ TACTICAL LIVE MAPS & RADAR"));
         content.addView(registerScreenCard("PRIMARY LIVE MAP", "Vector Map with Marker Callouts, Direction Chevrons & SOS Trigger", "LIVE", null, com.jdroidx.jfindme.R.drawable.ic_nav_map, "map live tracking gps pins sos chevron", v -> safeLaunch(MapActivity.class)));
-        content.addView(registerScreenCard("TACTICAL DASHBOARD HUD", "Dual-Pane Real-Time Radar & Multi-Node Coordinate Telemetry", "RADAR", null, com.jdroidx.jfindme.R.drawable.ic_radar, "radar dashboard telemetry coordinates dual pane", v -> safeLaunch(LiveMapDashboardActivity.class)));
+        // [Variables]: intent | [Constants]: LAUNCH_PANEL, INITIAL_TAB | [Dependencies]: LiveMapDashboardActivity, GroupActivity | [Integration Points]: Deep-Linked Screen Card Ingress
+        content.addView(registerScreenCard("TACTICAL DASHBOARD HUD", "Dual-Pane Real-Time Radar & Multi-Node Coordinate Telemetry", "RADAR", null, com.jdroidx.jfindme.R.drawable.ic_radar, "radar dashboard telemetry coordinates dual pane", v -> safeLaunch(LiveMapDashboardActivity.class, intent -> intent.putExtra("LAUNCH_PANEL", "RADAR"))));
 
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 2: 👥 CIRCLE MESH & PAIRING GATEWAYS
@@ -859,7 +883,7 @@ public class SettingsActivity extends BaseActivityJava {
         content.addView(createSectionHeader("👥 CIRCLE MESH & PAIRING GATEWAYS"));
         content.addView(registerScreenCard("NETWORK PAIRING GATEWAY", "Cloud PIN, QR Matrix Scanner & Nearby P2P Offline Discovery", "PAIRING", tv -> badgeRosterTv = tv, com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "pairing qr pin p2p wifi direct connect network gateway", v -> safeLaunch(NetworkGatewayActivity.class)));
         content.addView(registerScreenCard("FAMILY & GUARDIANS ROSTER", "Multi-Tier Circle Management & Immediate Callout Matrix", "CIRCLE", null, com.jdroidx.jfindme.R.drawable.ic_family_friends, "family friends guardians roster members contacts", v -> safeLaunch(FamilyFriendsActivity.class)));
-        content.addView(registerScreenCard("CIRCLE GROUPS PARTITION", "Create, Edit & Swap Active Team/Family Circles", "GROUPS", null, com.jdroidx.jfindme.R.drawable.ic_people, "groups teams partition circles swap", v -> safeLaunch(GroupActivity.class)));
+        content.addView(registerScreenCard("CIRCLE GROUPS PARTITION", "Create, Edit & Swap Active Team/Family Circles", "GROUPS", null, com.jdroidx.jfindme.R.drawable.ic_people, "groups teams partition circles swap", v -> safeLaunch(GroupActivity.class, intent -> intent.putExtra("INITIAL_TAB", "GROUPS"))));
         content.addView(registerScreenCard("MEMBER DOSSIER & ACL", "Node Profile, Medical Notes & Granular Access Control List", "ACL", null, com.jdroidx.jfindme.R.drawable.ic_user_profile, "dossier acl permissions member medical notes person details", v -> safeLaunch(PersonDetailsActivity.class)));
 
         // ══════════════════════════════════════════════════════════════════════
@@ -1009,17 +1033,29 @@ public class SettingsActivity extends BaseActivityJava {
         return "V" + BuildConfig.VERSION_NAME;
     }
 
+    // [Variables]: activityClass, intent, customizer | [Constants]: TAG | [Dependencies]: Intent, SystemLogger, UiArchitect | [Integration Points]: Screen Navigation Cards & Deep Linking
+    public interface IntentCustomizer {
+        void customize(Intent intent);
+    }
+
     /**
-     * Crash-Proof Activity Launcher with UI boundary error handling.
+     * Crash-Proof Activity Launcher with UI boundary error handling and deep-link parameter customization.
      */
-    private void safeLaunch(Class<?> activityClass) {
+    private void safeLaunch(Class<?> activityClass, IntentCustomizer customizer) {
         try {
             Intent intent = new Intent(this, activityClass);
+            if (customizer != null) {
+                customizer.customize(intent);
+            }
             startActivity(intent);
         } catch (Exception e) {
             SystemLogger.e(TAG, "Failed to launch " + activityClass.getSimpleName(), e);
             UiArchitect.showSlideNotificationBanner(this, "Module Launch Error", "Unable to open " + activityClass.getSimpleName() + ": " + e.getMessage(), true, 3000, null, null);
         }
+    }
+
+    private void safeLaunch(Class<?> activityClass) {
+        safeLaunch(activityClass, null);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1287,7 +1323,11 @@ public class SettingsActivity extends BaseActivityJava {
     }
 
     private void refreshAllUniversalTextViews() {
-        if (tvPingIntervalVal != null) tvPingIntervalVal.setText("Active Cadence: 15s | Balanced (15s)");
+        if (tvPingIntervalVal != null) {
+            long pingSec = RegistryManager.getTrackingInterval(this) / 1000;
+            String warning = pingSec < 30 ? " ⚠️ HIGH BATTERY DRAIN" : "";
+            tvPingIntervalVal.setText("Active Cadence: " + pingSec + "s" + warning + " | Preset/Stepper Mode");
+        }
         if (tvStealthCadenceVal != null) tvStealthCadenceVal.setText("Cadence: 60 mins | Autonomous SIM & Alarm Sentinel");
         if (tvMotionDutyVal != null) tvMotionDutyVal.setText("Still: 300s | Car: 10s | Walk: 20s");
         if (tvDisplacementVal != null) tvDisplacementVal.setText("Displacement: 0m (Suppresses stationary GPS jitter)");
@@ -1446,7 +1486,7 @@ public class SettingsActivity extends BaseActivityJava {
         stepperCard.setPadding(30, 30, 30, 30);
 
         android.widget.Switch masterSwitch = new android.widget.Switch(this);
-        masterSwitch.setText("🔋 MANUAL OVERRIDE (90s+)   ");
+        masterSwitch.setText("🔋 DYNAMIC CADENCE STEPPER (10s - 3600s)");
         masterSwitch.setTextColor(getTextColor());
         masterSwitch.setChecked(prefs.getBoolean("pref_stepper_active", false));
         stepperCard.addView(masterSwitch);
@@ -1456,7 +1496,8 @@ public class SettingsActivity extends BaseActivityJava {
         stepperControls.setAlpha(masterSwitch.isChecked() ? 1.0f : 0.4f);
 
         TextView valTv = new TextView(this);
-        long currentVal = prefs.getLong("pref_manual_pulse", 90000L) / 1000;
+        long currTrackMs = RegistryManager.getTrackingInterval(this);
+        long currentVal = currTrackMs > 0 ? (currTrackMs / 1000) : (prefs.getLong("pref_manual_pulse", 30000L) / 1000);
         valTv.setText(currentVal + "s");
         valTv.setTextColor(getTextColor());
         valTv.setTextSize(24f);
@@ -1473,14 +1514,13 @@ public class SettingsActivity extends BaseActivityJava {
         decBtn.setOnClickListener(v -> {
             if (!masterSwitch.isChecked()) return;
             long val = Long.parseLong(valTv.getText().toString().replace("s", ""));
-            if (val > 90) {
+            if (val > 10) {
                 val -= 10;
                 valTv.setText(val + "s");
                 prefs.edit().putLong("pref_manual_pulse", val * 1000).apply();
                 RegistryManager.setTrackingInterval(this, val * 1000);
-                if (tvPingIntervalVal != null) {
-                    tvPingIntervalVal.setText("Active Cadence: " + val + "s | Manual Stepper");
-                }
+                com.jdroidx.jfindme.service.BackgroundJobManager.INSTANCE.updateJobFrequency(this, "JOB_TRACKING_SERVICE", val);
+                updatePingCadenceSubtitle(val, "Manual Stepper");
                 v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
             }
         });
@@ -1493,14 +1533,15 @@ public class SettingsActivity extends BaseActivityJava {
         incBtn.setOnClickListener(v -> {
             if (!masterSwitch.isChecked()) return;
             long val = Long.parseLong(valTv.getText().toString().replace("s", ""));
-            val += 10;
-            valTv.setText(val + "s");
-            prefs.edit().putLong("pref_manual_pulse", val * 1000).apply();
-            RegistryManager.setTrackingInterval(this, val * 1000);
-            if (tvPingIntervalVal != null) {
-                tvPingIntervalVal.setText("Active Cadence: " + val + "s | Manual Stepper");
+            if (val < 3600) {
+                val += 10;
+                valTv.setText(val + "s");
+                prefs.edit().putLong("pref_manual_pulse", val * 1000).apply();
+                RegistryManager.setTrackingInterval(this, val * 1000);
+                com.jdroidx.jfindme.service.BackgroundJobManager.INSTANCE.updateJobFrequency(this, "JOB_TRACKING_SERVICE", val);
+                updatePingCadenceSubtitle(val, "Manual Stepper");
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
             }
-            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
         });
 
         stepperControls.addView(decBtn, new LinearLayout.LayoutParams(tacticalSize, tacticalSize));
@@ -1540,9 +1581,7 @@ public class SettingsActivity extends BaseActivityJava {
                 for (android.widget.Switch s : switches) s.setChecked(false);
                 sw.setChecked(true);
                 RegistryManager.setTrackingInterval(this, v);
-                if (tvPingIntervalVal != null) {
-                    tvPingIntervalVal.setText("Active Cadence: " + (v / 1000) + "s | " + n);
-                }
+                updatePingCadenceSubtitle(v / 1000, n);
             });
             presetCard.addView(sw);
         }
@@ -1555,9 +1594,7 @@ public class SettingsActivity extends BaseActivityJava {
                 for (android.widget.Switch s : switches) s.setChecked(false);
                 long val = Long.parseLong(valTv.getText().toString().replace("s", "")) * 1000;
                 RegistryManager.setTrackingInterval(this, val);
-                if (tvPingIntervalVal != null) {
-                    tvPingIntervalVal.setText("Active Cadence: " + (val / 1000) + "s | Manual Stepper");
-                }
+                updatePingCadenceSubtitle(val / 1000, "Manual Stepper");
             }
         });
 
@@ -1581,16 +1618,18 @@ public class SettingsActivity extends BaseActivityJava {
     }
 
     private void showPinTtlSelectionDialog() {
+        int currentTtl = prefs.getInt("pairing_pin_ttl_minutes", 5);
+        int[] values = {5, 10, 15, 20, 30};
+        String customLabel = "✏️ Custom TTL (" + currentTtl + " Min)...";
         String[] options = {
             "5 Minutes (Recommended - NIST SP 800-63B)",
             "10 Minutes",
             "15 Minutes",
             "20 Minutes",
-            "30 Minutes (Extended Pairing Window)"
+            "30 Minutes (Extended Pairing Window)",
+            customLabel
         };
-        int[] values = {5, 10, 15, 20, 30};
-        int currentTtl = prefs.getInt("pairing_pin_ttl_minutes", 5);
-        int selectedIdx = 0;
+        int selectedIdx = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == currentTtl) {
                 selectedIdx = i;
@@ -1601,29 +1640,41 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("⏱️ Pairing PIN Expiry TTL")
             .setSingleChoiceItems(options, selectedIdx, (dialog, which) -> {
-                int chosen = values[which];
-                prefs.edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
-                if (tvPinTtlVal != null) {
-                    tvPinTtlVal.setText("TTL: " + chosen + " Min (NIST SP 800-63B pairing countdown)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "PIN TTL Saved", "Pairing PIN Expiry TTL set to " + chosen + " minutes.", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("⏱️ Custom PIN TTL", "Minutes (1 - 120)", 1, 120, currentTtl, "Min", chosen -> {
+                        prefs.edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
+                        if (tvPinTtlVal != null) {
+                            tvPinTtlVal.setText("TTL: " + chosen + " Min (NIST SP 800-63B pairing countdown)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "PIN TTL Saved", "Pairing PIN Expiry TTL set to " + chosen + " minutes.", false, 2500, null, null);
+                    });
+                } else {
+                    int chosen = values[which];
+                    prefs.edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
+                    if (tvPinTtlVal != null) {
+                        tvPinTtlVal.setText("TTL: " + chosen + " Min (NIST SP 800-63B pairing countdown)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "PIN TTL Saved", "Pairing PIN Expiry TTL set to " + chosen + " minutes.", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
     private void showGeofenceJitterDialog() {
+        long currentMs = RegistryManager.getGeofenceJitterDebounceMs(this);
+        long[] values = {0L, 5000L, 15000L, 30000L, 60000L};
+        String customLabel = "✏️ Custom Debounce (" + (currentMs / 1000) + "s)...";
         String[] options = {
             "0s (Disabled - Instant Trigger)",
             "5s (High Sensitivity - Min Range)",
             "15s (Balanced Standard - Mid Range / Recommended)",
             "30s (Extended Boundary Filter)",
-            "60s (Highway & Rapid Travel - Max Range)"
+            "60s (Highway & Rapid Travel - Max Range)",
+            customLabel
         };
-        long[] values = {0L, 5000L, 15000L, 30000L, 60000L};
-        long currentMs = RegistryManager.getGeofenceJitterDebounceMs(this);
-        int selectedIdx = 2;
+        int selectedIdx = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == currentMs) {
                 selectedIdx = i;
@@ -1634,28 +1685,41 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("⏱️ Perimeter Jitter Filter (Anti-Flutter)")
             .setSingleChoiceItems(options, selectedIdx, (dialog, which) -> {
-                long chosenMs = values[which];
-                RegistryManager.setGeofenceJitterDebounceMs(this, chosenMs);
-                if (tvJitterVal != null) {
-                    tvJitterVal.setText("Debounce: " + (chosenMs / 1000) + "s (Temporal boundary anti-flutter)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Jitter Filter Updated", "Debounce threshold set to " + (chosenMs / 1000) + "s", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("⏱️ Custom Jitter Debounce", "Seconds (0 - 300)", 0, 300, (int)(currentMs / 1000), "s", chosen -> {
+                        long chosenMs = chosen * 1000L;
+                        RegistryManager.setGeofenceJitterDebounceMs(this, chosenMs);
+                        if (tvJitterVal != null) {
+                            tvJitterVal.setText("Debounce: " + chosen + "s (Temporal boundary anti-flutter)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Jitter Filter Updated", "Debounce threshold set to " + chosen + "s", false, 2500, null, null);
+                    });
+                } else {
+                    long chosenMs = values[which];
+                    RegistryManager.setGeofenceJitterDebounceMs(this, chosenMs);
+                    if (tvJitterVal != null) {
+                        tvJitterVal.setText("Debounce: " + (chosenMs / 1000) + "s (Temporal boundary anti-flutter)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Jitter Filter Updated", "Debounce threshold set to " + (chosenMs / 1000) + "s", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
     private void showDisplacementDialog() {
+        float current = RegistryManager.getMinDisplacementMeters(this);
+        float[] values = {0f, 5f, 10f, 25f};
+        String customLabel = "✏️ Custom Displacement (" + (int)current + "m)...";
         String[] options = {
             "0m (Continuous Telemetry - Max Sensitivity / Default)",
             "5m (Fine Pedestrian Tracking)",
             "10m (City Balanced Mode)",
-            "25m (Vehicle / Battery Saver - Max Range)"
+            "25m (Vehicle / Battery Saver - Max Range)",
+            customLabel
         };
-        float[] values = {0f, 5f, 10f, 25f};
-        float current = RegistryManager.getMinDisplacementMeters(this);
-        int selected = 0;
+        int selected = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == current) {
                 selected = i;
@@ -1666,28 +1730,40 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("📍 Minimum Displacement Threshold")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                float chosen = values[which];
-                RegistryManager.setMinDisplacementMeters(this, chosen);
-                if (tvDisplacementVal != null) {
-                    tvDisplacementVal.setText("Displacement: " + (int) chosen + "m (Suppresses stationary GPS jitter)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Displacement Updated", "Displacement threshold set to " + (int) chosen + "m", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("📍 Custom Displacement Threshold", "Meters (0 - 500)", 0, 500, (int)current, "m", chosen -> {
+                        RegistryManager.setMinDisplacementMeters(this, (float) chosen);
+                        if (tvDisplacementVal != null) {
+                            tvDisplacementVal.setText("Displacement: " + chosen + "m (Suppresses stationary GPS jitter)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Displacement Updated", "Displacement threshold set to " + chosen + "m", false, 2500, null, null);
+                    });
+                } else {
+                    float chosen = values[which];
+                    RegistryManager.setMinDisplacementMeters(this, chosen);
+                    if (tvDisplacementVal != null) {
+                        tvDisplacementVal.setText("Displacement: " + (int) chosen + "m (Suppresses stationary GPS jitter)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Displacement Updated", "Displacement threshold set to " + (int) chosen + "m", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
     private void showLowBatteryDialog() {
+        int current = RegistryManager.getLowBatteryThreshold(this);
+        int[] values = {10, 15, 20, 25};
+        String customLabel = "✏️ Custom Threshold (" + current + "%)...";
         String[] options = {
             "10% (Critical Level Only)",
             "15% (Medium Warning)",
             "20% (Standard Level - Recommended / Default)",
-            "25% (Early Warning Level)"
+            "25% (Early Warning Level)",
+            customLabel
         };
-        int[] values = {10, 15, 20, 25};
-        int current = RegistryManager.getLowBatteryThreshold(this);
-        int selected = 2;
+        int selected = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == current) {
                 selected = i;
@@ -1698,28 +1774,40 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("🟡 Low Battery Warning Level")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                int chosen = values[which];
-                RegistryManager.setLowBatteryThreshold(this, chosen);
-                if (tvLowBatteryVal != null) {
-                    tvLowBatteryVal.setText("Threshold: " + chosen + "% (Triggers amber distress telemetry)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Low Battery Threshold", "Warning trigger set to " + chosen + "%", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("🟡 Custom Low Battery Threshold", "Percentage (5 - 50)", 5, 50, current, "%", chosen -> {
+                        RegistryManager.setLowBatteryThreshold(this, chosen);
+                        if (tvLowBatteryVal != null) {
+                            tvLowBatteryVal.setText("Threshold: " + chosen + "% (Triggers amber distress telemetry)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Low Battery Threshold", "Warning trigger set to " + chosen + "%", false, 2500, null, null);
+                    });
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setLowBatteryThreshold(this, chosen);
+                    if (tvLowBatteryVal != null) {
+                        tvLowBatteryVal.setText("Threshold: " + chosen + "% (Triggers amber distress telemetry)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Low Battery Threshold", "Warning trigger set to " + chosen + "%", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
     private void showStaleInactiveDialog() {
+        int current = RegistryManager.getStaleInactiveMinutes(this);
+        int[] values = {5, 15, 30, 60};
+        String customLabel = "✏️ Custom Window (" + current + " Min)...";
         String[] options = {
             "5 Minutes (Strict / High Alert)",
             "15 Minutes (Balanced Standard - Default)",
             "30 Minutes (Relaxed Mode)",
-            "60 Minutes (Casual Mode)"
+            "60 Minutes (Casual Mode)",
+            customLabel
         };
-        int[] values = {5, 15, 30, 60};
-        int current = RegistryManager.getStaleInactiveMinutes(this);
-        int selected = 1;
+        int selected = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == current) {
                 selected = i;
@@ -1730,28 +1818,40 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("🟡 Inactive Stale Threshold (Amber)")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                int chosen = values[which];
-                RegistryManager.setStaleInactiveMinutes(this, chosen);
-                if (tvStaleVal != null) {
-                    tvStaleVal.setText("Stale Window: " + chosen + " Min (Marks node amber inactive)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Stale Threshold Updated", "Amber warning set to " + chosen + " minutes", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("🟡 Custom Stale Window", "Minutes (1 - 360)", 1, 360, current, "Min", chosen -> {
+                        RegistryManager.setStaleInactiveMinutes(this, chosen);
+                        if (tvStaleVal != null) {
+                            tvStaleVal.setText("Stale Window: " + chosen + " Min (Marks node amber inactive)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Stale Threshold Updated", "Amber warning set to " + chosen + " minutes", false, 2500, null, null);
+                    });
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setStaleInactiveMinutes(this, chosen);
+                    if (tvStaleVal != null) {
+                        tvStaleVal.setText("Stale Window: " + chosen + " Min (Marks node amber inactive)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Stale Threshold Updated", "Amber warning set to " + chosen + " minutes", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
     private void showCriticalOfflineDialog() {
+        int current = RegistryManager.getCriticalOfflineHours(this);
+        int[] values = {2, 6, 12, 24};
+        String customLabel = "✏️ Custom Window (" + current + " Hours)...";
         String[] options = {
             "2 Hours (Strict Fleet)",
             "6 Hours (Balanced - Recommended / Default)",
             "12 Hours (Half-Day Extended)",
-            "24 Hours (Full Day Extended)"
+            "24 Hours (Full Day Extended)",
+            customLabel
         };
-        int[] values = {2, 6, 12, 24};
-        int current = RegistryManager.getCriticalOfflineHours(this);
-        int selected = 1;
+        int selected = options.length - 1;
         for (int i = 0; i < values.length; i++) {
             if (values[i] == current) {
                 selected = i;
@@ -1762,14 +1862,27 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("🔴 Critical Offline Threshold (Red)")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                int chosen = values[which];
-                RegistryManager.setCriticalOfflineHours(this, chosen);
-                if (tvCriticalOfflineVal != null) {
-                    tvCriticalOfflineVal.setText("Offline Window: " + chosen + " Hours (Marks node red offline)");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Offline Threshold Updated", "Red alert trigger set to " + chosen + " hours", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("🔴 Custom Critical Offline Window", "Hours (1 - 168)", 1, 168, current, "Hours", chosen -> {
+                        RegistryManager.setCriticalOfflineHours(this, chosen);
+                        if (tvCriticalOfflineVal != null) {
+                            tvCriticalOfflineVal.setText("Offline Window: " + chosen + " Hours (Marks node red offline)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Offline Threshold Updated", "Red alert trigger set to " + chosen + " hours", false, 2500, null, null);
+                    });
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setCriticalOfflineHours(this, chosen);
+                    if (tvCriticalOfflineVal != null) {
+                        tvCriticalOfflineVal.setText("Offline Window: " + chosen + " Hours (Marks node red offline)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Offline Threshold Updated", "Red alert trigger set to " + chosen + " hours", false, 2500, null, null);
+                }
             })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
             .setNegativeButton("CANCEL", null)
             .show();
     }
@@ -2196,7 +2309,7 @@ public class SettingsActivity extends BaseActivityJava {
             "⚡ Ultra Aggressive (Still: 60s, Vehicle: 5s, Walk: 10s)",
             "🚗 Balanced Road Standard (Still: 300s, Vehicle: 10s, Walk: 20s - Recommended)",
             "🔋 Maximum Battery Eco (Still: 600s, Vehicle: 15s, Walk: 30s)",
-            "🛡️ Custom Dynamic Setup (Still: 180s, Vehicle: 10s, Walk: 15s)"
+            "🛡️ Custom Dynamic Setup (Configure Still, Vehicle, Walking...)"
         };
         long[][] values = {
             {60000L, 5000L, 10000L},
@@ -2217,18 +2330,42 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("🏃 Motion & Battery Duty Cycles")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                long[] chosen = values[which];
-                RegistryManager.setMotionStillIntervalMs(this, chosen[0]);
-                RegistryManager.setMotionVehicleIntervalMs(this, chosen[1]);
-                RegistryManager.setMotionWalkingIntervalMs(this, chosen[2]);
-                if (tvMotionDutyVal != null) {
-                    tvMotionDutyVal.setText("Still: " + (chosen[0] / 1000) + "s | Car: " + (chosen[1] / 1000) + "s | Walk: " + (chosen[2] / 1000) + "s");
-                }
-                UiArchitect.showSlideNotificationBanner(this, "Duty Cycles Saved", "Still: " + (chosen[0] / 1000) + "s, Car: " + (chosen[1] / 1000) + "s, Walk: " + (chosen[2] / 1000) + "s", false, 3000, null, null);
                 dialog.dismiss();
+                if (which == 3) {
+                    showCustomMotionDutyDialog();
+                } else {
+                    long[] chosen = values[which];
+                    RegistryManager.setMotionStillIntervalMs(this, chosen[0]);
+                    RegistryManager.setMotionVehicleIntervalMs(this, chosen[1]);
+                    RegistryManager.setMotionWalkingIntervalMs(this, chosen[2]);
+                    if (tvMotionDutyVal != null) {
+                        tvMotionDutyVal.setText("Still: " + (chosen[0] / 1000) + "s | Car: " + (chosen[1] / 1000) + "s | Walk: " + (chosen[2] / 1000) + "s");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Duty Cycles Saved", "Still: " + (chosen[0] / 1000) + "s, Car: " + (chosen[1] / 1000) + "s, Walk: " + (chosen[2] / 1000) + "s", false, 3000, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
+    }
+
+    private void showCustomMotionDutyDialog() {
+        long currStill = RegistryManager.getMotionStillIntervalMs(this) / 1000L;
+        long currVeh = RegistryManager.getMotionVehicleIntervalMs(this) / 1000L;
+        long currWalk = RegistryManager.getMotionWalkingIntervalMs(this) / 1000L;
+
+        showCustomNumericInputDialog("🛑 Still Motion Interval", "Seconds (30 - 3600)", 30, 3600, (int) currStill, "s", stillSec -> {
+            showCustomNumericInputDialog("🚗 Vehicle Motion Interval", "Seconds (3 - 120)", 3, 120, (int) currVeh, "s", vehSec -> {
+                showCustomNumericInputDialog("🚶 Walking Motion Interval", "Seconds (5 - 300)", 5, 300, (int) currWalk, "s", walkSec -> {
+                    RegistryManager.setMotionStillIntervalMs(this, stillSec * 1000L);
+                    RegistryManager.setMotionVehicleIntervalMs(this, vehSec * 1000L);
+                    RegistryManager.setMotionWalkingIntervalMs(this, walkSec * 1000L);
+                    if (tvMotionDutyVal != null) {
+                        tvMotionDutyVal.setText("Still: " + stillSec + "s | Car: " + vehSec + "s | Walk: " + walkSec + "s");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Duty Cycles Saved", "Still: " + stillSec + "s, Car: " + vehSec + "s, Walk: " + walkSec + "s", false, 3000, null, null);
+                });
+            });
+        });
     }
 
     private void showRoadSmoothingSensitivityDialog() {
@@ -2520,6 +2657,28 @@ public class SettingsActivity extends BaseActivityJava {
             .show();
     }
 
+    private void updateDatabaseEngineTtlSubtitle() {
+        if (tvDatabaseEngineTtlVal != null) {
+            String ttlSub = "Sync Queue: " + RegistryManager.getSyncQueueTtlHours(this) + "h • Logs: " + RegistryManager.getSysLogTtlHours(this) + "h • Page Limit: " + RegistryManager.getDefaultPageLimit(this);
+            tvDatabaseEngineTtlVal.setText(ttlSub);
+        }
+    }
+
+    private void updateSparkPlanQuotaSubtitle() {
+        if (tvSparkPlanQuotaVal != null) {
+            String currentTier = RegistryManager.getFirebasePlanTier(this);
+            int dailyMb = RegistryManager.getSparkDailyDownloadMb(this);
+            int monthlyGb = RegistryManager.getSparkMonthlyDownloadGb(this);
+            String resetIst = RegistryManager.getSparkDailyResetTimeIst(this);
+            tvSparkPlanQuotaVal.setText("Plan: " + currentTier + " • Daily Cap: " + dailyMb + " MB (Resets ~" + resetIst + ") • Monthly Cap: " + monthlyGb + " GB");
+        }
+        if (settingsModel != null) {
+            settingsModel.setFirebasePlanTier(RegistryManager.getFirebasePlanTier(this));
+            settingsModel.setSparkDailyDownloadMb(RegistryManager.getSparkDailyDownloadMb(this));
+            settingsModel.setSparkMonthlyDownloadGb(RegistryManager.getSparkMonthlyDownloadGb(this));
+        }
+    }
+
     private void showSyncQueueTtlDialog() {
         int current = RegistryManager.getSyncQueueTtlHours(this);
         String[] options = {"⚡ 12 Hours", "⚡ 24 Hours (1 Day)", "🛡️ 48 Hours (2 Days • Default)", "📅 72 Hours (3 Days)", "📅 168 Hours (7 Days)"};
@@ -2532,6 +2691,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setSyncQueueTtlHours(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Sync TTL Updated", "Pending sync queue retention set to " + chosen + " hours.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2551,6 +2711,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setSysLogTtlHours(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "SysLog TTL Updated", "Diagnostic system log TTL set to " + chosen + " hours.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2570,6 +2731,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setP2pMeshTtlHours(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Mesh TTL Updated", "P2P mesh packet retention set to " + chosen + " hours.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2589,6 +2751,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setInvitationTtlDays(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Invitation TTL Updated", "Pairing invitation expiry set to " + chosen + " days.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2608,6 +2771,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setWatchdogLogTtlDays(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Watchdog TTL Updated", "Daemon resurrection log TTL set to " + chosen + " days.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2627,6 +2791,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setAlertHistoryTtlDays(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Alert TTL Updated", "Alert history ledger TTL set to " + chosen + " days.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2646,6 +2811,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setDefaultPageLimit(this, chosen);
+                updateDatabaseEngineTtlSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Page Limit Updated", "Vault & Explorer default limit set to " + chosen + " rows.", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2659,15 +2825,17 @@ public class SettingsActivity extends BaseActivityJava {
     // [Integration Points]: TrackingService dead-reckoning threshold SSOT
     private void showDeadReckoningRadiusDialog() {
         float current = RegistryManager.getDeadReckoningRadiusMeters(this);
+        String customLabel = "✏️ Custom Radius (" + (int)current + "m)...";
         String[] options = {
             "⚡ 5 Meters (Ultra Sensitive • High Battery/Data)",
             "⚡ 10 Meters (City Walking • Moderate Tolerance)",
             "🛡️ 15 Meters (Default Recommended • 97% Bandwidth Cut)",
             "📅 25 Meters (Suburban Road Filter • High Tolerance)",
-            "📅 50 Meters (Macro Station Gate • Minimalist Data)"
+            "📅 50 Meters (Macro Station Gate • Minimalist Data)",
+            customLabel
         };
         float[] vals = {5.0f, 10.0f, 15.0f, 25.0f, 50.0f};
-        int selected = 2;
+        int selected = options.length - 1;
         for (int i = 0; i < vals.length; i++) {
             if (Math.abs(vals[i] - current) < 0.1f) {
                 selected = i;
@@ -2678,10 +2846,25 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("🛡️ Spatial Dead-Reckoning Noise Gate")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                float chosen = vals[which];
-                RegistryManager.setDeadReckoningRadiusMeters(this, chosen);
-                UiArchitect.showSlideNotificationBanner(this, "Dead-Reckoning Updated", "Noise gate set to " + (int)chosen + "m. Stationary GPS uploads suppressed.", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("🛡️ Custom Dead-Reckoning Radius", "Meters (1 - 200)", 1, 200, (int)current, "m", chosen -> {
+                        RegistryManager.setDeadReckoningRadiusMeters(this, (float) chosen);
+                        if (settingsModel != null) settingsModel.setDeadReckoningRadiusMeters((float) chosen);
+                        if (tvDeadReckoningVal != null) {
+                            tvDeadReckoningVal.setText("Noise Gate: " + chosen + "m • Suppresses Stationary GPS (97% Data Saving)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Dead-Reckoning Updated", "Noise gate set to " + chosen + "m. Stationary GPS uploads suppressed.", false, 2500, null, null);
+                    });
+                } else {
+                    float chosen = vals[which];
+                    RegistryManager.setDeadReckoningRadiusMeters(this, chosen);
+                    if (settingsModel != null) settingsModel.setDeadReckoningRadiusMeters(chosen);
+                    if (tvDeadReckoningVal != null) {
+                        tvDeadReckoningVal.setText("Noise Gate: " + (int)chosen + "m • Suppresses Stationary GPS (97% Data Saving)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Dead-Reckoning Updated", "Noise gate set to " + (int)chosen + "m. Stationary GPS uploads suppressed.", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
@@ -2693,15 +2876,17 @@ public class SettingsActivity extends BaseActivityJava {
     // [Integration Points]: TrackingService presence pulse keep-alive SSOT
     private void showPresencePulseIntervalDialog() {
         long current = RegistryManager.getPresencePulseIntervalMs(this);
+        String customLabel = "✏️ Custom Cadence (" + (current / 1000) + "s)...";
         String[] options = {
             "⚡ 60 Seconds (1 Minute • Real-Time Dynamic Active)",
             "⚡ 120 Seconds (2 Minutes • Fast Mesh Heartbeat)",
             "🛡️ 180 Seconds (3 Minutes • Default Recommended)",
             "📅 300 Seconds (5 Minutes • Ultra Lean Bandwidth)",
-            "📅 600 Seconds (10 Minutes • Minimalist Standby)"
+            "📅 600 Seconds (10 Minutes • Minimalist Standby)",
+            customLabel
         };
         long[] vals = {60_000L, 120_000L, 180_000L, 300_000L, 600_000L};
-        int selected = 2;
+        int selected = options.length - 1;
         for (int i = 0; i < vals.length; i++) {
             if (vals[i] == current) {
                 selected = i;
@@ -2712,16 +2897,62 @@ public class SettingsActivity extends BaseActivityJava {
         new android.app.AlertDialog.Builder(this)
             .setTitle("💓 Presence Pulse Heartbeat Interval")
             .setSingleChoiceItems(options, selected, (dialog, which) -> {
-                long chosen = vals[which];
-                RegistryManager.setPresencePulseIntervalMs(this, chosen);
-                UiArchitect.showSlideNotificationBanner(this, "Presence Pulse Updated", "Stationary heartbeat interval set to " + (chosen / 1000) + " seconds.", false, 2500, null, null);
                 dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("💓 Custom Presence Pulse Interval", "Seconds (30 - 1800)", 30, 1800, (int)(current / 1000), "s", chosen -> {
+                        long chosenMs = chosen * 1000L;
+                        RegistryManager.setPresencePulseIntervalMs(this, chosenMs);
+                        if (settingsModel != null) settingsModel.setPresencePulseIntervalMs(chosenMs);
+                        if (tvPresencePulseVal != null) {
+                            tvPresencePulseVal.setText("Cadence: " + chosen + "s • 28-Byte Presence Pulse (Keeps Server Online)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Presence Pulse Updated", "Stationary heartbeat interval set to " + chosen + " seconds.", false, 2500, null, null);
+                    });
+                } else {
+                    long chosen = vals[which];
+                    RegistryManager.setPresencePulseIntervalMs(this, chosen);
+                    if (settingsModel != null) settingsModel.setPresencePulseIntervalMs(chosen);
+                    if (tvPresencePulseVal != null) {
+                        tvPresencePulseVal.setText("Cadence: " + (chosen / 1000) + "s • 28-Byte Presence Pulse (Keeps Server Online)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Presence Pulse Updated", "Stationary heartbeat interval set to " + (chosen / 1000) + " seconds.", false, 2500, null, null);
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();
     }
 
-    // [Variables]: currentGroup, presetGroups, selected, chosen, input, container, lp
+    // [Variables]: agentId, newGroup | [Constants]: None | [Dependencies]: FirebaseAuth, RegistryManager, FirebaseComm | [Integration Points]: Real-Time RTDB Device Group Sync
+    private void syncDeviceGroupToCloud(String newGroup) {
+        try {
+            String agentId = RegistryManager.getAgentId(this);
+            if (agentId == null || agentId.isEmpty()) {
+                if (FirebaseAuth.getInstance().getCurrentUser() != null) {
+                    agentId = FirebaseAuth.getInstance().getCurrentUser().getUid();
+                }
+            }
+            if (agentId != null && !agentId.isEmpty()) {
+                FirebaseComm.updateDeviceGroup(agentId, newGroup, success -> {
+                    if (success != null && success) {
+                        SystemLogger.i("SettingsActivity", "Device group partition '" + newGroup + "' synchronized to Firebase cloud mesh.");
+                    }
+                });
+            }
+        } catch (Exception e) {
+            SystemLogger.e("SettingsActivity", "Cloud group sync error: " + e.getMessage());
+        }
+    }
+
+    // [Variables] intervalSec: long, mode: String, warning: String | [Constants] None | [Dependencies] tvPingIntervalVal, settingsModel, settingsController | [Integration Points] OOPS Two-Way Binding
+    private void updatePingCadenceSubtitle(long intervalSec, String mode) {
+        if (tvPingIntervalVal != null) {
+            String warning = intervalSec < 30 ? " ⚠️ HIGH BATTERY DRAIN" : "";
+            tvPingIntervalVal.setText("Active Cadence: " + intervalSec + "s" + warning + " | " + mode);
+        }
+        if (settingsModel != null) {
+            settingsModel.setPingIntervalSec((int) intervalSec);
+        }
+    }
     // [Constants]: Preset group keys
     // [Dependencies]: RegistryManager, UiArchitect, AlertDialog
     // [Integration Points]: Database group-by hierarchy & multi-tenancy SSOT
@@ -2752,6 +2983,11 @@ public class SettingsActivity extends BaseActivityJava {
                 } else {
                     String chosen = presetGroups[which];
                     RegistryManager.setDeviceCorrespondingGroup(this, chosen);
+                    syncDeviceGroupToCloud(chosen);
+                    if (settingsModel != null) settingsModel.setDeviceCorrespondingGroup(chosen);
+                    if (tvDeviceGroupVal != null) {
+                        tvDeviceGroupVal.setText("Hierarchy Group: " + chosen + " • Relative Group-By Partition");
+                    }
                     UiArchitect.showSlideNotificationBanner(this, "Device Group Updated", "Node assigned to group: " + chosen, false, 2500, null, null);
                 }
             })
@@ -2784,6 +3020,11 @@ public class SettingsActivity extends BaseActivityJava {
                 String val = input.getText().toString().trim();
                 if (!val.isEmpty()) {
                     RegistryManager.setDeviceCorrespondingGroup(this, val);
+                    syncDeviceGroupToCloud(val);
+                    if (settingsModel != null) settingsModel.setDeviceCorrespondingGroup(val);
+                    if (tvDeviceGroupVal != null) {
+                        tvDeviceGroupVal.setText("Hierarchy Group: " + val + " • Relative Group-By Partition");
+                    }
                     UiArchitect.showSlideNotificationBanner(this, "Device Group Updated", "Node assigned to: " + val, false, 2500, null, null);
                 }
             })
@@ -2834,6 +3075,10 @@ public class SettingsActivity extends BaseActivityJava {
                 int[] daysArr = {1, 2, 3, 7, 14, 30};
                 int chosen = daysArr[which];
                 RegistryManager.setStorageRetentionDays(this, chosen);
+                if (settingsModel != null) settingsModel.setStorageRetentionDays(chosen);
+                if (tvStorageRetentionVal != null) {
+                    tvStorageRetentionVal.setText("Rolling Retention: " + chosen + " Days • WAL Compaction");
+                }
                 UiArchitect.showSlideNotificationBanner(this, "Retention Updated", "Rolling history retention set to " + chosen + " day(s).", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2873,6 +3118,7 @@ public class SettingsActivity extends BaseActivityJava {
                 if (which == 0) {
                     String newTier = currentTier.equals("SPARK") ? "BLAZE" : "SPARK";
                     RegistryManager.setFirebasePlanTier(this, newTier);
+                    updateSparkPlanQuotaSubtitle();
                     UiArchitect.showSlideNotificationBanner(this, "Firebase Tier Updated", "Configured Plan Tier: " + newTier, false, 2500, null, null);
                 } else if (which == 1) {
                     showEditDailyLimitDialog();
@@ -2899,6 +3145,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, sel, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setSparkDailyDownloadMb(this, chosen);
+                updateSparkPlanQuotaSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Daily Limit Updated", "Daily quota cap set to " + chosen + " MB", false, 2500, null, null);
                 dialog.dismiss();
             })
@@ -2919,6 +3166,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setSingleChoiceItems(options, sel, (dialog, which) -> {
                 int chosen = vals[which];
                 RegistryManager.setSparkMonthlyDownloadGb(this, chosen);
+                updateSparkPlanQuotaSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Monthly Limit Updated", "Monthly quota cap set to " + chosen + " GB", false, 2500, null, null);
                 dialog.dismiss();
             })

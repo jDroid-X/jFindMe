@@ -55,5 +55,15 @@ class WatchdogAlarmReceiver : BroadcastReceiver() {
         } else {
             SystemLogger.i(TAG, "TrackingService is healthy and active.")
         }
+
+        // [Variables] intervalMins: Long | [Constants] PREF_WATCHDOG_INTERVAL, PREF_WATCHDOG_ACTIVE | [Dependencies] SharedPreferences, BackgroundJobManager | [Integration Points] Re-arms sub-15min alarm
+        try {
+            val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            val isWatchdogActive = prefs.getBoolean(com.jdroidx.jfindme.service.BackgroundJobManager.PREF_WATCHDOG_ACTIVE, true)
+            val intervalMins = prefs.getLong(com.jdroidx.jfindme.service.BackgroundJobManager.PREF_WATCHDOG_INTERVAL, com.jdroidx.jfindme.service.BackgroundJobManager.DEFAULT_WATCHDOG_MINS)
+            if (isWatchdogActive && intervalMins < 15L && intervalMins > 0L) {
+                com.jdroidx.jfindme.service.BackgroundJobManager.rescheduleWatchdogWorker(context, intervalMins)
+            }
+        } catch (_: Exception) { }
     }
 }

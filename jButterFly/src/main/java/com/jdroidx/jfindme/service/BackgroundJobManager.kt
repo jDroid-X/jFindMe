@@ -1,6 +1,10 @@
 package com.jdroidx.jfindme.service
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -11,6 +15,7 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.data.remote.OfflineSyncManager
 import com.jdroidx.jfindme.engine.sync.LocationWatchdogWorker
 import com.jdroidx.jfindme.engine.sync.OfflineSyncWorker
+import com.jdroidx.jfindme.receiver.WatchdogAlarmReceiver
 import com.jdroidx.jfindme.utils.SilentUpdateWorker
 import com.jdroidx.jfindme.engine.sync.DatabaseMaintenanceWorker
 import com.jdroidx.jfindme.utils.SystemLogger
@@ -226,7 +231,7 @@ object BackgroundJobManager {
         )
 
         // 6. Acoustic Siren & Emergency Beacon Bridge
-        val sirenDur = prefs.getLong(PREF_SIREN_DURATION, 30L)
+        val sirenDur = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(context).toLong().let { if (it > 0L) it else 30L }
         val sirenEnabled = prefs.getBoolean(PREF_ACOUSTIC_SIREN_ACTIVE, true)
         val sirenLastRun = formatLastRun(prefs.getLong(PREF_LAST_RUN_PREFIX + "JOB_ACOUSTIC_SIREN", 0L))
         val sirenJob = JobMetadata(
@@ -253,7 +258,8 @@ object BackgroundJobManager {
         // ==========================================
 
         // 7. Cloud Presence Heartbeat Pulse
-        val presenceSec = prefs.getLong(PREF_PRESENCE_PULSE_INTERVAL, DEFAULT_PRESENCE_PULSE_SEC)
+        val presenceMs = com.jdroidx.jfindme.utils.RegistryManager.getPresencePulseIntervalMs(context)
+        val presenceSec = if (presenceMs > 0L) (presenceMs / 1000L) else prefs.getLong(PREF_PRESENCE_PULSE_INTERVAL, DEFAULT_PRESENCE_PULSE_SEC)
         val presenceEnabled = prefs.getBoolean(PREF_PRESENCE_PULSE_ACTIVE, true)
         val presenceLastRun = formatLastRun(prefs.getLong(PREF_LAST_RUN_PREFIX + "JOB_PRESENCE_PULSE", System.currentTimeMillis()))
         val presenceJob = JobMetadata(
@@ -391,7 +397,7 @@ object BackgroundJobManager {
         // 13. Rolling Storage Hygiene & SQLite VACUUM
         val storagePruneEnabled = prefs.getBoolean(PREF_STORAGE_PRUNE_ACTIVE, true)
         val storagePruneLastRun = formatLastRun(prefs.getLong(PREF_LAST_RUN_PREFIX + "JOB_STORAGE_PRUNE", 0L))
-        val storagePruneDays = prefs.getLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, DEFAULT_STORAGE_PRUNE_DAYS)
+        val storagePruneDays = com.jdroidx.jfindme.utils.RegistryManager.getStorageRetentionDays(context).toLong().let { if (it > 0L) it else prefs.getLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, DEFAULT_STORAGE_PRUNE_DAYS) }
         val storagePruneJob = JobMetadata(
             jobId = "JOB_STORAGE_PRUNE",
             category = "⚡ SYSTEM MAINTENANCE & HYGIENE",
@@ -600,6 +606,7 @@ object BackgroundJobManager {
                 prefs.edit().putBoolean(PREF_WATCHDOG_ACTIVE, enabled).apply()
                 if (!enabled) {
                     WorkManager.getInstance(context).cancelUniqueWork("LocationWatchdogWork")
+                    cancelWatchdogAlarm(context)
                 } else {
                     rescheduleWatchdogWorker(context, prefs.getLong(PREF_WATCHDOG_INTERVAL, DEFAULT_WATCHDOG_MINS))
                 }
@@ -623,6 +630,42 @@ object BackgroundJobManager {
             "JOB_PRESENCE_PULSE" -> {
                 prefs.edit().putBoolean(PREF_PRESENCE_PULSE_ACTIVE, enabled).apply()
             }
+            "JOB_STEALTH_ALARM" -> {
+                prefs.edit().putBoolean(PREF_STEALTH_ALARM_ACTIVE, enabled).apply()
+                if (!enabled) {
+                    StealthAlarmSentinelEngine.cancelStealthAlarms(context)
+                } else {
+                    val interval = prefs.getLong(PREF_STEALTH_DORMANT_INTERVAL, DEFAULT_STEALTH_DORMANT_MINS)
+                    StealthAlarmSentinelEngine.scheduleNextStealthPulse(context, interval)
+                }
+            }
+            "JOB_STORAGE_PRUNE" -> {
+                prefs.edit().putBoolean(PREF_STORAGE_PRUNE_ACTIVE, enabled).apply()
+                if (!enabled) {
+                    WorkManager.getInstance(context).cancelUniqueWork(DatabaseMaintenanceWorker.WORK_NAME)
+                } else {
+                    val days = prefs.getLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, DEFAULT_STORAGE_PRUNE_DAYS)
+                    rescheduleStoragePruneWorker(context, days)
+                }
+            }
+            "JOB_SECURITY_RECEIVER" -> {
+                prefs.edit().putBoolean(PREF_SECURITY_RECEIVER_ACTIVE, enabled).apply()
+            }
+            "JOB_ACOUSTIC_SIREN" -> {
+                prefs.edit().putBoolean(PREF_ACOUSTIC_SIREN_ACTIVE, enabled).apply()
+            }
+            "JOB_FCM_MESSAGING" -> {
+                prefs.edit().putBoolean(PREF_FCM_ACTIVE, enabled).apply()
+            }
+            "JOB_LIVE_MAP_STREAM" -> {
+                prefs.edit().putBoolean(PREF_LIVE_MAP_STREAM_ACTIVE, enabled).apply()
+            }
+            "JOB_APP_UPGRADE_WATCH" -> {
+                prefs.edit().putBoolean(PREF_UPGRADE_WATCH_ACTIVE, enabled).apply()
+            }
+            "JOB_GEOFENCE_SENTINEL" -> {
+                prefs.edit().putBoolean(PREF_GEOFENCE_ACTIVE, enabled).apply()
+            }
         }
         SystemLogger.i(TAG, "Job $jobId active state set to: $enabled")
     }
@@ -637,6 +680,7 @@ object BackgroundJobManager {
         when (jobId) {
             "JOB_TRACKING_SERVICE" -> {
                 prefs.edit().putLong(PREF_TRACKING_INTERVAL, newInterval).apply()
+                com.jdroidx.jfindme.utils.RegistryManager.setTrackingInterval(context, newInterval)
                 SystemLogger.i(TAG, "Updated Tracking Service Interval to: ${newInterval}ms")
             }
             "JOB_OFFLINE_SYNC" -> {
@@ -663,14 +707,134 @@ object BackgroundJobManager {
                 rescheduleSilentUpdateWorker(context, newInterval)
             }
             "JOB_PRESENCE_PULSE" -> {
-                prefs.edit().putLong(PREF_PRESENCE_PULSE_INTERVAL, newInterval).apply()
-                SystemLogger.i(TAG, "Updated Presence Pulse Interval to: ${newInterval}s")
+                val sec = newInterval
+                val ms = sec * 1000L
+                prefs.edit()
+                    .putLong(PREF_PRESENCE_PULSE_INTERVAL, sec)
+                    .putLong("presence_pulse_interval_ms", ms)
+                    .apply()
+                com.jdroidx.jfindme.utils.RegistryManager.setPresencePulseIntervalMs(context, ms)
+                SystemLogger.i(TAG, "Updated Presence Pulse Interval to: ${sec}s (${ms}ms)")
             }
+            "JOB_STORAGE_PRUNE" -> {
+                prefs.edit()
+                    .putLong(PREF_STORAGE_PRUNE_INTERVAL_DAYS, newInterval)
+                    .putInt("pref_storage_retention_days", newInterval.toInt())
+                    .apply()
+                com.jdroidx.jfindme.utils.RegistryManager.setStorageRetentionDays(context, newInterval.toInt())
+                rescheduleStoragePruneWorker(context, newInterval)
+                SystemLogger.i(TAG, "Updated Storage Prune & Retention to: ${newInterval} days")
+            }
+            "JOB_ACOUSTIC_SIREN" -> {
+                prefs.edit()
+                    .putLong(PREF_SIREN_DURATION, newInterval)
+                    .putInt(PREF_SIREN_DURATION, newInterval.toInt())
+                    .apply()
+                com.jdroidx.jfindme.utils.RegistryManager.setSirenDurationSec(context, newInterval.toInt())
+                SystemLogger.i(TAG, "Updated Acoustic Siren Duration to: ${newInterval}s")
+            }
+            "JOB_GEOFENCE_SENTINEL" -> {
+                prefs.edit()
+                    .putLong(PREF_GEOFENCE_SENSITIVITY, newInterval)
+                    .putLong("pref_geofence_jitter_debounce_ms", newInterval * 1000L)
+                    .apply()
+                com.jdroidx.jfindme.utils.RegistryManager.setGeofenceJitterDebounceMs(context, newInterval * 1000L)
+                SystemLogger.i(TAG, "Updated Geofence Sentinel Sensitivity / Debounce to: ${newInterval}s")
+            }
+            "JOB_LIVE_MAP_STREAM" -> {
+                prefs.edit().putLong(PREF_STREAM_POLL_INTERVAL, newInterval).apply()
+                SystemLogger.i(TAG, "Updated Live Map Stream Rate to: ${newInterval}s")
+            }
+        }
+    }
+
+    private const val WATCHDOG_ALARM_REQUEST_CODE = 9921
+
+    private fun cancelWatchdogAlarm(context: Context) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, WatchdogAlarmReceiver::class.java).apply {
+                action = WatchdogAlarmReceiver.ACTION_WATCHDOG_HEARTBEAT
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                WATCHDOG_ALARM_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            )
+            alarmManager.cancel(pendingIntent)
+            SystemLogger.i(TAG, "Sub-15min watchdog alarm canceled.")
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed to cancel watchdog alarm: ${e.message}")
+        }
+    }
+
+    private fun scheduleWatchdogAlarm(context: Context, intervalMins: Long) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(context, WatchdogAlarmReceiver::class.java).apply {
+                action = WatchdogAlarmReceiver.ACTION_WATCHDOG_HEARTBEAT
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                WATCHDOG_ALARM_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            )
+            val triggerAtMillis = System.currentTimeMillis() + (intervalMins * 60 * 1000L)
+
+            val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
+
+            if (canScheduleExact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
+                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            }
+            SystemLogger.i(TAG, "Sub-15min watchdog exact alarm scheduled: Fires in $intervalMins min(s)")
+        } catch (secEx: SecurityException) {
+            SystemLogger.w(TAG, "Exact alarm permission restricted for watchdog: ${secEx.message}. Falling back to setAndAllowWhileIdle.")
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val intent = Intent(context, WatchdogAlarmReceiver::class.java).apply {
+                    action = WatchdogAlarmReceiver.ACTION_WATCHDOG_HEARTBEAT
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    WATCHDOG_ALARM_REQUEST_CODE,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+                )
+                val triggerAtMillis = System.currentTimeMillis() + (intervalMins * 60 * 1000L)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                } else {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                }
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Fatal fallback watchdog alarm failure: ${e.message}")
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed to schedule watchdog alarm: ${e.message}")
         }
     }
 
     private fun rescheduleWatchdogWorker(context: Context, intervalMins: Long) {
         try {
+            // [Variables] safeMins: Long, intervalMins: Long | [Constants] None | [Dependencies] WorkManager, AlarmManager, WatchdogAlarmReceiver | [Integration Points] Watchdog cadence scheduler
+            if (intervalMins < 15L && intervalMins > 0L) {
+                // Android WorkManager periodic floor is 15 minutes; dispatch sub-15min alarms via AlarmManager
+                scheduleWatchdogAlarm(context, intervalMins)
+            } else {
+                cancelWatchdogAlarm(context)
+            }
+
             val safeMins = if (intervalMins < 15L) 15L else intervalMins // WorkManager periodic minimum is 15 min
             val workRequest = PeriodicWorkRequest.Builder(LocationWatchdogWorker::class.java, safeMins, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -678,7 +842,7 @@ object BackgroundJobManager {
                 ExistingPeriodicWorkPolicy.UPDATE,
                 workRequest
             )
-            SystemLogger.i(TAG, "Watchdog worker rescheduled for $safeMins mins.")
+            SystemLogger.i(TAG, "Watchdog worker rescheduled for $safeMins mins (Sub-15m dual-dispatch active: ${intervalMins < 15L}).")
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed to reschedule watchdog worker: ${e.message}")
         }

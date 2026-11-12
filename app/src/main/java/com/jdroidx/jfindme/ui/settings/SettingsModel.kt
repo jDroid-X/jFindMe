@@ -46,7 +46,22 @@ data class SettingsModel(
     // Section 7: System OTA & Watchdog Diagnostics
     var watchdogFrequencySec: Int = 60,
     var otaChannel: String = "STABLE",
-    var logVerbosity: String = "INFO"
+    var logVerbosity: String = "INFO",
+
+    // Section 8: Database & Storage Engine Governance
+    var storageRetentionDays: Int = 3,
+    var deadReckoningRadiusMeters: Float = 15.0f,
+    var presencePulseIntervalMs: Long = 180_000L,
+    var deviceCorrespondingGroup: String = "UNIVERSAL_FLEET",
+
+    // Section 9: Cloud Spark & Failover Closed-Loop Sentinel
+    var firebasePlanTier: String = "SPARK",
+    var sparkDailyDownloadMb: Int = 360,
+    var sparkMonthlyDownloadGb: Int = 10,
+    var sparkBandwidthSaver: Boolean = true,
+    var closedLoopAckTimeoutMs: Long = 10000L,
+    var circuitBreakerFailures: Int = 3,
+    var failoverSmsTarget: String = ""
 )
 
 /**
@@ -57,52 +72,96 @@ class SettingsController(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
 
     fun loadSettings(): SettingsModel {
+        val trackingMs = prefs.getLong("pref_tracking_interval", 15000L)
+        val pingSec = if (trackingMs > 0L) (trackingMs / 1000L).toInt() else prefs.getInt("telemetry_ping_interval", 30)
         return SettingsModel(
-            pingIntervalSec = prefs.getInt("telemetry_ping_interval", 30),
+            pingIntervalSec = pingSec,
             motionDutyCycle = prefs.getString("motion_duty_cycle", "BALANCED") ?: "BALANCED",
-            displacementMeters = prefs.getFloat("displacement_threshold", 10f),
-            roadSmoothingEnabled = prefs.getBoolean("road_smoothing_enabled", true),
-            defaultSafeZoneRadiusM = prefs.getFloat("safezone_default_radius", 100f),
+            displacementMeters = prefs.getFloat("pref_min_displacement_meters", prefs.getFloat("displacement_threshold", 0f)),
+            roadSmoothingEnabled = prefs.getBoolean("pref_road_smoothing_enabled", prefs.getBoolean("road_smoothing_enabled", true)),
+            defaultSafeZoneRadiusM = prefs.getInt("pref_default_safe_zone_radius_meters", 100).toFloat(),
             dwellThresholdMinutes = prefs.getInt("dwell_threshold_minutes", 5),
-            lowBatteryThresholdPct = prefs.getFloat("low_battery_threshold", 20f),
-            staleTimeoutSec = prefs.getInt("stale_timeout_sec", 300),
-            criticalOfflineThresholdSec = prefs.getInt("critical_offline_sec", 1800),
-            sirenDurationSec = prefs.getInt("siren_duration_sec", 60),
-            sosCountdownSec = prefs.getInt("sos_countdown_sec", 5),
+            lowBatteryThresholdPct = prefs.getInt("pref_low_battery_threshold", prefs.getFloat("low_battery_threshold", 20f).toInt()).toFloat(),
+            staleTimeoutSec = prefs.getInt("pref_stale_inactive_minutes", 15) * 60,
+            criticalOfflineThresholdSec = prefs.getInt("pref_critical_offline_hours", 6) * 3600,
+            sirenDurationSec = prefs.getInt("pref_siren_duration_sec", prefs.getInt("siren_duration_sec", 30)),
+            sosCountdownSec = prefs.getInt("pref_sos_countdown_sec", prefs.getInt("sos_countdown_sec", 5)),
             sosFanoutCount = prefs.getInt("sos_fanout_count", 5),
-            offlineQueueCap = prefs.getInt("offline_queue_cap", 1000),
+            offlineQueueCap = prefs.getInt("pref_offline_queue_max_points", prefs.getInt("offline_queue_cap", 500)),
             syncRetryIntervalSec = prefs.getInt("sync_retry_interval_sec", 15),
             ghostModeOffsetM = prefs.getFloat("ghost_mode_offset_m", 500f),
             guardianPin = prefs.getString("guardian_pin", "") ?: "",
-            tamperDetectionEnabled = prefs.getBoolean("tamper_detection_enabled", true),
-            watchdogFrequencySec = prefs.getInt("watchdog_frequency_sec", 60),
+            tamperDetectionEnabled = prefs.getBoolean("child_ward_mode_active", prefs.getBoolean("tamper_detection_enabled", true)),
+            watchdogFrequencySec = (prefs.getLong("pref_watchdog_interval_mins", 15L) * 60L).toInt(),
             otaChannel = prefs.getString("ota_channel", "STABLE") ?: "STABLE",
-            logVerbosity = prefs.getString("log_verbosity", "INFO") ?: "INFO"
+            logVerbosity = prefs.getString("log_verbosity", "INFO") ?: "INFO",
+
+            // Section 8: Database & Storage Engine Governance
+            storageRetentionDays = prefs.getInt("pref_storage_retention_days", 3),
+            deadReckoningRadiusMeters = prefs.getFloat("pref_dead_reckoning_radius_meters", 15.0f),
+            presencePulseIntervalMs = prefs.getLong("presence_pulse_interval_ms", 180_000L),
+            deviceCorrespondingGroup = prefs.getString("device_corresponding_group", "UNIVERSAL_FLEET") ?: "UNIVERSAL_FLEET",
+
+            // Section 9: Cloud Spark & Failover Closed-Loop Sentinel
+            firebasePlanTier = prefs.getString("pref_firebase_plan_tier", "SPARK") ?: "SPARK",
+            sparkDailyDownloadMb = prefs.getInt("pref_spark_daily_download_mb", 360),
+            sparkMonthlyDownloadGb = prefs.getInt("pref_spark_monthly_download_gb", 10),
+            sparkBandwidthSaver = prefs.getBoolean("pref_spark_bandwidth_saver", true),
+            closedLoopAckTimeoutMs = prefs.getLong("pref_closed_loop_ack_timeout_ms", 10000L),
+            circuitBreakerFailures = prefs.getInt("pref_circuit_breaker_max_failures", 3),
+            failoverSmsTarget = prefs.getString("pref_failover_sms_target", "") ?: ""
         )
     }
 
     fun saveSettings(model: SettingsModel) {
         prefs.edit().apply {
+            putLong("pref_tracking_interval", model.pingIntervalSec * 1000L)
             putInt("telemetry_ping_interval", model.pingIntervalSec)
             putString("motion_duty_cycle", model.motionDutyCycle)
+            putFloat("pref_min_displacement_meters", model.displacementMeters)
             putFloat("displacement_threshold", model.displacementMeters)
+            putBoolean("pref_road_smoothing_enabled", model.roadSmoothingEnabled)
             putBoolean("road_smoothing_enabled", model.roadSmoothingEnabled)
+            putInt("pref_default_safe_zone_radius_meters", model.defaultSafeZoneRadiusM.toInt())
             putFloat("safezone_default_radius", model.defaultSafeZoneRadiusM)
             putInt("dwell_threshold_minutes", model.dwellThresholdMinutes)
+            putInt("pref_low_battery_threshold", model.lowBatteryThresholdPct.toInt())
             putFloat("low_battery_threshold", model.lowBatteryThresholdPct)
+            putInt("pref_stale_inactive_minutes", model.staleTimeoutSec / 60)
             putInt("stale_timeout_sec", model.staleTimeoutSec)
+            putInt("pref_critical_offline_hours", model.criticalOfflineThresholdSec / 3600)
             putInt("critical_offline_sec", model.criticalOfflineThresholdSec)
+            putInt("pref_siren_duration_sec", model.sirenDurationSec)
             putInt("siren_duration_sec", model.sirenDurationSec)
+            putInt("pref_sos_countdown_sec", model.sosCountdownSec)
             putInt("sos_countdown_sec", model.sosCountdownSec)
             putInt("sos_fanout_count", model.sosFanoutCount)
+            putInt("pref_offline_queue_max_points", model.offlineQueueCap)
             putInt("offline_queue_cap", model.offlineQueueCap)
             putInt("sync_retry_interval_sec", model.syncRetryIntervalSec)
             putFloat("ghost_mode_offset_m", model.ghostModeOffsetM)
             putString("guardian_pin", model.guardianPin)
+            putBoolean("child_ward_mode_active", model.tamperDetectionEnabled)
             putBoolean("tamper_detection_enabled", model.tamperDetectionEnabled)
+            putLong("pref_watchdog_interval_mins", (model.watchdogFrequencySec / 60).toLong())
             putInt("watchdog_frequency_sec", model.watchdogFrequencySec)
             putString("ota_channel", model.otaChannel)
             putString("log_verbosity", model.logVerbosity)
+
+            // Section 8: Database & Storage Engine Governance
+            putInt("pref_storage_retention_days", model.storageRetentionDays)
+            putFloat("pref_dead_reckoning_radius_meters", model.deadReckoningRadiusMeters)
+            putLong("presence_pulse_interval_ms", model.presencePulseIntervalMs)
+            putString("device_corresponding_group", model.deviceCorrespondingGroup)
+
+            // Section 9: Cloud Spark & Failover Closed-Loop Sentinel
+            putString("pref_firebase_plan_tier", model.firebasePlanTier)
+            putInt("pref_spark_daily_download_mb", model.sparkDailyDownloadMb)
+            putInt("pref_spark_monthly_download_gb", model.sparkMonthlyDownloadGb)
+            putBoolean("pref_spark_bandwidth_saver", model.sparkBandwidthSaver)
+            putLong("pref_closed_loop_ack_timeout_ms", model.closedLoopAckTimeoutMs)
+            putInt("pref_circuit_breaker_max_failures", model.circuitBreakerFailures)
+            putString("pref_failover_sms_target", model.failoverSmsTarget)
             apply()
         }
     }

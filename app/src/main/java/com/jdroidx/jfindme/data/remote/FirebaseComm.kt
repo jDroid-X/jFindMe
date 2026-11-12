@@ -1493,6 +1493,35 @@ object FirebaseComm {
     }
 
     /**
+     * 👥 Synchronizes device corresponding group partition to Firebase RTDB (/devices/{agentId}/device/group).
+     * [Variables] cleanId: String, cleanGroup: String, groupPayload: Map
+     * [Constants] NODE_DEVICES
+     * [Dependencies] devicesRef, sanitizeAgentId, isAgentIdValid, SystemLogger
+     * [Integration Points] SettingsActivity, RegistryManager, Peer Group-By Circle Mesh
+     */
+    @JvmStatic
+    fun updateDeviceGroup(agentId: String, newGroup: String, onComplete: ((Boolean) -> Unit)? = null) {
+        val cleanId = sanitizeAgentId(agentId)
+        if (!isAgentIdValid(cleanId)) {
+            SystemLogger.w("FirebaseComm", "Cannot update device group: invalid agentId '$agentId'")
+            onComplete?.invoke(false)
+            return
+        }
+        val cleanGroup = newGroup.trim().ifEmpty { "DEFAULT" }
+        val groupPayload = mapOf<String, Any>(
+            "group" to cleanGroup,
+            "updated_at" to getForensicTimestamp()
+        )
+        devicesRef.child(cleanId).child("device").updateChildren(groupPayload).addOnSuccessListener {
+            SystemLogger.i("FirebaseComm", "Device group partition updated to '$cleanGroup' for $cleanId")
+            onComplete?.invoke(true)
+        }.addOnFailureListener { err ->
+            SystemLogger.e("FirebaseComm", "Failed to update device group for $cleanId: ${err.message}")
+            onComplete?.invoke(false)
+        }
+    }
+
+    /**
      * 📱 Hardware Vitals & Telemetry Sync
      */
     @JvmStatic
