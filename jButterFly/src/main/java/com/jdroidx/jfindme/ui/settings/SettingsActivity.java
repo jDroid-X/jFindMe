@@ -1883,9 +1883,6 @@ public class SettingsActivity extends BaseActivityJava {
             .setNegativeButton("CANCEL", null)
             .show();
     }
-            .setNegativeButton("CANCEL", null)
-            .show();
-    }
 
     private void showSirenDurationDialog() {
         int current = RegistryManager.getSirenDurationSec(this);
@@ -2932,10 +2929,11 @@ public class SettingsActivity extends BaseActivityJava {
                 }
             }
             if (agentId != null && !agentId.isEmpty()) {
-                FirebaseComm.updateDeviceGroup(agentId, newGroup, success -> {
+                FirebaseComm.INSTANCE.updateDeviceGroup(agentId, newGroup, success -> {
                     if (success != null && success) {
                         SystemLogger.i("SettingsActivity", "Device group partition '" + newGroup + "' synchronized to Firebase cloud mesh.");
                     }
+                    return kotlin.Unit.INSTANCE;
                 });
             }
         } catch (Exception e) {

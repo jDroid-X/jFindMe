@@ -126,6 +126,27 @@ object StealthAlarmSentinelEngine {
     }
 
     @JvmStatic
+    fun cancelStealthAlarms(context: Context) {
+        try {
+            val appContext = context.applicationContext ?: context
+            val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(appContext, StealthAlarmReceiver::class.java).apply {
+                action = StealthAlarmReceiver.ACTION_STEALTH_PULSE
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                appContext,
+                STEALTH_ALARM_REQ_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
+            SystemLogger.i(TAG, "Stealth alarm pulse canceled successfully.")
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed to cancel stealth alarm: ${e.message}")
+        }
+    }
+
+    @JvmStatic
     fun executeStealthPulseWithWakeLock(context: Context, onComplete: () -> Unit) {
         val appContext = context.applicationContext ?: context
         val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager

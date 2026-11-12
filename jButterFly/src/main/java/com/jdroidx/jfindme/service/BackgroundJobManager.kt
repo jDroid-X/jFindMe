@@ -825,7 +825,7 @@ object BackgroundJobManager {
         }
     }
 
-    private fun rescheduleWatchdogWorker(context: Context, intervalMins: Long) {
+    fun rescheduleWatchdogWorker(context: Context, intervalMins: Long) {
         try {
             // [Variables] safeMins: Long, intervalMins: Long | [Constants] None | [Dependencies] WorkManager, AlarmManager, WatchdogAlarmReceiver | [Integration Points] Watchdog cadence scheduler
             if (intervalMins < 15L && intervalMins > 0L) {

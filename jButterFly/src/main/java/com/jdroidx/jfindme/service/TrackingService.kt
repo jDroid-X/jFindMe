@@ -133,13 +133,24 @@ class TrackingService : Service() {
             evaluateSoftwareGeofences(location.latitude, location.longitude)
 
             // 🛣️ Kalman 2D Spatial Stabilization & Road Azimuth Smoothing (Execute prior to dead-reckoning distance check)
-            val smoothedLocation = try {
+            val smoothedLocation: android.location.Location = try {
                 if (RegistryManager.isRoadSmoothingEnabled(applicationContext)) {
-                    com.jdroidx.jfindme.engine.map.RoadSmoothingEngine.processLocation(
+                    val res = com.jdroidx.jfindme.engine.map.RoadSmoothingEngine.processLocation(
                         deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext),
-                        rawLoc = location,
+                        rawLat = location.latitude,
+                        rawLng = location.longitude,
+                        accuracyMeters = location.accuracy,
+                        rawSpeedMps = location.speed,
+                        rawBearing = location.bearing,
+                        timestamp = location.time,
                         context = applicationContext
                     )
+                    android.location.Location(location).apply {
+                        latitude = res.smoothedLatLng.latitude
+                        longitude = res.smoothedLatLng.longitude
+                        speed = res.smoothedSpeedMps
+                        bearing = res.filteredHeading
+                    }
                 } else {
                     location
                 }
