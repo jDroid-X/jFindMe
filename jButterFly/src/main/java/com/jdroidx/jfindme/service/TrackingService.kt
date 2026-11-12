@@ -132,6 +132,21 @@ class TrackingService : Service() {
             // 🛡️ SOFTWARE GEOFENCING: Ray-Casting Polygon Perimeter Evaluation
             evaluateSoftwareGeofences(location.latitude, location.longitude)
 
+            // 🛣️ Kalman 2D Spatial Stabilization & Road Azimuth Smoothing (Execute prior to dead-reckoning distance check)
+            val smoothedLocation = try {
+                if (RegistryManager.isRoadSmoothingEnabled(applicationContext)) {
+                    com.jdroidx.jfindme.engine.map.RoadSmoothingEngine.processLocation(
+                        deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext),
+                        rawLoc = location,
+                        context = applicationContext
+                    )
+                } else {
+                    location
+                }
+            } catch (_: Exception) {
+                location
+            }
+
             // 🚀 Authoritative SSOT Background Avatar Sync & Vitals Logging
             val db = DatabaseHelper.getInstance(applicationContext)
             val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
@@ -170,12 +185,12 @@ class TrackingService : Service() {
 
             val currentTime = System.currentTimeMillis()
             val isSos = p.getBoolean("is_sos_active", false)
-            val distMoved = lastUploadedLocation?.distanceTo(location) ?: Float.MAX_VALUE
+            val distMoved = lastUploadedLocation?.distanceTo(smoothedLocation) ?: Float.MAX_VALUE
             // [Variables]: deadReckoningThreshold, presencePulseInterval, stationarySpeedThreshold | [Constants]: KEY_DEAD_RECKONING_RADIUS_METERS, KEY_PRESENCE_PULSE_INTERVAL_MS, KEY_STATIONARY_SPEED_THRESHOLD_MPS | [Dependencies]: RegistryManager | [Integration Points]: Settings & Dynamic Fleet OOPS Config
             val deadReckoningThreshold = com.jdroidx.jfindme.utils.RegistryManager.getDeadReckoningRadiusMeters(applicationContext)
             val presencePulseInterval = com.jdroidx.jfindme.utils.RegistryManager.getPresencePulseIntervalMs(applicationContext)
             val stationarySpeedThreshold = com.jdroidx.jfindme.utils.RegistryManager.getStationarySpeedThresholdMps(applicationContext)
-            val isPhysicallyStationary = (distMoved < deadReckoningThreshold && location.speed < stationarySpeedThreshold) && !isSos
+            val isPhysicallyStationary = (distMoved < deadReckoningThreshold && smoothedLocation.speed < stationarySpeedThreshold) && !isSos
 
             // 🛡️ Spatial Dead-Reckoning: Suppress redundant full GPS uploads when stationary (< deadReckoningThreshold m)
             if (isPhysicallyStationary) {
@@ -191,13 +206,13 @@ class TrackingService : Service() {
             }
 
             // Kinematic movement (> 15m) or Emergency SOS: Update anchor and continue through adaptive throttle
-            lastUploadedLocation = android.location.Location(location)
+            lastUploadedLocation = android.location.Location(smoothedLocation)
             lastPresencePulseEpoch = currentTime
 
             // 🛡️ Adaptive Telemetry Polling Throttle (GisSpatialEngine)
             val adaptiveInterval = com.jdroidx.jfindme.engine.location.GisSpatialEngine.computeAdaptivePollingInterval(
                 isSosActive = isSos,
-                speedMps = location.speed,
+                speedMps = smoothedLocation.speed,
                 batteryPct = p.getInt("last_known_battery", 100),
                 isCharging = p.getBoolean("last_known_charging", false),
                 isStationary = isPhysicallyStationary,
@@ -452,10 +467,39 @@ class TrackingService : Service() {
             val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(applicationContext)
 
+            var extremeRateStartEpoch = 0L
+
             while (isActive) {
                 // 📡 WHATSAPP ALGORITHM: Dynamic live cadence respecting user tracking frequency setting
                 val userInterval = RegistryManager.getTrackingInterval(applicationContext)
-                val cycleMs = userInterval.coerceIn(15000L, 300000L) // Respect configured interval (min 15s)
+                val isSosActive = prefs.getBoolean("is_sos_active", false)
+                
+                // 🛡️ Human-in-the-Loop Auto-Downgrade Failsafe:
+                // If user selects Extreme (1s) or High (7s) rate, enforce a 30-minute safety breaker to avoid accidental overnight 0% battery death, unless SOS is active.
+                val effectiveInterval = if (userInterval < 15000L && !isSosActive) {
+                    val nowEpoch = System.currentTimeMillis()
+                    if (extremeRateStartEpoch == 0L) {
+                        extremeRateStartEpoch = nowEpoch
+                    }
+                    if (nowEpoch - extremeRateStartEpoch > 30 * 60 * 1000L) { // 30 minutes expired
+                        SystemLogger.w(TAG, "BATTERY_SENTINEL: 30m high-rate timeout elapsed. Downgrading interval to 15s to preserve battery.")
+                        RegistryManager.setTrackingInterval(applicationContext, 15000L)
+                        extremeRateStartEpoch = 0L
+                        15000L
+                    } else {
+                        userInterval
+                    }
+                } else {
+                    extremeRateStartEpoch = 0L
+                    userInterval
+                }
+
+                // Permit sub-15s intervals (down to 1s) during active SOS or active safety window; otherwise clamp to 15s battery minimum
+                val cycleMs = if (isSosActive || effectiveInterval < 15000L) {
+                    effectiveInterval.coerceIn(1000L, 300000L)
+                } else {
+                    effectiveInterval.coerceIn(15000L, 300000L)
+                }
                 
                 // Acquire brief partial WakeLock (max 3s) to bypass deep Android Doze while screen is off / silent
                 try {

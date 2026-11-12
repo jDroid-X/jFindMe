@@ -694,7 +694,7 @@ object BackgroundJobManager {
             "JOB_STEALTH_ALARM" -> {
                 prefs.edit().putLong(PREF_STEALTH_DORMANT_INTERVAL, newInterval).apply()
                 try {
-                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setStealthIntervalMins(newInterval)
+                    com.jdroidx.jfindme.utils.RegistryManager.setStealthIntervalMins(context, newInterval)
                     StealthAlarmSentinelEngine.scheduleNextStealthPulse(context, newInterval)
                 } catch (_: Exception) {}
             }
@@ -707,7 +707,7 @@ object BackgroundJobManager {
                 rescheduleSilentUpdateWorker(context, newInterval)
             }
             "JOB_PRESENCE_PULSE" -> {
-                val sec = newInterval
+                val sec = if (newInterval >= 1000L) newInterval / 1000L else newInterval
                 val ms = sec * 1000L
                 prefs.edit()
                     .putLong(PREF_PRESENCE_PULSE_INTERVAL, sec)
@@ -851,7 +851,13 @@ object BackgroundJobManager {
     private fun rescheduleOfflineSyncWorker(context: Context, intervalMins: Long) {
         try {
             val safeMins = if (intervalMins < 15L) 15L else intervalMins
-            val workRequest = PeriodicWorkRequest.Builder(OfflineSyncWorker::class.java, safeMins, TimeUnit.MINUTES).build()
+            val isWifiOnly = com.jdroidx.jfindme.utils.RegistryManager.isSyncWifiOnly(context)
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(if (isWifiOnly) androidx.work.NetworkType.UNMETERED else androidx.work.NetworkType.CONNECTED)
+                .build()
+            val workRequest = PeriodicWorkRequest.Builder(OfflineSyncWorker::class.java, safeMins, TimeUnit.MINUTES)
+                .setConstraints(constraints)
+                .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "OfflineSyncPeriodic",
                 ExistingPeriodicWorkPolicy.UPDATE,

@@ -459,7 +459,7 @@ public class SettingsActivity extends BaseActivityJava {
         gpsCard.addView(strictWaitSwitch, btnLp);
 
                 // ⏰ STEALTH DORMANT CADENCE (APP CLOSED / BACKGROUND)
-        long stealthMins = DatabaseHelper.getInstance(this).getStealthIntervalMins();
+        long stealthMins = RegistryManager.getStealthIntervalMins(this);
         String stealthSub = "Cadence: " + stealthMins + " mins | Autonomous SIM & Alarm Sentinel";
         gpsCard.addView(createSettingTile("STEALTH DORMANT CADENCE (APP CLOSED)", stealthSub, com.jdroidx.jfindme.R.drawable.ic_settings_gears, v -> showStealthCadenceDialog(), tv -> tvStealthCadenceVal = tv), btnLp);
 
@@ -1225,7 +1225,7 @@ public class SettingsActivity extends BaseActivityJava {
      * Master Human-in-the-Loop Safe Recovery: Restores all universal engine parameters to enterprise defaults.
      */
         private void showStealthCadenceDialog() {
-        long currentMins = DatabaseHelper.getInstance(this).getStealthIntervalMins();
+        long currentMins = RegistryManager.getStealthIntervalMins(this);
         final long[] options = { 15L, 30L, 45L, 60L, 120L };
         final String[] labels = {
             "15 Mins (Fast Cadence - Moderate Battery)",
@@ -1246,7 +1246,7 @@ public class SettingsActivity extends BaseActivityJava {
             .setTitle("⏰ Stealth Dormant Cadence")
             .setSingleChoiceItems(labels, selected, (dialog, which) -> {
                 long chosen = options[which];
-                DatabaseHelper.getInstance(this).setStealthIntervalMins(chosen);
+                RegistryManager.setStealthIntervalMins(this, chosen);
                 com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(this, chosen);
                 if (tvStealthCadenceVal != null) {
                     tvStealthCadenceVal.setText("Cadence: " + chosen + " mins | Autonomous SIM and Alarm Sentinel");

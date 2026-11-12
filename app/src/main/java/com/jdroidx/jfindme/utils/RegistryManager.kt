@@ -132,6 +132,8 @@ object RegistryManager {
     // 📦 Offline Vault & Sync
     const val KEY_OFFLINE_QUEUE_MAX_POINTS   = "pref_offline_queue_max_points"
     const val KEY_SYNC_WIFI_ONLY             = "pref_sync_wifi_only"
+    const val KEY_STEALTH_DORMANT_INTERVAL_MINS = "pref_stealth_dormant_interval_mins"
+    const val DEFAULT_STEALTH_DORMANT_MINS   = 60L
 
     // 🔀 Telemetry Failover & Closed-Loop Routing
     const val KEY_FAILOVER_SMS_TARGET         = "pref_sos_sms_target"
@@ -532,6 +534,25 @@ object RegistryManager {
 
     @JvmStatic fun setSyncWifiOnly(context: Context, wifiOnly: Boolean) {
         putBoolean(context, KEY_SYNC_WIFI_ONLY, wifiOnly)
+    }
+
+    // ⏰ Stealth Dormant Cadence (Atomic SSOT Dual-Persistence)
+    @JvmStatic fun getStealthIntervalMins(context: Context): Long {
+        val spVal = getLong(context, KEY_STEALTH_DORMANT_INTERVAL_MINS, 0L)
+        if (spVal > 0L) return spVal
+        return try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).getStealthIntervalMins().takeIf { it > 0 } ?: DEFAULT_STEALTH_DORMANT_MINS
+        } catch (_: Exception) {
+            DEFAULT_STEALTH_DORMANT_MINS
+        }
+    }
+
+    @JvmStatic fun setStealthIntervalMins(context: Context, intervalMins: Long) {
+        val safe = if (intervalMins <= 0) DEFAULT_STEALTH_DORMANT_MINS else intervalMins
+        putLong(context, KEY_STEALTH_DORMANT_INTERVAL_MINS, safe)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setStealthIntervalMins(safe)
+        } catch (_: Exception) { }
     }
 
     // 🛡️ Master Purge Safety Phrase
