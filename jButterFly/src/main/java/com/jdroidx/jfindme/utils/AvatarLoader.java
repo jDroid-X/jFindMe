@@ -393,18 +393,21 @@ public class AvatarLoader {
         targetView.setImageResource(resId != 0 ? resId : android.R.drawable.ic_menu_myplaces);
     }
 
-    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-    // Pre-Composited Map Marker Cache: Generates pre-composited circular avatars with RAG halo rings for 60fps map rendering
-    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-    // Circular Avatar Resolution: Combines getRemoteAvatarBitmap and createCircularBitmap with caching
+    // [Variables] context, deviceId, avatarIdStr, targetSize, devKey, cacheKey, cached, raw, circular | [Constants] None | [Dependencies] Bitmap, Canvas, Paint, Context | [Integration Points] MultiMarkerEngine, MapActivity
+    // Circular Avatar Resolution: Combines getRemoteAvatarBitmap and createCircularBitmap with compound caching
     public static Bitmap getCircularAvatarBitmap(Context context, String avatarIdStr, int targetSize) {
+        return getCircularAvatarBitmap(context, null, avatarIdStr, targetSize);
+    }
+
+    public static Bitmap getCircularAvatarBitmap(Context context, String deviceId, String avatarIdStr, int targetSize) {
         if (context == null) return null;
-        String cacheKey = "CIRCULAR_HQ_" + avatarIdStr + "_S_" + targetSize;
+        String devKey = (deviceId != null && !deviceId.isEmpty()) ? deviceId : "GLOBAL";
+        String cacheKey = "CIRCULAR_HQ_" + devKey + "_" + (avatarIdStr != null ? avatarIdStr : "") + "_S_" + targetSize;
         Bitmap cached = bitmapCache.get(cacheKey);
         if (cached != null && !cached.isRecycled()) {
             return cached;
         }
-        Bitmap raw = getRemoteAvatarBitmap(context, avatarIdStr, targetSize);
+        Bitmap raw = getRemoteAvatarBitmap(context, deviceId, avatarIdStr, targetSize);
         if (raw == null) return null;
         Bitmap circular = createCircularBitmap(raw, targetSize);
         if (circular != null) {
@@ -414,14 +417,19 @@ public class AvatarLoader {
     }
 
     public static Bitmap getCompositeMarkerBitmap(Context context, String avatarId, int strokeColor, int sizePx) {
+        return getCompositeMarkerBitmap(context, null, avatarId, strokeColor, sizePx);
+    }
+
+    public static Bitmap getCompositeMarkerBitmap(Context context, String deviceId, String avatarId, int strokeColor, int sizePx) {
         if (context == null) return null;
-        String cacheKey = "marker_" + avatarId + "_" + strokeColor + "_" + sizePx;
+        String devKey = (deviceId != null && !deviceId.isEmpty()) ? deviceId : "GLOBAL";
+        String cacheKey = "marker_" + devKey + "_" + (avatarId != null ? avatarId : "") + "_" + strokeColor + "_" + sizePx;
         Bitmap cached = bitmapCache.get(cacheKey);
         if (cached != null && !cached.isRecycled()) {
             return cached;
         }
 
-        Bitmap base = getCircularAvatarBitmap(context, avatarId, sizePx);
+        Bitmap base = getCircularAvatarBitmap(context, deviceId, avatarId, sizePx);
         if (base == null) return null;
 
         Bitmap composited = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);

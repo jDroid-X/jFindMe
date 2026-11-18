@@ -38,7 +38,14 @@ class WatchdogAlarmReceiver : BroadcastReceiver() {
         
         val isRunning = isTrackingServiceRunning(context)
         if (!isRunning) {
-            SystemLogger.w(TAG, "TrackingService was found DEAD. Reviving service immediately...")
+            SystemLogger.w(TAG, "TrackingService was found DEAD. Triggering autonomous stealth pulse & reviving service...")
+            // 🛡️ PRIME OBJECTIVE: Even when app is off or killed, execute autonomous cellular & GPS pulse immediately
+            try {
+                com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.executeStealthPulseWithWakeLock(context) {}
+            } catch (stealthEx: Exception) {
+                SystemLogger.e(TAG, "Watchdog stealth pulse fallback error: ${stealthEx.message}")
+            }
+
             val serviceIntent = Intent(context, TrackingService::class.java).apply {
                 action = TrackingService.ACTION_START_TRACKING
             }

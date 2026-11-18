@@ -1341,12 +1341,18 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         applyDialogTheme(nameDialog);
     }
 
+    /**
+     * [Variables]: googleMap
+     * [Constants]: None
+     * [Dependencies]: GoogleMap, MapLifecycleDelegate
+     * [Integration Points]: GeofenceActivity, MapLifecycleDelegate, GeofenceRepository
+     *
+     * 🚀 V83 OOPS-based MVC SSOT Delegation: Configures canonical map defaults via MapLifecycleDelegate.
+     */
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
         this.googleMap = googleMap;
-        this.googleMap.getUiSettings().setZoomControlsEnabled(true);
-        this.googleMap.getUiSettings().setMyLocationButtonEnabled(false);
-        UiArchitect.applyMapStyle(this, this.googleMap);
+        com.jdroidx.jfindme.ui.map.MapLifecycleDelegate.configureMapDefaults(this, googleMap);
 
         this.googleMap.setOnMapClickListener(latLng -> {
             if (isPolygonMode) {

@@ -9,6 +9,7 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,6 +49,7 @@ class FamilyFriendsViewModel : ViewModel() {
 
     private var rosterListener: ValueEventListener? = null
     private var activeGroupId: String? = null
+    private var locationObserver: androidx.lifecycle.Observer<List<com.jdroidx.jfindme.data.model.UserLocation>>? = null
 
     fun initializeCloudSync(context: android.content.Context) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -65,9 +67,13 @@ class FamilyFriendsViewModel : ViewModel() {
                 val cached = offlineNodes.filterNot { item ->
                     val u1 = item["uid_1"] as? String ?: ""
                     val u2 = item["uid_2"] as? String ?: ""
+                    val role = item["role_type"] as? String ?: ""
+                    val name = item["fullName"] as? String ?: ""
+                    val isPrime = isChildOrPrimeTarget(u1, role, name) || isChildOrPrimeTarget(u2, role, name)
+                    val isCanonical = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(u1) || (u2.isNotEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(u2))
                     (u1.isNotEmpty() && (u1 == selfAuthUid || u1 == selfAgentId || u1 == selfDevUid || (resolvedLocalAgentId != null && u1 == resolvedLocalAgentId))) ||
                     (u2.isNotEmpty() && (u2 == selfDevUid || u2 == selfAgentId || (resolvedLocalAgentId != null && u2 == resolvedLocalAgentId))) ||
-                    (scopedIds.isNotEmpty() && !scopedIds.contains(u1) && !scopedIds.contains(u2))
+                    (!isPrime && !isCanonical && scopedIds.isNotEmpty() && !scopedIds.contains(u1) && !scopedIds.contains(u2))
                 }.map { item ->
                     val role = item["role_type"] as? String ?: "Unknown"
                     val isFriend = when (val fr = item["is_friend"]) {
@@ -87,12 +93,22 @@ class FamilyFriendsViewModel : ViewModel() {
                         if (pMaskStr.startsWith("0x", ignoreCase = true)) pMaskStr.substring(2).toInt(16)
                         else pMaskStr.toInt()
                     } catch (e: Exception) { 0xFF }
-                    val batteryPct = (item["battery_pct"] as? Number)?.toInt() ?: 100
-                    val lastSeenMs = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
-                    val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batteryPct, false)
+                    val rawBatteryPct = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                    val rawLastSeenMs = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
+                    val u1 = item["uid_1"] as? String ?: ""
+                    val u2 = item["uid_2"] as? String ?: ""
+
+                    // 🚀 Cross-Reference Live Location SSOT
+                    val locRepo = com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context)
+                    val cachedLoc = locRepo.getLatestLocationFor(u1) ?: (if (u2.isNotEmpty()) locRepo.getLatestLocationFor(u2) else null)
+                    val lastSeenMs = if (cachedLoc != null && cachedLoc.getLongTimestamp() > rawLastSeenMs) cachedLoc.getLongTimestamp() else rawLastSeenMs
+                    val batteryPct = if (cachedLoc != null && cachedLoc.batteryLevel > 0) cachedLoc.batteryLevel else rawBatteryPct
+                    val isSos = cachedLoc?.isSosActive ?: false
+
+                    val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batteryPct, isSos)
                     val isOnline = (rag.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN)
                     RosterNode(
-                        uid = item["uid_1"] as? String ?: "",
+                        uid = u1,
                         displayName = item["fullName"] as? String ?: "Unknown",
                         roleTitle = role,
                         statusText = rag.statusText,
@@ -106,7 +122,48 @@ class FamilyFriendsViewModel : ViewModel() {
                         permissionsMask = pMask
                     ) 
                 }
-                _rosterLiveData.postValue(cached) // Zero-Latency Boot with REAL RAG Vitals
+                val sortedCached = cached.sortedWith(
+                    compareByDescending<RosterNode> { isChildOrPrimeTarget(it.uid, it.roleTitle, it.displayName) }
+                        .thenByDescending { it.batteryPercent <= 15 && it.isOnline }
+                        .thenByDescending { it.isOnline }
+                        .thenByDescending { it.lastSeenTimestamp }
+                )
+                _rosterLiveData.postValue(sortedCached) // Zero-Latency Boot with REAL RAG Vitals (Latest/Prime first)
+            }
+        }
+
+        // 🚀 Unified Live Location Observer: Keeps Family & Friends Roster 100% in sync with Live Map Telemetry
+        if (locationObserver == null) {
+            val obs = androidx.lifecycle.Observer<List<com.jdroidx.jfindme.data.model.UserLocation>> { locations ->
+                val current = _rosterLiveData.value?.toMutableList() ?: return@Observer
+                var changed = false
+                for (loc in locations) {
+                    val uId = loc.getResolvedUserId()
+                    val cleanId = uId.removePrefix("HW_")
+                    val idx = current.indexOfFirst { it.uid == uId || it.uid == cleanId || it.uid == "HW_$cleanId" }
+                    if (idx != -1) {
+                        val old = current[idx]
+                        if (loc.getLongTimestamp() > old.lastSeenTimestamp) {
+                            val ragEval = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(loc.getLongTimestamp(), loc.batteryLevel, loc.isSosActive)
+                            current[idx] = old.copy(
+                                batteryPercent = if (loc.batteryLevel > 0) loc.batteryLevel else old.batteryPercent,
+                                lastSeenTimestamp = loc.getLongTimestamp(),
+                                isOnline = ragEval.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN,
+                                statusText = ragEval.statusText
+                            )
+                            changed = true
+                        }
+                    }
+                }
+                if (changed) {
+                    _rosterLiveData.postValue(current)
+                }
+            }
+            locationObserver = obs
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context.applicationContext).userLocations.observeForever(obs)
+                } catch (_: Exception) {}
             }
         }
 
@@ -126,12 +183,12 @@ class FamilyFriendsViewModel : ViewModel() {
             val idSnap = devSnap.child("Identity")
             val groupId = pSnap.child("active_group").getValue(String::class.java)
                 ?: idSnap.child("active_group").getValue(String::class.java)
-                ?: context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
-            val effectiveGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") groupId else defaultGroup
+                ?: com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+            val effectiveGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") groupId else com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
             activeGroupId = effectiveGroup
             bindLiveRosterSocket(effectiveGroup, context)
         }.addOnFailureListener {
-            val cachedGroup = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", defaultGroup) ?: defaultGroup
+            val cachedGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
             activeGroupId = cachedGroup
             bindLiveRosterSocket(cachedGroup, context)
         }
@@ -150,7 +207,7 @@ class FamilyFriendsViewModel : ViewModel() {
 
         com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(finalAgentId).child("profile").child("active_group").get().addOnCompleteListener { grpTask ->
             val groupId = if (grpTask.isSuccessful && grpTask.result != null) grpTask.result!!.getValue(String::class.java) else null
-            val effectiveGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") groupId else defaultGroup
+            val effectiveGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") groupId else com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
 
             // Stage 1: Query current active group (unified devices or legacy members)
             val groupRelRef = db.child(com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_RELATIONSHIPS).child(effectiveGroup)
@@ -336,7 +393,12 @@ class FamilyFriendsViewModel : ViewModel() {
             // 🛡️ Scoped connected device visibility: strictly isolate to respective connected peers
             val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
             val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
-            if (scopedIds.isNotEmpty() && !scopedIds.contains(canonicalAgentId) && !scopedIds.contains(rawKey)) {
+            val candidateRole = nodeSnap.child("membership").child("role").getValue(String::class.java)
+                ?: nodeSnap.child("role").getValue(String::class.java)
+                ?: profileSnap.child("role_title").getValue(String::class.java)
+            val isPrime = isChildOrPrimeTarget(canonicalAgentId, candidateRole, localDb.getDeviceCentricName(canonicalAgentId))
+            val isCanonical = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(canonicalAgentId) || com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(rawKey)
+            if (!isPrime && !isCanonical && scopedIds.isNotEmpty() && !scopedIds.contains(canonicalAgentId) && !scopedIds.contains(rawKey)) {
                 continue
             }
 
@@ -634,9 +696,14 @@ class FamilyFriendsViewModel : ViewModel() {
                     if (pMaskStr2.startsWith("0x", ignoreCase = true)) pMaskStr2.substring(2).toInt(16)
                     else pMaskStr2.toInt()
                 } catch (e: Exception) { 0xFF }
-                val batteryPct2 = (item["battery_pct"] as? Number)?.toInt() ?: 100
-                val lastSeenMs2 = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
-                val rag2 = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs2, batteryPct2, false)
+                val rawBatteryPct2 = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                val rawLastSeenMs2 = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
+                val locRepo2 = com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context)
+                val cachedLoc2 = locRepo2.getLatestLocationFor(u1)
+                val lastSeenMs2 = if (cachedLoc2 != null && cachedLoc2.getLongTimestamp() > rawLastSeenMs2) cachedLoc2.getLongTimestamp() else rawLastSeenMs2
+                val batteryPct2 = if (cachedLoc2 != null && cachedLoc2.batteryLevel > 0) cachedLoc2.batteryLevel else rawBatteryPct2
+                val isSos2 = cachedLoc2?.isSosActive ?: false
+                val rag2 = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs2, batteryPct2, isSos2)
 
                 resolvedNodes.add(RosterNode(
                     uid = u1,
@@ -655,7 +722,13 @@ class FamilyFriendsViewModel : ViewModel() {
             }
         }
 
-        _rosterLiveData.postValue(resolvedNodes)
+        val sortedNodes = resolvedNodes.sortedWith(
+            compareByDescending<RosterNode> { isChildOrPrimeTarget(it.uid, it.roleTitle, it.displayName) }
+                .thenByDescending { it.batteryPercent <= 15 && it.isOnline }
+                .thenByDescending { it.isOnline }
+                .thenByDescending { it.lastSeenTimestamp }
+        )
+        _rosterLiveData.postValue(sortedNodes)
         }
     }
 
@@ -701,6 +774,27 @@ class FamilyFriendsViewModel : ViewModel() {
         }
     }
 
+    /**
+     * 🧸 PRIME OBJECTIVE: Evaluates whether a roster node is a Child / Protected Ward target (dynamic SSOT via RegistryManager)
+     */
+    private fun isChildOrPrimeTarget(uid: String, roleTitle: String?, displayName: String?): Boolean {
+        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val primeTarget = if (appCtx != null) {
+            com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(appCtx)
+        } else {
+            com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_PRIME_TARGET_ID
+        }
+        if (uid.equals(primeTarget, ignoreCase = true) || uid.contains(primeTarget, ignoreCase = true)) return true
+        if (displayName != null && displayName.contains("RIDDHI", ignoreCase = true)) return true
+        val role = roleTitle ?: ""
+        return role.contains("Child", ignoreCase = true) ||
+               role.contains("Daughter", ignoreCase = true) ||
+               role.contains("Son", ignoreCase = true) ||
+               role.contains("Ward", ignoreCase = true) ||
+               role.contains("Dependent", ignoreCase = true) ||
+               role.contains("DEPENDENT_CHILD", ignoreCase = true)
+    }
+
     override fun onCleared() {
         super.onCleared()
         // Kill the Background Socket cleanly on Activity destruction!
@@ -720,6 +814,12 @@ class FamilyFriendsViewModel : ViewModel() {
             com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef.child(agentId).child("device").child("live").removeEventListener(listener)
         }
         peerLiveListeners.clear()
+        locationObserver?.let { obs ->
+            try {
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(com.jdroidx.jfindme.JFindMeApplication.getContext()).userLocations.removeObserver(obs)
+            } catch (_: Exception) {}
+            locationObserver = null
+        }
     }
 }
 

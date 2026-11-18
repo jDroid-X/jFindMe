@@ -92,6 +92,7 @@ object RegistryManager {
     const val KEY_UPDATE_AVAILABLE_TS     = "update_available_ts"
     const val KEY_UPDATE_STATUS_TS        = "update_status_ts"
     const val KEY_IS_UPDATED              = "is_updated"
+    const val KEY_LAST_KNOWN_VERSION_CODE = "last_known_version_code"
     const val KEY_PURGE_SAFETY_PHRASE     = "pref_purge_safety_phrase"
     const val KEY_LAST_FAILED_INSTALL_TS    = "last_failed_install_ts"
     const val KEY_LAST_FAILED_INSTALL_EPOCH = "last_failed_install_epoch"
@@ -139,10 +140,12 @@ object RegistryManager {
     const val KEY_FAILOVER_SMS_TARGET         = "pref_sos_sms_target"
     const val KEY_CLOSED_LOOP_ACK_TIMEOUT_MS  = "pref_closed_loop_ack_timeout_ms"
     const val KEY_MAX_ACK_FAILURES            = "pref_max_ack_failures"
+    const val KEY_DEVICE_SHARING_TIMEOUT_MS   = "pref_device_sharing_timeout_ms"
 
     const val DEFAULT_CLOSED_LOOP_ACK_TIMEOUT_MS = 5000L
     const val DEFAULT_MAX_ACK_FAILURES           = 2
     const val DEFAULT_FAILOVER_SMS_TARGET        = ""
+    const val DEFAULT_DEVICE_SHARING_TIMEOUT_MS  = 15000L
 
     // 🛡️ Decommissioned & Orphan Fleet Sentinel
     const val KEY_DECOMMISSIONED_AGENT_IDS       = "pref_decommissioned_agent_ids"
@@ -180,6 +183,9 @@ object RegistryManager {
 
     const val KEY_DEVICE_CORRESPONDING_GROUP    = "device_corresponding_group"
     const val DEFAULT_DEVICE_CORRESPONDING_GROUP = "UNIVERSAL_FLEET"
+
+    const val KEY_PRIME_TARGET_DEVICE_ID        = "pref_prime_target_device_id"
+    const val DEFAULT_PRIME_TARGET_ID           = "4379A761"
 
     // Firebase Spark Plan Defaults
     const val DEFAULT_FIREBASE_PLAN_TIER        = "SPARK" // SPARK (Free) or BLAZE (Pay-as-you-go)
@@ -222,12 +228,41 @@ object RegistryManager {
     const val DEFAULT_SIREN_DURATION_SEC      = 30
     const val DEFAULT_OFFLINE_QUEUE_MAX_POINTS= 500
     const val DEFAULT_SYSTEM_UPDATE_LINK = "https://drive.google.com/drive/folders/1qs1JRgku7SjfU59EMhZHCc7Kq2yFBGdC"
-    const val DEFAULT_GITHUB_UPDATE_LINK = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
-    const val DEFAULT_GITHUB_DOWNLOAD_LINK = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
-    const val DEFAULT_GITHUB_WEB_LINK    = "https://github.com/jDroid-X/jButterfly/tree/main/jbutterfly"
-    const val DEFAULT_GITHUB_LEGACY_RAW_LINK = "https://github.com/jDroid-X/jButterfly/raw/main/jbutterfly/jButterFly.apk"
+    const val DEFAULT_GITHUB_UPDATE_LINK = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jButterFly/jButterFly.apk"
+    const val DEFAULT_GITHUB_DOWNLOAD_LINK = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jButterFly/jButterFly.apk"
+    const val DEFAULT_GITHUB_WEB_LINK    = "https://github.com/jDroid-X/jButterfly/tree/main/jButterFly"
+    const val DEFAULT_GITHUB_LEGACY_RAW_LINK = "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jButterFly/jButterFly.apk"
     const val DEFAULT_LOCAL_SYNC_ENDPOINT= "http://127.0.0.1:8085"
     const val DEFAULT_PURGE_SAFETY_PHRASE = "jbutterfly@123"
+
+    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+    // Variables: None
+    // Constants: KEY_BUTTERFLY_ARRIVAL_RADIUS, DEFAULT_BUTTERFLY_ARRIVAL_RADIUS, DEFAULT_PACKAGE_SIZE
+    // Dependencies: SharedPreferences
+    // Integration Points: ButterflyPointEngine, ButterflyPointDialog, SystemUpdateViewModel
+    const val KEY_BUTTERFLY_ARRIVAL_RADIUS = "butterfly_arrival_radius_meters"
+    const val DEFAULT_BUTTERFLY_ARRIVAL_RADIUS = 50.0f
+    const val KEY_BUTTERFLY_EXPIRY_HOURS = "butterfly_expiry_hours"
+    const val DEFAULT_BUTTERFLY_EXPIRY_HOURS = 4
+    const val KEY_BUTTERFLY_HYSTERESIS_METERS = "butterfly_hysteresis_meters"
+    const val DEFAULT_BUTTERFLY_HYSTERESIS_METERS = 15.0f
+    const val KEY_BUTTERFLY_MAX_DISTANCE_KM = "butterfly_max_distance_km"
+    const val DEFAULT_BUTTERFLY_MAX_DISTANCE_KM = 500.0f
+    const val KEY_BUTTERFLY_AMBER_MULTIPLIER = "butterfly_rag_amber_multiplier"
+    const val DEFAULT_BUTTERFLY_AMBER_MULTIPLIER = 2.0f
+    const val KEY_BUTTERFLY_RED_MULTIPLIER = "butterfly_rag_red_multiplier"
+    const val DEFAULT_BUTTERFLY_RED_MULTIPLIER = 3.0f
+    const val KEY_BUTTERFLY_INVITATION_TIMEOUT_HOURS = "butterfly_invitation_timeout_hours"
+    const val DEFAULT_BUTTERFLY_INVITATION_TIMEOUT_HOURS = 24
+    const val KEY_BUTTERFLY_OVERDUE_GRACE_MINUTES = "butterfly_overdue_grace_minutes"
+    const val DEFAULT_BUTTERFLY_OVERDUE_GRACE_MINUTES = 120
+    const val KEY_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC = "butterfly_foreground_sync_interval_sec"
+    const val DEFAULT_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC = 4
+    const val KEY_BUTTERFLY_MAX_AVAILABILITY_DAYS = "butterfly_max_availability_days"
+    const val DEFAULT_BUTTERFLY_MAX_AVAILABILITY_DAYS = 7
+    const val DEFAULT_PACKAGE_SIZE = "84.6 MB"
+    const val KEY_PENDING_UPDATE_CLOUD_SYNC = "pending_update_cloud_sync"
+    const val KEY_PENDING_UPDATE_FROM_BUILD = "pending_update_from_build"
 
     // Motion & Road Tracking Defaults
     const val DEFAULT_MOTION_STILL_INTERVAL_MS   = 300000L // 5 minutes (Zero GPS drain)
@@ -303,6 +338,27 @@ object RegistryManager {
     @JvmStatic fun isAutoLoginEnabled(context: Context): Boolean = getBoolean(context, KEY_AUTO_LOGIN, false)
     @JvmStatic fun getEquippedAvatarId(context: Context): Int = getInt(context, KEY_EQUIPPED_AVATAR_ID, 1)
     @JvmStatic fun getActiveGroup(context: Context): String = getString(context, KEY_ACTIVE_GROUP, "")
+
+    @JvmStatic fun setActiveGroup(context: Context, group: String) {
+        val clean = group.trim()
+        putString(context, KEY_ACTIVE_GROUP, clean)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("active_group", clean, "Active circle/group partition")
+        } catch (_: Exception) { }
+    }
+
+    @JvmStatic fun getEffectiveActiveGroup(context: Context): String {
+        val active = getActiveGroup(context).trim()
+        if (active.isNotEmpty() && active != "DEFAULT_GROUP") {
+            return active
+        }
+        val corresponding = getDeviceCorrespondingGroup(context).trim()
+        if (corresponding.isNotEmpty() && corresponding != "DEFAULT_GROUP") {
+            return corresponding
+        }
+        val agentId = getAgentId(context).trim()
+        return if (agentId.isNotEmpty()) "GRP_$agentId" else "GRP_LOCAL_MESH"
+    }
     @JvmStatic fun isLiveTrackingGranted(context: Context): Boolean = getString(context, KEY_ACL_LIVE_TRACKING) != "DENIED"
     @JvmStatic fun isDeveloperLoggingEnabled(context: Context): Boolean = getBoolean(context, KEY_DEVELOPER_LOGGING, false)
     @JvmStatic fun getAllowDependents(context: Context): Boolean = getBoolean(context, KEY_ALLOW_DEPENDENTS, true)
@@ -350,6 +406,9 @@ object RegistryManager {
     @JvmStatic fun getPairingTimeoutMs(context: Context): Long =
         getLong(context, KEY_PAIRING_TIMEOUT_MS, DEFAULT_PAIRING_TIMEOUT)
 
+    @JvmStatic fun setPairingTimeoutMs(context: Context, timeoutMs: Long) =
+        putLong(context, KEY_PAIRING_TIMEOUT_MS, timeoutMs)
+
     @JvmStatic fun getGeocodeDebounceMs(context: Context): Long =
         getLong(context, KEY_GEOCODE_DEBOUNCE_MS, DEFAULT_GEOCODE_DEBOUNCE)
 
@@ -382,8 +441,25 @@ object RegistryManager {
     }
 
     @JvmStatic fun getGithubUpdateLink(context: Context): String {
-        val raw = getString(context, KEY_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_UPDATE_LINK)
-        return if (raw.isEmpty() || raw == DEFAULT_GITHUB_WEB_LINK || raw == "https://github.com/jDroid-X/jButterfly/tree/main/jbutterfly") {
+        // [Variables] raw: Stored link in SharedPreferences | isStaleOrBroken: Evaluation of broken or legacy patterns
+        // [Constants] KEY_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_WEB_LINK
+        // [Dependencies] SharedPreferences, SystemLogger
+        // [Integration Points] FirebaseComm.checkForVersionDifference, ApkInstallerHelper, SystemUpdateViewModel
+        val raw = getString(context, KEY_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_UPDATE_LINK).trim()
+        val isStaleOrBroken = raw.isEmpty() ||
+                raw == DEFAULT_GITHUB_WEB_LINK ||
+                raw.contains("jFindMe/releases", ignoreCase = true) ||
+                raw.contains("app-universal-release", ignoreCase = true) ||
+                raw.contains("app-release", ignoreCase = true) ||
+                raw.contains("/tree/", ignoreCase = true) ||
+                raw.contains("/blob/", ignoreCase = true) ||
+                raw.contains("raw.githubusercontent.com", ignoreCase = true) ||
+                raw.contains("/main/jbutterfly/", ignoreCase = false) ||
+                raw.endsWith("/jbutterfly.apk", ignoreCase = false)
+
+        return if (isStaleOrBroken) {
+            // 🛡️ Self-healing: Proactively sanitize stored preference to prevent persistent HTTP 404 loops
+            putString(context, KEY_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_UPDATE_LINK)
             DEFAULT_GITHUB_UPDATE_LINK
         } else {
             raw
@@ -393,7 +469,27 @@ object RegistryManager {
     @JvmStatic fun getGithubWebLink(context: Context): String = DEFAULT_GITHUB_WEB_LINK
 
     @JvmStatic fun setGithubUpdateLink(context: Context, link: String) {
-        putString(context, KEY_GITHUB_UPDATE_LINK, link)
+        // [Variables] clean: Trimmed input | sanitized: Self-healed canonical URL
+        // [Constants] KEY_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_UPDATE_LINK, DEFAULT_GITHUB_WEB_LINK
+        // [Dependencies] SharedPreferences
+        // [Integration Points] Settings & Registry Management
+        val clean = link.trim()
+        val sanitized = if (clean.isEmpty() ||
+            clean == DEFAULT_GITHUB_WEB_LINK ||
+            clean.contains("jFindMe/releases", ignoreCase = true) ||
+            clean.contains("app-universal-release", ignoreCase = true) ||
+            clean.contains("app-release", ignoreCase = true) ||
+            clean.contains("/tree/", ignoreCase = true) ||
+            clean.contains("/blob/", ignoreCase = true) ||
+            clean.contains("raw.githubusercontent.com", ignoreCase = true) ||
+            clean.contains("/main/jbutterfly/", ignoreCase = false) ||
+            clean.endsWith("/jbutterfly.apk", ignoreCase = false)
+        ) {
+            DEFAULT_GITHUB_UPDATE_LINK
+        } else {
+            clean
+        }
+        putString(context, KEY_GITHUB_UPDATE_LINK, sanitized)
     }
 
     @JvmStatic fun getLocalSyncEndpoint(context: Context): String =
@@ -422,6 +518,16 @@ object RegistryManager {
 
     @JvmStatic fun setGuardianPin(context: Context, pin: String) {
         putString(context, KEY_GUARDIAN_PIN, pin)
+    }
+
+    @JvmStatic fun verifyMasterPin(context: Context, candidatePin: String): Boolean {
+        if (candidatePin.isBlank()) return false
+        val cleanCandidate = candidatePin.trim()
+        val storedPin = getGuardianPin(context)
+        if (storedPin.isBlank()) {
+            return verifyAndUpgradePurgePhrase(context, cleanCandidate)
+        }
+        return storedPin == cleanCandidate || verifyAndUpgradePurgePhrase(context, cleanCandidate)
     }
 
     @JvmStatic fun getOwnerAgentId(context: Context): String = getAgentId(context)
@@ -468,6 +574,120 @@ object RegistryManager {
 
     @JvmStatic fun setMinDisplacementMeters(context: Context, meters: Float) {
         putFloat(context, KEY_MIN_DISPLACEMENT_METERS, meters)
+    }
+
+    // [Variables] context: Context, meters: Float, hours: Int, km: Float, mult: Float
+    // [Constants] KEY_BUTTERFLY_ARRIVAL_RADIUS, DEFAULT_BUTTERFLY_ARRIVAL_RADIUS, KEY_BUTTERFLY_EXPIRY_HOURS, KEY_BUTTERFLY_HYSTERESIS_METERS, KEY_BUTTERFLY_MAX_DISTANCE_KM
+    // [Dependencies] RegistryManager.getFloat, RegistryManager.putFloat, DatabaseHelper.setDynamicConfig
+    // [Integration Points] ButterflyPointEngine, ButterflyPointDialog, SettingsActivity
+    @JvmStatic fun getButterflyArrivalRadius(context: Context): Float =
+        getFloat(context, KEY_BUTTERFLY_ARRIVAL_RADIUS, DEFAULT_BUTTERFLY_ARRIVAL_RADIUS)
+
+    @JvmStatic fun setButterflyArrivalRadius(context: Context, meters: Float) {
+        putFloat(context, KEY_BUTTERFLY_ARRIVAL_RADIUS, meters)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_ARRIVAL_RADIUS, meters.toString(), "Butterfly point arrival perimeter radius")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyExpiryHours(context: Context): Int =
+        getInt(context, KEY_BUTTERFLY_EXPIRY_HOURS, DEFAULT_BUTTERFLY_EXPIRY_HOURS)
+
+    @JvmStatic fun setButterflyExpiryHours(context: Context, hours: Int) {
+        putInt(context, KEY_BUTTERFLY_EXPIRY_HOURS, hours)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_EXPIRY_HOURS, hours.toString(), "Butterfly point default expiration lifespan in hours")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyHysteresisMeters(context: Context): Float =
+        getFloat(context, KEY_BUTTERFLY_HYSTERESIS_METERS, DEFAULT_BUTTERFLY_HYSTERESIS_METERS)
+
+    @JvmStatic fun setButterflyHysteresisMeters(context: Context, meters: Float) {
+        putFloat(context, KEY_BUTTERFLY_HYSTERESIS_METERS, meters)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_HYSTERESIS_METERS, meters.toString(), "Butterfly point arrival hysteresis deadband")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyMaxDistanceKm(context: Context): Float =
+        getFloat(context, KEY_BUTTERFLY_MAX_DISTANCE_KM, DEFAULT_BUTTERFLY_MAX_DISTANCE_KM)
+
+    @JvmStatic fun setButterflyMaxDistanceKm(context: Context, km: Float) {
+        putFloat(context, KEY_BUTTERFLY_MAX_DISTANCE_KM, km)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_MAX_DISTANCE_KM, km.toString(), "Butterfly point distance safeguard warning threshold in km")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyRagAmberMultiplier(context: Context): Float =
+        getFloat(context, KEY_BUTTERFLY_AMBER_MULTIPLIER, DEFAULT_BUTTERFLY_AMBER_MULTIPLIER)
+
+    @JvmStatic fun setButterflyRagAmberMultiplier(context: Context, mult: Float) {
+        putFloat(context, KEY_BUTTERFLY_AMBER_MULTIPLIER, mult)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_AMBER_MULTIPLIER, mult.toString(), "Butterfly point RAG amber distance multiplier")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyRagRedMultiplier(context: Context): Float =
+        getFloat(context, KEY_BUTTERFLY_RED_MULTIPLIER, DEFAULT_BUTTERFLY_RED_MULTIPLIER)
+
+    @JvmStatic fun setButterflyRagRedMultiplier(context: Context, mult: Float) {
+        putFloat(context, KEY_BUTTERFLY_RED_MULTIPLIER, mult)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_RED_MULTIPLIER, mult.toString(), "Butterfly point RAG red distance multiplier")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyInvitationTimeoutHours(context: Context): Int =
+        getInt(context, KEY_BUTTERFLY_INVITATION_TIMEOUT_HOURS, DEFAULT_BUTTERFLY_INVITATION_TIMEOUT_HOURS)
+
+    @JvmStatic fun setButterflyInvitationTimeoutHours(context: Context, hours: Int) {
+        putInt(context, KEY_BUTTERFLY_INVITATION_TIMEOUT_HOURS, hours)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_INVITATION_TIMEOUT_HOURS, hours.toString(), "Butterfly point pending invitation timeout hours")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyOverdueGraceMinutes(context: Context): Int =
+        getInt(context, KEY_BUTTERFLY_OVERDUE_GRACE_MINUTES, DEFAULT_BUTTERFLY_OVERDUE_GRACE_MINUTES)
+
+    @JvmStatic fun setButterflyOverdueGraceMinutes(context: Context, minutes: Int) {
+        putInt(context, KEY_BUTTERFLY_OVERDUE_GRACE_MINUTES, minutes)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_OVERDUE_GRACE_MINUTES, minutes.toString(), "Butterfly point overdue grace minutes before auto-archiving")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyForegroundSyncIntervalSec(context: Context): Int =
+        getInt(context, KEY_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC, DEFAULT_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC)
+
+    @JvmStatic fun setButterflyForegroundSyncIntervalSec(context: Context, seconds: Int) {
+        putInt(context, KEY_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC, seconds)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_FOREGROUND_SYNC_INTERVAL_SEC, seconds.toString(), "Butterfly point foreground telemetry sync interval seconds")
+        } catch (_: Exception) {}
+    }
+
+    @JvmStatic fun getButterflyMaxAvailabilityDays(context: Context): Int =
+        getInt(context, KEY_BUTTERFLY_MAX_AVAILABILITY_DAYS, DEFAULT_BUTTERFLY_MAX_AVAILABILITY_DAYS)
+
+    @JvmStatic fun setButterflyMaxAvailabilityDays(context: Context, days: Int) {
+        putInt(context, KEY_BUTTERFLY_MAX_AVAILABILITY_DAYS, days)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig(KEY_BUTTERFLY_MAX_AVAILABILITY_DAYS, days.toString(), "Butterfly meeting point maximum retention/availability days")
+        } catch (_: Exception) {}
     }
 
     @JvmStatic fun isStrictAccuracyWait(context: Context): Boolean =
@@ -644,6 +864,109 @@ object RegistryManager {
         val elapsed = System.currentTimeMillis() - lastEpoch
         val remMs = bufferTimeMs - elapsed
         return if (remMs > 0) ((remMs / (1000 * 60 * 60)).toInt() + 1) else 0
+    }
+
+    /**
+     * [Variables] | [Constants] | [Dependencies] | [Integration Points]
+     * Variables: currentCode (Int), lastKnownCode (Int), currentVer (String), now (String)
+     * Constants: KEY_LAST_KNOWN_VERSION_CODE, KEY_IS_UPDATED, KEY_LAST_UPDATE_TS
+     * Dependencies: BuildConfig, SystemLogger, FirebaseComm
+     * Integration Points: SplashActivity.onCreate, SystemUpdateViewModel.initData, AppUpgradeReceiver
+     *
+     * Reverse Engineering Post-Upgrade Closed-Loop Feedback Sentinel:
+     * Verifies whether current runtime build code exceeds last known version code.
+     * If an upgrade occurred (via standard APK install, sideload, or Delayed Intent):
+     * 1. Records new version code into KEY_LAST_KNOWN_VERSION_CODE
+     * 2. Clears 24-hour failure buffer & invalid states
+     * 3. Sets KEY_IS_UPDATED to true
+     * 4. Updates KEY_LAST_UPDATE_TS
+     * 5. Purges cached APK binary
+     * 6. Dispatches INSTALLED confirmation to Firebase RTDB
+     */
+    @JvmStatic
+    fun checkAndCloseUpdateFeedbackLoop(context: Context) {
+        val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
+        val lastKnownCode = getInt(context, KEY_LAST_KNOWN_VERSION_CODE, 0)
+
+        if (currentCode > lastKnownCode) {
+            val currentVer = "V${com.jdroidx.jfindme.BuildConfig.VERSION_NAME} (Build $currentCode)"
+            val sdf = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US)
+            val dateStr = sdf.format(Date())
+
+            SystemLogger.i("RegistryManager", "🔄 CLOSING UPDATE FEEDBACK LOOP: Migrated from Build $lastKnownCode -> $currentCode ($currentVer)")
+
+            // 1. Commit new verified version code
+            putInt(context, KEY_LAST_KNOWN_VERSION_CODE, currentCode)
+
+            // 2. Mark system as up to date
+            putBoolean(context, KEY_IS_UPDATED, true)
+            putString(context, KEY_LAST_UPDATE_TS, "$currentVer on $dateStr")
+
+            // 3. Clear failure buffer
+            clearInstallFailure(context)
+
+            // 4. Purge cached download APK to free device storage
+            try {
+                val cachedApk = java.io.File(context.cacheDir, "update_jfindme.apk")
+                if (cachedApk.exists()) {
+                    val deleted = cachedApk.delete()
+                    SystemLogger.i("RegistryManager", "Post-upgrade APK cache purged: $deleted")
+                }
+            } catch (e: Exception) {
+                SystemLogger.w("RegistryManager", "Failed to delete cached APK: ${e.message}")
+            }
+
+            // 5. Cloud Telemetry Feedback Handoff (Resilient Delayed Execution)
+            putBoolean(context, KEY_PENDING_UPDATE_CLOUD_SYNC, true)
+            putInt(context, KEY_PENDING_UPDATE_FROM_BUILD, lastKnownCode)
+            flushPendingUpdateFeedback(context)
+        } else {
+            // Check if prior cloud sync remained pending due to offline / unauthenticated boot
+            flushPendingUpdateFeedback(context)
+        }
+    }
+
+    /**
+     * 🚀 Flushes pending update telemetry feedback to Firebase RTDB as soon as network and auth are available.
+     */
+    @JvmStatic
+    fun flushPendingUpdateFeedback(context: Context) {
+        // [Variables] agentId: String, currentUser: FirebaseUser?, currentCode: Int, fromBuild: Int
+        // [Constants] KEY_PENDING_UPDATE_CLOUD_SYNC, KEY_PENDING_UPDATE_FROM_BUILD, DEFAULT_PACKAGE_SIZE
+        // [Dependencies] FirebaseComm, FirebaseAuth, SystemLogger
+        // [Integration Points] Closed-loop upgrade confirmation dispatch to Firebase RTDB
+        if (!getBoolean(context, KEY_PENDING_UPDATE_CLOUD_SYNC, false)) return
+        val agentId = getAgentId(context)
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (agentId.isNotEmpty() && currentUser != null) {
+            val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
+            val fromBuild = getInt(context, KEY_PENDING_UPDATE_FROM_BUILD, currentCode - 1)
+            try {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(
+                    context,
+                    agentId,
+                    "INSTALLED",
+                    0L,
+                    DEFAULT_PACKAGE_SIZE
+                )
+                com.jdroidx.jfindme.data.remote.FirebaseComm.logChange(
+                    agentId,
+                    "System_Update",
+                    "UPGRADE_FEEDBACK_LOOP_CLOSED",
+                    "BUILD_$currentCode",
+                    mapOf(
+                        "from_build" to fromBuild.toString(),
+                        "to_build" to currentCode.toString(),
+                        "version_name" to com.jdroidx.jfindme.BuildConfig.VERSION_NAME
+                    ),
+                    agentId
+                )
+                putBoolean(context, KEY_PENDING_UPDATE_CLOUD_SYNC, false)
+                SystemLogger.i("RegistryManager", "✅ Closed-loop cloud upgrade confirmation confirmed for Node $agentId: Build $currentCode")
+            } catch (e: Exception) {
+                SystemLogger.e("RegistryManager", "Deferred cloud feedback sync retry queued: ${e.message}")
+            }
+        }
     }
 
     // ─── 🏃 MOTION & ROAD TRACKING GETTERS / SETTERS ─────────────────────────
@@ -967,9 +1290,40 @@ object RegistryManager {
     fun setDeviceCorrespondingGroup(context: Context, group: String) {
         val clean = group.trim().ifEmpty { DEFAULT_DEVICE_CORRESPONDING_GROUP }
         putString(context, KEY_DEVICE_CORRESPONDING_GROUP, clean)
+        val active = getActiveGroup(context).trim()
+        if (active.isEmpty() || active == "DEFAULT_GROUP") {
+            putString(context, KEY_ACTIVE_GROUP, clean)
+        }
         try {
             com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("device_corresponding_group", clean, "Device group-by hierarchy mapping")
         } catch (_: Exception) { }
+    }
+
+    // [Variables] configured, dynamicWardId, clean, finalTarget | [Constants] KEY_PRIME_TARGET_DEVICE_ID, DEFAULT_PRIME_TARGET_ID | [Dependencies] SharedPreferences, DatabaseHelper, FirebaseComm | [Integration Points] SettingsActivity, MapActivity, MapViewModel, LocationRepository, FamilyFriendsViewModel
+    @JvmStatic
+    fun getPrimeTargetDeviceId(context: Context): String {
+        val configured = getString(context, KEY_PRIME_TARGET_DEVICE_ID, "").trim()
+        if (configured.isNotEmpty() && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(configured)) {
+            return configured
+        }
+        // Dynamic fallback: Query SQLite roster for role child/ward
+        try {
+            val dynamicWardId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).getPrimaryWardDeviceId()
+            if (!dynamicWardId.isNullOrBlank() && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(dynamicWardId)) {
+                return dynamicWardId
+            }
+        } catch (_: Exception) {}
+        return DEFAULT_PRIME_TARGET_ID
+    }
+
+    @JvmStatic
+    fun setPrimeTargetDeviceId(context: Context, deviceId: String) {
+        val clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(deviceId).trim()
+        val finalTarget = if (clean.isNotEmpty()) clean else DEFAULT_PRIME_TARGET_ID
+        putString(context, KEY_PRIME_TARGET_DEVICE_ID, finalTarget)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).setDynamicConfig("prime_target_device_id", finalTarget, "Primary child/ward target device ID")
+        } catch (_: Exception) {}
     }
 
     // ─── EXTENDED REGISTRY ACCESSORS (Two-Tab Control Hub Standard) ───────────
@@ -1226,6 +1580,41 @@ object RegistryManager {
 
     @JvmStatic fun setMaxAckFailures(context: Context, maxFailures: Int) =
         putInt(context, KEY_MAX_ACK_FAILURES, maxFailures)
+
+    @JvmStatic fun getDeviceSharingTimeoutMs(context: Context): Long =
+        getLong(context, KEY_DEVICE_SHARING_TIMEOUT_MS, DEFAULT_DEVICE_SHARING_TIMEOUT_MS)
+
+    @JvmStatic fun setDeviceSharingTimeoutMs(context: Context, timeoutMs: Long) =
+        putLong(context, KEY_DEVICE_SHARING_TIMEOUT_MS, timeoutMs)
+
+    // ─── GOOGLE MAPS API KEY SENTINEL ───────────────────────────────────────
+    // [Variables] context: Context, configured: String, key: String
+    // [Constants] KEY_GOOGLE_MAPS_API_KEY, DEFAULT_GOOGLE_MAPS_KEY
+    // [Dependencies] SharedPreferences, DatabaseHelper, R.string.google_maps_key
+    // [Integration Points] MapActivity, SplashActivity, SettingsActivity
+    const val KEY_GOOGLE_MAPS_API_KEY = "pref_google_maps_api_key"
+    const val DEFAULT_GOOGLE_MAPS_KEY = "AIzaSyDbkAsYbNmxJxBVy2_XmCmKnIvjflJV0Vg"
+
+    @JvmStatic
+    fun getGoogleMapsApiKey(context: Context): String {
+        val configured = getString(context, KEY_GOOGLE_MAPS_API_KEY, "")
+        if (configured.isNotBlank()) return configured
+        return try {
+            context.getString(com.jdroidx.jfindme.R.string.google_maps_key)
+        } catch (_: Exception) {
+            DEFAULT_GOOGLE_MAPS_KEY
+        }
+    }
+
+    @JvmStatic
+    fun setGoogleMapsApiKey(context: Context, key: String) {
+        val cleanKey = key.trim()
+        putString(context, KEY_GOOGLE_MAPS_API_KEY, cleanKey)
+        try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                .setDynamicConfig("google_maps_api_key", cleanKey, "Operator dynamic Google Maps API key")
+        } catch (_: Exception) { }
+    }
 
     // ─── DECOMMISSIONED & ORPHAN FLEET SENTINEL ──────────────────────────────
     @JvmStatic fun getDecommissionedAgentIds(context: Context): Set<String> {

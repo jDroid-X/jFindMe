@@ -179,10 +179,10 @@
             app:layout_constraintBottom_toTopOf="@id/dashboard_grid_zone"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:layout_marginTop="2dp"
-            android:layout_marginBottom="2dp">
+            android:layout_marginStart="0dp"
+            android:layout_marginEnd="0dp"
+            android:layout_marginTop="0dp"
+            android:layout_marginBottom="0dp">
             
             <FrameLayout
                 android:layout_width="match_parent"
@@ -203,7 +203,8 @@
                     android:layout_gravity="top|start"
                     android:layout_marginStart="8dp"
                     android:layout_marginTop="56dp"
-                    android:elevation="40dp"
+                    android:elevation="12dp"
+                    android:overScrollMode="never"
                     android:clipChildren="false"
                     android:clipToPadding="false"
                     android:scrollbars="none">
@@ -217,16 +218,31 @@
                         android:clipToPadding="false" />
                 </ScrollView>
                     
-                <LinearLayout
-                    android:id="@+id/side_action_panel"
+                <ScrollView
+                    android:id="@+id/side_action_scroll"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_gravity="center_vertical|end"
+                    android:layout_gravity="top|end"
                     android:layout_marginEnd="8dp"
-                    android:elevation="40dp"
-                    android:visibility="gone">
-                </LinearLayout>
+                    android:layout_marginTop="48dp"
+                    android:layout_marginBottom="16dp"
+                    android:elevation="12dp"
+                    android:overScrollMode="never"
+                    android:scrollbars="none"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:visibility="visible">
+
+                    <LinearLayout
+                        android:id="@+id/side_action_panel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center_horizontal"
+                        android:clipChildren="false"
+                        android:clipToPadding="false">
+                    </LinearLayout>
+                </ScrollView>
                 
                 <ImageView
                     android:id="@+id/expand_icon"
@@ -266,7 +282,7 @@
                 android:scrollHorizontally="true"
                 android:focusable="true"
                 android:focusableInTouchMode="true"
-                android:text="🛰️ Satellite standby • Awaiting location • GPS active • • •        "
+                android:text="📍 Live Map Active • Waiting for GPS signal"
                 android:textStyle="bold"
                 android:textSize="15sp"
                 android:paddingTop="6dp"

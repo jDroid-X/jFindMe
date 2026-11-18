@@ -191,6 +191,13 @@ public class AcousticSirenActivity extends AppCompatActivity {
         finish();
     }
 
+    // [Variables] None | [Constants] None | [Dependencies] finishAndDismiss | [Integration Points] Deterministic Navigation Back Dispatch
+    @Override
+    public void onBackPressed() {
+        finishAndDismiss();
+        super.onBackPressed();
+    }
+
     @Override
     protected void onDestroy() {
         if (countDownTimer != null) {

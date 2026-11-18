@@ -82,6 +82,15 @@ public class SystemUpdateActivity extends BaseActivityJava {
     private TextView tabBtnInstallUpdate;
     private TextView tabBtnPatchLevel;
 
+    // 👥 Dynamic Device & Group Telemetry Views
+    private TextView tvDeviceGroupContext;
+    private View btnScanAction;
+    private View btnUpdateAction;
+    private TextView tvScanActionText;
+    private TextView tvUpdateActionText;
+    private LinearLayout advancedSettingsContainer;
+    private TextView tvAdvancedExpandIcon;
+
     @Override
     protected void setupLogic() {
         // Initialize Waterfall MVVM Engine
@@ -192,6 +201,16 @@ public class SystemUpdateActivity extends BaseActivityJava {
             updateHeroBanner();
         });
 
+        // [Variables] hasReady: Boolean flag indicating discovered upgrade on GitHub | code: Discovered version code | file: Target APK
+        // [Constants] BuildConfig.VERSION_CODE
+        // [Dependencies] SystemUpdateViewModel
+        // [Integration Points] 1-Click Update System Banner & Action Row
+        viewModel.getHasUpdateReady().observe(this, hasReady -> updateHeroBanner());
+        viewModel.getDiscoveredLatestCode().observe(this, code -> updateHeroBanner());
+        viewModel.getDiscoveredLatestFileName().observe(this, file -> updateHeroBanner());
+        viewModel.getAgentId().observe(this, id -> updateDeviceGroupContext());
+        viewModel.getActiveGroup().observe(this, grp -> updateDeviceGroupContext());
+
         viewModel.getLastDownloadInfo().observe(this, info -> {
             if (tvLastDownload != null) tvLastDownload.setText("📥 LAST DOWNLOADED PACKAGE: " + info);
         });
@@ -274,13 +293,6 @@ public class SystemUpdateActivity extends BaseActivityJava {
                 tvPipelineStatus.setText("⚡ PIPELINE: " + msg);
             }
         });
-
-        // 🛡️ HUMAN-IN-THE-LOOP Installation Prompt Observer
-        viewModel.getShowInstallPrompt().observe(this, promptData -> {
-            if (promptData != null) {
-                showInstallGuidanceModal(promptData);
-            }
-        });
     }
 
     @Override
@@ -310,27 +322,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
 
         root.addView(header);
 
-        // --- 2-TAB SEGREGATION NAVIGATION BAR ---
-        LinearLayout tabNav = new LinearLayout(this);
-        tabNav.setOrientation(LinearLayout.HORIZONTAL);
-        tabNav.setWeightSum(2.0f);
-        int tabPad = scale(14);
-        tabNav.setPadding(tabPad, scale(8), tabPad, scale(8));
-
-        tabBtnInstallUpdate = createTabButton("📦 1. INSTALL / UPDATE", true, v -> switchTab(0));
-        tabBtnPatchLevel = createTabButton("⚡ 2. PATCH LEVEL UPDATE", false, v -> switchTab(1));
-
-        LinearLayout.LayoutParams pTab1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        pTab1.setMargins(0, 0, scale(6), 0);
-        tabNav.addView(tabBtnInstallUpdate, pTab1);
-
-        LinearLayout.LayoutParams pTab2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        pTab2.setMargins(scale(6), 0, 0, 0);
-        tabNav.addView(tabBtnPatchLevel, pTab2);
-
-        root.addView(tabNav);
-
-        // --- SCROLL CONTAINER ---
+        // --- SCROLL CONTAINER (Unified High-Clarity 1-Screen Viewport) ---
         ScrollView scroll = new ScrollView(this);
         scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
         scroll.setClipToPadding(false);
@@ -340,65 +332,274 @@ public class SystemUpdateActivity extends BaseActivityJava {
         int quota = getResponsivePaddingQuota();
         master.setPadding(quota, quota, quota, scale(60));
 
-        // ========================================================================================
-        // TAB 1: INSTALL / UPDATE (Traditional distribution, settings & full releases)
-        // ========================================================================================
-        tabContentInstallUpdate = new LinearLayout(this);
-        tabContentInstallUpdate.setOrientation(LinearLayout.VERTICAL);
-
         // 1. Hero System Status Banner
-        tabContentInstallUpdate.addView(createHeroBanner());
-        tabContentInstallUpdate.addView(createSpacer(15));
+        master.addView(createHeroBanner());
+        master.addView(createSpacer(15));
 
-        // 2. Distribution Channels & Settings Card
-        tabContentInstallUpdate.addView(createConfigurationCard());
-        tabContentInstallUpdate.addView(createSpacer(15));
+        // 2. High-Clarity Software Release Status Card
+        master.addView(createUpdateSummaryCard());
+        master.addView(createSpacer(15));
 
-        // 3. Tab 1 Specific Action Bar (Scan, Full APK, Drive Mirror, Close)
-        tabContentInstallUpdate.addView(createInstallUpdateActionRow());
-        tabContentInstallUpdate.addView(createSpacer(20));
+        // 3. Consolidated Action Bar (Scan, Update, Releases, Close)
+        master.addView(createUnifiedActionRow());
+        master.addView(createSpacer(15));
 
-        // 4. Architectural Footer
-        tabContentInstallUpdate.addView(createArchitecturalFooter());
+        // 4. Advanced Distribution & Endpoints Settings Card (Collapsible)
+        master.addView(createAdvancedSettingsCard());
+        master.addView(createSpacer(20));
 
-        master.addView(tabContentInstallUpdate);
+        // 5. Architectural Footer
+        master.addView(createArchitecturalFooter());
 
-        // ========================================================================================
-        // TAB 2: PATCH LEVEL UPDATE (Zero-Install hot-patches, delta binary diffs & ledger)
-        // ========================================================================================
+        // Keep legacy tab containers instantiated in memory to satisfy backward compatibility
+        tabContentInstallUpdate = new LinearLayout(this);
         tabContentPatchLevel = new LinearLayout(this);
-        tabContentPatchLevel.setOrientation(LinearLayout.VERTICAL);
-        tabContentPatchLevel.setVisibility(View.GONE); // Default: Tab 1 active
-
-        // 1. Dynamic In-App Hot-Patch (Zero-Install)
-        tabContentPatchLevel.addView(createHotPatchCard());
-        tabContentPatchLevel.addView(createSpacer(15));
-
-        // 2. Smart Differential Delta Binary Patch
-        tabContentPatchLevel.addView(createDeltaPatchCard());
-        tabContentPatchLevel.addView(createSpacer(15));
-
-        // 3. Real-Time Cryptographic Pipeline Stepper
-        tabContentPatchLevel.addView(createPipelineStepperCard());
-        tabContentPatchLevel.addView(createSpacer(15));
-
-        // 4. Forensic Audit & Patch Ledger (Group By Target Matrix + Open on Click)
-        tabContentPatchLevel.addView(createForensicLedgerCard());
-        tabContentPatchLevel.addView(createSpacer(15));
-
-        // 5. Tab 2 Action Bar (Apply Live Patch, Scan RTDB, Guide, Close)
-        tabContentPatchLevel.addView(createIntegratedActionRow());
-        tabContentPatchLevel.addView(createSpacer(20));
-
-        // 6. Architectural Footer
-        tabContentPatchLevel.addView(createArchitecturalFooter());
-
-        master.addView(tabContentPatchLevel);
 
         scroll.addView(master);
         root.addView(scroll);
 
         return root;
+    }
+
+    private View createUpdateSummaryCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(scale(20), scale(18), scale(20), scale(18));
+        applyCardStyle(card);
+
+        // Header Row
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView lbl = new TextView(this);
+        lbl.setText("📦 SOFTWARE RELEASE STATUS");
+        lbl.setTextColor(getGradientStart());
+        lbl.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, lbl, "TEXT_TITLE");
+        headerRow.addView(lbl, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView refreshBadge = new TextView(this);
+        refreshBadge.setText("🔄 SCAN");
+        refreshBadge.setTextColor(getGradientStart());
+        refreshBadge.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, refreshBadge, "TEXT_MINI");
+        refreshBadge.setPadding(scale(10), scale(4), scale(10), scale(4));
+        refreshBadge.setClickable(true);
+        refreshBadge.setFocusable(true);
+        refreshBadge.setOnClickListener(v -> viewModel.executeUpdate(this));
+        headerRow.addView(refreshBadge);
+        card.addView(headerRow);
+
+        // Status Box
+        LinearLayout statusBox = new LinearLayout(this);
+        statusBox.setOrientation(LinearLayout.VERTICAL);
+        statusBox.setPadding(scale(14), scale(12), scale(14), scale(12));
+        statusBox.setBackground(createInnerWellBackground());
+
+        tvUpdateAvailable = new TextView(this);
+        tvUpdateAvailable.setText("📦 UPDATE AVAILABLE: Checking release server...");
+        tvUpdateAvailable.setTextColor(getTextColor());
+        tvUpdateAvailable.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, tvUpdateAvailable, "TEXT_BODY");
+        statusBox.addView(tvUpdateAvailable);
+
+        tvIsUpdatedStatus = new TextView(this);
+        tvIsUpdatedStatus.setText("🛡️ SYSTEM STATUS: Baseline Verified");
+        tvIsUpdatedStatus.setTextColor(Color.parseColor("#00E676"));
+        tvIsUpdatedStatus.setPadding(0, scale(4), 0, 0);
+        UiArchitect.applyText(this, tvIsUpdatedStatus, "TEXT_MINI");
+        statusBox.addView(tvIsUpdatedStatus);
+
+        tvLastCheck = new TextView(this);
+        tvLastCheck.setText("🌐 LAST CHECKED ONLINE: Never (Pending Check)");
+        tvLastCheck.setTextColor(getSecondaryTextColor());
+        tvLastCheck.setPadding(0, scale(4), 0, 0);
+        UiArchitect.applyText(this, tvLastCheck, "TEXT_MINI");
+        statusBox.addView(tvLastCheck);
+
+        tvCurrentVersion = new TextView(this);
+        tvCurrentVersion.setText("📱 CURRENT VERSION: V" + BuildConfig.VERSION_NAME + " (Build " + BuildConfig.VERSION_CODE + ")");
+        tvCurrentVersion.setTextColor(getSecondaryTextColor());
+        tvCurrentVersion.setPadding(0, scale(4), 0, 0);
+        UiArchitect.applyText(this, tvCurrentVersion, "TEXT_MINI");
+        statusBox.addView(tvCurrentVersion);
+
+        tvDeviceGroupContext = new TextView(this);
+        tvDeviceGroupContext.setText("👥 FLEET NODE: Standalone • GROUP: Fleet");
+        tvDeviceGroupContext.setTextColor(getSecondaryTextColor());
+        tvDeviceGroupContext.setPadding(0, scale(4), 0, 0);
+        UiArchitect.applyText(this, tvDeviceGroupContext, "TEXT_MINI");
+        statusBox.addView(tvDeviceGroupContext);
+
+        card.addView(statusBox);
+        card.addView(createSpacer(12));
+
+        // Silent Background Checking Toggle Node
+        card.addView(createSilentUpdateNode());
+
+        return card;
+    }
+
+    private View createUnifiedActionRow() {
+        // [Variables] btnCheck: Scan action | btnUpdate: 1-click update action | btnReleases: GitHub repo web view | btnClose: Dismiss
+        // [Constants] android.R.drawable icons
+        // [Dependencies] SystemUpdateViewModel.triggerOneClickUpdate
+        // [Integration Points] 1-Click Update Action Hub
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setWeightSum(4.0f);
+
+        TextView[] outScanTv = new TextView[1];
+        btnScanAction = createSmallButton("🔄 SCAN", android.R.drawable.ic_popup_sync, true, v -> viewModel.executeUpdate(this), outScanTv);
+        tvScanActionText = outScanTv[0];
+
+        TextView[] outUpdateTv = new TextView[1];
+        btnUpdateAction = createSmallButton("⬇️ UPDATE", android.R.drawable.ic_menu_save, true, v -> viewModel.triggerOneClickUpdate(this), outUpdateTv);
+        tvUpdateActionText = outUpdateTv[0];
+
+        View btnReleases = createSmallButton("🌐 RELEASES", android.R.drawable.ic_menu_view, false, v -> viewModel.openGithubInBrowser(this));
+        View btnClose = createSmallButton("CLOSE", android.R.drawable.ic_menu_close_clear_cancel, false, v -> finish());
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        row.addView(btnScanAction, p);
+
+        LinearLayout.LayoutParams pMid1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        pMid1.setMargins(scale(6), 0, scale(6), 0);
+        row.addView(btnUpdateAction, pMid1);
+
+        LinearLayout.LayoutParams pMid2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        pMid2.setMargins(0, 0, scale(6), 0);
+        row.addView(btnReleases, pMid2);
+
+        row.addView(btnClose, p);
+
+        return row;
+    }
+
+    private View createAdvancedSettingsCard() {
+        // [Variables] card: Root container | headerRow: Clickable expander | advancedSettingsContainer: Foldable options
+        // [Constants] scale dimensions, ThemeManager
+        // [Dependencies] UiArchitect, SystemUpdateViewModel
+        // [Integration Points] OOPS-based dynamic endpoint configuration
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(scale(20), scale(18), scale(20), scale(18));
+        applyCardStyle(card);
+
+        // Header Row (Clickable to toggle expansion)
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setClickable(true);
+        headerRow.setFocusable(true);
+
+        TextView lbl = new TextView(this);
+        lbl.setText("⚙️ ADVANCED DISTRIBUTION & ENDPOINTS");
+        lbl.setTextColor(getGradientStart());
+        lbl.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, lbl, "TEXT_TITLE");
+        headerRow.addView(lbl, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        tvAdvancedExpandIcon = createPillBadge("▼ EXPAND", getGradientStart());
+        headerRow.addView(tvAdvancedExpandIcon);
+        card.addView(headerRow);
+
+        // Expandable Container
+        advancedSettingsContainer = new LinearLayout(this);
+        advancedSettingsContainer.setOrientation(LinearLayout.VERTICAL);
+        advancedSettingsContainer.setVisibility(View.GONE);
+        advancedSettingsContainer.setPadding(0, scale(14), 0, 0);
+
+        headerRow.setOnClickListener(v -> {
+            boolean isVisible = advancedSettingsContainer.getVisibility() == View.VISIBLE;
+            advancedSettingsContainer.setVisibility(isVisible ? View.GONE : View.VISIBLE);
+            tvAdvancedExpandIcon.setText(isVisible ? "▼ EXPAND" : "▲ COLLAPSE");
+        });
+
+        // 1. GitHub Direct Binary Endpoint
+        LinearLayout ghHeader = new LinearLayout(this);
+        ghHeader.setOrientation(LinearLayout.HORIZONTAL);
+        ghHeader.setGravity(Gravity.CENTER_VERTICAL);
+        ghHeader.addView(createLabel("GITHUB DIRECT BINARY & REPOSITORY (*)"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnEditGh = new TextView(this);
+        btnEditGh.setText("EDIT / SAVE");
+        btnEditGh.setTextColor(getGradientStart());
+        btnEditGh.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnEditGh, "TEXT_MINI");
+        btnEditGh.setPadding(scale(10), scale(6), scale(10), scale(6));
+        btnEditGh.setOnClickListener(v -> showEditGithubLinkDialog());
+        ghHeader.addView(btnEditGh);
+        advancedSettingsContainer.addView(ghHeader);
+
+        githubLinkField = createEnterpriseField("Constructing GitHub link...", android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        githubLinkField.setEnabled(true);
+        githubLinkField.setFocusable(true);
+        githubLinkField.setFocusableInTouchMode(false);
+        githubLinkField.setCursorVisible(false);
+        githubLinkField.setKeyListener(null);
+        advancedSettingsContainer.addView(wrapField(githubLinkField));
+
+        // 2. Google Drive Mirror Backup
+        LinearLayout driveHeader = new LinearLayout(this);
+        driveHeader.setOrientation(LinearLayout.HORIZONTAL);
+        driveHeader.setGravity(Gravity.CENTER_VERTICAL);
+        driveHeader.addView(createLabel("GOOGLE DRIVE MIRROR BACKUP"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnEditDrive = new TextView(this);
+        btnEditDrive.setText("EDIT / SAVE");
+        btnEditDrive.setTextColor(getGradientStart());
+        btnEditDrive.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnEditDrive, "TEXT_MINI");
+        btnEditDrive.setPadding(scale(10), scale(6), scale(10), scale(6));
+        btnEditDrive.setOnClickListener(v -> showEditLinkDialog());
+        driveHeader.addView(btnEditDrive);
+        advancedSettingsContainer.addView(driveHeader);
+
+        driveLinkField = createEnterpriseField("Constructing link...", android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        driveLinkField.setEnabled(true);
+        driveLinkField.setFocusable(true);
+        driveLinkField.setFocusableInTouchMode(false);
+        driveLinkField.setCursorVisible(false);
+        driveLinkField.setKeyListener(null);
+        advancedSettingsContainer.addView(wrapField(driveLinkField));
+
+        // 3. Local Sync Daemon Endpoint
+        LinearLayout syncHeader = new LinearLayout(this);
+        syncHeader.setOrientation(LinearLayout.HORIZONTAL);
+        syncHeader.setGravity(Gravity.CENTER_VERTICAL);
+        syncHeader.addView(createLabel("LOCAL SYNC SERVER ENDPOINT"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView btnEditSync = new TextView(this);
+        btnEditSync.setText("EDIT / SET");
+        btnEditSync.setTextColor(getGradientStart());
+        btnEditSync.setTypeface(null, Typeface.BOLD);
+        UiArchitect.applyText(this, btnEditSync, "TEXT_MINI");
+        btnEditSync.setPadding(scale(10), scale(6), scale(10), scale(6));
+        btnEditSync.setOnClickListener(v -> showEditLocalSyncEndpointDialog());
+        syncHeader.addView(btnEditSync);
+        advancedSettingsContainer.addView(syncHeader);
+
+        localSyncEndpointField = createEnterpriseField("http://127.0.0.1:8085", android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        localSyncEndpointField.setEnabled(true);
+        localSyncEndpointField.setFocusable(true);
+        localSyncEndpointField.setFocusableInTouchMode(false);
+        localSyncEndpointField.setCursorVisible(false);
+        localSyncEndpointField.setKeyListener(null);
+        advancedSettingsContainer.addView(wrapField(localSyncEndpointField));
+
+        card.addView(advancedSettingsContainer);
+        return card;
+    }
+
+    private void updateDeviceGroupContext() {
+        if (tvDeviceGroupContext == null) return;
+        String id = viewModel.getAgentId().getValue();
+        String grp = viewModel.getActiveGroup().getValue();
+        String cleanId = (id != null && !id.isEmpty()) ? id : "NODE_STANDALONE";
+        String cleanGrp = (grp != null && !grp.isEmpty()) ? grp : "GLOBAL_FLEET";
+        tvDeviceGroupContext.setText("👥 FLEET NODE: " + cleanId + " • GROUP: " + cleanGrp);
     }
 
     private TextView createTabButton(String title, boolean active, View.OnClickListener listener) {
@@ -480,21 +681,33 @@ public class SystemUpdateActivity extends BaseActivityJava {
         if (tvHeroBadge == null || tvHeroSub == null) return;
         boolean hotActive = Boolean.TRUE.equals(viewModel.isHotPatchActive().getValue());
         boolean hasHot = currentHotPatchInfo != null;
+        boolean hasUpdateReady = Boolean.TRUE.equals(viewModel.getHasUpdateReady().getValue());
         String updateAvail = viewModel.getUpdateAvailableInfo().getValue();
-        boolean hasBuildUpdate = updateAvail != null && !updateAvail.startsWith("None") && !updateAvail.contains("Matches");
+        boolean hasBuildUpdate = hasUpdateReady || (updateAvail != null && !updateAvail.startsWith("None") && !updateAvail.contains("Matches") && !updateAvail.contains("Ahead"));
 
-        if (hasHot && !hotActive) {
+        if (hasUpdateReady || hasBuildUpdate) {
+            int targetCode = viewModel.getDiscoveredLatestCode().getValue() != null ? viewModel.getDiscoveredLatestCode().getValue() : (BuildConfig.VERSION_CODE + 1);
+            String targetFile = viewModel.getDiscoveredLatestFileName().getValue() != null ? viewModel.getDiscoveredLatestFileName().getValue() : "jButterFly.apk";
+            tvHeroBadge.setText("🚀 NEW SYSTEM BUILD READY: Build " + targetCode);
+            tvHeroBadge.setTextColor(Color.parseColor("#40C4FF")); // Cyan
+            tvHeroSub.setText("Latest binary: " + targetFile + " • 1-Click direct install ready from GitHub.");
+        } else if (hasHot && !hotActive) {
             tvHeroBadge.setText("⚡ DYNAMIC IN-APP PATCH AVAILABLE");
             tvHeroBadge.setTextColor(Color.parseColor("#FFB300")); // Vibrant Amber
             tvHeroSub.setText("Payload: " + currentHotPatchInfo.getPatchName() + " (" + currentHotPatchInfo.getPatchSize() + ") • Zero OS Install Required!");
-        } else if (hasBuildUpdate) {
-            tvHeroBadge.setText("📦 NEW SYSTEM BUILD READY: " + updateAvail);
-            tvHeroBadge.setTextColor(Color.parseColor("#40C4FF")); // Cyan
-            tvHeroSub.setText("Differential delta available • 97% mobile bandwidth savings via GitHub");
         } else {
             tvHeroBadge.setText("🟢 SYSTEM INTEGRITY: 100% SECURE");
             tvHeroBadge.setTextColor(Color.parseColor("#00E676")); // Emerald Green
-            tvHeroSub.setText("Installed: V" + BuildConfig.VERSION_NAME + " (Build " + BuildConfig.VERSION_CODE + ")" + (hotActive ? " • Hot-Patch Active" : " • Baseline Verified"));
+            tvHeroSub.setText("Installed: V" + BuildConfig.VERSION_NAME + " (Build " + BuildConfig.VERSION_CODE + ")" + (hotActive ? " • Hot-Patch Active" : " • System Up To Date"));
+        }
+
+        if (tvUpdateActionText != null) {
+            if (hasUpdateReady || hasBuildUpdate) {
+                int targetCode = viewModel.getDiscoveredLatestCode().getValue() != null ? viewModel.getDiscoveredLatestCode().getValue() : (BuildConfig.VERSION_CODE + 1);
+                tvUpdateActionText.setText("⬇️ UPDATE (" + targetCode + ")");
+            } else {
+                tvUpdateActionText.setText("⬇️ RE-INSTALL");
+            }
         }
     }
 
@@ -705,7 +918,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
 
         String fSize = viewModel.getLatestFullApkSize().getValue();
         boolean hasFull = fSize != null && !fSize.trim().isEmpty();
-        String fullSize = hasFull ? fSize.trim() : "80.5 MB";
+        String fullSize = hasFull ? fSize.trim() : com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_PACKAGE_SIZE;
 
         double savingsPct = pct != null ? pct : 97.0;
 
@@ -1593,7 +1806,7 @@ public class SystemUpdateActivity extends BaseActivityJava {
             : ("v" + BuildConfig.VERSION_NAME);
         String fullSize = viewModel.getLatestFullApkSize().getValue() != null 
             ? viewModel.getLatestFullApkSize().getValue() 
-            : "80.5 MB";
+            : com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_PACKAGE_SIZE;
 
         com.jdroidx.jfindme.utils.ApkInstallerHelper.UpdatePackageMetadata metadata =
             new com.jdroidx.jfindme.utils.ApkInstallerHelper.UpdatePackageMetadata(

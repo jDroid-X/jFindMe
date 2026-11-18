@@ -317,8 +317,10 @@ public class NotifActivity extends BaseActivityJava {
 
                     String addr = (snap != null && snap.hasChild("address")) ? snap.child("address").getValue(String.class) : "Perimeter Anchor";
                     Double rad = (snap != null && snap.hasChild("radius")) ? snap.child("radius").getValue(Double.class) : 100.0;
-                    Integer start = (snap != null && snap.hasChild("startTime")) ? snap.child("startTime").getValue(Integer.class) : 0;
-                    Integer end = (snap != null && snap.hasChild("endTime")) ? snap.child("endTime").getValue(Integer.class) : 2359;
+                    Integer start = com.jdroidx.jfindme.data.remote.FirebaseComm.safeInt(snap != null ? snap.child("startTime") : null);
+                    if (start == null) start = 0;
+                    Integer end = com.jdroidx.jfindme.data.remote.FirebaseComm.safeInt(snap != null ? snap.child("endTime") : null);
+                    if (end == null) end = 2359;
 
                     android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(NotifActivity.this);
                     builder.setTitle("🛡️ SAFE ZONE SPECIFICATIONS");
@@ -510,6 +512,18 @@ public class NotifActivity extends BaseActivityJava {
                 }
             }
         });
+    }
+
+    // [Variables] category, changeType, entityId, senderId
+    // [Constants] ACTION_MASTER_DATA_UPDATED
+    // [Dependencies] BaseActivityJava, NotifViewModel
+    // [Integration Points] NotifActivity, AlertManager, TrackingService, PairingRepository
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        if (viewModel != null) {
+            viewModel.loadLocalAlerts();
+        }
     }
 }
 

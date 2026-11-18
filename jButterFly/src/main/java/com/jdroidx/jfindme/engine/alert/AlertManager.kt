@@ -3,6 +3,7 @@ package com.jdroidx.jfindme.engine.alert
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.os.*
 import androidx.core.app.NotificationCompat
 import com.jdroidx.jfindme.utils.SystemLogger
@@ -294,5 +295,361 @@ object AlertManager {
         notificationManager.notify((now % 10000).toInt(), notification)
         triggerGeofenceHapticAlert(context)
         SystemLogger.i(TAG, "GEOFENCE_UI_ALERT_POSTED: $payload [$dateStr $timeStr]")
+    }
+
+    // [Variables] notificationManager, channelId, notificationId, now, timeStr, dateStr, notification
+    // [Constants] None | [Dependencies] NotificationCompat, NotificationManager, SystemLogger
+    // [Integration Points] TrackingService, FCMService, DeviceSharingHub
+    @JvmStatic
+    fun showDeviceSharingNotification(context: Context, title: String, message: String) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "device_sharing_sync"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Device Sharing & Mesh Sync", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Mutual device pairing and mesh roster synchronization alerts"
+                enableLights(true)
+                lightColor = android.graphics.Color.CYAN
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val now = System.currentTimeMillis()
+        val timeFormat = java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault())
+        val dateFormat = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+        val timeStr = timeFormat.format(java.util.Date(now))
+        val dateStr = dateFormat.format(java.util.Date(now))
+
+        val intent = android.content.Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.group.FamilyFriendsActivity")
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            (now % 10000).toInt(),
+            intent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            else
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("📱 $title • $timeStr")
+            .setSubText(dateStr)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$message\n\n🕒 Date: $dateStr | Time: $timeStr"))
+            .setContentIntent(pendingIntent)
+            .setShowWhen(true)
+            .setWhen(now)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify((now % 10000).toInt(), notification)
+        triggerGeofenceHapticAlert(context)
+        try {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).writableDatabase
+            com.jdroidx.jfindme.data.local.tables.AlertHistoryTable.logAlert(
+                db,
+                agentId = "DEVICE_SHARING",
+                alertType = "DEVICE_PAIR_LINK",
+                details = "$title: $message",
+                timestamp = now,
+                severity = "INFO"
+            )
+        } catch (ignored: Exception) {}
+        SystemLogger.i(TAG, "DEVICE_SHARING_NOTIFICATION_POSTED: $title - $message")
+    }
+
+    @JvmStatic
+    fun showButterflyInvitationNotification(
+        context: Context,
+        pointId: String,
+        pointName: String,
+        creatorName: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "butterfly_point_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Butterfly Point Rendezvous", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Tactical Butterfly Point Rendezvous Invitations"
+                enableLights(true)
+                lightColor = android.graphics.Color.MAGENTA
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = (System.currentTimeMillis() % 10000).toInt()
+
+        // [Variables] contentIntent, pContentIntent | [Constants] EXTRA_FOCUS_BUTTERFLY_POINT_ID | [Dependencies] Intent, PendingIntent | [Integration Points] MapActivity decoupling
+        // Content intent: Opens MapActivity focused on the Butterfly Point (Decoupled component binding)
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("EXTRA_FOCUS_BUTTERFLY_POINT_ID", pointId)
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // [Variables] acceptIntent, rejectIntent, pAcceptIntent, pRejectIntent
+        // [Constants] ACTION_BUTTERFLY_ACCEPT, ACTION_BUTTERFLY_REJECT
+        // [Dependencies] Intent, PendingIntent, ButterflyPointActionReceiver
+        // [Integration Points] Butterfly Point rendezvous push notification interactive response buttons
+        // Action Intent: ACCEPT (Explicit component target prevents OS implicit broadcast drop on exported=false)
+        val acceptIntent = Intent("com.jdroidx.jfindme.ACTION_BUTTERFLY_ACCEPT").apply {
+            setClass(context, com.jdroidx.jfindme.receiver.ButterflyPointActionReceiver::class.java)
+            setPackage(context.packageName)
+            putExtra("point_id", pointId)
+            putExtra("notification_id", notificationId)
+        }
+        val pAcceptIntent = android.app.PendingIntent.getBroadcast(
+            context,
+            notificationId * 10 + 1,
+            acceptIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Action Intent: REJECT (Explicit component target prevents OS implicit broadcast drop on exported=false)
+        val rejectIntent = Intent("com.jdroidx.jfindme.ACTION_BUTTERFLY_REJECT").apply {
+            setClass(context, com.jdroidx.jfindme.receiver.ButterflyPointActionReceiver::class.java)
+            setPackage(context.packageName)
+            putExtra("point_id", pointId)
+            putExtra("notification_id", notificationId)
+        }
+        val pRejectIntent = android.app.PendingIntent.getBroadcast(
+            context,
+            notificationId * 10 + 2,
+            rejectIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setContentTitle("🦋 Butterfly Rendezvous: $pointName")
+            .setContentText("Invited by $creatorName. Tap to open tactical map.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("Rendezvous invitation for '$pointName' initiated by $creatorName. Select Accept to participate or Reject to decline."))
+            .setContentIntent(pContentIntent)
+            .addAction(android.R.drawable.checkbox_on_background, "ACCEPT", pAcceptIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "REJECT", pRejectIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "BUTTERFLY_INVITATION_NOTIFICATION_POSTED: id=$pointId by=$creatorName")
+    }
+
+    // [Variables] notificationManager: NotificationManager, channelId: String, notificationId: Int, contentIntent: Intent, pContentIntent: PendingIntent, notification: Notification
+    // [Constants] None
+    // [Dependencies] NotificationCompat, NotificationManager, Intent, PendingIntent, SystemLogger
+    // [Integration Points] TrackingService, ButterflyPointEngine, MapActivity
+    @JvmStatic
+    fun showButterflyArrivalNotification(
+        context: Context,
+        pointName: String,
+        deviceName: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "butterfly_point_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Butterfly Point Rendezvous", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Tactical Butterfly Point Rendezvous Notifications"
+                enableLights(true)
+                lightColor = android.graphics.Color.GREEN
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = 88000 + (System.currentTimeMillis() % 1000).toInt()
+        // [Variables] contentIntent, pContentIntent | [Constants] FLAGS | [Dependencies] Intent, PendingIntent | [Integration Points] MapActivity decoupling
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setContentTitle("🎯 Rendezvous Reached: $pointName")
+            .setContentText("$deviceName arrived at Butterfly Point '$pointName'.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("🎯 Arrival Confirmed: $deviceName has reached the rendezvous perimeter for '$pointName'."))
+            .setContentIntent(pContentIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "BUTTERFLY_ARRIVAL_NOTIFICATION_POSTED: $pointName by $deviceName")
+    }
+
+    @JvmStatic
+    fun showButterflyNudgeNotification(
+        context: Context,
+        pointName: String,
+        message: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "butterfly_point_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Butterfly Point Rendezvous", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Tactical Butterfly Point Rendezvous Notifications"
+                enableLights(true)
+                lightColor = android.graphics.Color.YELLOW
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = 89000 + (System.currentTimeMillis() % 1000).toInt()
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle("🦋 Rendezvous Nudge: $pointName")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pContentIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "BUTTERFLY_NUDGE_NOTIFICATION_POSTED: $pointName")
+    }
+
+    // [Variables] notificationManager, channelId, notificationId, contentIntent, pContentIntent, message, notification
+    // [Constants] TAG
+    // [Dependencies] NotificationCompat, NotificationManager, PendingIntent, SystemLogger
+    // [Integration Points] TrackingService.kt (onChildChanged), MapActivity
+    @JvmStatic
+    fun showButterflyTimeExtensionNotification(
+        context: Context,
+        pointName: String,
+        newTimeStr: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "butterfly_point_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Butterfly Point Rendezvous", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Tactical Butterfly Point Rendezvous Notifications"
+                enableLights(true)
+                lightColor = android.graphics.Color.CYAN
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = 89200 + (System.currentTimeMillis() % 1000).toInt()
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val message = "Meeting time extended to $newTimeStr"
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            .setContentTitle("⏰ Rendezvous Extended: $pointName")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pContentIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "BUTTERFLY_EXTENSION_NOTIFICATION_POSTED: $pointName -> $newTimeStr")
+    }
+
+    // [Variables] notificationManager, channelId, notificationId, contentIntent, pContentIntent, message, notification
+    // [Constants] TAG
+    // [Dependencies] NotificationCompat, NotificationManager, PendingIntent, SystemLogger
+    // [Integration Points] ButterflyPointEngine.kt (startActivePointPeerSync), MapActivity
+    @JvmStatic
+    fun showButterflyQuorumNotification(
+        context: Context,
+        pointName: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "butterfly_point_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Butterfly Point Rendezvous", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Tactical Butterfly Point Rendezvous Notifications"
+                enableLights(true)
+                lightColor = android.graphics.Color.GREEN
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = 89400 + (System.currentTimeMillis() % 1000).toInt()
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val message = "All group members have successfully arrived at $pointName!"
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setContentTitle("🎉 Full Quorum Assembled: $pointName")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pContentIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "BUTTERFLY_QUORUM_NOTIFICATION_POSTED: $pointName")
+    }
+
+    @JvmStatic
+    fun cancelButterflyNotification(context: Context, notificationId: Int) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        nm?.cancel(notificationId)
     }
 }

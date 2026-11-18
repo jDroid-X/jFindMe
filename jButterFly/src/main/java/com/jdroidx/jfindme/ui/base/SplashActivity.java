@@ -68,15 +68,41 @@ public class SplashActivity extends Activity {
 
         setContentView(root);
 
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Variables: context
+        // Constants: KEY_LAST_KNOWN_VERSION_CODE
+        // Dependencies: RegistryManager
+        // Integration Points: System Update Closed-Loop Feedback Sentinel
+        com.jdroidx.jfindme.utils.RegistryManager.checkAndCloseUpdateFeedbackLoop(this);
+
         // 🚀 Maps SDK Pre-Warming: Pre-load vector renderer in background during splash
         new Thread(() -> {
+            try {
+                String dynamicKey = com.jdroidx.jfindme.utils.RegistryManager.getGoogleMapsApiKey(getApplicationContext());
+                if (dynamicKey != null && !dynamicKey.trim().isEmpty()) {
+                    String cleanKey = dynamicKey.trim();
+                    android.content.pm.ApplicationInfo ai = getPackageManager().getApplicationInfo(getPackageName(), android.content.pm.PackageManager.GET_META_DATA);
+                    if (ai != null && ai.metaData != null) {
+                        ai.metaData.putString("com.google.android.geo.API_KEY", cleanKey);
+                    }
+                }
+            } catch (Exception ignored) {}
             try {
                 com.google.android.gms.maps.MapsInitializer.initialize(
                     getApplicationContext(),
                     com.google.android.gms.maps.MapsInitializer.Renderer.LATEST,
                     renderer -> com.jdroidx.jfindme.utils.SystemLogger.i("SplashActivity", "Maps SDK Pre-Warmed: " + renderer.name())
                 );
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.jdroidx.jfindme.utils.SystemLogger.w("SplashActivity", "Renderer.LATEST pre-warm failed (" + e.getMessage() + "), trying LEGACY renderer");
+                try {
+                    com.google.android.gms.maps.MapsInitializer.initialize(
+                        getApplicationContext(),
+                        com.google.android.gms.maps.MapsInitializer.Renderer.LEGACY,
+                        null
+                    );
+                } catch (Exception ignored) {}
+            }
         }).start();
 
         // 🔄 Zero-Data-Loss Migration State Restore (Debug to Release Upgrade) in Background Thread
@@ -197,18 +223,30 @@ public class SplashActivity extends Activity {
         com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Starting background profile recovery for UID: " + authUid);
         com.jdroidx.jfindme.data.remote.FirebaseComm.purgeLegacyAuthUidNodes();
         
-        // 🛡️ Post-Reinstall Recovery: First resolve canonical hardware agent ID from lookup_indices/auth_to_device
+        // [Variables] localHardwareId, canonicalAgentId, isLocalRoster | [Constants] "2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789" | [Dependencies] DeviceIdentityHelper, FirebaseComm | [Integration Points] Reinstall Profile Recovery
+        // 🛡️ Post-Reinstall Recovery: First resolve canonical hardware agent ID from hardware SSOT
+        final String localHardwareId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+
         com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(authUid, resolvedCloudId -> {
             String canonicalAgentId;
-            if (resolvedCloudId != null && !resolvedCloudId.isEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
+            boolean isLocalRoster = isKnownRosterDevice(localHardwareId);
+            if (isLocalRoster) {
+                canonicalAgentId = localHardwareId;
+                // Re-anchor Cloud Lookup index if cloud was pointed to an orphan ID
+                if (!canonicalAgentId.equals(resolvedCloudId)) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.registerLookupIndex(authUid, canonicalAgentId);
+                    com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Healed Cloud Lookup Index to Canonical Roster ID: " + canonicalAgentId);
+                }
+            } else if (resolvedCloudId != null && !resolvedCloudId.isEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
                 canonicalAgentId = resolvedCloudId;
-                com.jdroidx.jfindme.utils.RegistryManager.putString(SplashActivity.this, com.jdroidx.jfindme.utils.RegistryManager.KEY_AGENT_ID, canonicalAgentId);
-                com.jdroidx.jfindme.utils.DeviceIdentityHelper.setCustomAgentId(SplashActivity.this, canonicalAgentId);
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Restored registered canonical Agent ID from Cloud Lookup: " + canonicalAgentId);
             } else {
-                canonicalAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                canonicalAgentId = localHardwareId;
                 com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Using derived hardware agent ID for profile recovery: " + canonicalAgentId);
             }
+            com.jdroidx.jfindme.utils.RegistryManager.putString(SplashActivity.this, com.jdroidx.jfindme.utils.RegistryManager.KEY_AGENT_ID, canonicalAgentId);
+            com.jdroidx.jfindme.utils.DeviceIdentityHelper.setCustomAgentId(SplashActivity.this, canonicalAgentId);
+
             fetchCloudProfile(authUid, canonicalAgentId);
             return null;
         });
@@ -247,7 +285,12 @@ public class SplashActivity extends Activity {
                     String rawActiveGroup = profileSnap.child("active_group").getValue(String.class);
                     String activeGroup = rawActiveGroup;
                     if (activeGroup == null || activeGroup.trim().isEmpty() || "DEFAULT_GROUP".equals(activeGroup)) {
-                        activeGroup = "GRP_" + agentId;
+                        String dynGroup = com.jdroidx.jfindme.utils.RegistryManager.getDeviceCorrespondingGroup(SplashActivity.this);
+                        if (dynGroup != null && !dynGroup.trim().isEmpty() && !"DEFAULT_GROUP".equals(dynGroup)) {
+                            activeGroup = dynGroup.trim();
+                        } else {
+                            activeGroup = "GRP_" + agentId;
+                        }
                         com.jdroidx.jfindme.data.remote.FirebaseComm.INSTANCE.getDevicesRef().child(agentId).child("profile").child("active_group").setValue(activeGroup);
                         com.jdroidx.jfindme.data.remote.FirebaseComm.INSTANCE.getRelationshipsRef().child(activeGroup).child("members").child(agentId).child("role").setValue("OWNER");
                     }
@@ -294,7 +337,7 @@ public class SplashActivity extends Activity {
                                 profileData, orgData, null, groupData, null, null, null,
                                 0.0, 0.0, null, "ADMIN"
                             );
-                            db.pruneZombieNodes(canonicalAgentId, android.os.Build.MODEL);
+                            db.pruneZombieNodes(canonicalAgentId, (phone != null && !phone.trim().isEmpty()) ? phone.trim() : null);
                             db.applyTtlDecay(7);
                         } catch (Exception e) {
                             com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Background handshake persistence notice: " + e.getMessage());
@@ -330,6 +373,20 @@ public class SplashActivity extends Activity {
                 }
                 isSyncInProgress = false;
             });
+    }
+
+    // [Variables] agentId: String | [Constants] DeviceIdentityHelper.CANONICAL_ROSTER_IDS | [Dependencies] DeviceIdentityHelper | [Integration Points] SSOT Canonical Identity Guard
+    private boolean isKnownRosterDevice(String agentId) {
+        return com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(agentId);
+    }
+
+    // [Variables] None | [Constants] None | [Dependencies] transitionHandler, transitionRunnable | [Integration Points] Deterministic Navigation Back Dispatch
+    @Override
+    public void onBackPressed() {
+        if (transitionHandler != null && transitionRunnable != null) {
+            transitionHandler.removeCallbacks(transitionRunnable);
+        }
+        finish();
     }
 
     @Override

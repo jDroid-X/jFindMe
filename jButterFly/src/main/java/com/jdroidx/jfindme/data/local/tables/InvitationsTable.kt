@@ -16,12 +16,14 @@ object InvitationsTable {
 
     const val COL_ID = "id"
     const val COL_TOKEN = "token" // 6-digit PIN or UUID QR token
+    const val COL_CODE = COL_TOKEN // Backward-compatibility alias
     const val COL_GROUP_ID = "group_id" // FK to groups.group_id
     const val COL_INITIATOR_IDENTITY_ID = "initiator_identity_id" // FK to UserIdentityTable.id
     const val COL_INITIATOR_AGENT_ID = "initiator_agent_id"
     const val COL_TARGET_PHONE_OR_EMAIL = "target_phone_or_email"
     const val COL_INVITE_TYPE = "invite_type" // QR_CODE, PAIR_CODE_6DIGIT, DIRECT_INVITE
     const val COL_TARGET_ROLE = "target_role" // member, guardian, child
+    const val COL_ROLE = COL_TARGET_ROLE // Backward-compatibility alias
     const val COL_TARGET_CIRCLE_TYPE = "target_circle_type" // FAMILY, FRIENDS, WORK, SENTINEL
     const val COL_STATUS = "status" // PENDING, ACCEPTED, EXPIRED, REVOKED
     const val COL_EXPIRES_AT = "expires_at"

@@ -14,18 +14,24 @@ import com.jdroidx.jfindme.utils.SystemLogger
 import com.jdroidx.jfindme.utils.RegistryManager
 import kotlinx.coroutines.launch
 import java.util.*
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
  * OfflineSyncManager: Handles data persistence and queueing during network loss.
  * Strategic Update: Integrated AES-256 Persistent Vault for GPS points.
+ * 🚀 V83: Latest Data First LIFO Prioritization Engine.
+ *
+ * [Variables]: syncQueue (ConcurrentLinkedDeque), isNetworkAvailable, gson
+ * [Constants]: TAG, PREF_OFFLINE_QUEUE
+ * [Dependencies]: UserLocation, DatabaseHelper, FirebaseComm, SecureVault
+ * [Integration Points]: LocationRepository, TrackingService, MasterDataSyncSentinel
  */
 class OfflineSyncManager private constructor(context: Context) {
 
     private val context = context.applicationContext
     private val TAG = "OfflineSyncManager"
     private val PREF_OFFLINE_QUEUE = "offline_gps_queue"
-    private val syncQueue: Queue<UserLocation> = ConcurrentLinkedQueue()
+    private val syncQueue: java.util.concurrent.ConcurrentLinkedDeque<UserLocation> = ConcurrentLinkedDeque()
     @Volatile private var isNetworkAvailable = false
     private val gson = Gson()
     private var isNetworkMonitoringActive = false
@@ -81,6 +87,9 @@ class OfflineSyncManager private constructor(context: Context) {
         monitorNetwork()
     }
 
+    // [Variables] networkDebounceJob | [Constants] NETWORK_DEBOUNCE_MS = 3000L | [Dependencies] CoroutineScope, Dispatchers, delay | [Integration Points] NetworkCallback
+    private var networkDebounceJob: kotlinx.coroutines.Job? = null
+
     @Synchronized
     private fun monitorNetwork() {
         if (isNetworkMonitoringActive) return
@@ -94,14 +103,23 @@ class OfflineSyncManager private constructor(context: Context) {
                 override fun onAvailable(network: Network) {
                     isNetworkAvailable = true
                     isOnlineLiveData.postValue(true)
-                    SystemLogger.i(TAG, "Network Restored. Processing Sync Queue: ${syncQueue.size} items.")
                     listeners.forEach { it.onNetworkStatusChanged(true) }
-                    processQueue()
-                    reconcileMetadataWithCloud()
-                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.flushPendingMasterSyncQueue(context)
+
+                    // 🛡️ AIRPLANE MODE RAPID-CYCLE DEBOUNCE (3000ms Baseband Settling Delay)
+                    networkDebounceJob?.cancel()
+                    networkDebounceJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        kotlinx.coroutines.delay(3000L)
+                        if (isNetworkAvailable) {
+                            SystemLogger.i(TAG, "Network Restored & Debounced (3000ms). Processing Sync Queue: ${syncQueue.size} items.")
+                            processQueue()
+                            reconcileMetadataWithCloud()
+                            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.flushPendingMasterSyncQueue(context)
+                        }
+                    }
                 }
 
                 override fun onLost(network: Network) {
+                    networkDebounceJob?.cancel()
                     isNetworkAvailable = false
                     isOnlineLiveData.postValue(false)
                     SystemLogger.w(TAG, "Network Lost. Entering Offline Queue Mode.")
@@ -150,20 +168,20 @@ class OfflineSyncManager private constructor(context: Context) {
             SystemLogger.e(TAG, "Local history point caching error: ${e.message}")
         }
 
-        if (isNetworkAvailable) {
-            // ⚡ Phase 3 Optimization: Only dispatch standalone analytical event if explicitly requested.
-            // Avoids redundant double-write when updateUserLocation() immediately follows with syncPartitionedLocationTrace().
-            if (dispatchCloud) {
+        val isCloudReady = isNetworkAvailable && FirebaseComm.isAuthenticated()
+        if (isCloudReady) {
+            // 🚀 Latest Data First Priority Rule: Live position dispatched to Firebase immediately
+            if (dispatchCloud || location.isSosActive) {
                 FirebaseComm.syncAnalyticalEvent(rUserId, location)
             }
-            // If queue had backlogged items, flush them now
+            // If queue had backlogged items, flush them now in priority order
             if (syncQueue.isNotEmpty()) {
                 processQueue()
             }
         } else {
             val maxQueue = RegistryManager.getOfflineQueueMaxPoints(context)
-            if (syncQueue.size >= maxQueue) syncQueue.poll()
-            syncQueue.offer(location)
+            if (syncQueue.size >= maxQueue) syncQueue.pollLast() // Drop oldest item from back
+            syncQueue.offerFirst(location) // 🚀 Latest data placed at FRONT of sync queue (LIFO priority)
 
             // Also persist into SQLite PendingSyncQueueTable for Zero Data Loss
             try {
@@ -302,18 +320,19 @@ class OfflineSyncManager private constructor(context: Context) {
     private fun processQueue() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             var itemsProcessed = 0
+            // 🚀 Latest Data First Priority: Drain newest memory queued pings first
             while (syncQueue.isNotEmpty() && isNetworkAvailable) {
-                val location = syncQueue.poll()
+                val location = syncQueue.pollFirst()
                 if (location != null) {
                     FirebaseComm.syncAnalyticalEvent(location.getResolvedUserId(), location)
                     itemsProcessed++
                 }
             }
 
-            // Also drain persistent SQLite pending_sync_queue
+            // 🚀 Drain persistent SQLite pending_sync_queue with LATEST TIMESTAMP FIRST (DESC)
             try {
                 val db = DatabaseHelper.getInstance(context)
-                val sqlitePending = db.getPendingSyncQueue(50)
+                val sqlitePending = db.getLatestPendingSyncQueue(50)
                 for (item in sqlitePending) {
                     val id = (item["id"] as? Long) ?: continue
                     val targetUid = (item["target_uid"] as? String) ?: ""

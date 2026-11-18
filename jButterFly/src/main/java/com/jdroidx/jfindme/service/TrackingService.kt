@@ -33,6 +33,8 @@ class TrackingService : Service() {
     private var batteryReceiver: BroadcastReceiver? = null
     private var cpuWakeLock: android.os.PowerManager.WakeLock? = null
     private var syncListener: ValueEventListener? = null
+    private var butterflyRef: DatabaseReference? = null
+    private var butterflyChildListener: ChildEventListener? = null
     private val TAG = "TrackingService_DozeBypass"
     
     // 🔋 SILENT BATTERY VALIDATION (V9.2)
@@ -47,6 +49,35 @@ class TrackingService : Service() {
     private fun hasLocationPermission(): Boolean {
         return androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
                androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    // [Variables] None | [Constants] None | [Dependencies] DeviceIdentityHelper | [Integration Points] TrackingService, LocationRepository
+    fun getResolvedBatteryAndCharging(): Pair<Int, Boolean> {
+        return com.jdroidx.jfindme.utils.DeviceIdentityHelper.getResolvedBatteryAndCharging(this)
+    }
+
+    /**
+     * 🛡️ Proactive Background Firebase Token Refresh:
+     * Prevents silent telemetry drops (R-01) by renewing Auth token before the 60-minute expiry window.
+     */
+    fun refreshAuthTokenIfExpiring() {
+        try {
+            val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (user != null) {
+                user.getIdToken(false).addOnSuccessListener { tokenResult ->
+                    val exp = tokenResult.expirationTimestamp
+                    val nowSec = System.currentTimeMillis() / 1000
+                    if (exp - nowSec < 600) { // If expiring within 10 minutes, force renewal
+                        user.getIdToken(true).addOnSuccessListener {
+                            SystemLogger.i(TAG, "Proactive Firebase Auth token renewed successfully.")
+                            com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(applicationContext).triggerBackgroundSync()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.d(TAG, "Token refresh evaluation: ${e.message}")
+        }
     }
 
     override fun onCreate() {
@@ -260,6 +291,7 @@ class TrackingService : Service() {
                         effectiveLng = location.longitude
                     }
 
+                    val (curBattery, isCharging) = getResolvedBatteryAndCharging()
                     val userLocation = UserLocation(
                         userId = targetAgentId,
                         deviceId = deviceId, 
@@ -270,20 +302,35 @@ class TrackingService : Service() {
                         speed = location.speed,
                         accuracy = location.accuracy,
                         altitude = location.altitude,
+                        batteryLevel = curBattery,
+                        isSosActive = isSos,
                         timestamp = timeStampSign,
                         allowDependents = p.getBoolean("allow_dependents", true),
                         active_group = p.getString("active_group", "") ?: "",
                         isForensicAudit = true,
                         userName = resolvedUserName,
                         avatar_id = resolvedAvatarId
-                    )
+                    ).apply {
+                        this.isCharging = isCharging
+                    }
                     com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(applicationContext, userLocation)
                 }
             }
 
             // 🧬 Hardware Root Anchor: Publish strictly to local hardware silicon agent ID
             publishLocation(localAgentId)
+
+            val activeZones = try {
+                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(applicationContext).getActiveSafeZones()
+            } catch (_: Exception) { emptyList() }
+            val isNearPerimeter = com.jdroidx.jfindme.utils.SpatialMathUtil.isNearAnySafeZonePerimeter(
+                location.latitude, location.longitude, activeZones, 150.0
+            )
+            if (isLowPowerMode || isNearPerimeter) {
+                locationEngine?.setLowPowerMode(isLowPowerMode, nearGeofencePerimeter = isNearPerimeter)
+            }
         }
+
         if (isLowPowerMode) {
             locationEngine?.setLowPowerMode(true)
         }
@@ -334,8 +381,13 @@ class TrackingService : Service() {
         }
     }
 
+    // [Variables]: remoteCommandListener, pokeCommandListener, systemUpdateCommandListener
+    // [Constants]: None
+    // [Dependencies]: FirebaseComm, ApkInstallerHelper, SystemLogger
+    // [Integration Points]: Cloud-to-Mobile OTA command execution and closed-loop feedback reporting
     private var remoteCommandListener: ValueEventListener? = null
     private var pokeCommandListener: ValueEventListener? = null
+    private var systemUpdateCommandListener: ValueEventListener? = null
 
     private fun setupRemoteCommandListener() {
         if (!FirebaseComm.isAuthenticated()) return
@@ -345,17 +397,22 @@ class TrackingService : Service() {
         // 🛰️ MASTER DATA SYNC SENTINEL: Real-time peer inbox listener
         com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.startRealtimePeerSyncListener(applicationContext, localAgentId)
 
+        // 🔄 System Update Closed-Loop Sentinel: Flush pending cloud ACK if deferred during boot
+        com.jdroidx.jfindme.utils.RegistryManager.flushPendingUpdateFeedback(applicationContext)
+
         val cmdRef = FirebaseComm.getDeviceRef(localAgentId).child("device").child("remote_command")
         remoteCommandListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (snapshot.exists()) {
                     val action = snapshot.child("action").getValue(String::class.java)
                     val durationSec = snapshot.child("duration_sec").getValue(Int::class.java) ?: 30
-                    val epochMs = snapshot.child("epoch_ms").getValue(Long::class.java) ?: 0L
+                    val epochMs = FirebaseComm.safeLong(snapshot.child("epoch_ms")) ?: 0L
                     val now = System.currentTimeMillis()
+                    // 🛡️ Clock-Skew & Zero-Epoch Safeguard: Allow immediate execution if epoch is unset (<=0) or within 3-minute bidirectional window
+                    val isFreshCommand = (epochMs <= 0L) || (Math.abs(now - epochMs) < 180000L)
 
                     if (action == "RING_DEVICE") {
-                        if ((now - epochMs) < 90000L) {
+                        if (isFreshCommand) {
                             SystemLogger.w(TAG, "🔊 INCOMING REMOTE RING COMMAND RECEIVED for $localAgentId (${durationSec}s)")
                             com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.startSiren(
                                 this@TrackingService,
@@ -363,15 +420,150 @@ class TrackingService : Service() {
                                 "Remote Guardian"
                             )
                         } else {
-                            SystemLogger.w(TAG, "🔊 Expired RING_DEVICE command ($epochMs) purged from cloud")
+                            SystemLogger.w(TAG, "🔊 Expired RING_DEVICE command ($epochMs vs now $now) purged from cloud")
                         }
                         snapshot.ref.removeValue()
                     } else if (action == "LOCATE_DEVICE" || action == "POKE_DEVICE" || action == "REQUEST_LOCATION" || action == "PING_LOCATION") {
-                        if ((now - epochMs) < 90000L) {
+                        if (isFreshCommand) {
                             SystemLogger.w(TAG, "🛰️ INCOMING REMOTE LOCATE COMMAND RECEIVED for $localAgentId -> triggering immediate GPS fix")
                             requestImmediateLocationAndPublish()
                         } else {
-                            SystemLogger.w(TAG, "🛰️ Expired LOCATE_DEVICE command ($epochMs) purged from cloud")
+                            SystemLogger.w(TAG, "🛰️ Expired LOCATE_DEVICE command ($epochMs vs now $now) purged from cloud")
+                        }
+                        snapshot.ref.removeValue()
+                    } else if (action == "SYSTEM_UPDATE" || action == "DOWNLOAD_APK_TO_STORAGE" || action == "DOWNLOAD_AND_INSTALL") {
+                        val dlUrl = snapshot.child("download_url").getValue(String::class.java)
+                            ?: snapshot.child("downloadUrl").getValue(String::class.java) ?: ""
+                        val vName = snapshot.child("version_name").getValue(String::class.java) ?: com.jdroidx.jfindme.BuildConfig.VERSION_NAME
+                        val vCode = snapshot.child("version_code").getValue(Int::class.java) ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
+                        val isDownloadOnly = (action == "DOWNLOAD_APK_TO_STORAGE" || snapshot.child("install_action").getValue(String::class.java) == "DOWNLOAD_ONLY")
+
+                        SystemLogger.w(TAG, "🚀 INCOMING REMOTE OTA COMMAND RECEIVED for $localAgentId: Action=$action, V=$vName (Build $vCode), URL=$dlUrl")
+
+                        if (dlUrl.isNotBlank()) {
+                            val statusNode = FirebaseComm.getDeviceRef(localAgentId).child("Version_Update").child("pending_push")
+                            if (isDownloadOnly) {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.enqueueSystemDownload(
+                                    context = applicationContext,
+                                    downloadUrl = dlUrl,
+                                    fileName = "jButterFly_V${vCode}.apk",
+                                    title = "jButterFly V$vName Update",
+                                    isWifiOnly = false
+                                )
+                                statusNode.child("status").setValue("DOWNLOADING_VIA_DOWNLOAD_MANAGER")
+                                statusNode.child("stage").setValue("DOWNLOAD_ENQUEUED")
+                                statusNode.child("epoch_ms").setValue(System.currentTimeMillis())
+                            } else {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.downloadApkInBackground(
+                                    context = applicationContext,
+                                    downloadUrl = dlUrl
+                                ) { success, apkFile ->
+                                    if (success && apkFile != null) {
+                                        SystemLogger.i(TAG, "✅ Remote OTA APK downloaded successfully: ${apkFile.absolutePath}")
+                                        try {
+                                            val publicDl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                            if (publicDl != null && (publicDl.exists() || publicDl.mkdirs())) {
+                                                val destFile = java.io.File(publicDl, "jButterFly_V${vCode}.apk")
+                                                apkFile.copyTo(destFile, overwrite = true)
+                                                SystemLogger.i(TAG, "📁 Copied package to public downloads: ${destFile.absolutePath}")
+                                            }
+                                        } catch (copyErr: Exception) {
+                                            SystemLogger.w(TAG, "Public download copy notice: ${copyErr.message}")
+                                        }
+
+                                        com.jdroidx.jfindme.utils.ApkInstallerHelper.installSilentlyOrPrompt(
+                                            context = applicationContext,
+                                            apkFile = apkFile,
+                                            versionName = vName
+                                        )
+                                        statusNode.child("status").setValue("INSTALL_PROMPTED")
+                                        statusNode.child("stage").setValue("INSTALL_PROMPTED")
+                                        statusNode.child("completed_epoch_ms").setValue(System.currentTimeMillis())
+                                    } else {
+                                        SystemLogger.e(TAG, "❌ Remote OTA APK download failed.")
+                                        statusNode.child("status").setValue("FAILED")
+                                        statusNode.child("error").setValue("Download verification failed")
+                                    }
+                                }
+                            }
+                        }
+                        snapshot.ref.removeValue()
+                    } else if (action == "DEVICE_SYNC" || action == "DEVICE_SHARING_SYNC") {
+                        val peerId = snapshot.child("peer_id").getValue(String::class.java) ?: ""
+                        val peerName = snapshot.child("peer_name").getValue(String::class.java) ?: peerId
+                        val peerRole = snapshot.child("peer_role").getValue(String::class.java)
+                            ?: snapshot.child("role").getValue(String::class.java) ?: "Member"
+                        val myRole = snapshot.child("my_role").getValue(String::class.java)
+                            ?: if (peerRole.contains("Child", ignoreCase = true)) "Parent / Guardian"
+                               else if (peerRole.contains("Guardian", ignoreCase = true) || peerRole.contains("Parent", ignoreCase = true)) "Child"
+                               else "Member"
+                        val groupId = snapshot.child("group_id").getValue(String::class.java) ?: ""
+                        val epochMs = FirebaseComm.safeLong(snapshot.child("epoch_ms")) ?: 0L
+                        val expiresAt = FirebaseComm.safeLong(snapshot.child("expires_at")) ?: if (epochMs > 0L) epochMs + 86400000L else Long.MAX_VALUE
+                        val syncSessionId = snapshot.child("sync_session_id").getValue(String::class.java)
+                            ?: snapshot.child("epoch_ms").getValue()?.toString() ?: ""
+
+                        // ⏱️ 24-Hour Expiration Sentinel: Reject and auto-revoke stale sharing commands
+                        if (System.currentTimeMillis() > expiresAt) {
+                            SystemLogger.w(TAG, "⏱️ DEVICE_SYNC command expired (>24h). Discarding packet.")
+                            snapshot.ref.removeValue()
+                            FirebaseComm.getDeviceRef(localAgentId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                "status" to "EXPIRED",
+                                "sync_session_id" to syncSessionId,
+                                "peer_id" to peerId,
+                                "role" to peerRole,
+                                "reason" to "Request exceeded 24-hour acceptance window",
+                                "timestamp" to System.currentTimeMillis()
+                            ))
+                            return
+                        }
+
+                        if (peerId.isNotBlank()) {
+                            SystemLogger.i(TAG, "🔗 INCOMING DEVICE_SYNC COMMAND: Pairing with $peerId ($peerName, $peerRole) in $groupId")
+                            try {
+                                val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(applicationContext)
+                                val pairId = "PAIR_${localAgentId}_${peerId}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    sLocalDb.writableDatabase,
+                                    pairId,
+                                    localAgentId,
+                                    peerId,
+                                    myRole,
+                                    peerRole,
+                                    null,
+                                    "PAIRED"
+                                )
+                                val isFriend = peerRole.contains("Friend", ignoreCase = true)
+                                sLocalDb.saveRosterNode(peerId, peerName, peerRole, "ACTIVE", false, isFriend, activeGroupId = groupId)
+                                sLocalDb.saveRosterNode(localAgentId, "My Device", myRole, "ACTIVE", false, false, activeGroupId = groupId)
+                                sLocalDb.appendValidLinkedAgent(localAgentId, peerId)
+                                sLocalDb.appendValidLinkedAgent(peerId, localAgentId)
+                                sLocalDb.updateCitizenRole(peerId, if (isFriend) "None" else peerRole, if (isFriend) peerRole else "None", isFriend, groupId)
+
+                                val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                                    setPackage(applicationContext.packageName)
+                                    putExtra("category", "ROSTER")
+                                    putExtra("EXTRA_CATEGORY", "ROSTER")
+                                }
+                                applicationContext.sendBroadcast(refreshIntent)
+
+                                com.jdroidx.jfindme.engine.alert.AlertManager.showDeviceSharingNotification(
+                                    applicationContext,
+                                    "Device Synchronized",
+                                    "$peerName is now synced with your device as [$peerRole] in circle $groupId."
+                                )
+
+                                FirebaseComm.getDeviceRef(localAgentId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                    "status" to "ACKNOWLEDGED",
+                                    "sync_session_id" to syncSessionId,
+                                    "peer_id" to peerId,
+                                    "role" to peerRole,
+                                    "my_role" to myRole,
+                                    "timestamp" to System.currentTimeMillis()
+                                ))
+                            } catch (e: Exception) {
+                                SystemLogger.e(TAG, "Failed to process remote DEVICE_SYNC: ${e.message}")
+                            }
                         }
                         snapshot.ref.removeValue()
                     } else if (action != null) {
@@ -386,17 +578,115 @@ class TrackingService : Service() {
         }
         cmdRef.addValueEventListener(remoteCommandListener!!)
 
+        // 🛰️ Dual-Path Ingress: Direct listener on /devices/{id}/commands for instant 24h background sync
+        val directCmdRef = FirebaseComm.getDeviceRef(localAgentId).child("commands")
+        directCmdRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val action = snapshot.child("action").getValue(String::class.java) 
+                        ?: snapshot.child("command").getValue(String::class.java)
+                    if (action == "DEVICE_SYNC" || action == "DEVICE_SHARING_SYNC") {
+                        val peerId = snapshot.child("peer_id").getValue(String::class.java) ?: ""
+                        val peerName = snapshot.child("peer_name").getValue(String::class.java) ?: peerId
+                        val peerRole = snapshot.child("peer_role").getValue(String::class.java)
+                            ?: snapshot.child("role").getValue(String::class.java) ?: "Member"
+                        val myRole = snapshot.child("my_role").getValue(String::class.java)
+                            ?: if (peerRole.contains("Child", ignoreCase = true)) "Parent / Guardian"
+                               else if (peerRole.contains("Guardian", ignoreCase = true) || peerRole.contains("Parent", ignoreCase = true)) "Child"
+                               else "Member"
+                        val groupId = snapshot.child("group_id").getValue(String::class.java) ?: ""
+                        val epochMs = FirebaseComm.safeLong(snapshot.child("epoch_ms")) ?: 0L
+                        val expiresAt = FirebaseComm.safeLong(snapshot.child("expires_at")) ?: if (epochMs > 0L) epochMs + 86400000L else Long.MAX_VALUE
+                        val syncSessionId = snapshot.child("sync_session_id").getValue(String::class.java)
+                            ?: snapshot.child("epoch_ms").getValue()?.toString() ?: ""
+
+                        if (System.currentTimeMillis() > expiresAt) {
+                            SystemLogger.w(TAG, "⏱️ DEVICE_SYNC command expired (>24h). Discarding packet.")
+                            snapshot.ref.removeValue()
+                            FirebaseComm.getDeviceRef(localAgentId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                "status" to "EXPIRED",
+                                "sync_session_id" to syncSessionId,
+                                "peer_id" to peerId,
+                                "role" to peerRole,
+                                "reason" to "Request exceeded 24-hour acceptance window",
+                                "timestamp" to System.currentTimeMillis()
+                            ))
+                            return
+                        }
+
+                        if (peerId.isNotBlank()) {
+                            try {
+                                val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(applicationContext)
+                                val pairId = "PAIR_${localAgentId}_${peerId}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    sLocalDb.writableDatabase,
+                                    pairId,
+                                    localAgentId,
+                                    peerId,
+                                    myRole,
+                                    peerRole,
+                                    null,
+                                    "PAIRED"
+                                )
+                                val isFriend = peerRole.contains("Friend", ignoreCase = true)
+                                sLocalDb.saveRosterNode(peerId, peerName, peerRole, "ACTIVE", false, isFriend, activeGroupId = groupId)
+                                sLocalDb.saveRosterNode(localAgentId, "My Device", myRole, "ACTIVE", false, false, activeGroupId = groupId)
+                                sLocalDb.appendValidLinkedAgent(localAgentId, peerId)
+                                sLocalDb.appendValidLinkedAgent(peerId, localAgentId)
+                                sLocalDb.updateCitizenRole(peerId, if (isFriend) "None" else peerRole, if (isFriend) peerRole else "None", isFriend, groupId)
+
+                                val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                                    setPackage(applicationContext.packageName)
+                                    putExtra("category", "ROSTER")
+                                    putExtra("EXTRA_CATEGORY", "ROSTER")
+                                }
+                                applicationContext.sendBroadcast(refreshIntent)
+
+                                com.jdroidx.jfindme.engine.alert.AlertManager.showDeviceSharingNotification(
+                                    applicationContext,
+                                    "Device Synchronized",
+                                    "$peerName is now synced with your device as [$peerRole] in circle $groupId."
+                                )
+
+                                FirebaseComm.getDeviceRef(localAgentId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                    "status" to "ACKNOWLEDGED",
+                                    "sync_session_id" to syncSessionId,
+                                    "peer_id" to peerId,
+                                    "role" to peerRole,
+                                    "my_role" to myRole,
+                                    "timestamp" to System.currentTimeMillis()
+                                ))
+                            } catch (e: Exception) {
+                                SystemLogger.e(TAG, "Failed to process remote DEVICE_SYNC: ${e.message}")
+                            }
+                        }
+                        snapshot.ref.removeValue()
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+
         val pokeRef = FirebaseComm.getDeviceRef(localAgentId).child("commands").child("poke")
         pokeCommandListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (snapshot.exists()) {
                     val cmd = snapshot.child("command").getValue(String::class.java)
-                    val ts = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
+                    val type = snapshot.child("type").getValue(String::class.java)
+                    val ts = FirebaseComm.safeLong(snapshot.child("timestamp")) ?: 0L
                     val now = System.currentTimeMillis()
-                    if (cmd == "POKE_LOCATION_UPDATE") {
+                    if (cmd == "POKE_LOCATION_UPDATE" || type == "RENDEZVOUS_NUDGE" || cmd == "RENDEZVOUS_NUDGE") {
                         if ((now - ts) < 90000L) {
                             SystemLogger.w(TAG, "🛰️ INCOMING POKE LOCATION UPDATE RECEIVED for $localAgentId")
                             requestImmediateLocationAndPublish()
+
+                            // If this was a rendezvous nudge from an organizer, post heads-up notification
+                            if (type == "RENDEZVOUS_NUDGE" || cmd == "RENDEZVOUS_NUDGE") {
+                                val pointName = snapshot.child("point_name").getValue(String::class.java) ?: "Rendezvous"
+                                val nudgeMsg = snapshot.child("message").getValue(String::class.java)
+                                    ?: "Organizer requested your current progress and arrival update."
+                                AlertManager.showButterflyNudgeNotification(applicationContext, pointName, nudgeMsg)
+                            }
                         } else {
                             SystemLogger.w(TAG, "🛰️ Expired POKE_LOCATION_UPDATE command ($ts) purged from cloud")
                         }
@@ -408,6 +698,285 @@ class TrackingService : Service() {
             override fun onCancelled(error: DatabaseError) {}
         }
         pokeRef.addValueEventListener(pokeCommandListener!!)
+
+        val sysUpdateRef = FirebaseComm.getDeviceRef(localAgentId).child("commands").child("system_update")
+        systemUpdateCommandListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val action = snapshot.child("action").getValue(String::class.java)
+                        ?: snapshot.child("command").getValue(String::class.java)
+                    if (action == "SYSTEM_UPDATE" || action == "DOWNLOAD_APK_TO_STORAGE" || action == "DOWNLOAD_AND_INSTALL") {
+                        val dlUrl = snapshot.child("download_url").getValue(String::class.java)
+                            ?: snapshot.child("downloadUrl").getValue(String::class.java) ?: ""
+                        val vName = snapshot.child("version_name").getValue(String::class.java) ?: com.jdroidx.jfindme.BuildConfig.VERSION_NAME
+                        val vCode = snapshot.child("version_code").getValue(Int::class.java) ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
+                        val isDownloadOnly = (action == "DOWNLOAD_APK_TO_STORAGE" || snapshot.child("install_action").getValue(String::class.java) == "DOWNLOAD_ONLY")
+
+                        if (dlUrl.isNotBlank()) {
+                            val statusNode = FirebaseComm.getDeviceRef(localAgentId).child("Version_Update").child("pending_push")
+                            if (isDownloadOnly) {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.enqueueSystemDownload(
+                                    context = applicationContext,
+                                    downloadUrl = dlUrl,
+                                    fileName = "jButterFly_V${vCode}.apk",
+                                    title = "jButterFly V$vName Update",
+                                    isWifiOnly = false
+                                )
+                                statusNode.child("status").setValue("DOWNLOADING_VIA_DOWNLOAD_MANAGER")
+                                statusNode.child("stage").setValue("DOWNLOAD_ENQUEUED")
+                                statusNode.child("epoch_ms").setValue(System.currentTimeMillis())
+                            } else {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.downloadApkInBackground(
+                                    context = applicationContext,
+                                    downloadUrl = dlUrl
+                                ) { success, apkFile ->
+                                    if (success && apkFile != null) {
+                                        try {
+                                            val publicDl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                                            if (publicDl != null && (publicDl.exists() || publicDl.mkdirs())) {
+                                                val destFile = java.io.File(publicDl, "jButterFly_V${vCode}.apk")
+                                                apkFile.copyTo(destFile, overwrite = true)
+                                            }
+                                        } catch (_: Exception) {}
+
+                                        com.jdroidx.jfindme.utils.ApkInstallerHelper.installSilentlyOrPrompt(
+                                            context = applicationContext,
+                                            apkFile = apkFile,
+                                            versionName = vName
+                                        )
+                                        statusNode.child("status").setValue("INSTALL_PROMPTED")
+                                        statusNode.child("stage").setValue("INSTALL_PROMPTED")
+                                        statusNode.child("completed_epoch_ms").setValue(System.currentTimeMillis())
+                                    } else {
+                                        statusNode.child("status").setValue("FAILED")
+                                        statusNode.child("error").setValue("Download failed")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    snapshot.ref.removeValue()
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        sysUpdateRef.addValueEventListener(systemUpdateCommandListener!!)
+
+        this.butterflyRef = FirebaseComm.getDeviceRef(localAgentId).child("butterfly_invitations")
+        this.butterflyChildListener = object : ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                try {
+                    val pointId = snapshot.child("point_id").getValue(String::class.java) ?: snapshot.key ?: return
+                    val pointName = snapshot.child("point_name").getValue(String::class.java) ?: "Butterfly Point"
+                    val creatorName = snapshot.child("creator_name").getValue(String::class.java) ?: "Connected Node"
+                    val creatorDeviceId = snapshot.child("creator_device_id").getValue(String::class.java) 
+                        ?: snapshot.child("creatorDeviceId").getValue(String::class.java) ?: creatorName
+                    val address = snapshot.child("address").getValue(String::class.java) ?: ""
+                    val rTs = FirebaseComm.safeLong(snapshot.child("rendezvous_timestamp")) ?: 0L
+                    val lat = snapshot.child("lat").getValue(Double::class.java) ?: 0.0
+                    val lng = snapshot.child("lng").getValue(Double::class.java) ?: 0.0
+                    val arrivalRadius = snapshot.child("arrival_radius_meters").getValue(Double::class.java) 
+                        ?: com.jdroidx.jfindme.utils.RegistryManager.getButterflyArrivalRadius(applicationContext).toDouble()
+
+                    val expiryHours = com.jdroidx.jfindme.utils.RegistryManager.getButterflyExpiryHours(applicationContext)
+                    val expTs = FirebaseComm.safeLong(snapshot.child("expiry_timestamp")) 
+                        ?: (rTs + (expiryHours * 3600 * 1000L))
+
+                    val now = System.currentTimeMillis()
+                    val graceMs = com.jdroidx.jfindme.utils.RegistryManager.getButterflyOverdueGraceMinutes(applicationContext) * 60 * 1000L
+
+                    // 🛡️ Cold Boot / Stale Invitation Invariant Guard (24h Timeout & Post-Expiry Suppression)
+                    val isExpired = (expTs > 0L && now > expTs) || (rTs > 0L && now > (rTs + graceMs))
+                    if (isExpired) {
+                        SystemLogger.w(TAG, "Suppressed stale butterfly invitation '$pointId' (Expired: $expTs, Rendezvous: $rTs, Now: $now)")
+                        val db = DatabaseHelper.getInstance(this@TrackingService).writableDatabase
+                        com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.save(
+                            db = db,
+                            pointId = pointId,
+                            creatorDeviceId = creatorDeviceId,
+                            creatorIdentityId = null,
+                            pointName = pointName,
+                            address = address,
+                            lat = lat,
+                            lng = lng,
+                            geohash = "",
+                            rendezvousTimestamp = rTs,
+                            expiryTimestamp = expTs,
+                            arrivalRadiusMeters = arrivalRadius,
+                            isActive = false,
+                            isArchived = true
+                        )
+                        com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.assignDevice(
+                            db = db,
+                            pointId = pointId,
+                            deviceId = localAgentId,
+                            initialStatus = com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_TIMED_OUT
+                        )
+                        return
+                    }
+
+                    // 1. Sync to local SQLite Master DB
+                    val db = DatabaseHelper.getInstance(this@TrackingService).writableDatabase
+                    com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.save(
+                        db = db,
+                        pointId = pointId,
+                        creatorDeviceId = creatorDeviceId,
+                        creatorIdentityId = null,
+                        pointName = pointName,
+                        address = address,
+                        lat = lat,
+                        lng = lng,
+                        geohash = "",
+                        rendezvousTimestamp = rTs,
+                        expiryTimestamp = expTs,
+                        arrivalRadiusMeters = arrivalRadius,
+                        isActive = true,
+                        isArchived = false
+                    )
+
+                    // 🛡️ Creator Safeguard: Suppress duplicate invitation notification to creator node
+                    val isCreator = creatorDeviceId.equals(localAgentId, ignoreCase = true)
+                    if (isCreator) {
+                        SystemLogger.d(TAG, "Suppressed butterfly invitation notification for creator node $localAgentId")
+                        com.jdroidx.jfindme.engine.map.ButterflyPointEngine.startActivePointPeerSync(applicationContext, pointId)
+                        return
+                    }
+
+                    // 2. Sync self status in Sub-Master DB with idempotency guard
+                    val existingStatus = com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.getDeviceStatus(db, pointId, localAgentId)
+                    val cloudStatus = snapshot.child("status").getValue(String::class.java)
+                    val resolvedStatus = if (!cloudStatus.isNullOrBlank() && cloudStatus != com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_PENDING) {
+                        cloudStatus
+                    } else {
+                        existingStatus ?: com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_PENDING
+                    }
+                    val alreadyHandled = resolvedStatus != com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_PENDING
+
+                    com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.assignDevice(
+                        db = db,
+                        pointId = pointId,
+                        deviceId = localAgentId,
+                        initialStatus = resolvedStatus
+                    )
+
+                    // 🔄 Feedback Loop Closure: Activate real-time peer sync for this point
+                    com.jdroidx.jfindme.engine.map.ButterflyPointEngine.startActivePointPeerSync(applicationContext, pointId)
+
+                    // 3. Emit heads-up notification with interactive Accept / Reject actions ONLY if not yet handled
+                    if (!alreadyHandled) {
+                        AlertManager.showButterflyInvitationNotification(
+                            context = applicationContext,
+                            pointId = pointId,
+                            pointName = pointName,
+                            creatorName = creatorName
+                        )
+                    }
+
+                    // 4. Broadcast to MapActivity (Explicit package prevents Android 14+ broadcast drop)
+                    val refreshIntent = Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                        setPackage(packageName)
+                        putExtra("category", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_ENTITY_ID", pointId)
+                        putExtra("EXTRA_CHANGE_TYPE", "INSERT")
+                        putExtra("EXTRA_SENDER_ID", creatorName)
+                    }
+                    sendBroadcast(refreshIntent)
+
+                } catch (e: Exception) {
+                    SystemLogger.e(TAG, "Error processing incoming butterfly invitation: ${e.message}")
+                }
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                try {
+                    val pointId = snapshot.child("point_id").getValue(String::class.java) ?: snapshot.key ?: return
+                    val isArchived = snapshot.child("is_archived").getValue(Boolean::class.java) ?: false
+                    val isActive = snapshot.child("is_active").getValue(Boolean::class.java) ?: true
+                    val db = DatabaseHelper.getInstance(this@TrackingService).writableDatabase
+
+                    if (isArchived || !isActive) {
+                        com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.archive(db, pointId)
+                        com.jdroidx.jfindme.engine.map.ButterflyPointEngine.stopActivePointPeerSync(pointId)
+                        if (com.jdroidx.jfindme.engine.map.ButterflyPointEngine.activeButterflyPoint?.pointId == pointId) {
+                            com.jdroidx.jfindme.engine.map.ButterflyPointEngine.clearButterflyOverlay()
+                        }
+                    } else {
+                        // ⏰ Closed-Loop Time Extension & Metadata Synchronization
+                        val newRendezvousTs = FirebaseComm.safeLong(snapshot.child("rendezvous_timestamp")) ?: 0L
+                        val newExpiryTs = FirebaseComm.safeLong(snapshot.child("expiry_timestamp")) ?: 0L
+                        val ptName = snapshot.child("point_name").getValue(String::class.java) ?: "Butterfly Point"
+                        if (newRendezvousTs > 0L) {
+                            val curPt = DatabaseHelper.getInstance(this@TrackingService).getActiveButterflyPoints()
+                                .firstOrNull { it.pointId == pointId }
+                            val oldRendezvousTs = curPt?.rendezvousTimestamp ?: 0L
+
+                            // Update SQLite Sub-Master
+                            db.execSQL(
+                                "UPDATE ${com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.TABLE_NAME} SET " +
+                                "${com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP} = ?, " +
+                                "${com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.COL_EXPIRY_TIMESTAMP} = ? " +
+                                "WHERE ${com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.COL_POINT_ID} = ?",
+                                arrayOf<Any>(newRendezvousTs, newExpiryTs, pointId)
+                            )
+
+                            // Update in-memory active point
+                            val activePt = com.jdroidx.jfindme.engine.map.ButterflyPointEngine.activeButterflyPoint
+                            if (activePt?.pointId == pointId) {
+                                activePt.rendezvousTimestamp = newRendezvousTs
+                                if (newExpiryTs > 0L) activePt.expiryTimestamp = newExpiryTs
+                            }
+
+                            // Alert user if extended
+                            if (oldRendezvousTs in 1..<newRendezvousTs) {
+                                val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+                                val formattedTime = sdf.format(java.util.Date(newRendezvousTs))
+                                AlertManager.showButterflyTimeExtensionNotification(applicationContext, ptName, formattedTime)
+                            }
+                        }
+                    }
+
+                    val refreshIntent = Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                        setPackage(packageName)
+                        putExtra("category", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_ENTITY_ID", pointId)
+                        putExtra("EXTRA_CHANGE_TYPE", "UPDATE")
+                    }
+                    sendBroadcast(refreshIntent)
+                } catch (e: Exception) {
+                    SystemLogger.e(TAG, "Error in butterfly onChildChanged: ${e.message}")
+                }
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                try {
+                    val pointId = snapshot.child("point_id").getValue(String::class.java) ?: snapshot.key ?: return
+                    val db = DatabaseHelper.getInstance(this@TrackingService).writableDatabase
+                    com.jdroidx.jfindme.data.local.tables.ButterflyPointTable.archive(db, pointId)
+                    com.jdroidx.jfindme.engine.map.ButterflyPointEngine.stopActivePointPeerSync(pointId)
+                    if (com.jdroidx.jfindme.engine.map.ButterflyPointEngine.activeButterflyPoint?.pointId == pointId) {
+                        com.jdroidx.jfindme.engine.map.ButterflyPointEngine.clearButterflyOverlay()
+                    }
+
+                    val refreshIntent = Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                        setPackage(packageName)
+                        putExtra("category", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                        putExtra("EXTRA_ENTITY_ID", pointId)
+                        putExtra("EXTRA_CHANGE_TYPE", "DELETE")
+                    }
+                    sendBroadcast(refreshIntent)
+                } catch (e: Exception) {
+                    SystemLogger.e(TAG, "Error in butterfly onChildRemoved: ${e.message}")
+                }
+            }
+
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        butterflyRef?.addChildEventListener(butterflyChildListener!!)
     }
 
     @android.annotation.SuppressLint("MissingPermission")
@@ -440,6 +1009,10 @@ class TrackingService : Service() {
                             "butterfly"
                         }
 
+                        val (curBattery, isCharging) = getResolvedBatteryAndCharging()
+                        val prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                        val isSosActive = prefs.getBoolean("is_sos_active", false)
+
                         // P0 FIX: Route through unified repository path instead of raw duplicate writes.
                         // This eliminates 2x bandwidth by using the single syncPartitionedLocationTrace() path.
                         val userLocation = UserLocation(
@@ -451,16 +1024,23 @@ class TrackingService : Service() {
                             speed = loc.speed,
                             accuracy = loc.accuracy,
                             altitude = loc.altitude,
+                            batteryLevel = curBattery,
+                            isSosActive = isSosActive,
                             timestamp = FirebaseComm.getForensicTimestamp(),
                             allowDependents = RegistryManager.getAllowDependents(applicationContext),
                             active_group = RegistryManager.getActiveGroup(applicationContext),
                             isForensicAudit = true,
                             userName = userName,
                             avatar_id = resolvedAvatarId
-                        )
+                        ).apply {
+                            this.isCharging = isCharging
+                        }
                         RegistryManager.setLastKnownLatitude(applicationContext, loc.latitude)
                         RegistryManager.setLastKnownLongitude(applicationContext, loc.longitude)
                         com.jdroidx.jfindme.engine.sync.TelemetryFailoverRouter.dispatchLocationWithFailover(applicationContext, userLocation)
+                        // 🦋 Closed-Loop Telemetry: Update proximity, ETA & status for active Butterfly Points (Convert m/s to km/h)
+                        val speedKmh = com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.toKmh(loc.speed)
+                        com.jdroidx.jfindme.engine.map.ButterflyPointEngine.processLocalLocationUpdate(applicationContext, loc.latitude, loc.longitude, speedKmh)
                     }
                     if (wakeLock.isHeld) wakeLock.release()
                 }
@@ -524,11 +1104,11 @@ class TrackingService : Service() {
                 }
                 
                 // Forensic Battery Sweep
-                val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val plugged = intent?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+                val (level, isCharging) = getResolvedBatteryAndCharging()
+                val plugged = if (isCharging) 1 else 0
                 
                 SystemLogger.i(TAG, "LIVE_HEARTBEAT_ACTIVE: Level $level% | Cadence: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
+                refreshAuthTokenIfExpiring()
                 
                 val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
                 val now = System.currentTimeMillis()
@@ -586,6 +1166,7 @@ class TrackingService : Service() {
                                 "butterfly"
                             }
 
+                            val isSosActive = prefs.getBoolean("is_sos_active", false)
                             val userLoc = UserLocation(
                                 userId = myAgentId,
                                 deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext),
@@ -595,16 +1176,23 @@ class TrackingService : Service() {
                                 speed = resolvedLoc.speed,
                                 accuracy = resolvedLoc.accuracy,
                                 altitude = resolvedLoc.altitude,
+                                batteryLevel = level,
+                                isSosActive = isSosActive,
                                 timestamp = timeStampSign,
                                 allowDependents = prefs.getBoolean("allow_dependents", true),
                                 active_group = prefs.getString("active_group", "") ?: "",
                                 isForensicAudit = true,
                                 userName = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker",
                                 avatar_id = resolvedAvatarId
-                            )
+                            ).apply {
+                                this.isCharging = isCharging
+                            }
                             RegistryManager.setLastKnownLatitude(applicationContext, resolvedLoc.latitude)
                             RegistryManager.setLastKnownLongitude(applicationContext, resolvedLoc.longitude)
                             repository.updateMyLocation(userLoc)
+                            // 🦋 Closed-Loop Telemetry: Update proximity, ETA & status for active Butterfly Points (Convert m/s to km/h)
+                            val speedKmh = com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.toKmh(resolvedLoc.speed)
+                            com.jdroidx.jfindme.engine.map.ButterflyPointEngine.processLocalLocationUpdate(applicationContext, resolvedLoc.latitude, resolvedLoc.longitude, speedKmh)
                         }
                     } catch (e: Exception) {
                         SystemLogger.d(TAG, "Background fused location tick completed with fallback: ${e.message}")
@@ -750,11 +1338,12 @@ class TrackingService : Service() {
         })
     }
 
+    // [Variables] filter, batteryReceiver, level, isCharging | [Constants] ACTION_BATTERY_CHANGED | [Dependencies] IntentFilter, BroadcastReceiver | [Integration Points] TrackingService, LocationEngine
     private fun registerBatteryMonitor() {
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         batteryReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                val (level, _) = getResolvedBatteryAndCharging()
                 if (level != -1 && level < 15) {
                     SystemLogger.w(TAG, "LOW_BATTERY_DETECTED: Level $level%. Enabling Low Power Tracking.")
                     isLowPowerMode = true
@@ -841,23 +1430,31 @@ class TrackingService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        SystemLogger.w(TAG, "Task removed from recent apps. Scheduling auto-resurrect alarm...")
+        SystemLogger.w(TAG, "Task removed from recent apps. Scheduling auto-resurrect alarm and immediate stealth pulse...")
         try {
-            val restartIntent = Intent(applicationContext, TrackingService::class.java).apply {
-                setPackage(packageName)
+            // 🛡️ PRIME OBJECTIVE: Fire immediate stealth pulse with cellular tower triangulation fallback
+            com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(applicationContext, 1L)
+
+            // 🐕 Route resurrection through WatchdogAlarmReceiver broadcast intent to comply with Android 8-14 background execution limits
+            val restartIntent = Intent(applicationContext, com.jdroidx.jfindme.receiver.WatchdogAlarmReceiver::class.java).apply {
+                action = com.jdroidx.jfindme.receiver.WatchdogAlarmReceiver.ACTION_WATCHDOG_HEARTBEAT
             }
             val pFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             } else {
-                PendingIntent.FLAG_ONE_SHOT
+                PendingIntent.FLAG_UPDATE_CURRENT
             }
-            val pendingIntent = PendingIntent.getService(applicationContext, 1001, restartIntent, pFlags)
+            val pendingIntent = PendingIntent.getBroadcast(applicationContext, 1001, restartIntent, pFlags)
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + 1000L,
-                pendingIntent
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + 2000L,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 2000L, pendingIntent)
+            }
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed scheduling service resurrect on task removal", e)
         }
@@ -907,6 +1504,17 @@ class TrackingService : Service() {
             pokeCommandListener?.let { listener ->
                 FirebaseComm.getDeviceRef(localAgentId).child("commands").child("poke").removeEventListener(listener)
             }
+            systemUpdateCommandListener?.let { listener ->
+                FirebaseComm.getDeviceRef(localAgentId).child("commands").child("system_update").removeEventListener(listener)
+            }
+            butterflyChildListener?.let { listener ->
+                try {
+                    butterflyRef?.removeEventListener(listener)
+                } catch (e: Exception) {
+                    SystemLogger.e(TAG, "Failed to remove butterflyChildListener: ${e.message}")
+                }
+            }
+            com.jdroidx.jfindme.engine.map.ButterflyPointEngine.stopAllActivePointPeerSyncs()
             com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.stopRealtimePeerSyncListener(localAgentId)
         }
     }

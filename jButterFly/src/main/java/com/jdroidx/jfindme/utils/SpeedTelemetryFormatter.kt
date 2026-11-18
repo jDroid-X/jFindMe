@@ -50,9 +50,9 @@ object SpeedTelemetryFormatter {
     fun getMarqueeSpeedTag(speedMps: Float): String {
         val speedKmh = toKmh(speedMps)
         return if (speedKmh > THRESHOLD_WALKING_KMH) {
-            String.format(Locale.US, " • 🚗 %.1f km/h", speedKmh)
+            String.format(Locale.US, " • 🚗 %.0f km/h", speedKmh)
         } else {
-            " • 🛑 Static (0.0 km/h)"
+            ""
         }
     }
 }

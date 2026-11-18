@@ -23,11 +23,19 @@ public class AngelLoader {
      * Injects a perfectly centered, touch-blocking transparent dim layer onto the entire Activity.
      * Fires the beautiful Butterfly animation if the file exists.
      */
+    // [Variables] context: Activity, root: ViewGroup, overlay: FrameLayout, contentGroup: LinearLayout, statusCard: LinearLayout, scriptText: TextView, verText: TextView
+    // [Constants] TAG_NODE, TAG_TEXT
+    // [Dependencies] LottieAnimationView, ProgressBar, Activity, ViewGroup, FrameLayout, LinearLayout, Looper
+    // [Integration Points] MapActivity, FamilyFriendsActivity, NetworkGatewayActivity, SplashActivity, DeviceSharing
     public static void show(Activity context) {
         if (context == null || context.isFinishing() || context.isDestroyed()) return;
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            context.runOnUiThread(() -> show(context));
+            return;
+        }
         
         ViewGroup root = (ViewGroup) context.getWindow().getDecorView().findViewById(android.R.id.content);
-        if (root.findViewWithTag(TAG_NODE) != null) return; // Prevent duplicate instantiation!
+        if (root == null || root.findViewWithTag(TAG_NODE) != null) return; // Prevent duplicate instantiation!
         
         FrameLayout overlay = new FrameLayout(context);
         overlay.setTag(TAG_NODE);
@@ -129,10 +137,16 @@ public class AngelLoader {
     /**
      * Instantly dismantles the animation engine safely and natively.
      */
+    // [Variables] context: Activity, root: ViewGroup, cacheRemove: View | [Constants] TAG_NODE | [Dependencies] Looper, Activity, ViewGroup | [Integration Points] AngelLoader lifecycle
     public static void hide(Activity context) {
         if (context == null || context.isFinishing() || context.isDestroyed()) return;
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            context.runOnUiThread(() -> hide(context));
+            return;
+        }
         
         ViewGroup root = (ViewGroup) context.getWindow().getDecorView().findViewById(android.R.id.content);
+        if (root == null) return;
         View cacheRemove = root.findViewWithTag(TAG_NODE);
         
         if (cacheRemove != null) {
@@ -144,13 +158,16 @@ public class AngelLoader {
         }
     }
     
-    /**
-     * 🚀 QA Upgrade: Dynamically updates the script stream rendered directly beneath the Animated Object.
-     */
+    // [Variables] context: Activity, statusMessage: String, root: ViewGroup, rawText: View | [Constants] TAG_TEXT | [Dependencies] Looper, Activity, TextView | [Integration Points] AngelLoader status updates
     public static void setStatus(Activity context, String statusMessage) {
         if (context == null || context.isFinishing() || context.isDestroyed()) return;
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            context.runOnUiThread(() -> setStatus(context, statusMessage));
+            return;
+        }
         
         ViewGroup root = (ViewGroup) context.getWindow().getDecorView().findViewById(android.R.id.content);
+        if (root == null) return;
         View rawText = root.findViewWithTag(TAG_TEXT);
         if (rawText instanceof android.widget.TextView) {
             ((android.widget.TextView) rawText).setText(statusMessage);

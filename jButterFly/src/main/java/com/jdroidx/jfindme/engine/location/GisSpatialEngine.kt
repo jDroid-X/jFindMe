@@ -16,16 +16,11 @@ object GisSpatialEngine {
 
     /**
      * Calculates great-circle distance between two coordinates in meters (Haversine formula).
+     * Delegated to SpatialMathUtil for enterprise OOPS deduplication.
      */
     @JvmStatic
     fun computeHaversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2).pow(2.0) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLon / 2).pow(2.0)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return EARTH_RADIUS_METERS * c
+        return com.jdroidx.jfindme.utils.SpatialMathUtil.computeDistanceBetween(lat1, lon1, lat2, lon2)
     }
 
     /**

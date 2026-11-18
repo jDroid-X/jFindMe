@@ -425,7 +425,8 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         return root;
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextColor(getGradientStart());
@@ -1173,11 +1174,18 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         }
     }
 
+    /**
+     * [Variables]: googleMap, first, db, myAgentId, myUid, queryId, logs
+     * [Constants]: None
+     * [Dependencies]: GoogleMap, MapLifecycleDelegate, CameraUpdateFactory, DatabaseHelper
+     * [Integration Points]: HistoryActivity, MapLifecycleDelegate, TelemetryRepository
+     *
+     * 🚀 V83 OOPS-based MVC SSOT Delegation: Configures canonical map defaults via MapLifecycleDelegate.
+     */
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
         this.googleMap = googleMap;
-        this.googleMap.getUiSettings().setZoomControlsEnabled(true);
-        UiArchitect.applyMapStyle(this, googleMap);
+        com.jdroidx.jfindme.ui.map.MapLifecycleDelegate.configureMapDefaults(this, googleMap);
         
         if (!historyPoints.isEmpty()) {
             drawStaticPath(historyPoints);

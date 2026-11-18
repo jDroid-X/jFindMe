@@ -22,5 +22,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "jFindMe"
-include(":app")
+// [Variables] rootProject | [Constants] None | [Dependencies] Gradle Settings | [Integration Points] Android Studio & Gradle
+// Sole Canonical Application Module: jButterFly (replaces duplicate :app module)
 include(":jButterFly")

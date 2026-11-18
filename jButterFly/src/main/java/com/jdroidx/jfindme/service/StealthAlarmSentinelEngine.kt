@@ -65,9 +65,15 @@ object StealthAlarmSentinelEngine {
     fun scheduleNextStealthPulse(context: Context, customIntervalMins: Long = 0L) {
         val appContext = context.applicationContext ?: context
         val dbHelper = DatabaseHelper.getInstance(appContext)
+        val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val isPowerSave = pm?.isPowerSaveMode ?: false
+        val isChildMode = RegistryManager.isChildWardMode(appContext)
 
+        // 🧸 PRIME OBJECTIVE: When app is off or in battery saver mode, guarantee 15-minute stealth cadence for child protection
         val intervalMins = if (customIntervalMins > 0) {
             customIntervalMins
+        } else if (isChildMode || isPowerSave) {
+            15L
         } else {
             dbHelper.getStealthIntervalMins().takeIf { it > 0 } ?: 60L
         }
@@ -211,6 +217,10 @@ object StealthAlarmSentinelEngine {
                     resolvedLng = RegistryManager.getLastKnownLongitude(appContext)
                 }
 
+                // [Variables] resolvedBat, isCharging, isSos, userLoc, fallbackPayload | [Constants] TAG, forensicTs | [Dependencies] DeviceIdentityHelper, UserLocation, TelemetryFailoverRouter | [Integration Points] StealthAlarmReceiver, FirebaseComm, DatabaseHelper
+                val (resolvedBat, isCharging) = DeviceIdentityHelper.getResolvedBatteryAndCharging(appContext)
+                val isSos = prefs.getBoolean("is_sos_active", false)
+
                 if (resolvedLat != 0.0 && resolvedLng != 0.0) {
                     val ssotAvatar = dbHelper.getDeviceCentricAvatar(agentId)
                     val resolvedAvatar = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") ssotAvatar else "butterfly"
@@ -226,6 +236,8 @@ object StealthAlarmSentinelEngine {
                         speed = resolvedSpeed,
                         accuracy = resolvedAcc,
                         altitude = resolvedAlt,
+                        batteryLevel = resolvedBat,
+                        isSosActive = isSos,
                         timestamp = forensicTs,
                         allowDependents = prefs.getBoolean("allow_dependents", true),
                         active_group = prefs.getString("active_group", "") ?: "",
@@ -242,6 +254,11 @@ object StealthAlarmSentinelEngine {
                     SystemLogger.w(TAG, "GPS unavailable (0,0); dispatching pure cellular baseband heartbeat.")
                     val fallbackPayload = mutableMapOf<String, Any>(
                         "last_heartbeat" to forensicTs,
+                        "last_seen" to forensicTs,
+                        "updated_at" to forensicTs,
+                        "status" to "ONLINE",
+                        "battery" to resolvedBat,
+                        "battery_pct" to resolvedBat,
                         "active_route" to "TIER_3_CELLULAR_TOWER",
                         "cellular_mcc_mnc" to "${cellData.mcc}-${cellData.mnc}",
                         "cellular_lac_cid" to "${cellData.lac}-${cellData.cid}",
@@ -255,8 +272,11 @@ object StealthAlarmSentinelEngine {
                         FirebaseComm.getTelemetryRef(agentId).updateChildren(fallbackPayload)
                         val liveRef = FirebaseComm.getLiveRef(agentId)
                         liveRef.child("last_seen").setValue(forensicTs)
+                        liveRef.child("updated_at").setValue(forensicTs)
                         liveRef.child("active_route").setValue("TIER_3_CELLULAR_TOWER")
                         liveRef.child("cellular_operator").setValue(cellData.operator)
+                        liveRef.child("cellular_lac_cid").setValue("${cellData.lac}-${cellData.cid}")
+                        liveRef.child("cellular_mcc_mnc").setValue("${cellData.mcc}-${cellData.mnc}")
                         liveRef.child("location_status").setValue("CELL_TOWER_ONLY")
                     } catch (fbEx: Exception) {
                         SystemLogger.e(TAG, "Error pushing cellular-only fallback to Firebase: ${fbEx.message}")

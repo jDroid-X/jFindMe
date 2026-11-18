@@ -97,33 +97,41 @@ public class SilentUpdateWorker extends Worker {
             RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_TIME, nowStr);
             RegistryManager.putString(context, RegistryManager.KEY_LAST_CHECK_TS, nowStr);
 
-            if (!agentId.isEmpty()) {
-                FirebaseComm.checkForVersionDifference(context, agentId, (hasNew, remoteVersion, remoteCode, downloadUrl, size) -> {
-                    try {
-                        if (hasNew) {
-                            SystemLogger.i(TAG, "🚀 New Remote Version Detected: V" + remoteVersion + " (Build " + remoteCode + ")");
-                            RegistryManager.putString(context, RegistryManager.KEY_UPDATE_AVAILABLE_TS, "V" + remoteVersion + " (Build " + remoteCode + ")");
-                            RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, false);
+            // [Variables] nowStr: Timestamp | candidate: Discovered release model
+            // [Constants] RegistryManager.KEY_SILENT_UPDATE_LAST_TIME, RegistryManager.KEY_LAST_CHECK_TS
+            // [Dependencies] ApkInstallerHelper.scanGitHubForLatestRelease, FirebaseComm
+            // [Integration Points] Autonomous background updater for fleet devices
+            ApkInstallerHelper.scanGitHubForLatestRelease(context, candidate -> {
+                try {
+                    if (candidate.getHasNewVersion()) {
+                        int remoteCode = candidate.getLatestVersionCode();
+                        String remoteVersion = candidate.getLatestVersionName();
+                        String targetUrl = candidate.getDownloadUrl();
 
-                            // Storage Gate
-                            if (!ApkInstallerHelper.INSTANCE.hasAvailableStorage(context, MIN_STORAGE_REQUIRED)) {
-                                RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "STORAGE_FULL");
-                                RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Insufficient storage for update package.");
-                                RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
-                                latch.countDown();
-                                return kotlin.Unit.INSTANCE;
-                            }
+                        SystemLogger.i(TAG, "🚀 New Remote Version Detected on GitHub: V" + remoteVersion + " (Build " + remoteCode + ") -> " + candidate.getFileName());
+                        RegistryManager.putString(context, RegistryManager.KEY_UPDATE_AVAILABLE_TS, "V" + remoteVersion + " (Build " + remoteCode + ")");
+                        RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, false);
 
-                            // Cellular Metering Protection
-                            if (isMetered && !allowMetered) {
-                                SystemLogger.i(TAG, "Metered cellular connection detected. Deferring 65MB APK download until unmetered Wi-Fi.");
-                                RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "METERED_DEFERRED");
-                                RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Waiting for unmetered Wi-Fi.");
-                                latch.countDown();
-                                return kotlin.Unit.INSTANCE;
-                            }
+                        // Storage Gate
+                        if (!ApkInstallerHelper.INSTANCE.hasAvailableStorage(context, MIN_STORAGE_REQUIRED)) {
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "STORAGE_FULL");
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Insufficient storage for update package.");
+                            RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
+                            latch.countDown();
+                            return kotlin.Unit.INSTANCE;
+                        }
 
-                            // Trigger Change Log Audit
+                        // Cellular Metering Protection
+                        if (isMetered && !allowMetered) {
+                            SystemLogger.i(TAG, "Metered cellular connection detected. Deferring APK download until unmetered Wi-Fi.");
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "METERED_DEFERRED");
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Waiting for unmetered Wi-Fi.");
+                            latch.countDown();
+                            return kotlin.Unit.INSTANCE;
+                        }
+
+                        // Trigger Change Log Audit if agentId present
+                        if (!agentId.isEmpty()) {
                             FirebaseComm.logChange(
                                 agentId,
                                 "System_Update",
@@ -132,75 +140,64 @@ public class SilentUpdateWorker extends Worker {
                                 Collections.singletonMap("remote_version", "V" + remoteVersion),
                                 agentId
                             );
-
-                            String targetUrl = (downloadUrl != null && !downloadUrl.isEmpty())
-                                ? downloadUrl
-                                : RegistryManager.getSystemUpdateLink(context);
-
-                            File existingTargetApk = new File(context.getCacheDir(), "update_jfindme.apk");
-                            if (existingTargetApk.exists() && ApkInstallerHelper.isValidApkFile(context, existingTargetApk)) {
-                                ApkInstallerHelper.VersionStatus vStatus = ApkInstallerHelper.INSTANCE.checkVersionStatus(context, existingTargetApk);
-                                if (vStatus == ApkInstallerHelper.VersionStatus.UPGRADE) {
-                                    SystemLogger.i(TAG, "Update package already exists in cache and is a verified upgrade. Proceeding to silent install.");
-                                    
-                                    // Flush SQLite WAL pages before installation
-                                    DatabaseHelper.getInstance(context).forceWalCheckpoint();
-                                    
-                                    ApkInstallerHelper.installSilentlyOrPrompt(context, existingTargetApk, remoteVersion, "");
-                                    latch.countDown();
-                                    return kotlin.Unit.INSTANCE;
-                                } else {
-                                    try { existingTargetApk.delete(); } catch (Exception ignored) {}
-                                }
-                            }
-
-                            SystemLogger.i(TAG, "Initiating background APK streaming from: " + targetUrl);
-                            ApkInstallerHelper.downloadApkInBackground(context, targetUrl, (success, apkFile) -> {
-                                try {
-                                    if (success && apkFile != null) {
-                                        ApkInstallerHelper.SignatureStatus sigStatus = ApkInstallerHelper.INSTANCE.checkSignatureMatch(context, apkFile);
-                                        if (sigStatus == ApkInstallerHelper.SignatureStatus.MISMATCH) {
-                                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "SIGNATURE_MISMATCH");
-                                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Downloaded Release package signature does not match installed Debug certificate.");
-                                            RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
-                                            SystemLogger.w(TAG, "⚠️ Downloaded APK signature differs from running build.");
-                                        } else {
-                                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "UPDATE_READY");
-                                            RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
-                                            SystemLogger.i(TAG, "✅ Background APK verified. Checkpointing SQLite and committing install.");
-                                            
-                                            // Force SQLite WAL checkpoint before replacing binary
-                                            DatabaseHelper.getInstance(context).forceWalCheckpoint();
-                                            
-                                            ApkInstallerHelper.installSilentlyOrPrompt(context, apkFile, remoteVersion, "");
-                                        }
-                                    } else {
-                                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "DOWNLOAD_FAILED");
-                                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Background download connection failed.");
-                                        RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
-                                        finalResult.set(Result.retry());
-                                    }
-                                } finally {
-                                    latch.countDown();
-                                }
-                                return kotlin.Unit.INSTANCE;
-                            });
-                        } else {
-                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "UP_TO_DATE");
-                            RegistryManager.putString(context, RegistryManager.KEY_UPDATE_AVAILABLE_TS, "None (Running Latest)");
-                            RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, true);
-                            SystemLogger.i(TAG, "✅ Local system is up to date with Cloud Firebase.");
-                            latch.countDown();
                         }
-                    } catch (Exception ex) {
-                        SystemLogger.e(TAG, "Version processing error", ex);
+
+                        File existingTargetApk = new File(context.getCacheDir(), "update_jfindme.apk");
+                        if (existingTargetApk.exists() && ApkInstallerHelper.isValidApkFile(context, existingTargetApk)) {
+                            ApkInstallerHelper.VersionStatus vStatus = ApkInstallerHelper.INSTANCE.checkVersionStatus(context, existingTargetApk);
+                            if (vStatus == ApkInstallerHelper.VersionStatus.UPGRADE) {
+                                SystemLogger.i(TAG, "Update package already exists in cache and is a verified upgrade. Proceeding to silent install.");
+                                DatabaseHelper.getInstance(context).forceWalCheckpoint();
+                                ApkInstallerHelper.installSilentlyOrPrompt(context, existingTargetApk, remoteVersion, "");
+                                latch.countDown();
+                                return kotlin.Unit.INSTANCE;
+                            } else {
+                                try { existingTargetApk.delete(); } catch (Exception ignored) {}
+                            }
+                        }
+
+                        SystemLogger.i(TAG, "Initiating background APK streaming from: " + targetUrl);
+                        ApkInstallerHelper.downloadApkInBackground(context, targetUrl, (success, apkFile) -> {
+                            try {
+                                if (success && apkFile != null) {
+                                    ApkInstallerHelper.SignatureStatus sigStatus = ApkInstallerHelper.INSTANCE.checkSignatureMatch(context, apkFile);
+                                    if (sigStatus == ApkInstallerHelper.SignatureStatus.MISMATCH) {
+                                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "SIGNATURE_MISMATCH");
+                                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Downloaded Release package signature does not match installed Debug certificate.");
+                                        RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
+                                        SystemLogger.w(TAG, "⚠️ Downloaded APK signature differs from running build.");
+                                    } else {
+                                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "UPDATE_READY");
+                                        RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
+                                        SystemLogger.i(TAG, "✅ Background APK verified. Checkpointing SQLite and committing install.");
+                                        DatabaseHelper.getInstance(context).forceWalCheckpoint();
+                                        ApkInstallerHelper.installSilentlyOrPrompt(context, apkFile, remoteVersion, "");
+                                    }
+                                } else {
+                                    RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "DOWNLOAD_FAILED");
+                                    RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Background download connection failed.");
+                                    RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
+                                    finalResult.set(Result.retry());
+                                }
+                            } finally {
+                                latch.countDown();
+                            }
+                            return kotlin.Unit.INSTANCE;
+                        });
+
+                    } else {
+                        RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "UP_TO_DATE");
+                        RegistryManager.putString(context, RegistryManager.KEY_UPDATE_AVAILABLE_TS, "None (Running Latest)");
+                        RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, true);
+                        SystemLogger.i(TAG, "✅ Local system is up to date with GitHub repository.");
                         latch.countDown();
                     }
-                    return kotlin.Unit.INSTANCE;
-                });
-            } else {
-                latch.countDown();
-            }
+                } catch (Exception ex) {
+                    SystemLogger.e(TAG, "Version processing error", ex);
+                    latch.countDown();
+                }
+                return kotlin.Unit.INSTANCE;
+            });
 
             // Enforce 14-minute watchdog limit so background execution never runs wild
             boolean completedInTime = latch.await(14, TimeUnit.MINUTES);

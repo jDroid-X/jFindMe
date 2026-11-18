@@ -316,7 +316,8 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
         contentMatrix.addView(table);
     }
 
-    private ImageView createSmallIcon(int res, int color, View.OnClickListener listener) {
+    @Override
+    protected ImageView createSmallIcon(int res, int color, View.OnClickListener listener) {
         ImageView iv = new ImageView(this);
         iv.setImageResource(res);
         iv.setColorFilter(color);

@@ -67,6 +67,46 @@ class FCMService : FirebaseMessagingService() {
                         val pct = data["battery_pct"]?.toIntOrNull() ?: 15
                         AlertManager.showLowBatteryNotification(applicationContext, avatarName.ifEmpty { "Monitored Device" }, pct)
                     }
+                    "SYSTEM_UPDATE_AVAILABLE", "DOWNLOAD_APK" -> {
+                        // [Variables] ver: String, bld: String, dlUrl: String, isDownloadOnly: Boolean
+                        // [Constants] None
+                        // [Dependencies] BuildConfig, ApkInstallerHelper, AlertManager
+                        // [Integration Points] Cloud FCM OTA Push Update Pipeline
+                        val ver = data["version_name"] ?: (com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
+                        val bld = data["version_code"] ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1).toString()
+                        val dlUrl = data["download_url"] ?: ""
+                        val isDownloadOnly = (data["type"] == "DOWNLOAD_APK" || data["action"] == "DOWNLOAD_ONLY" || data["auto_install"] == "false")
+
+                        val prompt = if (isDownloadOnly) {
+                            "jButterFly V$ver (Build $bld) downloading to /sdcard/Download/..."
+                        } else {
+                            "New jFindMe update available: V$ver (Build $bld). Tap to review."
+                        }
+                        AlertManager.showGeofenceNotification(applicationContext, prompt)
+
+                        if (dlUrl.isNotBlank()) {
+                            if (isDownloadOnly) {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.enqueueSystemDownload(
+                                    context = applicationContext,
+                                    downloadUrl = dlUrl,
+                                    fileName = "jButterFly_V${bld}.apk",
+                                    title = "jButterFly V$ver Update"
+                                )
+                            } else {
+                                com.jdroidx.jfindme.utils.ApkInstallerHelper.downloadApkInBackground(applicationContext, dlUrl) { success, apkFile ->
+                                    if (success && apkFile != null) {
+                                        com.jdroidx.jfindme.utils.ApkInstallerHelper.installSilentlyOrPrompt(
+                                            context = applicationContext,
+                                            apkFile = apkFile,
+                                            versionName = ver
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            com.jdroidx.jfindme.utils.SystemUpdateScheduler.triggerImmediateMaintenance(applicationContext)
+                        }
+                    }
                     "PING_LOCATION", "POKE_DEVICE", "REQUEST_LOCATION", "REMOTE_WAKEUP" -> {
                         SystemLogger.w(TAG, "REMOTE_LOCATION_WAKEUP: High-priority background location ping received.")
                         requestImmediateLocationAndBroadcast()
@@ -82,6 +122,111 @@ class FCMService : FirebaseMessagingService() {
                             applicationContext,
                             body.ifEmpty { "Unlink request was cancelled. Connection restored." }
                         )
+                    }
+                    "DEVICE_SYNC", "DEVICE_SHARING_SYNC" -> {
+                        val epochMs = data["epoch_ms"]?.toLongOrNull() ?: 0L
+                        val expiresAt = data["expires_at"]?.toLongOrNull() ?: if (epochMs > 0L) epochMs + 86400000L else Long.MAX_VALUE
+                        val syncSessionId = data["sync_session_id"] ?: ""
+                        val selfId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(applicationContext)
+                        val peerId = data["peer_id"] ?: ""
+                        val peerName = data["peer_name"] ?: peerId
+                        val peerRole = data["peer_role"] ?: data["role"] ?: "Member"
+                        val myRole = data["my_role"] ?: if (peerRole.contains("Child", ignoreCase = true)) "Parent / Guardian"
+                                       else if (peerRole.contains("Guardian", ignoreCase = true) || peerRole.contains("Parent", ignoreCase = true)) "Child"
+                                       else "Member"
+                        val groupId = data["group_id"] ?: ""
+
+                        // ⏱️ 24-Hour Expiration Sentinel: Reject and auto-revoke stale sharing commands via Push
+                        if (System.currentTimeMillis() > expiresAt) {
+                            SystemLogger.w(TAG, "⏱️ FCM DEVICE_SYNC command expired (>24h). Discarding.")
+                            if (selfId.isNotBlank()) {
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(selfId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                    "status" to "EXPIRED",
+                                    "sync_session_id" to syncSessionId,
+                                    "peer_id" to peerId,
+                                    "role" to peerRole,
+                                    "reason" to "Push sync request exceeded 24-hour acceptance window",
+                                    "timestamp" to System.currentTimeMillis()
+                                ))
+                            }
+                            return
+                        }
+
+                        if (peerId.isNotBlank()) {
+                            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                            val syncWakeLock = powerManager?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe::FcmDeviceSyncWakeLock")
+                            try {
+                                syncWakeLock?.acquire(10000L) // 10-second Doze bypass window
+                                val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(applicationContext)
+                                val pairId = "PAIR_${selfId}_${peerId}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    sLocalDb.writableDatabase,
+                                    pairId,
+                                    selfId,
+                                    peerId,
+                                    myRole,
+                                    peerRole,
+                                    null,
+                                    "PAIRED"
+                                )
+                                val isFriend = peerRole.contains("Friend", ignoreCase = true)
+                                sLocalDb.saveRosterNode(peerId, peerName, peerRole, "ACTIVE", false, isFriend, activeGroupId = groupId)
+                                sLocalDb.saveRosterNode(selfId, "My Device", myRole, "ACTIVE", false, false, activeGroupId = groupId)
+                                sLocalDb.appendValidLinkedAgent(selfId, peerId)
+                                sLocalDb.appendValidLinkedAgent(peerId, selfId)
+                                sLocalDb.updateCitizenRole(peerId, if (isFriend) "None" else peerRole, if (isFriend) peerRole else "None", isFriend, groupId)
+
+                                val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                                    setPackage(applicationContext.packageName)
+                                    putExtra("category", "ROSTER")
+                                    putExtra("EXTRA_CATEGORY", "ROSTER")
+                                }
+                                applicationContext.sendBroadcast(refreshIntent)
+
+                                AlertManager.showDeviceSharingNotification(
+                                    applicationContext,
+                                    "Device Synchronized",
+                                    "$peerName is now synced with your device as [$peerRole] in circle $groupId."
+                                )
+
+                                com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(selfId).child("commands_ack").child("device_sync").setValue(mapOf(
+                                    "status" to "ACKNOWLEDGED",
+                                    "sync_session_id" to syncSessionId,
+                                    "peer_id" to peerId,
+                                    "role" to peerRole,
+                                    "my_role" to myRole,
+                                    "timestamp" to System.currentTimeMillis()
+                                ))
+                            } catch (e: Exception) {
+                                SystemLogger.e(TAG, "FCM DEVICE_SYNC error: ${e.message}")
+                            } finally {
+                                if (syncWakeLock?.isHeld == true) syncWakeLock.release()
+                            }
+                        }
+                    }
+                    "BUTTERFLY_INVITATION" -> {
+                        AlertManager.showGeofenceNotification(
+                            applicationContext,
+                            "🦋 Butterfly Point: $body"
+                        )
+                        val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                            setPackage(applicationContext.packageName)
+                            putExtra("category", "BUTTERFLY_POINT")
+                            putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                        }
+                        applicationContext.sendBroadcast(refreshIntent)
+                    }
+                    "BUTTERFLY_RESPONSE" -> {
+                        AlertManager.showGeofenceNotification(
+                            applicationContext,
+                            "🦋 Rendezvous Update: $body"
+                        )
+                        val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                            setPackage(applicationContext.packageName)
+                            putExtra("category", "BUTTERFLY_POINT")
+                            putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                        }
+                        applicationContext.sendBroadcast(refreshIntent)
                     }
                     else -> {
                         AlertManager.showGeofenceNotification(applicationContext, body)

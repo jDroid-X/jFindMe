@@ -281,7 +281,16 @@ public class PersonDetailsActivity extends BaseActivityJava {
             android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
             i.putExtra("ESTABLISH_DOMAIN_ADDRESS", addr);
             i.putExtra("ESTABLISH_DOMAIN_NAME", name.isEmpty() ? "New Zone" : name);
-            if (targetRoleTitle != null) i.putExtra("TARGET_UID", targetRoleTitle);
+            // [Variables] addr, name, i, targetUid, targetRoleTitle, etFullName
+            // [Constants] "ESTABLISH_DOMAIN_ADDRESS", "ESTABLISH_DOMAIN_NAME", "TARGET_UID", "TARGET_NAME"
+            // [Dependencies] Intent, GeofenceActivity, PersonDetailsActivity
+            // [Integration Points] PersonDetailsActivity -> GeofenceActivity
+            if (targetUid != null && !targetUid.isEmpty()) {
+                i.putExtra("TARGET_UID", targetUid);
+                i.putExtra("target_uid", targetUid);
+            } else if (targetRoleTitle != null) {
+                i.putExtra("TARGET_ROLE", targetRoleTitle);
+            }
             if (etFullName != null && !etFullName.getText().toString().isEmpty()) i.putExtra("TARGET_NAME", etFullName.getText().toString());
             startActivity(i);
         });
@@ -809,7 +818,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
         UiArchitect.showValidationDialog(this, "Cloud Privacy Inspector", msg, null);
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextColor(getGradientStart());
@@ -1369,63 +1379,32 @@ public class PersonDetailsActivity extends BaseActivityJava {
         if (cbGlobalCloudSync != null && savedState.containsKey("SAVED_CLOUD_SYNC")) cbGlobalCloudSync.setChecked(savedState.getBoolean("SAVED_CLOUD_SYNC"));
     }
 
+    /**
+     * [Variables]: peerName
+     * [Constants]: None
+     * [Dependencies]: SecurityDialogManager
+     * [Integration Points]: PersonDetailsActivity, SecurityDialogManager, DeviceRepository
+     *
+     * 🚀 V83 OOPS-based MVC SSOT Delegation: Calls centralized SecurityDialogManager.
+     */
     private void showUnlinkDeviceDialog() {
         String peerName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : targetAgentId;
-        UiArchitect.OptionItem[] unlinkOptions = new UiArchitect.OptionItem[]{
-            new UiArchitect.OptionItem("❌ Standard Unlink Device", "Safely uncouple this device from your active tracking circle", android.R.drawable.ic_menu_delete),
-            new UiArchitect.OptionItem("🛡️ Master Password Force Purge", "Administrative override with master security password to instantly wipe corrupted or orphan nodes", com.jdroidx.jfindme.R.drawable.ic_privacy_lock)
-        };
-
-        UiArchitect.showRichOptionsDialog(this, "Remove " + peerName + "?", unlinkOptions, (idx, label) -> {
-            if (idx == 0) {
-                // Standard Unlink
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                String myGrp = prefs.getString("active_group", null);
-                db.deleteRosterNode(targetAgentId, myGrp);
-                if (myGrp != null) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetAgentId).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetAgentId).removeValue();
-                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetAgentId).child("joined_circles").child(myGrp).removeValue();
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
+        String myGrp = prefs != null ? prefs.getString("active_group", null) : null;
+        com.jdroidx.jfindme.ui.base.SecurityDialogManager.showUnlinkDeviceDialog(
+            this,
+            targetAgentId,
+            peerName,
+            myGrp,
+            new com.jdroidx.jfindme.ui.base.SecurityDialogManager.OnDialogActionListener() {
+                @Override
+                public void onActionSuccess(String action, String details) {
+                    finish();
                 }
-                String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
-                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(targetAgentId).child(finalMyId).removeValue();
-                Toast.makeText(this, "Device " + peerName + " unlinked successfully.", Toast.LENGTH_SHORT).show();
-                finish();
-            } else {
-                // Master Password Purge
-                String requiredPass = RegistryManager.getPurgeSafetyPhrase(this);
-                UiArchitect.showInputPromptDialog(this,
-                    "Master Admin Authorization",
-                    "Enter master security password to force purge '" + peerName + "' (" + targetAgentId + "):",
-                    "",
-                    inputPass -> {
-                        if (RegistryManager.verifyAndUpgradePurgePhrase(this, inputPass != null ? inputPass.trim() : "")) {
-                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-                            String myGrp = prefs.getString("active_group", null);
-                            db.deleteRosterNode(targetAgentId, myGrp);
-                            if (myGrp != null) {
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("devices").child(targetAgentId).removeValue();
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(targetAgentId).removeValue();
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("citizen_dossiers").child(targetAgentId).removeValue();
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("direct_pairs").child(targetAgentId).removeValue();
-                                com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetAgentId).child("joined_circles").child(myGrp).removeValue();
-                                com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
-                            }
-                            String finalMyId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(finalMyId).child(targetAgentId).removeValue();
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getRelationshipsRef(targetAgentId).child(finalMyId).removeValue();
-                            Toast.makeText(this, "🛡️ Force Administrative Purge Completed for " + peerName, Toast.LENGTH_LONG).show();
-                            finish();
-                        } else {
-                            UiArchitect.showValidationDialog(this, "Authorization Denied", "Incorrect master password. Device deletion was blocked.", null);
-                        }
-                    });
+
+                @Override
+                public void onActionCancelled() {}
             }
-        });
+        );
     }
 
     private void showTargetAvatarPreviewDialog() {
@@ -1477,6 +1456,20 @@ public class PersonDetailsActivity extends BaseActivityJava {
             })
             .setNegativeButton("CLOSE", null)
             .show();
+    }
+
+    // [Variables] category, changeType, entityId, senderId, prefs
+    // [Constants] "app_prefs", "active_group"
+    // [Dependencies] BaseActivityJava, PersonDetailsViewModel, SharedPreferences
+    // [Integration Points] PersonDetailsActivity, MapActivity, NetworkGatewayActivity, FamilyFriendsActivity
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        if (viewModel != null && targetUid != null) {
+            android.content.SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+            viewModel.fetchDossier(this, prefs.getString("active_group", null), targetUid);
+            viewModel.fetchLocalRoster(this);
+        }
     }
 
     @Override

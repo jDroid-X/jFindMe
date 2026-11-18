@@ -317,6 +317,7 @@ object LocalPairingManager {
             
             val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
             val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val effectiveGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
             db.logDevicePairing(
                 hostDeviceId,
                 "Local Host",
@@ -325,7 +326,7 @@ object LocalPairingManager {
                 childName,
                 "CHILD_DEV",
                 childRole,
-                "DEFAULT_GROUP"
+                effectiveGroup
             )
             onMergeComplete(true)
         }.addOnFailureListener {

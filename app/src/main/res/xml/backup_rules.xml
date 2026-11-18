@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Exclude transient local storage to prevent state corruption across fresh installs -->
-    <exclude domain="database" path="DatabaseHelper.db" />
-    <exclude domain="database" path="DatabaseHelper.db-journal" />
-    <exclude domain="database" path="DatabaseHelper.db-wal" />
-    <exclude domain="database" path="DatabaseHelper.db-shm" />
-    <exclude domain="sharedpref" path="system_registry.xml" />
-</full-backup-content>

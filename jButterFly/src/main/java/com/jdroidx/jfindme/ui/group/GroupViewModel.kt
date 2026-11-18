@@ -334,6 +334,7 @@ class GroupViewModel : ViewModel() {
      * Pulls active group members from Firebase Realtime Database and mirrors them
      * into local SQLite via DatabaseHelper, ensuring 100% SSOT parity across screens.
      */
+    // [Variables] context: Context, groupId: String?, db: DatabaseHelper, membersSnap: DataSnapshot, devicesSnap: DataSnapshot, allNodeSnaps: MutableList<DataSnapshot>, uid: String, profSnap: DataSnapshot, role: String, name: String, avatar: String, upper: String, isAdmin: Boolean, isFriend: Boolean | [Constants] NODE_RELATIONSHIPS | [Dependencies] DatabaseHelper, FirebaseComm, SystemLogger, Dispatchers.IO, viewModelScope | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel, MapViewModel
     fun syncCloudGroupToLocalDb(context: android.content.Context, groupId: String?) {
         if (groupId.isNullOrEmpty()) {
             refreshLocalRoster(DatabaseHelper.getInstance(context))
@@ -344,17 +345,45 @@ class GroupViewModel : ViewModel() {
         _isLoading.postValue(true)
         _syncStatus.postValue("SYNCING CLOUD ROSTER...")
 
-        FirebaseComm.relationshipsRef.child(groupId).child("members").addListenerForSingleValueEvent(object : ValueEventListener {
+        FirebaseComm.relationshipsRef.child(groupId).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 viewModelScope.launch(Dispatchers.IO) {
                     try {
-                        for (nodeSnap in snapshot.children) {
+                        val membersSnap = snapshot.child("members")
+                        val devicesSnap = snapshot.child("devices")
+                        val allNodeSnaps = mutableListOf<DataSnapshot>()
+                        if (devicesSnap.exists()) {
+                            for (c in devicesSnap.children) allNodeSnaps.add(c)
+                        }
+                        if (membersSnap.exists()) {
+                            for (c in membersSnap.children) {
+                                if (!devicesSnap.hasChild(c.key ?: "")) {
+                                    allNodeSnaps.add(c)
+                                }
+                            }
+                        }
+                        if (allNodeSnaps.isEmpty() && snapshot.childrenCount > 0) {
+                            for (c in snapshot.children) {
+                                if (c.key != "signals" && c.key != "created_at" && c.key != "owner_id") {
+                                    allNodeSnaps.add(c)
+                                }
+                            }
+                        }
+
+                        for (nodeSnap in allNodeSnaps) {
                             val uid = nodeSnap.key ?: continue
-                            val role = nodeSnap.child("role").getValue(String::class.java) ?: "Member"
+                            val profSnap = if (nodeSnap.hasChild("profile")) nodeSnap.child("profile") else nodeSnap
+                            val role = nodeSnap.child("role").getValue(String::class.java) 
+                                ?: profSnap.child("role_title").getValue(String::class.java)
+                                ?: "Member"
                             val name = nodeSnap.child("name").getValue(String::class.java) 
+                                ?: profSnap.child("full_name").getValue(String::class.java)
+                                ?: profSnap.child("display_name").getValue(String::class.java)
                                 ?: nodeSnap.child("fullName").getValue(String::class.java)
                                 ?: "Device_$uid"
-                            val avatar = nodeSnap.child("avatar_id").getValue(String::class.java) ?: "1"
+                            val avatar = nodeSnap.child("avatar_id").getValue(String::class.java)
+                                ?: profSnap.child("avatar_id").getValue(String::class.java)
+                                ?: "1"
 
                             val upper = role.uppercase()
                             val isAdmin = upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN") || upper.contains("ADMIN")

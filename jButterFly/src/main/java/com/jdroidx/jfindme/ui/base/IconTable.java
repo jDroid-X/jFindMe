@@ -54,9 +54,11 @@ public class IconTable {
     static {
         // [Stage 1: Enterprise Registry] - Initializing the "Master Map Mirror"
         // Properties: ID, ResID, TalkBack, Elev, Pad, Glow, Haptic, Dynamic, Fallback, Route
+        // [Variables] registry | [Constants] "ACTION_FRAME_ALL" | [Dependencies] IconRecord, R.drawable.ic_nav_map | [Integration Points] MapActivity sideActionPanel
         registry.put("ACTION_EXPAND",   new IconRecord("ACTION_EXPAND",   R.drawable.ic_map_expand,   "Enlarge Live Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_BOUNDS"));
         registry.put("ACTION_MINIMIZE", new IconRecord("ACTION_MINIMIZE", R.drawable.ic_map_minimize, "Minimize Viewport", 35f, 20, 0.8f, "LIGHT", true, Color.WHITE, "MAP_MINIMIZE"));
         registry.put("ACTION_LOCATE",   new IconRecord("ACTION_LOCATE",   R.drawable.ic_map_locate,   "Recenter GPS Target", 35f, 20, 0.6f, "HEAVY", true, Color.WHITE, "MAP_RECENTER"));
+        registry.put("ACTION_FRAME_ALL",new IconRecord("ACTION_FRAME_ALL", R.drawable.ic_nav_map,    "Fit All Devices in Viewport", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_FRAME_ALL"));
         registry.put("ACTION_REFRESH",  new IconRecord("ACTION_REFRESH",  android.R.drawable.ic_popup_sync, "Refresh Fleet Radar Matrix", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_REFRESH_MATRIX"));
         registry.put("ACTION_ADD",      new IconRecord("ACTION_ADD",      R.drawable.ic_map_zoom_in,  "Zoom In Map", 35f, 20, 0.5f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_IN"));
         registry.put("ACTION_MINUS",    new IconRecord("ACTION_MINUS",    R.drawable.ic_map_zoom_out, "Zoom Out Map", 25f, 20, 0.4f, "LIGHT", true, Color.WHITE, "MAP_ZOOM_OUT"));
@@ -64,7 +66,9 @@ public class IconTable {
         registry.put("ACTION_ALERT",    new IconRecord("ACTION_ALERT",    R.drawable.ic_nav_notice,   "Emergency SOS Sentinel", 45f, 20, 0.9f, "HEAVY", true, Color.RED, "SOS_TRIGGER"));
         registry.put("ACTION_SAFE_ZONE",new IconRecord("ACTION_SAFE_ZONE",R.drawable.ic_safe_zone,    "Toggle Safe Zone Overlay", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_TOGGLE_ZONES"));
         registry.put("ACTION_ZONES",    new IconRecord("ACTION_ZONES",    R.drawable.ic_safe_zone,    "Define Geo-Bounds & Safe Zones", 35f, 20, 0.7f, "HEAVY", true, Color.WHITE, "ROUTE_GEOFENCE"));
-        registry.put("ACTION_GHOST",    new IconRecord("ACTION_GHOST",    R.drawable.ic_ghost_mode,   "Stealth Visibility Mask", 35f, 20, 0.5f, "LIGHT", true, Color.WHITE, "TOGGLE_CALLOUTS"));
+        // 🦋 Refactored: Ghost Icon as Butterfly Point (Live Map Right Action Panel) with Long-Press Ghost Mode Fallback
+        registry.put("ACTION_BUTTERFLY_POINT", new IconRecord("ACTION_BUTTERFLY_POINT", R.drawable.ic_butterfly_point, "Butterfly Point Rendezvous & Hub", 40f, 20, 0.7f, "HEAVY", true, Color.WHITE, "BUTTERFLY_HUB"));
+        registry.put("ACTION_GHOST",    new IconRecord("ACTION_GHOST",    R.drawable.ic_butterfly_point,   "Butterfly Point Rendezvous & Hub (Long-Press: Ghost Mode)", 40f, 20, 0.7f, "HEAVY", true, Color.WHITE, "BUTTERFLY_HUB"));
         registry.put("ACTION_SEARCH",   new IconRecord("ACTION_SEARCH",   R.drawable.ic_radar,        "Query Target Array & Scanner", 35f, 20, 0.6f, "LIGHT", true, Color.WHITE, "MAP_SEARCH_NODES"));
         registry.put("ACTION_WATCHDOG", new IconRecord("ACTION_WATCHDOG", R.drawable.ic_watchdog,     "WatchDog Security Heartbeat", 45f, 20, 0.9f, "HEAVY", true, Color.WHITE, "ROUTE_WATCHDOG"));
     }
@@ -142,11 +146,18 @@ public class IconTable {
             view.setColorFilter(record.fallbackColor);
         }
 
-        // [Stage 4: Haptic Interaction Matrix]
-        if (record.interactionType.equals("LIGHT")) {
-            view.setOnLongClickListener(v -> { v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); return false; });
-        } else if (record.interactionType.equals("HEAVY")) {
-            view.setOnLongClickListener(v -> { v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); return false; });
+        // [Variables] record, view | [Constants] "LIGHT", "HEAVY" | [Dependencies] HapticFeedbackConstants, BaseActivityJava | [Integration Points] IconTable, MapActivity, UiArchitect
+        // [Stage 4: Haptic Interaction Matrix - Safe Non-Blocking Dispatch]
+        // CRITICAL ANDROID ARCHITECTURAL SAFEGUARD: Do NOT attach an empty onLongClickListener returning false to ImageView.
+        // In Android View.onTouchEvent, having an onLongClickListener sets LONG_CLICKABLE=true, which forces onTouchEvent
+        // to return true for MotionEvent.ACTION_DOWN, swallowing touch gestures and preventing parent button containers
+        // (like FrameLayout in MapActivity) from ever receiving user clicks!
+        if (view.isClickable()) {
+            if ("LIGHT".equals(record.interactionType)) {
+                view.setOnLongClickListener(v -> { v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); return false; });
+            } else if ("HEAVY".equals(record.interactionType)) {
+                view.setOnLongClickListener(v -> { v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); return false; });
+            }
         }
     }
 }

@@ -33,6 +33,15 @@ class LocationRepository(internal val context: Context) {
     private val profileListeners = HashMap<String, ValueEventListener>()
     private val latestLocations = HashMap<String, UserLocation>()
 
+    fun getLatestLocationFor(userId: String): UserLocation? {
+        if (userId.isBlank()) return null
+        val cleanId = userId.removePrefix("HW_")
+        val prefixedId = "HW_$cleanId"
+        synchronized(latestLocations) {
+            return latestLocations[userId] ?: latestLocations[cleanId] ?: latestLocations[prefixedId]
+        }
+    }
+
     private var lastGeocodeTime: Long = 0
     private var lastGeocodedLocation: android.location.Location? = null
     private var cachedHumanAddress: String? = null
@@ -173,6 +182,20 @@ class LocationRepository(internal val context: Context) {
             compareByDescending<UserLocation> { it.isSosActive }
                 .thenByDescending { it.getLongTimestamp() }
         ))
+
+        // 🚀 Telemetry SSOT Backfill: Instantly synchronize DeviceVitalsTable in SQLite
+        try {
+            val effTs = loc.getLongTimestamp()
+            val batt = loc.batteryLevel
+            if (effTs > 0L) {
+                db.updateDeviceVitalsTelemetry(canonicalStoreId, if (batt > 0) batt else 100, effTs)
+                if (resolvedId != canonicalStoreId) {
+                    db.updateDeviceVitalsTelemetry(resolvedId, if (batt > 0) batt else 100, effTs)
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("LocationRepository", "DeviceVitals telemetry backfill note: ${e.message}")
+        }
     }
 
     private fun updateTargetListeners() {
@@ -203,11 +226,11 @@ class LocationRepository(internal val context: Context) {
         // 🚀 CRITICAL FIX: Pull ONLY verified handshaked devices from SQLite Roster
         try {
             val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-            // [Variables] addTarget: (String?) -> Unit | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] Realtime location listener subscription
+            // [Variables] addTarget: (String?) -> Unit, clean: String, focalAgentId: String, scopedIds: Set<String>, pairedIds: Set<String> | [Constants] "4379A761" | [Dependencies] FirebaseComm.sanitizeAgentId, DatabaseHelper | [Integration Points] Realtime location listener subscription
             val addTarget = { raw: String? ->
                 if (!raw.isNullOrBlank()) {
                     val clean = FirebaseComm.sanitizeAgentId(raw)
-                    if (FirebaseComm.isAgentIdValid(clean)) {
+                    if (FirebaseComm.isAgentIdValid(clean) || (clean.length in 6..40 && clean.matches(Regex("^[a-zA-Z0-9_-]+$")))) {
                         targetUids.add(clean)
                     }
                 }
@@ -219,26 +242,25 @@ class LocationRepository(internal val context: Context) {
                 addTarget(node["connected_id"] as? String)
             }
 
-            // 🛡️ Scoped Connected Devices: Enforce respective connected devices isolation
+            // 🛡️ Scoped Connected Devices: Enforce respective connected devices isolation & include all paired peers
             val focalAgentId = if (myAgentId.isNotBlank()) myAgentId else (myUid ?: "")
             val scopedIds = if (focalAgentId.isNotBlank()) localDb.getConnectedDeviceIds(focalAgentId) else emptySet()
 
-            if (scopedIds.isNotEmpty()) {
-                // Strictly prioritize and track only respective connected peers
-                for (s in scopedIds) {
-                    addTarget(s)
-                }
-            } else {
-                // Fallback for fresh uncoupled installs / root host before initial pair
-                val pairedIds = localDb.getAllPairedDeviceIds()
-                for (p in pairedIds) {
-                    addTarget(p)
-                }
+            for (s in scopedIds) {
+                addTarget(s)
             }
+            val pairedIds = localDb.getAllPairedDeviceIds()
+            for (p in pairedIds) {
+                addTarget(p)
+            }
+
+            // 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target via RegistryManager
+            val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+            addTarget(primeTarget)
 
             // 🛡️ SOFT-DELETE PURGE: Immediately evict any target marked as DELETED
             targetUids.removeAll { uid ->
-                uid != myUid && uid != myAgentId && localDb.isDeviceDeleted(uid)
+                uid != myUid && uid != myAgentId && uid != primeTarget && localDb.isDeviceDeleted(uid)
             }
         } catch (e: Exception) {
             SystemLogger.e("LocationRepository", "Failed reading offline roster for targets", e)
@@ -280,13 +302,13 @@ class LocationRepository(internal val context: Context) {
                             val lat = snapshot.child("latitude").getValue(Double::class.java) ?: 0.0
                             val lng = snapshot.child("longitude").getValue(Double::class.java) ?: 0.0
                             val acc = snapshot.child("accuracy").getValue(Double::class.java)?.toFloat()
-                                ?: snapshot.child("accuracy").getValue(Long::class.java)?.toFloat() ?: 0f
+                                ?: FirebaseComm.safeLong(snapshot.child("accuracy"))?.toFloat() ?: 0f
                             val alt = snapshot.child("altitude").getValue(Double::class.java) ?: 0.0
                             val motion = snapshot.child("motion_state").getValue(String::class.java) ?: "UNKNOWN"
                             val spd = snapshot.child("speed").getValue(Double::class.java)?.toFloat()
-                                ?: snapshot.child("speed").getValue(Long::class.java)?.toFloat() ?: 0f
+                                ?: FirebaseComm.safeLong(snapshot.child("speed"))?.toFloat() ?: 0f
                             val brg = snapshot.child("bearing").getValue(Double::class.java)?.toFloat()
-                                ?: snapshot.child("bearing").getValue(Long::class.java)?.toFloat() ?: 0f
+                                ?: FirebaseComm.safeLong(snapshot.child("bearing"))?.toFloat() ?: 0f
                             val allowDep = snapshot.child("allowDependents").getValue(Boolean::class.java)
                                 ?: snapshot.child("allow_dependents").getValue(Boolean::class.java) ?: true
                             rawLoc = UserLocation(
@@ -313,23 +335,27 @@ class LocationRepository(internal val context: Context) {
                             } catch (e: Exception) {}
                         }
 
-                        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+                        // [Variables] snapTs, snapHb, snapUpAt, effectiveTs, effectiveUpAt, snapBattery, snapSos, loc | [Constants] None | [Dependencies] snapshot, rawLoc, UserLocation | [Integration Points] MapViewModel, LiveData, MultiMarkerEngine
                         // Multi-field timestamp & telemetry normalization from primary cloud snapshot
                         val snapTs = snapshot.child("timestamp").getValue()
                         val snapHb = snapshot.child("last_heartbeat").getValue()
                         val snapUpAt = snapshot.child("updated_at").getValue()
                         val effectiveTs = snapTs ?: snapHb ?: snapUpAt ?: rawLoc.timestamp
                         val effectiveUpAt = snapUpAt ?: snapTs ?: snapHb ?: rawLoc.updated_at
-                        val snapBattery = snapshot.child("battery").getValue(Long::class.java)?.toInt()
-                            ?: snapshot.child("batteryLevel").getValue(Long::class.java)?.toInt()
+                        val snapBattery = FirebaseComm.safeInt(snapshot.child("battery"))
+                            ?: FirebaseComm.safeInt(snapshot.child("batteryLevel"))
                             ?: rawLoc.batteryLevel
+                        val snapSos = snapshot.child("sos").getValue(Boolean::class.java)
+                            ?: snapshot.child("isSosActive").getValue(Boolean::class.java)
+                            ?: rawLoc.isSosActive
 
                         val loc = rawLoc.copy(
                             userId = uid,
                             avatar_id = explicitAvatar ?: rawLoc.avatar_id,
                             userName = explicitName ?: rawLoc.userName,
                             timestamp = effectiveTs,
-                            batteryLevel = snapBattery
+                            batteryLevel = snapBattery,
+                            isSosActive = snapSos
                         ).apply {
                             this.updated_at = effectiveUpAt
                         }
@@ -489,9 +515,12 @@ class LocationRepository(internal val context: Context) {
             val groupListener = object : ValueEventListener {
                 override fun onDataChange(snap: DataSnapshot) {
                     val rawGroup = snap.getValue(String::class.java) ?: ""
-                    val myGroup = if (rawGroup.isNotEmpty() && rawGroup != "DEFAULT_GROUP") rawGroup else "GRP_" + finalId
-                    
-                    prefs.edit().putString("active_group", myGroup).apply()
+                    val myGroup = if (rawGroup.isNotEmpty() && rawGroup != "DEFAULT_GROUP") {
+                        rawGroup
+                    } else {
+                        com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+                    }
+                    com.jdroidx.jfindme.utils.RegistryManager.setActiveGroup(context, myGroup)
                     
                     val relRef = FirebaseComm.relationshipsRef.child(myGroup)
                     val relListener = object : ValueEventListener {
@@ -525,6 +554,22 @@ class LocationRepository(internal val context: Context) {
                                     if (!csv.contains("$targetId,")) {
                                         csv.append(targetId).append(",")
                                     }
+                                }
+                            }
+
+                            // 3. 🚀 CIRCLE MEMBERS & DEVICES SSOT: Include all active circle members and devices
+                            val membersSnap = relSnap.child("members")
+                            membersSnap.children.forEach { mSnap ->
+                                val mId = mSnap.key
+                                if (!mId.isNullOrEmpty() && !csv.contains("$mId,")) {
+                                    csv.append(mId).append(",")
+                                }
+                            }
+                            val devicesSnap = relSnap.child("devices")
+                            devicesSnap.children.forEach { dSnap ->
+                                val dId = dSnap.key
+                                if (!dId.isNullOrEmpty() && !csv.contains("$dId,")) {
+                                    csv.append(dId).append(",")
                                 }
                             }
                             
@@ -635,9 +680,18 @@ class LocationRepository(internal val context: Context) {
                 if (!addresses.isNullOrEmpty()) {
                     humanAddress = addresses[0].getAddressLine(0)
                     cachedHumanAddress = humanAddress
+                } else if (humanAddress.isNullOrBlank()) {
+                    val lat = userLocation.latitude
+                    val lng = userLocation.longitude
+                    humanAddress = String.format(Locale.US, "%.5f° %s, %.5f° %s", kotlin.math.abs(lat), if (lat >= 0) "N" else "S", kotlin.math.abs(lng), if (lng >= 0) "E" else "W")
                 }
             } catch (e: Exception) {
                 SystemLogger.e("LocationRepository", "Forensic Geocoding Blocked: ${e.message}")
+                if (humanAddress.isNullOrBlank()) {
+                    val lat = userLocation.latitude
+                    val lng = userLocation.longitude
+                    humanAddress = String.format(Locale.US, "%.5f° %s, %.5f° %s", kotlin.math.abs(lat), if (lat >= 0) "N" else "S", kotlin.math.abs(lng), if (lng >= 0) "E" else "W")
+                }
             }
             
             finalizeLocationPush(userLocation, humanAddress)
@@ -697,6 +751,14 @@ class LocationRepository(internal val context: Context) {
                                     point.getResolvedTimestamp()
                                 }
                                 point.timestamp = effectiveTs
+                                val childSos = child.child("sos").getValue(Boolean::class.java) 
+                                    ?: child.child("isSosActive").getValue(Boolean::class.java) 
+                                    ?: point.isSosActive
+                                val childBattery = FirebaseComm.safeInt(child.child("battery"))
+                                    ?: FirebaseComm.safeInt(child.child("batteryLevel"))
+                                    ?: point.batteryLevel
+                                point.isSosActive = childSos
+                                point.batteryLevel = childBattery
                                 points.add(point)
                                 
                                 db.saveHistoryPoint(
@@ -731,5 +793,17 @@ class LocationRepository(internal val context: Context) {
                     }
                 }
             })
+    }
+
+    companion object {
+        @Volatile
+        private var INSTANCE: LocationRepository? = null
+
+        @JvmStatic
+        fun getInstance(context: Context): LocationRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: LocationRepository(context.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 }

@@ -1970,6 +1970,11 @@ public class UiArchitect {
      */
     public static void showSlideNotification(BaseActivityJava activity, String title, String message, 
                                              int iconRes, int accentColor, String actionText, Runnable onAction) {
+        showSlideNotification(activity, title, message, iconRes, accentColor, actionText, onAction, 4000L);
+    }
+
+    public static void showSlideNotification(BaseActivityJava activity, String title, String message, 
+                                             int iconRes, int accentColor, String actionText, Runnable onAction, long durationMs) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
 
         ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
@@ -2039,21 +2044,22 @@ public class UiArchitect {
         flp.setMargins(m, 0, m, m + activity.scale(40));
         banner.addView(card, flp);
 
-        // Slide-in translation animation
-        card.setTranslationY(activity.scale(120));
+        // Slide-in from right bottom translation animation
+        card.setTranslationX(activity.scale(350));
         card.setAlpha(0f);
-        card.animate().translationY(0f).alpha(1f).setDuration(350).start();
+        card.animate().translationX(0f).alpha(1f).setDuration(350).start();
 
         decor.addView(banner);
 
-        // Auto-dismiss after 4 seconds
+        // Auto-dismiss (slide out to right bottom)
+        long effectiveDuration = durationMs > 0 ? durationMs : 4000L;
         card.postDelayed(() -> {
             try {
-                card.animate().translationY(activity.scale(120)).alpha(0f).setDuration(300).withEndAction(() -> {
+                card.animate().translationX(activity.scale(350)).alpha(0f).setDuration(300).withEndAction(() -> {
                     decor.removeView(banner);
                 }).start();
             } catch (Exception ignored) {}
-        }, 4000);
+        }, effectiveDuration);
     }
 
     // ============================================================================================
@@ -2515,7 +2521,7 @@ public class UiArchitect {
                                                    boolean isAlert, long durationMs, String actionText, Runnable actionCallback) {
         int accentColor = isAlert ? Color.parseColor("#EF4444") : activity.getGradientStart();
         int iconRes = isAlert ? android.R.drawable.ic_dialog_alert : android.R.drawable.ic_dialog_info;
-        showSlideNotification(activity, title, message, iconRes, accentColor, actionText, actionCallback);
+        showSlideNotification(activity, title, message, iconRes, accentColor, actionText, actionCallback, durationMs);
     }
 
     // 9. COORDINATE TREE MINDMAP INSPECTOR DIALOG

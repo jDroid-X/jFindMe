@@ -293,7 +293,8 @@ public class PrivacyActivity extends BaseActivityJava {
         return row;
     }
 
-    private View createSectionHeader(String t) {
+    @Override
+    protected View createSectionHeader(String t) {
         TextView h = new TextView(this);
         h.setText(t);
         h.setTextColor(getGradientStart());

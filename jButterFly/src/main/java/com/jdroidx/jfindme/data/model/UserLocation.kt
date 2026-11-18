@@ -56,6 +56,15 @@ data class UserLocation(
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var role_friend: String = "None"
 ) {
+    @JvmOverloads
+    constructor(userId: String, lat: Double, lng: Double, spd: Float = 0f) : this(
+        userId = userId,
+        deviceId = userId,
+        latitude = lat,
+        longitude = lng,
+        speed = spd,
+        timestamp = System.currentTimeMillis()
+    )
     @get:com.google.firebase.database.PropertyName("timestamp_raw")
     @set:com.google.firebase.database.PropertyName("timestamp_raw")
     var timestamp_raw: Any?
@@ -72,17 +81,34 @@ data class UserLocation(
     @set:com.google.firebase.database.PropertyName("updated_at")
     var updated_at: Any? = ""
 
+    @get:com.google.firebase.database.PropertyName("is_charging")
+    @set:com.google.firebase.database.PropertyName("is_charging")
+    var isCharging: Boolean = false
+
     @get:com.google.firebase.database.Exclude @set:com.google.firebase.database.Exclude
     var isSos: Boolean
         get() = isSosActive
         set(value) { isSosActive = value }
 
-    // 🛡️ RECOVERY HELPERS: Ensures legacy numerical data doesn't break the UI thread
+    // [Variables] u, d | [Constants] "null" | [Dependencies] None (POJO) | [Integration Points] MultiMarkerEngine, MapActivity, MapViewModel
+    // 🛡️ RECOVERY HELPERS: Ensures legacy numerical data doesn't break the UI thread & handles cross-fallback
     @com.google.firebase.database.Exclude
-    fun getResolvedUserId(): String = userId?.toString() ?: ""
+    fun getResolvedUserId(): String {
+        val u = userId?.toString()?.trim() ?: ""
+        if (u.isNotEmpty() && !u.equals("null", ignoreCase = true)) return u
+        val d = deviceId?.toString()?.trim() ?: ""
+        if (d.isNotEmpty() && !d.equals("null", ignoreCase = true)) return d
+        return ""
+    }
 
     @com.google.firebase.database.Exclude
-    fun getResolvedDeviceId(): String = deviceId?.toString() ?: ""
+    fun getResolvedDeviceId(): String {
+        val d = deviceId?.toString()?.trim() ?: ""
+        if (d.isNotEmpty() && !d.equals("null", ignoreCase = true)) return d
+        val u = userId?.toString()?.trim() ?: ""
+        if (u.isNotEmpty() && !u.equals("null", ignoreCase = true)) return u
+        return ""
+    }
 
     @com.google.firebase.database.Exclude
     fun getResolvedTimestamp(): String {

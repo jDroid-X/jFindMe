@@ -54,12 +54,16 @@ class AppUpgradeReceiver : BroadcastReceiver() {
             val agentId = RegistryManager.getAgentId(context)
             if (agentId.isNotEmpty()) {
                 try {
+                    // [Variables] context, agentId
+                    // [Constants] RegistryManager.DEFAULT_PACKAGE_SIZE
+                    // [Dependencies] FirebaseComm, RegistryManager
+                    // [Integration Points] Post-Upgrade Package Metadata Cloud Synchronization
                     FirebaseComm.syncVersionUpdateMetadata(
                         context,
                         agentId,
                         "INSTALLED",
                         0L,
-                        "~101 MB"
+                        RegistryManager.DEFAULT_PACKAGE_SIZE
                     )
                     FirebaseComm.logChange(
                         agentId,
@@ -77,8 +81,9 @@ class AppUpgradeReceiver : BroadcastReceiver() {
             // 4. Restart Tracking Engine
             restartTrackingService(context)
 
-            // 5. Reschedule Periodic Silent Update Sentinel
+            // 5. Reschedule Periodic Silent Update Sentinel & Re-arm all background sentinels
             SystemUpdateScheduler.scheduleCheck(context)
+            com.jdroidx.jfindme.service.BackgroundJobManager.initializeAllJobs(context)
         }
     }
 

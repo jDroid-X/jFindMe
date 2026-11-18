@@ -84,17 +84,62 @@ class SimForensicWorker(
             val cellData = CellTowerSentinel.extractServingCellInfo(context)
             SystemLogger.d(TAG, "Cell Tower Telemetry: operator=${cellData.operator}, mcc=${cellData.mcc}, mnc=${cellData.mnc}, lac=${cellData.lac}, cid=${cellData.cid}, dbm=${cellData.signalDbm}")
 
-            // Log real SIM Health status locally into SQLite SimTable
-            dbHelper.logSimCard(
-                cellData.slot,
-                hwId,
-                cellData.operator,
-                cellData.mcc,
-                cellData.mnc,
-                cellData.lac,
-                cellData.cid,
-                cellData.isRegistered
-            )
+            // Log real SIM Health status locally into SQLite SimTable across all active SIM slots
+            val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? android.telephony.SubscriptionManager
+            val hasPhonePerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.READ_PHONE_STATE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            var loggedSlots = false
+            if (hasPhonePerm && subManager != null) {
+                try {
+                    val activeList = subManager.activeSubscriptionInfoList
+                    if (!activeList.isNullOrEmpty()) {
+                        for (subInfo in activeList) {
+                            val slot = subInfo.simSlotIndex
+                            val carrier = subInfo.carrierName?.toString() ?: cellData.operator
+                            val mcc = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                subInfo.mccString ?: cellData.mcc
+                            } else {
+                                @Suppress("DEPRECATION")
+                                subInfo.mcc.toString()
+                            }
+                            val mnc = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                subInfo.mncString ?: cellData.mnc
+                            } else {
+                                @Suppress("DEPRECATION")
+                                subInfo.mnc.toString()
+                            }
+                            dbHelper.logSimCard(
+                                slot,
+                                hwId,
+                                carrier,
+                                mcc,
+                                mnc,
+                                cellData.lac,
+                                cellData.cid,
+                                true
+                            )
+                        }
+                        loggedSlots = true
+                    }
+                } catch (e: Exception) {
+                    SystemLogger.d(TAG, "SubscriptionManager multi-SIM read deferred: ${e.message}")
+                }
+            }
+
+            if (!loggedSlots) {
+                dbHelper.logSimCard(
+                    cellData.slot,
+                    hwId,
+                    cellData.operator,
+                    cellData.mcc,
+                    cellData.mnc,
+                    cellData.lac,
+                    cellData.cid,
+                    cellData.isRegistered
+                )
+            }
 
             // =================================================================
             // 3. Proactively Acquire Location Fix (Fused GNSS + Network Provider)

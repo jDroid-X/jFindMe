@@ -16,6 +16,27 @@ import java.util.UUID
  */
 class PairingRepository {
 
+    /**
+     * 🦋 Device Sharing Closed-Loop Handshake Callback
+     */
+    interface DeviceSharingSyncCallback {
+        fun onSyncDispatched(syncSessionId: String)
+        fun onSyncComplete(devAId: String, devBId: String, latencyMs: Long)
+        fun onSyncTimeout(diagnosticReason: String)
+        fun onSyncFailed(errorMessage: String)
+    }
+
+    /**
+     * 🦋 Batch Device Sharing Closed-Loop Handshake Callback
+     */
+    interface BatchDeviceSharingSyncCallback {
+        fun onBatchDispatched(syncSessionId: String, totalDevices: Int)
+        fun onBatchProgress(syncedCount: Int, totalDevices: Int)
+        fun onBatchComplete(syncedCount: Int, totalDevices: Int, latencyMs: Long)
+        fun onBatchTimeout(syncedCount: Int, totalDevices: Int, diagnosticReason: String)
+        fun onBatchFailed(errorMessage: String)
+    }
+
     private val TAG = "PairingRepository"
     private val sessionsRef = FirebaseComm.database.getReference("pairing_sessions")
     private val hubRef = FirebaseComm.devicesRef
@@ -129,11 +150,19 @@ class PairingRepository {
         // [Dependencies] FirebaseComm, SystemLogger, JFindMeApplication, DatabaseHelper, DevicePairingTable, UserIdentityTable, MasterDataSyncSentinel
         // [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity, MapActivity, LocationRepository
         @JvmStatic
-        fun executeFamilyHandshake(hostAgentId: String, hostGroupId: String, targetAgentId: String, roleFam: String, onSuccess: () -> Unit) {
+        @JvmOverloads
+        fun executeFamilyHandshake(
+            hostAgentId: String,
+            hostGroupId: String,
+            targetAgentId: String,
+            roleFam: String,
+            onResult: ((Boolean, String?) -> Unit)? = null
+        ) {
             val cleanHost = FirebaseComm.sanitizeAgentId(hostAgentId)
             val cleanTarget = FirebaseComm.sanitizeAgentId(targetAgentId)
             if (!FirebaseComm.isAgentIdValid(cleanHost) || !FirebaseComm.isAgentIdValid(cleanTarget)) {
                 SystemLogger.e("PairingRepo", "BLOCKED: Handshake with invalid Agent IDs: $cleanHost -> $cleanTarget")
+                onResult?.invoke(false, "Invalid Agent IDs: $cleanHost -> $cleanTarget")
                 return
             }
             
@@ -221,55 +250,68 @@ class PairingRepository {
                 )
                 
                 db.updateChildren(updates).addOnCompleteListener { updTask ->
-                    SystemLogger.w("PairingRepo", "V68.0 Handshake: Target Agent Matrix Constructed under $cleanHost")
-                    
-                    // 🛡️ Local SQLite SSOT Logging & SharedPreferences Update
-                    JFindMeApplication.getContext()?.let { ctx ->
-                        try {
-                            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
-                            val pairId = "PAIR_${cleanHost}_${cleanTarget}"
-                            com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
-                                localDb.writableDatabase,
-                                pairId,
-                                cleanHost,
-                                cleanTarget,
-                                "ADMIN",
-                                roleFam,
-                                null,
-                                "PAIRED"
-                            )
+                    if (updTask.isSuccessful) {
+                        SystemLogger.w("PairingRepo", "V68.0 Handshake: Target Agent Matrix Constructed under $cleanHost")
+                        
+                        // 🛡️ Local SQLite SSOT Logging & SharedPreferences Update
+                        JFindMeApplication.getContext()?.let { ctx ->
+                            try {
+                                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                val pairId = "PAIR_${cleanHost}_${cleanTarget}"
+                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                    localDb.writableDatabase,
+                                    pairId,
+                                    cleanHost,
+                                    cleanTarget,
+                                    "ADMIN",
+                                    roleFam,
+                                    null,
+                                    "PAIRED"
+                                )
 
-                            // Save roster nodes locally for offline and immediate rendering
-                            val isFriend = roleFam.contains("Friend", ignoreCase = true)
-                            localDb.saveRosterNode(cleanTarget, cleanTarget, roleFam, "ACTIVE", false, isFriend, activeGroupId = hostGroupId)
-                            localDb.saveRosterNode(cleanHost, hostNickname, "ADMIN", "ACTIVE", true, false, activeGroupId = hostGroupId)
-                            localDb.appendValidLinkedAgent(cleanHost, cleanTarget)
-                            localDb.appendValidLinkedAgent(cleanTarget, cleanHost)
-                            localDb.updateCitizenRole(cleanTarget, if (isFriend) "None" else roleFam, if (isFriend) roleFam else "None", isFriend, hostGroupId)
+                                // Save roster nodes locally for offline and immediate rendering
+                                val isFriend = roleFam.contains("Friend", ignoreCase = true)
+                                localDb.saveRosterNode(cleanTarget, cleanTarget, roleFam, "ACTIVE", false, isFriend, activeGroupId = hostGroupId)
+                                localDb.saveRosterNode(cleanHost, hostNickname, "ADMIN", "ACTIVE", true, false, activeGroupId = hostGroupId)
+                                localDb.appendValidLinkedAgent(cleanHost, cleanTarget)
+                                localDb.appendValidLinkedAgent(cleanTarget, cleanHost)
+                                localDb.updateCitizenRole(cleanTarget, if (isFriend) "None" else roleFam, if (isFriend) roleFam else "None", isFriend, hostGroupId)
 
-                            val prefs = ctx.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
-                            prefs.edit().putString("active_group", hostGroupId).apply()
+                                val prefs = ctx.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                                prefs.edit().putString("active_group", hostGroupId).apply()
 
-                            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
-                                ctx,
-                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
-                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
-                                cleanTarget
-                            )
-                        } catch (ex: Exception) {
-                            SystemLogger.e("PairingRepo", "executeFamilyHandshake SQLite log warning: ${ex.message}")
+                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                    ctx,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                    cleanTarget
+                                )
+                            } catch (ex: Exception) {
+                                SystemLogger.e("PairingRepo", "executeFamilyHandshake SQLite log warning: ${ex.message}")
+                            }
                         }
-                    }
 
-                    // 📝 AUDIT CHANGE LOGS: Record Pairing and Family/Friends mutations
-                    val pairingDetails = mapOf("target_agent" to cleanTarget, "host_group" to hostGroupId, "role" to roleFam)
-                    FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanTarget, pairingDetails)
-                    FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "MEMBER_LINK", cleanTarget, pairingDetails)
-                    FirebaseComm.logChange(cleanTarget, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanHost, mapOf("host_agent" to cleanHost, "role" to "GUARDIAN"))
-                    
-                    onSuccess()
+                        // 📝 AUDIT CHANGE LOGS: Record Pairing and Family/Friends mutations
+                        val pairingDetails = mapOf("target_agent" to cleanTarget, "host_group" to hostGroupId, "role" to roleFam)
+                        FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanTarget, pairingDetails)
+                        FirebaseComm.logChange(cleanHost, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "MEMBER_LINK", cleanTarget, pairingDetails)
+                        FirebaseComm.logChange(cleanTarget, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanHost, mapOf("host_agent" to cleanHost, "role" to "GUARDIAN"))
+                        
+                        onResult?.invoke(true, hostGroupId)
+                    } else {
+                        val errMsg = updTask.exception?.message ?: "Handshake Cloud SSOT update failed"
+                        SystemLogger.e("PairingRepo", "Handshake rejected: $errMsg")
+                        onResult?.invoke(false, errMsg)
+                    }
                 }
             }
+        }
+    }
+
+    @JvmStatic
+    fun executeFamilyHandshake(hostAgentId: String, hostGroupId: String, targetAgentId: String, roleFam: String, onSuccess: () -> Unit) {
+        executeFamilyHandshake(hostAgentId, hostGroupId, targetAgentId, roleFam) { success, _ ->
+            if (success) onSuccess()
         }
     }
 
@@ -326,12 +368,12 @@ class PairingRepository {
             childAgentId: String,
             coParentName: String = "",
             childName: String = "",
-            onComplete: ((Boolean, String?) -> Unit)? = null
+            callback: ResultCallback? = null
         ) {
             val cleanCoParent = FirebaseComm.sanitizeAgentId(coParentAgentId)
             val cleanChild = FirebaseComm.sanitizeAgentId(childAgentId)
             if (!FirebaseComm.isAgentIdValid(cleanCoParent) || !FirebaseComm.isAgentIdValid(cleanChild)) {
-                onComplete?.invoke(false, "Invalid Parent or Child Agent ID.")
+                callback?.onResult(false, "Invalid Parent or Child Agent ID.")
                 return
             }
             val now = FirebaseComm.getForensicTimestamp()
@@ -340,6 +382,7 @@ class PairingRepository {
             val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
             val effectiveGroup = when {
                 hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP" -> hostGroupId
+                resolvedCtx != null -> RegistryManager.getEffectiveActiveGroup(resolvedCtx)
                 !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
                 else -> "GRP_$cleanCoParent"
             }
@@ -409,65 +452,83 @@ class PairingRepository {
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanChild/$cleanCoParent" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/members/$cleanChild/co_guardians/$cleanCoParent" to true,
                         "users/$cleanCoParent/joined_circles/$effectiveGroup" to true,
-                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis(),
+
+                        // Device command dispatch for closed-loop real-time sync with 24-Hour TTL
+                        "${FirebaseComm.NODE_DEVICES}/$cleanCoParent/commands" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to "COPARENT_${System.currentTimeMillis()}",
+                            "peer_id" to cleanChild,
+                            "peer_name" to childDisplayName,
+                            "role" to "Guardian",
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to System.currentTimeMillis(),
+                            "expires_at" to System.currentTimeMillis() + 86400000L,
+                            "ttl_hours" to 24
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanChild/commands" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to "COPARENT_${System.currentTimeMillis()}",
+                            "peer_id" to cleanCoParent,
+                            "peer_name" to coParentDisplayName,
+                            "role" to "Child",
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to System.currentTimeMillis(),
+                            "expires_at" to System.currentTimeMillis() + 86400000L,
+                            "ttl_hours" to 24
+                        )
                     )
 
                     db.updateChildren(updates).addOnCompleteListener { updTask ->
-                        SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
-                        
-                        // Local SQLite commit
-                        JFindMeApplication.getContext()?.let { ctx ->
-                            try {
-                                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
-                                val pairId = "COPARENT_${cleanCoParent}_${cleanChild}"
-                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
-                                    localDb.writableDatabase,
-                                    pairId,
-                                    cleanCoParent,
-                                    cleanChild,
-                                    "Guardian",
-                                    "Child",
-                                    null,
-                                    "PAIRED"
-                                )
+                        if (updTask.isSuccessful) {
+                            SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
+                            
+                            // Local SQLite commit
+                            JFindMeApplication.getContext()?.let { ctx ->
+                                try {
+                                    val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                    val pairId = "COPARENT_${cleanCoParent}_${cleanChild}"
+                                    com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                        localDb.writableDatabase,
+                                        pairId,
+                                        cleanCoParent,
+                                        cleanChild,
+                                        "Guardian",
+                                        "Child",
+                                        null,
+                                        "PAIRED"
+                                    )
 
-                                localDb.saveRosterNode(cleanCoParent, coParentDisplayName, "Guardian", "ACTIVE", false, false, activeGroupId = effectiveGroup)
-                                localDb.saveRosterNode(cleanChild, childDisplayName, "Child", "ACTIVE", false, false, activeGroupId = effectiveGroup)
-                                localDb.appendValidLinkedAgent(cleanCoParent, cleanChild)
-                                localDb.appendValidLinkedAgent(cleanChild, cleanCoParent)
-                                localDb.updateCitizenRole(cleanCoParent, "Guardian", "None", false, effectiveGroup)
+                                    localDb.saveRosterNode(cleanCoParent, coParentDisplayName, "Guardian", "ACTIVE", false, false, activeGroupId = effectiveGroup)
+                                    localDb.saveRosterNode(cleanChild, childDisplayName, "Child", "ACTIVE", false, false, activeGroupId = effectiveGroup)
+                                    localDb.appendValidLinkedAgent(cleanCoParent, cleanChild)
+                                    localDb.appendValidLinkedAgent(cleanChild, cleanCoParent)
+                                    localDb.updateCitizenRole(cleanCoParent, "Guardian", "None", false, effectiveGroup)
 
-                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
-                                    ctx,
-                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
-                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
-                                    cleanCoParent
-                                )
-                            } catch (ex: Exception) {
-                                SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                        ctx,
+                                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                        cleanCoParent
+                                    )
+                                } catch (ex: Exception) {
+                                    SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
+                                }
                             }
-                        }
 
-                        val logDetails = mapOf("co_parent" to cleanCoParent, "child" to cleanChild, "group" to effectiveGroup)
-                        FirebaseComm.logChange(cleanCoParent, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "CO_PARENT_LINK", cleanChild, logDetails)
-                        FirebaseComm.logChange(cleanChild, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "GUARDIAN_LINK", cleanCoParent, logDetails)
-                        onComplete?.invoke(true, null)
+                            val logDetails = mapOf("co_parent" to cleanCoParent, "child" to cleanChild, "group" to effectiveGroup)
+                            FirebaseComm.logChange(cleanCoParent, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "CO_PARENT_LINK", cleanChild, logDetails)
+                            FirebaseComm.logChange(cleanChild, FirebaseComm.LOG_ITEM_FAMILY_FRIENDS, "GUARDIAN_LINK", cleanCoParent, logDetails)
+                            callback?.onResult(true, null)
+                        } else {
+                            val err = updTask.exception?.message ?: "Firebase Co-Parent update rejected"
+                            SystemLogger.e("PairingRepo", "linkCoParentToChild rejected: $err")
+                            callback?.onResult(false, err)
+                        }
                     }
                 }
-            }
-        }
-
-        @JvmStatic
-        fun linkCoParentToChild(
-            hostGroupId: String,
-            coParentAgentId: String,
-            childAgentId: String,
-            coParentName: String,
-            childName: String,
-            callback: ResultCallback
-        ) {
-            linkCoParentToChild(hostGroupId, coParentAgentId, childAgentId, coParentName, childName) { success, msg ->
-                callback.onResult(success, msg)
             }
         }
 
@@ -501,9 +562,15 @@ class PairingRepository {
                 "pairing_requests/$inviteCode" to payload
             )
             FirebaseComm.database.reference.updateChildren(updates)
-                .addOnCompleteListener {
-                    SystemLogger.i("PairingRepo", "🔑 Circle Invite Code Generated: $inviteCode for Group $hostGroupId")
-                    onCodeReady(inviteCode)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        SystemLogger.i("PairingRepo", "🔑 Circle Invite Code Generated: $inviteCode for Group $hostGroupId")
+                        onCodeReady(inviteCode)
+                    } else {
+                        val err = task.exception?.message ?: "Failed generating circle invite"
+                        SystemLogger.e("PairingRepo", "createCircleInviteCode failed: $err")
+                        onCodeReady("")
+                    }
                 }
         }
 
@@ -551,7 +618,7 @@ class PairingRepository {
 
         private fun processInviteSnapshot(snapshot: DataSnapshot, cleanCode: String, joiningAgentId: String, onResult: (Boolean, String?) -> Unit) {
             val status = snapshot.child("status").getValue(String::class.java) ?: "EXPIRED"
-            val expiresAt = snapshot.child("expires_at").getValue(Long::class.java) ?: 0L
+            val expiresAt = FirebaseComm.safeLong(snapshot.child("expires_at")) ?: 0L
             val hostAgent = snapshot.child("host_agent").getValue(String::class.java)
                 ?: snapshot.child("hostDeviceId").getValue(String::class.java) ?: ""
             val groupId = snapshot.child("group_id").getValue(String::class.java) ?: ""
@@ -562,10 +629,14 @@ class PairingRepository {
                 return
             }
             
-            // Execute handshake
-            executeFamilyHandshake(hostAgent, groupId, joiningAgentId, role) {
-                SystemLogger.i("PairingRepo", "🎉 Joined Circle via Code $cleanCode: $joiningAgentId -> $groupId")
-                onResult(true, groupId)
+            // Execute handshake with real success/failure propagation
+            executeFamilyHandshake(hostAgent, groupId, joiningAgentId, role) { success, err ->
+                if (success) {
+                    SystemLogger.i("PairingRepo", "🎉 Joined Circle via Code $cleanCode: $joiningAgentId -> $groupId")
+                    onResult(true, groupId)
+                } else {
+                    onResult(false, err ?: "Handshake failed")
+                }
             }
         }
 
@@ -590,12 +661,12 @@ class PairingRepository {
             roleA: String,
             roleB: String? = null,
             pairingCode: String? = null,
-            onComplete: ((Boolean, String?) -> Unit)? = null
+            callback: ResultCallback? = null
         ) {
             val cleanDevA = FirebaseComm.sanitizeAgentId(devAId)
             val cleanDevB = FirebaseComm.sanitizeAgentId(devBId)
             if (!FirebaseComm.isAgentIdValid(cleanDevA) || !FirebaseComm.isAgentIdValid(cleanDevB)) {
-                onComplete?.invoke(false, "Invalid Agent IDs: $cleanDevA <-> $cleanDevB")
+                callback?.onResult(false, "Invalid Agent IDs: $cleanDevA <-> $cleanDevB")
                 return
             }
             val now = FirebaseComm.getForensicTimestamp()
@@ -604,6 +675,7 @@ class PairingRepository {
             val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
             val effectiveGroup = when {
                 hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP" -> hostGroupId
+                resolvedCtx != null -> RegistryManager.getEffectiveActiveGroup(resolvedCtx)
                 !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
                 else -> "GRP_$cleanDevA"
             }
@@ -651,6 +723,10 @@ class PairingRepository {
 
                             val nameA = localDb?.getDeviceCentricName(cleanDevA)?.ifEmpty { cleanDevA } ?: cleanDevA
                             val nameB = localDb?.getDeviceCentricName(cleanDevB)?.ifEmpty { cleanDevB } ?: cleanDevB
+                            val effectiveSyncSessionId = if (!pairingCode.isNullOrBlank()) pairingCode else "SYNC_${System.currentTimeMillis()}_${(1000..9999).random()}"
+
+                            val nowMs = System.currentTimeMillis()
+                            val expiresAtMs = nowMs + 86400000L // 24 Hours TTL
 
                             val updates = hashMapOf<String, Any>(
                                 // Device-Centric Relationships Mesh
@@ -691,87 +767,497 @@ class PairingRepository {
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevB/$cleanDevA" to true,
                         "users/$cleanDevA/joined_circles/$effectiveGroup" to true,
                         "users/$cleanDevB/joined_circles/$effectiveGroup" to true,
-                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis()
+                        "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis(),
+
+                        // Device command dispatch for closed-loop real-time sync with 24-Hour TTL (Dual-mirrored for zero-latency ingress)
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/commands" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to effectiveSyncSessionId,
+                            "peer_id" to cleanDevB,
+                            "peer_name" to nameB,
+                            "role" to computedRoleB,
+                            "peer_role" to computedRoleB,
+                            "my_role" to roleA,
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to nowMs,
+                            "expires_at" to expiresAtMs,
+                            "ttl_hours" to 24
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevA/device/remote_command" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to effectiveSyncSessionId,
+                            "peer_id" to cleanDevB,
+                            "peer_name" to nameB,
+                            "role" to computedRoleB,
+                            "peer_role" to computedRoleB,
+                            "my_role" to roleA,
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to nowMs,
+                            "expires_at" to expiresAtMs,
+                            "ttl_hours" to 24
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevB/commands" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to effectiveSyncSessionId,
+                            "peer_id" to cleanDevA,
+                            "peer_name" to nameA,
+                            "role" to roleA,
+                            "peer_role" to roleA,
+                            "my_role" to computedRoleB,
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to nowMs,
+                            "expires_at" to expiresAtMs,
+                            "ttl_hours" to 24
+                        ),
+                        "${FirebaseComm.NODE_DEVICES}/$cleanDevB/device/remote_command" to mapOf(
+                            "action" to "DEVICE_SYNC",
+                            "command" to "DEVICE_SYNC",
+                            "sync_session_id" to effectiveSyncSessionId,
+                            "peer_id" to cleanDevA,
+                            "peer_name" to nameA,
+                            "role" to roleA,
+                            "peer_role" to roleA,
+                            "my_role" to computedRoleB,
+                            "group_id" to effectiveGroup,
+                            "epoch_ms" to nowMs,
+                            "expires_at" to expiresAtMs,
+                            "ttl_hours" to 24
+                        )
                     )
 
                     db.updateChildren(updates).addOnCompleteListener { updTask ->
-                        SystemLogger.i("PairingRepo", "🔗 Devices Connected: $cleanDevA ($roleA) <-> $cleanDevB ($computedRoleB) in $effectiveGroup")
-                        
-                        // Local SQLite commit
-                        resolvedCtx?.let { ctx ->
-                            try {
-                                val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
-                                val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(ctx)
-                                val pairId = "PAIR_${cleanDevA}_${cleanDevB}"
-                                com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
-                                    sLocalDb.writableDatabase,
-                                    pairId,
-                                    cleanDevA,
-                                    cleanDevB,
-                                    roleA,
-                                    computedRoleB,
-                                    pairingCode,
-                                    "PAIRED"
-                                )
-
-                                val isDevAFriend = roleA.contains("Friend", ignoreCase = true)
-                                val isDevBFriend = computedRoleB.contains("Friend", ignoreCase = true)
-                                sLocalDb.saveRosterNode(cleanDevA, nameA, roleA, "ACTIVE", false, isDevAFriend, activeGroupId = effectiveGroup)
-                                sLocalDb.saveRosterNode(cleanDevB, nameB, computedRoleB, "ACTIVE", false, isDevBFriend, activeGroupId = effectiveGroup)
-                                sLocalDb.appendValidLinkedAgent(cleanDevA, cleanDevB)
-                                sLocalDb.appendValidLinkedAgent(cleanDevB, cleanDevA)
-
-                                sLocalDb.updateCitizenRole(cleanDevA, if (isDevAFriend) "None" else roleA, if (isDevAFriend) roleA else "None", isDevAFriend, effectiveGroup)
-                                sLocalDb.updateCitizenRole(cleanDevB, if (isDevBFriend) "None" else computedRoleB, if (isDevBFriend) computedRoleB else "None", isDevBFriend, effectiveGroup)
-
-                                // If the current initiating device is linking two peers, also ensure mutual pairing is saved locally so scopedIds doesn't exclude them
-                                if (selfDevId != cleanDevA && selfDevId != cleanDevB) {
+                        if (updTask.isSuccessful) {
+                            SystemLogger.i("PairingRepo", "🔗 Devices Connected: $cleanDevA ($roleA) <-> $cleanDevB ($computedRoleB) in $effectiveGroup")
+                            
+                            // Local SQLite commit
+                            resolvedCtx?.let { ctx ->
+                                try {
+                                    val sLocalDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(ctx)
+                                    val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(ctx)
+                                    val pairId = "PAIR_${cleanDevA}_${cleanDevB}"
                                     com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
                                         sLocalDb.writableDatabase,
-                                        "PAIR_${selfDevId}_${cleanDevB}",
-                                        selfDevId,
+                                        pairId,
+                                        cleanDevA,
                                         cleanDevB,
-                                        "Member",
+                                        roleA,
                                         computedRoleB,
                                         pairingCode,
                                         "PAIRED"
                                     )
-                                    sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevB)
-                                    sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevA)
+
+                                    val isDevAFriend = roleA.contains("Friend", ignoreCase = true)
+                                    val isDevBFriend = computedRoleB.contains("Friend", ignoreCase = true)
+                                    sLocalDb.saveRosterNode(cleanDevA, nameA, roleA, "ACTIVE", false, isDevAFriend, activeGroupId = effectiveGroup)
+                                    sLocalDb.saveRosterNode(cleanDevB, nameB, computedRoleB, "ACTIVE", false, isDevBFriend, activeGroupId = effectiveGroup)
+                                    sLocalDb.appendValidLinkedAgent(cleanDevA, cleanDevB)
+                                    sLocalDb.appendValidLinkedAgent(cleanDevB, cleanDevA)
+
+                                    sLocalDb.updateCitizenRole(cleanDevA, if (isDevAFriend) "None" else roleA, if (isDevAFriend) roleA else "None", isDevAFriend, effectiveGroup)
+                                    sLocalDb.updateCitizenRole(cleanDevB, if (isDevBFriend) "None" else computedRoleB, if (isDevBFriend) computedRoleB else "None", isDevBFriend, effectiveGroup)
+
+                                    // 🛡️ TRIADIC PAIRING SSOT: If initiating device (A) is linking B <-> C, ensure bidirectional pairs (A <-> B) and (A <-> C) exist in SQLite
+                                    if (selfDevId.isNotBlank()) {
+                                        if (selfDevId != cleanDevA) {
+                                            com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                                sLocalDb.writableDatabase,
+                                                "PAIR_${selfDevId}_${cleanDevA}",
+                                                selfDevId,
+                                                cleanDevA,
+                                                "Member",
+                                                roleA,
+                                                pairingCode,
+                                                "PAIRED"
+                                            )
+                                            sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevA)
+                                            sLocalDb.appendValidLinkedAgent(cleanDevA, selfDevId)
+                                        }
+                                        if (selfDevId != cleanDevB) {
+                                            com.jdroidx.jfindme.data.local.tables.DevicePairingTable.logPairingWithRoles(
+                                                sLocalDb.writableDatabase,
+                                                "PAIR_${selfDevId}_${cleanDevB}",
+                                                selfDevId,
+                                                cleanDevB,
+                                                "Member",
+                                                computedRoleB,
+                                                pairingCode,
+                                                "PAIRED"
+                                            )
+                                            sLocalDb.appendValidLinkedAgent(selfDevId, cleanDevB)
+                                            sLocalDb.appendValidLinkedAgent(cleanDevB, selfDevId)
+                                        }
+                                    }
+
+                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                                        ctx,
+                                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                                        com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                                        cleanDevB
+                                    )
+                                } catch (ex: Exception) {
+                                    SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
                                 }
-
-                                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
-                                    ctx,
-                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
-                                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
-                                    cleanDevB
-                                )
-                            } catch (ex: Exception) {
-                                SystemLogger.e("PairingRepo", "Local SQLite logPairingWithRoles warning: ${ex.message}")
                             }
-                        }
 
-                        val logDetails = mapOf("device_a" to cleanDevA, "device_b" to cleanDevB, "role_a" to roleA, "role_b" to computedRoleB, "group" to effectiveGroup)
-                        FirebaseComm.logChange(cleanDevA, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevB, logDetails)
-                        FirebaseComm.logChange(cleanDevB, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevA, logDetails)
-                        onComplete?.invoke(true, null)
+                            val logDetails = mapOf("device_a" to cleanDevA, "device_b" to cleanDevB, "role_a" to roleA, "role_b" to computedRoleB, "group" to effectiveGroup)
+                            FirebaseComm.logChange(cleanDevA, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevB, logDetails)
+                            FirebaseComm.logChange(cleanDevB, FirebaseComm.LOG_ITEM_PAIRING, "DEVICE_PAIR_LINK", cleanDevA, logDetails)
+                            callback?.onResult(true, null)
+                        } else {
+                            val err = updTask.exception?.message ?: "Firebase link update rejected"
+                            SystemLogger.e("PairingRepo", "linkDevicesWithRoles rejected: $err")
+                            callback?.onResult(false, err)
+                        }
                     }
                 }
             }
         }
 
+        // [Variables] context: Context, hostGroupId: String, devAId: String, devBId: String, roleA: String, roleB: String?, callback: DeviceSharingSyncCallback, cleanDevA: String, cleanDevB: String, selfDevId: String, timeoutMs: Long, syncSessionId: String, startTime: Long, mainHandler: Handler, isResolved: AtomicBoolean, needsAckA: Boolean, needsAckB: Boolean, ackReceivedA: AtomicBoolean, ackReceivedB: AtomicBoolean, listenerA: ValueEventListener?, listenerB: ValueEventListener?
+        // [Constants] NODE_DEVICES
+        // [Dependencies] FirebaseComm, SystemLogger, RegistryManager, DeviceIdentityHelper
+        // [Integration Points] MapActivity, FamilyFriendsActivity, TrackingService, FCMService
+        /**
+         * 🚀 Execute Closed-Loop Device Sharing:
+         * Dispatches reciprocal roles, commands, and attaches real-time ACK listeners with standard watchdog timer.
+         * Angel Butterfly progress remains active until remote peers physically acknowledge, or watchdog fires timeout feedback.
+         */
         @JvmStatic
-        fun linkDevicesWithRoles(
+        fun executeClosedLoopDeviceSharing(
+            context: android.content.Context,
             hostGroupId: String,
             devAId: String,
             devBId: String,
             roleA: String,
-            roleB: String,
-            pairingCode: String?,
-            callback: ResultCallback
+            roleB: String? = null,
+            callback: DeviceSharingSyncCallback
         ) {
-            linkDevicesWithRoles(hostGroupId, devAId, devBId, roleA, roleB, pairingCode) { success, msg ->
-                callback.onResult(success, msg)
+            val cleanDevA = FirebaseComm.sanitizeAgentId(devAId)
+            val cleanDevB = FirebaseComm.sanitizeAgentId(devBId)
+            val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val timeoutMs = RegistryManager.getDeviceSharingTimeoutMs(context)
+            val syncSessionId = "SYNC_${System.currentTimeMillis()}_${(1000..9999).random()}"
+            val startTime = System.currentTimeMillis()
+            val shareId = "DSH_${cleanDevA}_${cleanDevB}"
+
+            // 🛡️ V83 Sub-Master State Initialization
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            localDb.upsertDeviceSharing(
+                shareId = shareId,
+                masterDev = selfDevId,
+                submasterDev = cleanDevA,
+                targetDev = cleanDevB,
+                relType = roleA,
+                mask = 0xFF,
+                status = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REQUESTED,
+                isActive = false,
+                retryCount = 0
+            )
+            localDb.recordDeviceSharingTransaction(
+                shareId = shareId,
+                actorDev = selfDevId,
+                recipientDev = cleanDevA,
+                prevStage = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_NONE,
+                newStage = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REQUESTED,
+                attempt = 1,
+                channel = "CLOUD_FIREBASE",
+                reason = "Triadic device sharing request initiated by Master"
+            )
+
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            val isResolved = java.util.concurrent.atomic.AtomicBoolean(false)
+
+            val needsAckA = cleanDevA != selfDevId && cleanDevA.isNotBlank()
+            val needsAckB = cleanDevB != selfDevId && cleanDevB.isNotBlank()
+
+            val ackReceivedA = java.util.concurrent.atomic.AtomicBoolean(!needsAckA)
+            val ackReceivedB = java.util.concurrent.atomic.AtomicBoolean(!needsAckB)
+
+            var listenerA: ValueEventListener? = null
+            var listenerB: ValueEventListener? = null
+            val refA = FirebaseComm.getDeviceRef(cleanDevA).child("commands_ack").child("device_sync")
+            val refB = FirebaseComm.getDeviceRef(cleanDevB).child("commands_ack").child("device_sync")
+
+            val cleanup = {
+                listenerA?.let { refA.removeEventListener(it) }
+                listenerB?.let { refB.removeEventListener(it) }
+            }
+
+            val timeoutRunnable = java.lang.Runnable {
+                if (isResolved.compareAndSet(false, true)) {
+                    cleanup()
+                    val unAcked = when {
+                        !ackReceivedA.get() && !ackReceivedB.get() -> "$cleanDevA & $cleanDevB"
+                        !ackReceivedA.get() -> cleanDevA
+                        !ackReceivedB.get() -> cleanDevB
+                        else -> "Peer device"
+                    }
+                    val diagReason = "Peer device ($unAcked) did not acknowledge synchronization handshake within standard time limit (${timeoutMs / 1000}s).\n\n" +
+                        "Diagnostic Reason: Device offline, power-saving doze active, or cellular latency exceeded SLA threshold."
+                    localDb.updateDeviceSharingStage(
+                        shareId,
+                        com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_TIMED_OUT,
+                        selfDevId,
+                        diagReason
+                    )
+                    localDb.saveSysLog("WARN", "PairingRepository", diagReason)
+                    mainHandler.post { callback.onSyncTimeout(diagReason) }
+
+                    // 🛡️ CONTINUOUS 24-HOUR BACKGROUND SENTINEL: Keep passive background listener armed
+                    armPersistent24hAckSentinel(context, cleanDevA, cleanDevB, syncSessionId, roleA, roleB)
+                }
+            }
+
+            mainHandler.postDelayed(timeoutRunnable, timeoutMs)
+
+            val checkCompletion = {
+                if (ackReceivedA.get() && ackReceivedB.get()) {
+                    if (isResolved.compareAndSet(false, true)) {
+                        mainHandler.removeCallbacks(timeoutRunnable)
+                        cleanup()
+                        val latencyMs = System.currentTimeMillis() - startTime
+                        localDb.updateDeviceSharingStage(
+                            shareId,
+                            com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_ACTIVE,
+                            cleanDevA,
+                            "Mutual synchronization acknowledged (Latency: ${latencyMs}ms)"
+                        )
+                        mainHandler.post { callback.onSyncComplete(cleanDevA, cleanDevB, latencyMs) }
+                    }
+                }
+            }
+
+            if (needsAckA) {
+                listenerA = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val status = snapshot.child("status").getValue(String::class.java)
+                        val incomingSession = snapshot.child("sync_session_id").getValue(String::class.java)
+                        if ("ACKNOWLEDGED".equals(status, ignoreCase = true) &&
+                            (incomingSession == null || incomingSession == syncSessionId || incomingSession.startsWith("SYNC_"))) {
+                            ackReceivedA.set(true)
+                            checkCompletion()
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+                refA.addValueEventListener(listenerA!!)
+            }
+
+            if (needsAckB) {
+                listenerB = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val status = snapshot.child("status").getValue(String::class.java)
+                        val incomingSession = snapshot.child("sync_session_id").getValue(String::class.java)
+                        if ("ACKNOWLEDGED".equals(status, ignoreCase = true) &&
+                            (incomingSession == null || incomingSession == syncSessionId || incomingSession.startsWith("SYNC_"))) {
+                            ackReceivedB.set(true)
+                            checkCompletion()
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+                refB.addValueEventListener(listenerB!!)
+            }
+
+            // Dispatch mutations to Firebase RTDB
+            linkDevicesWithRoles(
+                hostGroupId,
+                cleanDevA,
+                cleanDevB,
+                roleA,
+                roleB,
+                pairingCode = syncSessionId,
+                callback = object : ResultCallback {
+                    override fun onResult(success: Boolean, errorMessage: String?) {
+                        if (success) {
+                            mainHandler.post { callback.onSyncDispatched(syncSessionId) }
+                            checkCompletion()
+                        } else {
+                            if (isResolved.compareAndSet(false, true)) {
+                                mainHandler.removeCallbacks(timeoutRunnable)
+                                cleanup()
+                                val failMsg = errorMessage ?: "Firebase cloud sync dispatch rejected"
+                                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveSysLog("ERROR", "PairingRepository", failMsg)
+                                mainHandler.post { callback.onSyncFailed(failMsg) }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+
+        // [Variables] context: Context, hostGroupId: String, sourceDevId: String, targetDevIds: List<String>, roles: List<String>, callback: BatchDeviceSharingSyncCallback, cleanSource: String, selfDevId: String, timeoutMs: Long, syncSessionId: String, startTime: Long, total: Int, mainHandler: Handler, isResolved: AtomicBoolean, ackedCount: AtomicInteger, listeners: List<Pair<DatabaseReference, ValueEventListener>>, timeoutRunnable: Runnable, checkCompletion: Function0, primaryRole: String, dispatchedCount: AtomicInteger
+        // [Constants] NODE_DEVICES
+        // [Dependencies] FirebaseComm, SystemLogger, RegistryManager, DeviceIdentityHelper
+        // [Integration Points] MapActivity, FamilyFriendsActivity, TrackingService, FCMService
+        /**
+         * 🚀 Execute Closed-Loop Batch Device Sharing:
+         * Attaches physical ACK listeners across all target devices with dynamic watchdog timer.
+         * Angel Butterfly remains flapping until all peers physically ACK, or watchdog fires timeout feedback.
+         */
+        @JvmStatic
+        fun executeClosedLoopBatchDeviceSharing(
+            context: android.content.Context,
+            hostGroupId: String,
+            sourceDevId: String,
+            targetDevIds: List<String>,
+            roles: List<String>,
+            callback: BatchDeviceSharingSyncCallback
+        ) {
+            val cleanSource = FirebaseComm.sanitizeAgentId(sourceDevId)
+            val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val timeoutMs = RegistryManager.getDeviceSharingTimeoutMs(context)
+            val syncSessionId = "SYNC_BATCH_${System.currentTimeMillis()}_${(1000..9999).random()}"
+            val startTime = System.currentTimeMillis()
+            val total = targetDevIds.size
+
+            if (total == 0) {
+                val noDevMsg = "No target devices specified for batch sharing."
+                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveSysLog("WARN", "PairingRepository", noDevMsg)
+                callback.onBatchFailed(noDevMsg)
+                return
+            }
+
+            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+            val isResolved = java.util.concurrent.atomic.AtomicBoolean(false)
+            val ackedCount = java.util.concurrent.atomic.AtomicInteger(0)
+            val listeners = mutableListOf<Pair<com.google.firebase.database.DatabaseReference, ValueEventListener>>()
+            val primaryRole = if (roles.isNotEmpty()) roles[0].replace(Regex("[^a-zA-Z /]"), "").trim() else "Member"
+
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            for (tId in targetDevIds) {
+                val cleanT = FirebaseComm.sanitizeAgentId(tId)
+                val shareId = "DSH_${cleanSource}_${cleanT}"
+                localDb.upsertDeviceSharing(
+                    shareId = shareId,
+                    masterDev = selfDevId,
+                    submasterDev = cleanSource,
+                    targetDev = cleanT,
+                    relType = primaryRole,
+                    mask = 0xFF,
+                    status = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REQUESTED,
+                    isActive = false,
+                    retryCount = 0
+                )
+                localDb.recordDeviceSharingTransaction(
+                    shareId = shareId,
+                    actorDev = selfDevId,
+                    recipientDev = cleanT,
+                    prevStage = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_NONE,
+                    newStage = com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REQUESTED,
+                    attempt = 1,
+                    channel = "CLOUD_FIREBASE",
+                    reason = "Batch device sharing invitation dispatched"
+                )
+            }
+
+            val cleanup = {
+                listeners.forEach { (ref, listener) ->
+                    try { ref.removeEventListener(listener) } catch (ignored: Exception) {}
+                }
+                listeners.clear()
+            }
+
+            val timeoutRunnable = java.lang.Runnable {
+                if (isResolved.compareAndSet(false, true)) {
+                    cleanup()
+                    val count = ackedCount.get()
+                    val diagReason = "Batch synchronization timed out after ${timeoutMs / 1000}s ($count of $total devices acknowledged).\n\n" +
+                        "Diagnostic Reason: One or more target devices failed to acknowledge within SLA threshold (devices offline, sleeping, or restricted)."
+                    for (tId in targetDevIds) {
+                        val cleanT = FirebaseComm.sanitizeAgentId(tId)
+                        val shareId = "DSH_${cleanSource}_${cleanT}"
+                        localDb.updateDeviceSharingStage(
+                            shareId,
+                            com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_TIMED_OUT,
+                            selfDevId,
+                            diagReason
+                        )
+                    }
+                    com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveSysLog("WARN", "PairingRepository", diagReason)
+                    mainHandler.post { callback.onBatchTimeout(count, total, diagReason) }
+
+                    // 🛡️ CONTINUOUS 24-HOUR BACKGROUND SENTINEL: Arm passive listeners for unreached batch devices
+                    for (tId in targetDevIds) {
+                        armPersistent24hAckSentinel(context, tId, cleanSource, syncSessionId, primaryRole, null)
+                    }
+                }
+            }
+            mainHandler.postDelayed(timeoutRunnable, timeoutMs)
+
+            val checkCompletion = {
+                val count = ackedCount.get()
+                mainHandler.post { callback.onBatchProgress(count, total) }
+                if (count >= total) {
+                    if (isResolved.compareAndSet(false, true)) {
+                        mainHandler.removeCallbacks(timeoutRunnable)
+                        cleanup()
+                        val latencyMs = System.currentTimeMillis() - startTime
+                        for (tId in targetDevIds) {
+                            val cleanT = FirebaseComm.sanitizeAgentId(tId)
+                            val shareId = "DSH_${cleanSource}_${cleanT}"
+                            localDb.updateDeviceSharingStage(
+                                shareId,
+                                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_ACTIVE,
+                                cleanT,
+                                "Batch synchronization acknowledged"
+                            )
+                        }
+                        mainHandler.post { callback.onBatchComplete(count, total, latencyMs) }
+                    }
+                }
+            }
+
+            for (tId in targetDevIds) {
+                val cleanTId = FirebaseComm.sanitizeAgentId(tId)
+                if (cleanTId == selfDevId) {
+                    ackedCount.incrementAndGet()
+                    continue
+                }
+                val ref = FirebaseComm.getDeviceRef(cleanTId).child("commands_ack").child("device_sync")
+                val listener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val status = snapshot.child("status").getValue(String::class.java)
+                        val incomingSession = snapshot.child("sync_session_id").getValue(String::class.java)
+                        if ("ACKNOWLEDGED".equals(status, ignoreCase = true) &&
+                            (incomingSession == null || incomingSession == syncSessionId || incomingSession.startsWith("SYNC_"))) {
+                            ackedCount.incrementAndGet()
+                            checkCompletion()
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+                listeners.add(Pair(ref, listener))
+                ref.addValueEventListener(listener)
+            }
+
+            val dispatchedCount = java.util.concurrent.atomic.AtomicInteger(0)
+            for (tId in targetDevIds) {
+                linkDevicesWithRoles(
+                    hostGroupId,
+                    cleanSource,
+                    tId,
+                    primaryRole,
+                    null,
+                    pairingCode = syncSessionId,
+                    callback = object : ResultCallback {
+                        override fun onResult(success: Boolean, errorMessage: String?) {
+                            if (success) {
+                                if (dispatchedCount.incrementAndGet() == total) {
+                                    mainHandler.post { callback.onBatchDispatched(syncSessionId, total) }
+                                    checkCompletion()
+                                }
+                            } else {
+                                val failMsg = "Batch link failed for $tId: $errorMessage"
+                                SystemLogger.e("PairingRepo", failMsg)
+                                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).saveSysLog("ERROR", "PairingRepository", failMsg)
+                            }
+                        }
+                    }
+                )
             }
         }
 
@@ -792,15 +1278,17 @@ class PairingRepository {
             maxAttachments: Int = 5,
             onCodeReady: (String) -> Unit
         ) {
+            val resolvedCtx = JFindMeApplication.getContext()
             val pairCode = (100000..999999).random().toString()
             val sessionId = UUID.randomUUID().toString().take(6)
-            val timeoutMs = 30 * 60 * 1000L // 30 minutes
+            // [Variables] timeoutMs: dynamic from RegistryManager (configurable via Settings) | [Constants] None | [Dependencies] RegistryManager | [Integration Points] SettingsActivity, PairingSession
+            val timeoutMs = resolvedCtx?.let { RegistryManager.getPairingTimeoutMs(it) } ?: (30 * 60 * 1000L)
             val cleanPrimary = FirebaseComm.sanitizeAgentId(primaryDeviceId)
-            val resolvedCtx = JFindMeApplication.getContext()
             val selfDevId = resolvedCtx?.let { com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(it) } ?: ""
             val prefsGroup = resolvedCtx?.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)?.getString("active_group", null)
             val effectiveGroup = when {
                 groupId.isNotBlank() && groupId != "DEFAULT_GROUP" -> groupId
+                resolvedCtx != null -> RegistryManager.getEffectiveActiveGroup(resolvedCtx)
                 !prefsGroup.isNullOrBlank() && prefsGroup != "DEFAULT_GROUP" -> prefsGroup
                 else -> "GRP_$cleanPrimary"
             }
@@ -842,16 +1330,20 @@ class PairingRepository {
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful) {
                         SystemLogger.i("PairingRepo", "Multi-Device Pairing Session Started: $pairCode in Group $effectiveGroup (Max $maxAttachments devices)")
+                        onCodeReady(pairCode)
                     } else {
-                        SystemLogger.w("PairingRepo", "Notice: pairing session update: ${task.exception?.message}")
+                        val err = task.exception?.message ?: "Failed writing pairing session"
+                        SystemLogger.e("PairingRepo", "pairing session update failed: $err")
+                        onCodeReady("")
                     }
-                    onCodeReady(pairCode)
                 }
         }
 
         @JvmStatic
         fun startMultiDevicePairingSession(userId: String, primaryDeviceId: String, role: String, maxAttachments: Int, callback: CodeCallback) {
-            startMultiDevicePairingSession(userId, primaryDeviceId, "DEFAULT_GROUP", role, maxAttachments) { callback.onCodeReady(it) }
+            val ctx = JFindMeApplication.getContext()
+            val resolvedGroup = if (ctx != null) RegistryManager.getEffectiveActiveGroup(ctx) else "GRP_$userId"
+            startMultiDevicePairingSession(userId, primaryDeviceId, resolvedGroup, role, maxAttachments) { callback.onCodeReady(it) }
         }
 
         @JvmStatic
@@ -892,14 +1384,22 @@ class PairingRepository {
                                     val grp = reqSnap.child("group_id").getValue(String::class.java) ?: "GRP_$primaryDev"
                                     val r = reqSnap.child("role").getValue(String::class.java) ?: "MEMBER"
                                     
-                                    linkDevicesWithRoles(grp, primaryDev, cleanJoiner, r, requestedRole, cleanCode) { success, err ->
-                                        if (success) {
-                                            finalizeJoiningDeviceState(primaryDev, cleanJoiner, requestedRole, grp)
-                                            onResult(true, primaryDev)
-                                        } else {
-                                            onResult(false, err)
+                                    linkDevicesWithRoles(
+                                        hostGroupId = grp,
+                                        devAId = primaryDev,
+                                        devBId = cleanJoiner,
+                                        roleA = r,
+                                        roleB = requestedRole,
+                                        pairingCode = cleanCode,
+                                        callback = { success, err ->
+                                            if (success) {
+                                                finalizeJoiningDeviceState(primaryDev, cleanJoiner, requestedRole, grp)
+                                                onResult(true, primaryDev)
+                                            } else {
+                                                onResult(false, err)
+                                            }
                                         }
-                                    }
+                                    )
                                 } else {
                                     onResult(false, "Invalid Pair Code")
                                 }
@@ -959,22 +1459,38 @@ class PairingRepository {
                 } else {
                     "GRP_${session.primaryDevice}"
                 }
-                linkDevicesWithRoles(hostGrp, session.primaryDevice, cleanJoiner, session.role, requestedRole, cleanCode) { success, err ->
-                    if (success) {
-                        finalizeJoiningDeviceState(session.primaryDevice, cleanJoiner, requestedRole, hostGrp)
-                        // 🌐 Full Mesh: Reciprocally link new joiner to all other sibling devices attached in this session
-                        for (peerJoiner in attachedMap.keys) {
-                            val cleanPeer = FirebaseComm.sanitizeAgentId(peerJoiner)
-                            if (FirebaseComm.isAgentIdValid(cleanPeer) && cleanPeer != cleanJoiner) {
-                                linkDevicesWithRoles(hostGrp, cleanPeer, cleanJoiner, "MEMBER", requestedRole, cleanCode) { _, _ -> }
+                linkDevicesWithRoles(
+                    hostGroupId = hostGrp,
+                    devAId = session.primaryDevice,
+                    devBId = cleanJoiner,
+                    roleA = session.role,
+                    roleB = requestedRole,
+                    pairingCode = cleanCode,
+                    callback = { success, err ->
+                        if (success) {
+                            finalizeJoiningDeviceState(session.primaryDevice, cleanJoiner, requestedRole, hostGrp)
+                            // 🌐 Full Mesh: Reciprocally link new joiner to all other sibling devices attached in this session
+                            for (peerJoiner in attachedMap.keys) {
+                                val cleanPeer = FirebaseComm.sanitizeAgentId(peerJoiner)
+                                if (FirebaseComm.isAgentIdValid(cleanPeer) && cleanPeer != cleanJoiner) {
+                                    linkDevicesWithRoles(
+                                        hostGroupId = hostGrp,
+                                        devAId = cleanPeer,
+                                        devBId = cleanJoiner,
+                                        roleA = "MEMBER",
+                                        roleB = requestedRole,
+                                        pairingCode = cleanCode,
+                                        callback = { _, _ -> }
+                                    )
+                                }
                             }
+                            SystemLogger.i("PairingRepo", "Device $cleanJoiner successfully attached via Code $cleanCode")
+                            onResult(true, session.primaryDevice)
+                        } else {
+                            onResult(false, err)
                         }
-                        SystemLogger.i("PairingRepo", "Device $cleanJoiner successfully attached via Code $cleanCode")
-                        onResult(true, session.primaryDevice)
-                    } else {
-                        onResult(false, err)
                     }
-                }
+                )
             }
         }
 
@@ -1007,6 +1523,143 @@ class PairingRepository {
         @JvmStatic
         fun joinMultiDevicePairingSession(pairCode: String, joiningDeviceId: String, requestedRole: String, callback: ResultCallback) {
             joinMultiDevicePairingSession(pairCode, joiningDeviceId, requestedRole) { success, msg -> callback.onResult(success, msg) }
+        }
+
+        // [Variables] context: Context, devAId: String, devBId: String, syncSessionId: String, roleA: String, roleB: String?, selfDevId: String, targets: List<String>
+        // [Constants] None
+        // [Dependencies] FirebaseComm, DatabaseHelper, SystemLogger, AlertManager
+        // [Integration Points] PairingRepository, TrackingService, FCMService
+        /**
+         * 🛡️ Persistent 24-Hour ACK Sentinel:
+         * Maintains passive background listeners for unreached/offline nodes up to 24 hours.
+         * When target boots and posts ACK, updates SQLite, dispatches broadcast, and displays confirmation notification.
+         */
+        @JvmStatic
+        fun armPersistent24hAckSentinel(
+            context: android.content.Context,
+            devAId: String,
+            devBId: String,
+            syncSessionId: String,
+            roleA: String,
+            roleB: String? = null
+        ) {
+            val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val targets = listOf(devAId, devBId).filter { it.isNotBlank() && it != selfDevId }
+
+            for (targetId in targets) {
+                val ackRef = FirebaseComm.getDeviceRef(targetId).child("commands_ack").child("device_sync")
+                val sentinelListener = object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        if (!snapshot.exists()) return
+                        val status = snapshot.child("status").getValue(String::class.java)
+                        val incomingSession = snapshot.child("sync_session_id").getValue(String::class.java)
+                        if (incomingSession != null && (incomingSession == syncSessionId || incomingSession.startsWith("SYNC_"))) {
+                            if ("ACKNOWLEDGED".equals(status, ignoreCase = true)) {
+                                ackRef.removeEventListener(this)
+                                SystemLogger.i("PairingRepo", "🟢 Persistent 24h ACK Received from $targetId for session $syncSessionId")
+                                try {
+                                    val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                                    val peerName = localDb.getDeviceCentricName(targetId).ifEmpty { "Device $targetId" }
+                                    val shareId = "DSH_${devAId}_${devBId}"
+                                    localDb.updateDeviceSharingStage(
+                                        shareId,
+                                        com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_ACTIVE,
+                                        targetId,
+                                        "Persistent 24h ACK Received"
+                                    )
+                                    localDb.saveRosterNode(targetId, peerName, roleA, "ACTIVE", false, false)
+                                    com.jdroidx.jfindme.engine.alert.AlertManager.showDeviceSharingNotification(
+                                        context,
+                                        "Device Sharing Confirmed",
+                                        "🟢 $peerName came online and confirmed mutual tracking."
+                                    )
+                                    val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                                        setPackage(context.packageName)
+                                        putExtra("category", "ROSTER")
+                                    }
+                                    context.sendBroadcast(refreshIntent)
+                                } catch (e: Exception) {
+                                    SystemLogger.e("PairingRepo", "Persistent ACK processing warning: ${e.message}")
+                                }
+                            } else if ("EXPIRED".equals(status, ignoreCase = true)) {
+                                ackRef.removeEventListener(this)
+                                SystemLogger.w("PairingRepo", "🔴 Persistent 24h Sync Expired for $targetId")
+                                try {
+                                    val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                                    val peerName = localDb.getDeviceCentricName(targetId).ifEmpty { "Device $targetId" }
+                                    val shareId = "DSH_${devAId}_${devBId}"
+                                    localDb.updateDeviceSharingStage(
+                                        shareId,
+                                        com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_EXPIRED,
+                                        targetId,
+                                        "Persistent 24-hour sync window expired"
+                                    )
+                                    com.jdroidx.jfindme.engine.alert.AlertManager.showDeviceSharingNotification(
+                                        context,
+                                        "Device Sharing Expired",
+                                        "🔴 24-hour window expired for $peerName. Tap to re-issue request."
+                                    )
+                                } catch (ignored: Exception) {}
+                            }
+                        }
+                    }
+                    override fun onCancelled(error: DatabaseError) {}
+                }
+                ackRef.addValueEventListener(sentinelListener)
+            }
+        }
+
+        // [Variables] shareId: String, actorDeviceId: String, reason: String | [Constants] STAGE_REJECTED | [Dependencies] DatabaseHelper, FirebaseComm | [Integration Points] PairingRepository, MapActivity
+        @JvmStatic
+        fun rejectDeviceSharingRequest(context: android.content.Context, shareId: String, actorDeviceId: String, reason: String = "Master rejected sharing request") {
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            localDb.updateDeviceSharingStage(
+                shareId,
+                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REJECTED,
+                actorDeviceId,
+                reason
+            )
+            val record = localDb.getDeviceSharingRecord(shareId)
+            if (record != null) {
+                FirebaseComm.getDeviceRef(record.submasterDeviceId).child("device_sharing").child(shareId)
+                    .updateChildren(mapOf("status" to "REJECTED", "is_active" to false, "reason" to reason))
+            }
+        }
+
+        // [Variables] shareId: String, actorDeviceId: String, reason: String | [Constants] STAGE_DECLINED | [Dependencies] DatabaseHelper, FirebaseComm | [Integration Points] PairingRepository, MapActivity
+        @JvmStatic
+        fun declineDeviceSharingInvitation(context: android.content.Context, shareId: String, actorDeviceId: String, reason: String = "Invitee declined invitation") {
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            localDb.updateDeviceSharingStage(
+                shareId,
+                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_DECLINED,
+                actorDeviceId,
+                reason
+            )
+            val record = localDb.getDeviceSharingRecord(shareId)
+            if (record != null) {
+                FirebaseComm.getDeviceRef(record.masterDeviceId).child("device_sharing").child(shareId)
+                    .updateChildren(mapOf("status" to "DECLINED", "is_active" to false, "reason" to reason))
+            }
+        }
+
+        // [Variables] shareId: String, actorDeviceId: String, reason: String | [Constants] STAGE_REVOKED | [Dependencies] DatabaseHelper, FirebaseComm | [Integration Points] PairingRepository, MapActivity
+        @JvmStatic
+        fun revokeDeviceSharingSession(context: android.content.Context, shareId: String, actorDeviceId: String, reason: String = "Access revoked by authority") {
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            localDb.updateDeviceSharingStage(
+                shareId,
+                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REVOKED,
+                actorDeviceId,
+                reason
+            )
+            val record = localDb.getDeviceSharingRecord(shareId)
+            if (record != null) {
+                FirebaseComm.getDeviceRef(record.masterDeviceId).child("device_sharing").child(shareId)
+                    .updateChildren(mapOf("status" to "REVOKED", "is_active" to false, "reason" to reason))
+                FirebaseComm.getDeviceRef(record.submasterDeviceId).child("device_sharing").child(shareId)
+                    .updateChildren(mapOf("status" to "REVOKED", "is_active" to false, "reason" to reason))
+            }
         }
     }
 

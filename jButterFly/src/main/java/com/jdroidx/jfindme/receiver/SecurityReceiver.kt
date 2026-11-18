@@ -25,6 +25,7 @@ class SecurityReceiver : BroadcastReceiver() {
                 restoreHardwareGeofences(context)
                 com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleMaintenanceWindow(context)
                 com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(context)
+                com.jdroidx.jfindme.service.BackgroundJobManager.initializeAllJobs(context)
             }
             Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                 val isOn = SecurityEngine.isAirplaneModeOn(context)

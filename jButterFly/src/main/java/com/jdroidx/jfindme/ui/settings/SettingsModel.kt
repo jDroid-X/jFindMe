@@ -61,7 +61,19 @@ data class SettingsModel(
     var sparkBandwidthSaver: Boolean = true,
     var closedLoopAckTimeoutMs: Long = 10000L,
     var circuitBreakerFailures: Int = 3,
-    var failoverSmsTarget: String = ""
+    var failoverSmsTarget: String = "",
+
+    // Section 10: Butterfly Point & Tactical Rendezvous Hub
+    var butterflyArrivalRadiusM: Float = 50.0f,
+    var butterflyExpiryHours: Int = 4,
+    var butterflyHysteresisM: Float = 15.0f,
+    var butterflyMaxDistanceKm: Float = 500.0f,
+    var butterflyRagAmberMultiplier: Float = 2.0f,
+    var butterflyRagRedMultiplier: Float = 3.0f,
+    var butterflyInvitationTimeoutHours: Int = 24,
+    var butterflyOverdueGraceMinutes: Int = 120,
+    var butterflyForegroundSyncIntervalSec: Int = 4,
+    var butterflyMaxAvailabilityDays: Int = 7
 )
 
 /**
@@ -109,7 +121,19 @@ class SettingsController(private val context: Context) {
             sparkBandwidthSaver = prefs.getBoolean("pref_spark_bandwidth_saver", true),
             closedLoopAckTimeoutMs = prefs.getLong("pref_closed_loop_ack_timeout_ms", 10000L),
             circuitBreakerFailures = prefs.getInt("pref_circuit_breaker_max_failures", 3),
-            failoverSmsTarget = prefs.getString("pref_failover_sms_target", "") ?: ""
+            failoverSmsTarget = prefs.getString("pref_failover_sms_target", "") ?: "",
+
+            // Section 10: Butterfly Point & Tactical Rendezvous Hub
+            butterflyArrivalRadiusM = prefs.getFloat("butterfly_arrival_radius_meters", 50.0f),
+            butterflyExpiryHours = prefs.getInt("butterfly_expiry_hours", 4),
+            butterflyHysteresisM = prefs.getFloat("butterfly_hysteresis_meters", 15.0f),
+            butterflyMaxDistanceKm = prefs.getFloat("butterfly_max_distance_km", 500.0f),
+            butterflyRagAmberMultiplier = prefs.getFloat("butterfly_rag_amber_multiplier", 2.0f),
+            butterflyRagRedMultiplier = prefs.getFloat("butterfly_rag_red_multiplier", 3.0f),
+            butterflyInvitationTimeoutHours = prefs.getInt("butterfly_invitation_timeout_hours", 24),
+            butterflyOverdueGraceMinutes = prefs.getInt("butterfly_overdue_grace_minutes", 120),
+            butterflyForegroundSyncIntervalSec = prefs.getInt("butterfly_foreground_sync_interval_sec", 4),
+            butterflyMaxAvailabilityDays = prefs.getInt("butterfly_max_availability_days", 7)
         )
     }
 
@@ -162,6 +186,18 @@ class SettingsController(private val context: Context) {
             putLong("pref_closed_loop_ack_timeout_ms", model.closedLoopAckTimeoutMs)
             putInt("pref_circuit_breaker_max_failures", model.circuitBreakerFailures)
             putString("pref_failover_sms_target", model.failoverSmsTarget)
+
+            // Section 10: Butterfly Point & Tactical Rendezvous Hub
+            putFloat("butterfly_arrival_radius_meters", model.butterflyArrivalRadiusM)
+            putInt("butterfly_expiry_hours", model.butterflyExpiryHours)
+            putFloat("butterfly_hysteresis_meters", model.butterflyHysteresisM)
+            putFloat("butterfly_max_distance_km", model.butterflyMaxDistanceKm)
+            putFloat("butterfly_rag_amber_multiplier", model.butterflyRagAmberMultiplier)
+            putFloat("butterfly_rag_red_multiplier", model.butterflyRagRedMultiplier)
+            putInt("butterfly_invitation_timeout_hours", model.butterflyInvitationTimeoutHours)
+            putInt("butterfly_overdue_grace_minutes", model.butterflyOverdueGraceMinutes)
+            putInt("butterfly_foreground_sync_interval_sec", model.butterflyForegroundSyncIntervalSec)
+            putInt("butterfly_max_availability_days", model.butterflyMaxAvailabilityDays)
             apply()
         }
     }

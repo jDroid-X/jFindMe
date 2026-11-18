@@ -1284,7 +1284,8 @@ public class ProfileActivity extends BaseActivityJava {
         applyDialogTheme(previewDialog);
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         UiArchitect.DesignStage stage = UiArchitect.getStage(this);
         TextView header = new TextView(this);
         header.setText(text);

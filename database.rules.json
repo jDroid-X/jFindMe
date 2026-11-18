@@ -83,6 +83,11 @@
           ".read": "auth != null",
           ".write": "auth != null"
         },
+        "butterfly_invitations": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".indexOn": ["status", "rendezvous_timestamp"]
+        },
         "Access": {
           ".read": "auth != null",
           ".write": "auth != null"
@@ -179,6 +184,11 @@
       ".read": "auth != null",
       ".write": "auth != null",
       ".indexOn": ["geohash", "timestamp"]
+    },
+    "butterfly_points": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["creator_device_id", "is_active", "is_archived", "rendezvous_timestamp"]
     }
   }
 }

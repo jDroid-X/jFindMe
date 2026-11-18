@@ -1,85 +1,150 @@
-# jFindMe Waterfall MVVM Workflow
+# jFindMe Master Waterfall MVVM Workflow (V5.0 Enterprise Standard)
 
-This master workflow governs all development tasks, ensuring a systematic, non-destructive approach from forensic analysis to final audit.
+> **Mandatory Reference Pipeline**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)` ➔ `Branding (.agent/rules/branding.md)` ➔ `Lifecycle (.agent/rules/lifecycle_rules.md)`
 
 ---
 
-## 🧭 Master 4-Step Reference Protocol: Workflow ➔ Rules ➔ Agents ➔ Skills
+## 🧭 Master 6-Step Reference Pipeline
 
 When ANY change, patch, bug fix, or feature request is received, every agent and developer MUST traverse this pipeline in exact order:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │ STEP 1: WORKFLOW (.agent/rules/workflow.md)                            │
-│ Check Concurrency (< 4 agents), Single Workflow lock, Waterfall Phase  │
+│ Check Concurrency (< 4 agents), Select Lane (1, 2, 3), 7-Stage Sequence│
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ STEP 2: RULES (.agent/rules/rules.md)                                  │
-│ 1. Check TIER 1 Universal Invariants (Pre-declaration, Parity, SSOT)   │
-│ 2. Identify TIER 2 Screen-Dependent Subset (Subsets A - H)             │
+│ 1. Verify Universal Invariants (Pre-declaration, Parity, SSOT, 4 Gates)│
+│ 2. Select Screen-Dependent Subset (Subsets A - H)                      │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ STEP 3: AGENTS (.agent/rules/agents.md)                                │
-│ Assign task to the designated Specialist Agent (Agent 1 - 7)          │
+│ Assign primary and supporting agents from the 22-Agent Workforce       │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ STEP 4: SKILLS (.agent/rules/skills.md)                                │
-│ Activate required technical capability & execute with zero stubs       │
+│ Activate specialized technical capabilities; execute with zero stubs   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 5: BRANDING (.agent/rules/branding.md)                            │
+│ Apply 12 Dynamic Themes, L7 UI Architect, RAG Colors, Lightweight Map  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ STEP 6: LIFECYCLE (.agent/rules/lifecycle_rules.md)                    │
+│ Hardware/Software Pre-Flight, Unattended Upgrade, Pre-Uninstall Teardown│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 0: Agent Dispatch & Concurrency Control (Global Guard)
+## 🚦 Adaptive 3-Lane Matrix
 
-- **Rule 1 (Single Workflow)**: Only ONE workflow instance allowed per project. If running, attach to it.
-- **Rule 2 (Pre-Spawn Guard)**: Before spawning, check if `active_agents >= 4`. If true, queue task immediately.
-- **Rule 3 (Duplicate Execution Block)**: Do NOT start another instance if the same `task_id` is already running.
-- **Rule 4 (Task Merge Rule)**: If tasks share the same input and stage, merge them into one execution.
-- **Rule 5 (Controlled Parallelism)**: Parallel execution is ONLY allowed for Model vs Controller vs View. All other tasks execute sequentially.
+Every incoming task is categorized into one of three execution lanes to balance rigor with velocity:
 
-## Phase 1: Forensic Analysis (The "Look-Ahead")
+### Lane 1: Patch Lane (Targeted Fix / Defect Remediation)
+- **Scope**: Hotfixes, typo corrections, null checks, localized layout tweaks ($\le 2$ files).
+- **Protocol**:
+  1. Check warm context or `git status -s` (Fast-Exit Guard).
+  2. Pre-change declaration: `[Variables] | [Constants] | [Dependencies] | [Integration Points]`.
+  3. Apply non-destructive fix (`@Deprecated` or merge).
+  4. Sync twin module file immediately (`app` ⟷ `jButterFly`).
+  5. Verify cross-references with zero unresolved symbols.
 
-- **Step 1**: Identify the target module or feature requested.
-- **Step 2**: Audit current implementation for existing logic, technical debt, and brownfield file sizes ($\ge 1,920$ lines).
-- **Step 3**: Identify all dependencies (Classes, Sub-routines, APIs).
-- **Step 4**: **Pre-Change Declaration Mandatory**:
+### Lane 2: Feature Lane (Component / Screen Addition)
+- **Scope**: New screens, new dialogs, new view models, new background jobs.
+- **Protocol**:
+  1. Define 6-Layer Coordinate Tree `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`.
+  2. Apply Dynamic OOPS MVC/MVVM pattern.
+  3. Ensure Ponytail Line Ceiling ($\le 1,920$ lines per file).
+  4. Bind to `ThemeManager` 12 themes & L7 aesthetics (`UiArchitect`).
+  5. Enforce dual-module twin creation and database temporal ordering (`ORDER BY ... DESC`).
+
+### Lane 3: Enterprise Lane (Subsystem / Schema Overhaul)
+- **Scope**: Database schema migrations (SQLite / Firebase), mesh protocol refactoring, authentication restructuring.
+- **Protocol**:
+  1. Full traversal through the 7-Stage Closed-Loop Waterfall Sequence.
+  2. Multi-agent coordination (Agents 1 – 4 Orchestration review).
+  3. Anti-GIGO verification & backward compatibility ledger.
+  4. Red-Line confirmation gate if monitoring hierarchy or circle scoping is affected.
+
+---
+
+## 🔄 Master 7-Stage Closed-Loop Waterfall Sequence
+
+```
+[Stage 1: Initiate & Plan]
+         │
+         ▼
+[Stage 2: Requirements Analysis]
+         │
+         ▼
+[Stage 3: System Design]
+         │
+         ▼
+[Stage 4: Implementation (OOPS MVC)]
+         │
+         ▼
+[Stage 5: Testing & Parity Verification]
+         │
+         ▼
+[Stage 6: Deployment & Build Quarantine]
+         │
+         ▼
+[Stage 7: Maintenance & Closed-Loop Feedback]
+```
+
+### Stage 1: Initiate & Plan (Concurrency & Target Gate)
+- **Concurrency Guard**: Check `active_agents < 4`. Queue tasks if saturated.
+- **Single Workflow Lock**: Attach to existing workflows; prevent duplicate runs on identical `task_id`.
+- **Target Resolution & Fast-Exit**: If no target screen/module is specified and context is cold ($\le 3$ turns), check `git status -s`. If no files are modified, **STOP & FAST-EXIT**: do NOT crawl the repository speculatively. Invert untouched screens to `[N/A]`.
+
+### Stage 2: Requirements Analysis (The "Anti-GIGO Gate")
+- **Specification Check**: Map requirements to `docs/design/` and `requirements/` specs.
+- **Coordinate Tree Formulation**: Explicitly write out `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`:
+  - **ROOT**: Subsystem Context
+  - **BR**: Business Rules & Role Permissions
+  - **EL**: Event Listeners & State Triggers
+  - **FE**: Frontend UI/UX Elements
+  - **BE**: Backend Repositories & ViewModels
+  - **DB**: Dual Storage SSOT (SQLite Tables & Views ↔ Firebase RTDB)
+
+### Stage 3: System Design (OOPS MVVM Architecture)
+- **Architectural Mapping**: Verify dependencies in `.agent/enterprise-22-agents/PROGRAM-MAPPING.md`.
+- **Design Tokens**: Select theme palette (Themes 0–11) and L7 UI components (Glassmorphism, 16f–30f radii, 50f capsule buttons, 8f–25f elevation).
+- **Temporal Query Guarantee**: Ensure all database reads plan for descending ordering (`ORDER BY timestamp DESC`).
+
+### Stage 4: Implementation (Modular OOPS Build)
+- **Pre-Change Declaration Mandatory**:
   $$\text{[Variables]} \quad\vert\quad \text{[Constants]} \quad\vert\quad \text{[Dependencies]} \quad\vert\quad \text{[Integration Points]}$$
-- **Step 5**: **Verification Rule**: Check for missing links, caller references, or integration gaps across BOTH modules (`app` and `jButterFly`) before proceeding.
+- **Ponytail 96% Rule**: If a class or file reaches $\ge 1,920$ lines, decompose via Strangler Fig pattern or call-by-reference modular controllers.
+- **Dual-Module Synchronization**: Every line written to `app/src/main/...` must be mirrored in `jButterFly/src/main/...`.
+- **Non-Destructive Code Evolution**: Never delete earlier working code; deprecate gracefully (`@Deprecated`) or merge.
 
-## Phase 2: Structural Planning (The "Design-Wait")
+### Stage 5: Testing & Parity Verification
+- **Dual-Module Parity Audit**: Line-by-line verification across all 14 twin pairs.
+- **Basic Error Zero-Tolerance**: Unresolved references, missing parameters, and missing imports are strictly blocked.
+- **RAG Status Engine Test**: Verify 15m (Green), 15m–6h (Amber), >6h (Red), SOS (Crimson), Ghost (Gray).
+- **Navigation & Lifecycle**: Verify D-Pad, Enter action, Tab sequence, and predictive back callback.
 
-- **Step 1**: Define the Scenario and Sub-Scenarios.
-- **Step 2**: Check Tier 1 Universal Rules and select the exact Tier 2 Screen-Dependent Subset in `.agent/rules/rules.md`.
-- **Step 3**: Design the View-ViewModel-Repository structure (Waterfall MVVM).
-- **Step 4**: **Coordinate Tree Plan `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`**: Explicitly document Context Root $\supset$ Business Rules (BR) $\supset$ Event Listeners (EL) $\supset$ Frontend UI (FE) $\supset$ Backend Repositories & ViewModels (BE) $\supset$ Dual Storage SSOT (DB).
-- **Trigger**: Move to Solutioning ONLY after the plan is approved. (Do NOT create uncoordinated sub-branches during initial execution).
+### Stage 6: Deployment & Build Quarantine
+- **Strict Build Quarantine Protocol**: **NEVER execute Gradle builds (`./gradlew`, `./gradlew.bat installDebug`) autonomously.**
+- Code modifications are decoupled from build tasks until explicitly commanded by operator `JEET`.
+- Package hash calculation (`SHA-256`) and manifest identity review via Agent 21.
+- **Hardware & Software Pre-Flight Evaluation**: Evaluate battery ($\ge 15\%$), free storage ($\ge 150\text{ MB}$), and keystore certificate match per `.agent/rules/lifecycle_rules.md`.
 
-## Phase 3: Solutioning (The "Modular-Build")
-
-- **Step 1**: Develop modular, reusable functions/Classes (Ponytail ceiling: $\le 1,920$ lines).
-- **Step 2**: Implement the "Closed-Loop" data binding and bi-directional SQLite/Firebase synchronization.
-- **Step 3**: Apply L7 UI Architect styles (Two-point Linear Gradients, Glassmorphism, 16f-30f Radii, Capsule Buttons).
-- **Rule**: No duplicate code. Re-use existing components where possible via call-by-reference.
-
-## Phase 4: Implementation & Audit (The "Zero-Gap")
-
-- **Step 1**: Integrate components and establish Firebase sync hooks with type-safe deserializers (`safeLong`, `safeInt`).
-- **Step 2**: Execute Tab-Sequence, Enter-Action, and Predictive Back navigation validation.
-- **Step 3**: Perform Cross-Device usability and performance audit (Map rendering throttled $\ge 250\text{ ms}$).
-- **Step 4**: **Strict Build Quarantine Protocol**: Decouple all code modifications from build tasks. NEVER execute `./gradlew` autonomously.
-- **Step 5**: Trigger a Feedback Loop ONLY after main workflow completes (Feedback must NOT auto-trigger workflows).
-
-## Final Validation Protocol
-
-1. **Module Parity**: All 14 twin file pairs between `app/` and `jButterFly/` verified 100% synchronized?
-2. **Consistency**: UI, local SQLite, and Firebase Cloud SSOT perfectly synchronized?
-3. **Accessibility**: D-Pad, Marquee text, and Back-navigation functional?
-4. **Security**: Mandatory fields marked with red asterisk, RBAC checked, and hardware root anchor immutable?
-5. **Performance**: Zero UI blocking during IO operations; markers lightweight and GPU-optimized?
+### Stage 7: Maintenance & Closed-Loop Feedback
+- **Self-Healing Watchdog**: Monitor SQLite integrity and process resurrection.
+- **Rolling Maintenance**: Periodic SQLite `VACUUM` and log compression via `BackgroundJobManager`.
+- **Pre-Uninstall Teardown Guard**: Stop background sentinels, flush offline queues to cloud, offer forensic SQLite dump, before triggering native `ACTION_DELETE` package intent.
+- **Feedback Isolation**: Post-task feedback triggers must NOT spawn uncontrolled recurring workflows.

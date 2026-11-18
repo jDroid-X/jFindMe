@@ -88,9 +88,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     private static final String TAG = "NetworkGatewayActivity";
 
     // Tab Constants: ROSTER IS FIRST TAB
-    private static final int TAB_ACTIVE_ROSTER = 0;
-    private static final int TAB_REMOTE_CLOUD = 1;
-    private static final int TAB_NEARBY_P2P = 2;
+    public static final int TAB_ACTIVE_ROSTER = 0;
+    public static final int TAB_REMOTE_CLOUD = 1;
+    public static final int TAB_NEARBY_P2P = 2;
     private int selectedTab = TAB_ACTIVE_ROSTER;
 
     // UI Tab Containers & Segment Buttons
@@ -134,6 +134,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     private GroupViewModel viewModel;
     private String forensicAgentId = "";
     private String safeUid = "LOCAL_DEVICE";
+
+    // Reactive SSOT Observers & Listeners
+    private final Map<String, ValueEventListener> liveDeviceListeners = new HashMap<>();
+    private androidx.lifecycle.Observer<List<com.jdroidx.jfindme.data.model.UserLocation>> locationObserver = null;
 
     // QR Code Scanner Result Launcher
     private final ActivityResultLauncher<ScanOptions> barcodeLauncher = registerForActivityResult(
@@ -243,6 +247,17 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             }
         });
 
+        // 🚀 Unified Live Location Observer: Re-evaluates active/inactive vitals in real time
+        if (locationObserver == null) {
+            locationObserver = locations -> {
+                if (selectedTab == TAB_ACTIVE_ROSTER && !isFinishing() && !isDestroyed()) {
+                    rebuildRosterView(currentCachedRoster);
+                }
+            };
+            com.jdroidx.jfindme.data.repository.LocationRepository.Companion.getInstance(this)
+                .getUserLocations().observe(this, locationObserver);
+        }
+
         viewModel.isTimerExpired().observe(this, expired -> {
             if (Boolean.TRUE.equals(expired)) {
                 if (tvCode != null) tvCode.setText("EXPIRED");
@@ -273,6 +288,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if ("RECOVERY".equals(mode)) {
             getIntent().removeExtra("LAUNCH_MODE");
             showRestoreOldGroupDialog();
+        }
+
+        // 📡 Seamless Failover Tab Ingress
+        int selectTab = getIntent().getIntExtra("SELECT_TAB", -1);
+        if (selectTab != -1) {
+            switchToTab(selectTab);
         }
 
         // 🚀 Deep Link Universal Pairing Handler (jfindme://pair?code=... or https://jfindme.app/pair?code=...)
@@ -328,17 +349,22 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
     }
 
+    // [Variables] category, changeType, entityId, senderId
+    // [Constants] ACTION_MASTER_DATA_UPDATED
+    // [Dependencies] BaseActivityJava, GroupViewModel, DatabaseHelper
+    // [Integration Points] NetworkGatewayActivity, MapActivity, FamilyFriendsActivity, PairingRepository
+    @Override
+    protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
+        super.onMasterDataUpdated(category, changeType, entityId, senderId);
+        if (viewModel != null) {
+            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+        }
+    }
+
         // [Variables] | [Constants] | [Dependencies] | [Integration Points]
     // Dynamic SSOT Active Group Resolver: Replaces hardcoded fallback strings with device-centric group mapping
     private String getResolvedActiveGroup() {
-        String safeAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-        String defaultGroup = "GRP_" + safeAgentId;
-        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-        String grp = jPrefs.getString("active_group", defaultGroup);
-        if (grp == null || grp.trim().isEmpty() || "DEFAULT_GROUP".equals(grp) || "SECURE_HUB".equals(grp)) {
-            grp = defaultGroup;
-        }
-        return grp;
+        return com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
     }
 
     private void refreshOwnerIdentity() {
@@ -1283,7 +1309,17 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         return Math.max(scale(135), Math.min(scale(200), available));
     }
 
+    private void clearLiveDeviceListeners() {
+        for (Map.Entry<String, ValueEventListener> entry : liveDeviceListeners.entrySet()) {
+            try {
+                FirebaseComm.INSTANCE.getDevicesRef().child(entry.getKey()).child("device").child("live").removeEventListener(entry.getValue());
+            } catch (Exception ignored) {}
+        }
+        liveDeviceListeners.clear();
+    }
+
     private void rebuildRosterView(List<Map<String, Object>> liveData) {
+        clearLiveDeviceListeners();
         currentCachedRoster = (liveData != null) ? liveData : new ArrayList<>();
         if (rosterContainer == null) return;
         rosterContainer.removeAllViews();
@@ -1308,10 +1344,13 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 continue; // Skip self in member list (rendered via Root Guardian Anchor)
             }
 
-            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers
-            if (scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
+            // [Variables] isCanonical: boolean, isPrime: boolean, canon: String | [Constants] None | [Dependencies] DeviceIdentityHelper, DatabaseHelper | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel
+            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers, bypassing canonical fleet and prime target
+            boolean isCanonical = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(uid);
+            boolean isPrime = "4379A761".equalsIgnoreCase(uid) || "4379A761".equalsIgnoreCase(dbLocal.resolveAgentIdLocally(uid));
+            if (!isPrime && !isCanonical && scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
                 String canon = dbLocal.resolveAgentIdLocally(uid);
-                if (canon == null || !scopedIds.contains(canon)) {
+                if (canon == null || (!scopedIds.contains(canon) && !com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(canon))) {
                     continue;
                 }
             }
@@ -1558,9 +1597,32 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         UiArchitect.applyText(this, tvName, "TEXT_TITLE");
         details.addView(tvName);
 
+        // Resolve initial RAG status from SQLite vitals + LocationRepository SSOT
+        java.util.Map<String, Object> vitals = db.getDeviceVitals(finalUid);
+        long initTs = 0L;
+        int initBatt = 100;
+        if (vitals != null) {
+            Object vTs = vitals.get(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_LAST_SEEN);
+            if (vTs instanceof Number) initTs = ((Number) vTs).longValue();
+            Object vBat = vitals.get(com.jdroidx.jfindme.data.local.tables.DeviceVitalsTable.COL_BATTERY_LEVEL);
+            if (vBat instanceof Number) initBatt = ((Number) vBat).intValue();
+        }
+        com.jdroidx.jfindme.data.model.UserLocation cachedLoc = 
+            com.jdroidx.jfindme.data.repository.LocationRepository.Companion.getInstance(this).getLatestLocationFor(finalUid);
+        if (cachedLoc != null && cachedLoc.getLongTimestamp() > initTs) {
+            initTs = cachedLoc.getLongTimestamp();
+            if (cachedLoc.getBatteryLevel() > 0) initBatt = cachedLoc.getBatteryLevel();
+        }
+        boolean isDeleted = db.isDeviceDeleted(finalUid);
+        boolean isPendingUnlink = db.isDevicePendingUnlink(finalUid);
+        com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult initRag = 
+            com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(initTs, initBatt, cachedLoc != null && cachedLoc.isSosActive(), isDeleted, false, isPendingUnlink);
+
         TextView tvStatus = new TextView(this);
-        tvStatus.setText(roleIcon + " " + finalRole + trackingTag);
-        tvStatus.setTextColor(getSecondaryTextColor());
+        tvStatus.setText(roleIcon + " " + finalRole + " • " + initRag.getStatusText() + (isTrackingActive ? "" : " (Paused)"));
+        tvStatus.setTextColor(initRag.getStatusColor());
+        card.setAlpha(initRag.getCardAlpha());
+        avBg.setStroke(2, initRag.getStrokeColor());
         UiArchitect.applyText(this, tvStatus, "TEXT_MINI");
         details.addView(tvStatus);
 
@@ -1624,7 +1686,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         });
 
         // Async resolve Firebase live status & avatar with full Live Map parity
-        FirebaseComm.INSTANCE.getDevicesRef().child(finalUid).addListenerForSingleValueEvent(new ValueEventListener() {
+        ValueEventListener liveListener = new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot locSnap) {
                 if (!isFinishing() && !isDestroyed()) {
@@ -1670,30 +1732,46 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         }
                     }
 
+                    com.jdroidx.jfindme.data.model.UserLocation liveLoc = 
+                        com.jdroidx.jfindme.data.repository.LocationRepository.Companion.getInstance(NetworkGatewayActivity.this).getLatestLocationFor(finalUid);
+                    if (liveLoc != null && liveLoc.getLongTimestamp() > ts) {
+                        ts = liveLoc.getLongTimestamp();
+                    }
+
                     int batt = -1;
                     Object batObj = live.child("battery").getValue();
                     if (batObj instanceof Number) batt = ((Number) batObj).intValue();
+                    if (batt < 0 && liveLoc != null && liveLoc.getBatteryLevel() > 0) {
+                        batt = liveLoc.getBatteryLevel();
+                    }
 
-                    boolean isSos = Boolean.TRUE.equals(live.child("sos").getValue(Boolean.class));
-                    boolean isDeleted = db.isDeviceDeleted(finalUid);
-                    boolean isPendingUnlink = db.isDevicePendingUnlink(finalUid);
+                    boolean isSos = Boolean.TRUE.equals(live.child("sos").getValue(Boolean.class)) || (liveLoc != null && liveLoc.isSosActive());
+                    boolean curDeleted = db.isDeviceDeleted(finalUid);
+                    boolean curPendingUnlink = db.isDevicePendingUnlink(finalUid);
 
                     // 🚦 Evaluate Unified Enterprise RAG Status
                     com.jdroidx.jfindme.utils.DeviceRagEngine.EvaluationResult rag = 
-                        com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(ts, batt, isSos, isDeleted, false, isPendingUnlink);
+                        com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(ts, batt, isSos, curDeleted, false, curPendingUnlink);
 
-                    tvStatus.setText(finalRoleIcon + " " + finalRole + " • " + rag.getStatusText());
+                    tvStatus.setText(finalRoleIcon + " " + finalRole + " • " + rag.getStatusText() + (isTrackingActive ? "" : " (Paused)"));
                     tvStatus.setTextColor(rag.getStatusColor());
                     card.setAlpha(rag.getCardAlpha());
                     avBg.setStroke(2, rag.getStrokeColor());
                     // [Variables] finalUid, avId, rag | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Desaturated Live Gateway Avatar
                     AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, finalUid, avId, rag.isDesaturated());
+
+                    // SSOT Backfill to local SQLite DeviceVitals
+                    if (ts > 0L) {
+                        db.updateDeviceVitalsTelemetry(finalUid, batt > 0 ? batt : 100, ts, false, null);
+                    }
                 }
             }
 
             @Override
             public void onCancelled(DatabaseError error) {}
-        });
+        };
+        FirebaseComm.INSTANCE.getDevicesRef().child(finalUid).addValueEventListener(liveListener);
+        liveDeviceListeners.put(finalUid, liveListener);
 
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cardLp.setMargins(0, 0, 0, scale(8));
@@ -1728,35 +1806,23 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
     }
 
+    /**
+     * [Variables]: chosen
+     * [Constants]: None
+     * [Dependencies]: SecurityDialogManager
+     * [Integration Points]: NetworkGatewayActivity, SecurityDialogManager, GatewayViewModel
+     *
+     * 🚀 V83 OOPS-based MVC SSOT Delegation: Calls centralized SecurityDialogManager.
+     */
     private void showPinTtlSelectionDialog() {
-        String[] options = {
-            "5 Minutes (Recommended - NIST SP 800-63B)",
-            "10 Minutes",
-            "15 Minutes",
-            "20 Minutes",
-            "30 Minutes (Extended Pairing Window)"
-        };
-        int[] values = {5, 10, 15, 20, 30};
-        int currentTtl = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
-        int selectedIdx = 0;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] == currentTtl) { selectedIdx = i; break; }
-        }
-
-        new AlertDialog.Builder(this)
-            .setTitle("⏱️ Pairing PIN Expiry TTL")
-            .setSingleChoiceItems(options, selectedIdx, (dialog, which) -> {
-                int chosen = values[which];
-                getSharedPreferences("system_registry", MODE_PRIVATE).edit().putInt("pairing_pin_ttl_minutes", chosen).apply();
-                Toast.makeText(this, "Pairing PIN Expiry TTL set to " + chosen + " minutes.", Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
+        com.jdroidx.jfindme.ui.base.SecurityDialogManager.showPinTtlSelectionDialog(this, chosen -> {
+            if (viewModel != null) {
                 viewModel.startCountdown(chosen, selectedTab == TAB_NEARBY_P2P, () -> {
                     Toast.makeText(this, "PIN / Token Expired.", Toast.LENGTH_SHORT).show();
                     return kotlin.Unit.INSTANCE;
                 });
-            })
-            .setNegativeButton("CANCEL", null)
-            .show();
+            }
+        });
     }
 
     private void executeHostSessionSpinup() {
@@ -2332,7 +2398,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 }
             }
             if (myGrp == null || myGrp.isEmpty() || myGrp.equals("DEFAULT_GROUP")) {
-                myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", "GRP_" + safeAgentId);
+                myGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
             }
             final String finalGrp = (myGrp != null && !myGrp.isEmpty()) ? myGrp : ("GRP_" + safeAgentId);
 
@@ -2639,5 +2705,18 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         String lc = savedState.getString("SAVED_LOCAL_CODE");
         if (etLocalCode != null && lc != null) etLocalCode.setText(lc);
         updateTabVisibility();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        clearLiveDeviceListeners();
+        if (locationObserver != null) {
+            try {
+                com.jdroidx.jfindme.data.repository.LocationRepository.Companion.getInstance(this)
+                    .getUserLocations().removeObserver(locationObserver);
+            } catch (Exception ignored) {}
+            locationObserver = null;
+        }
     }
 }

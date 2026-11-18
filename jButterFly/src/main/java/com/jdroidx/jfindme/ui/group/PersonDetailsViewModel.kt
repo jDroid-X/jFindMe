@@ -214,12 +214,17 @@ class PersonDetailsViewModel : ViewModel() {
      */
     fun updateCitizenRoleProtocol(context: Context, groupId: String?, targetUid: String, famRole: String, frRole: String, isFriend: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. Local Commit — 🔧 FIX ISSUE-05: Pass groupId so DB writes to correct group, not DEFAULT_GROUP
+            val resolvedGroup = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") {
+                groupId
+            } else {
+                com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+            }
+            // 1. Local Commit — 🔧 Dynamic Group-By Hierarchy Binding
             val localDb = DatabaseHelper.getInstance(context)
-            localDb.updateCitizenRole(targetUid, famRole, frRole, isFriend, groupId ?: "DEFAULT_GROUP")
+            localDb.updateCitizenRole(targetUid, famRole, frRole, isFriend, resolvedGroup)
             
             // 2. Cloud Commit
-            if (!groupId.isNullOrEmpty()) {
+            if (resolvedGroup.isNotEmpty()) {
                 val effectiveRole = if (isFriend) "Friends" else if (famRole != "None" && famRole.isNotBlank()) famRole else "Member"
                 val membershipMap = mapOf(
                     "role" to effectiveRole,
@@ -227,16 +232,16 @@ class PersonDetailsViewModel : ViewModel() {
                     "role_friend" to frRole
                 )
                 // 1. Unified `devices/` Structure
-                FirebaseComm.relationshipsRef.child(groupId)
+                FirebaseComm.relationshipsRef.child(resolvedGroup)
                     .child("devices").child(targetUid).child("membership").updateChildren(membershipMap)
                 
                 // 2. Legacy Redundancy for backwards compatibility
                 val cp = mapOf("role_family" to famRole, "role_friend" to frRole)
-                FirebaseComm.relationshipsRef.child(groupId)
+                FirebaseComm.relationshipsRef.child(resolvedGroup)
                     .child("citizen_dossiers").child(targetUid).updateChildren(cp)
-                FirebaseComm.relationshipsRef.child(groupId)
+                FirebaseComm.relationshipsRef.child(resolvedGroup)
                     .child("members").child(targetUid).child("role").setValue(effectiveRole)
-                FirebaseComm.relationshipsRef.child(groupId)
+                FirebaseComm.relationshipsRef.child(resolvedGroup)
                     .child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
             }
 
@@ -464,7 +469,7 @@ class PersonDetailsViewModel : ViewModel() {
                 .get().addOnSuccessListener { snap ->
                     val logs = mutableListOf<String>()
                     snap.children.forEach { child ->
-                        val ts = child.child("timestamp").getValue(Long::class.java) ?: 0L
+                        val ts = FirebaseComm.safeLong(child.child("timestamp")) ?: 0L
                         val action = child.child("action").getValue(String::class.java) ?: ""
                         val editor = child.child("editorUid").getValue(String::class.java) ?: ""
                         val date = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))

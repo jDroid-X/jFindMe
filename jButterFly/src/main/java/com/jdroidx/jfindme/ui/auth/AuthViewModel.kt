@@ -74,15 +74,21 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                 if (task.isSuccessful) {
                     val authUid = auth.currentUser?.uid ?: ""
                     
+                    // [Variables] authUid, resolvedCloudId, localAgentId, isLocalRoster, agentId, rawId, hardwareUid | [Constants] CANONICAL_ROSTER_IDS | [Dependencies] DeviceIdentityHelper, FirebaseComm | [Integration Points] Login Canonical Re-anchoring
                     // 🛡️ Forensic Bridge: Reclaim Canonical Cloud Agent ID on Login
                     FirebaseComm.resolveHardwareIdentity(authUid) { resolvedCloudId ->
                         val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
-                        val agentId = if (!resolvedCloudId.isNullOrEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
-                            RegistryManager.putString(getApplication(), RegistryManager.KEY_AGENT_ID, resolvedCloudId)
+                        val isLocalRoster = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(localAgentId)
+                        val agentId = if (isLocalRoster) {
+                            localAgentId
+                        } else if (!resolvedCloudId.isNullOrEmpty() && com.jdroidx.jfindme.utils.DeviceIdentityHelper.isValidAgentId(resolvedCloudId)) {
                             resolvedCloudId
                         } else {
                             localAgentId
                         }
+                        RegistryManager.putString(getApplication(), RegistryManager.KEY_AGENT_ID, agentId)
+                        com.jdroidx.jfindme.utils.DeviceIdentityHelper.setCustomAgentId(getApplication(), agentId)
+                        FirebaseComm.registerLookupIndex(authUid, agentId)
                         val rawId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(getApplication())
                         val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(getApplication())
 
@@ -115,7 +121,9 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
                             if (cloudEmail != null) finalEmail = cloudEmail
 
                             val savedGroup = snap.child("active_group").getValue(String::class.java)
-                            activeGroup = if (!savedGroup.isNullOrBlank() && savedGroup != "DEFAULT_GROUP") savedGroup else defaultPersonalGroup
+                            val dynGroup = com.jdroidx.jfindme.utils.RegistryManager.getDeviceCorrespondingGroup(getApplication())
+                            val preferredGroup = if (dynGroup.isNotBlank() && dynGroup != "DEFAULT_GROUP") dynGroup else defaultPersonalGroup
+                            activeGroup = if (!savedGroup.isNullOrBlank() && savedGroup != "DEFAULT_GROUP") savedGroup else preferredGroup
                             if (savedGroup.isNullOrBlank() || savedGroup == "DEFAULT_GROUP") {
                                 FirebaseComm.devicesRef.child(agentId).child("profile").child("active_group").setValue(activeGroup)
                                 FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(agentId).child("role").setValue("OWNER")

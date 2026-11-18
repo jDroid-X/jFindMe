@@ -47,8 +47,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
-    <!-- 🚀 QA Fix: Android 11+ Package Visibility (Queries) necessary for hardware intent mapping! -->
+    <!-- 🚀 QA Fix: Android 11+ Package Visibility (Queries) necessary for GMS & hardware intent mapping! -->
     <queries>
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.android.vending" />
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
@@ -281,6 +283,17 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.jdroidx.jfindme.ACTION_PROCESS_ACTIVITY_TRANSITIONS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- L5.11: Butterfly Point Instant Action Receiver (ACCEPT / REJECT) -->
+        <receiver
+            android:name=".receiver.ButterflyPointActionReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.jdroidx.jfindme.ACTION_BUTTERFLY_ACCEPT" />
+                <action android:name="com.jdroidx.jfindme.ACTION_BUTTERFLY_REJECT" />
             </intent-filter>
         </receiver>
 

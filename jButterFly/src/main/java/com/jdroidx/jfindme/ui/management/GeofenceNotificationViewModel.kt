@@ -67,7 +67,7 @@ class GeofenceNotificationViewModel(application: Application) : AndroidViewModel
                             val avatar = node.child("avatar_name").getValue(String::class.java) ?: "Unknown"
                             val zone = node.child("zone_name").getValue(String::class.java) ?: "Unknown"
                             val status = node.child("status").getValue(String::class.java) ?: "OUT"
-                            val time = node.child("timestamp").getValue(Long::class.java) ?: System.currentTimeMillis()
+                            val time = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(node.child("timestamp")) ?: System.currentTimeMillis()
                             val uid = node.child("uid").getValue(String::class.java) ?: "REMOTE_NODE"
                             
                             // 💾 ANALYTIC ARCHIVAL: Deduplicated safe archival to local SQLite

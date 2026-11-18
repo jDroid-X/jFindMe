@@ -9,6 +9,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.jdroidx.jfindme.data.local.tables.*
+import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 import java.text.SimpleDateFormat
 import java.util.*
@@ -21,7 +22,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 81 // 🚀 V81: Complete 25-Table Tri-Tier Enterprise Schema Refabrication, Offline-to-Online Parity & Compatibility Views // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
+        const val DATABASE_VERSION = 83 // 🚀 V83: Sub-Master DeviceSharing & DeviceSharingTransaction Ledger Architecture // 🚀 V82: Butterfly Point Rendezvous Master & Sub-Master Subsystem // 🚀 V81: Complete 25-Table Tri-Tier Enterprise Schema Refabrication, Offline-to-Online Parity & Compatibility Views // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -127,7 +128,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 "safe_zone_user_map", "stealth_schedule_config", "reverse_geocode_cache",
                 "location_event", "pending_sync_queue", "device_vitals", "alert_history", "watchdog_resurrection_log",
                 "telemetry_failover_routes", "sys_log", "p2p_mesh_packets", "invitations", "sim_transactions",
-                "geofence_event", "sync_queue", "change_log", "security_audit_log"
+                "geofence_event", "sync_queue", "change_log", "security_audit_log",
+                "device_sharing", "device_sharing_transactions", "butterfly_points", "butterfly_point_device_map"
             )
             try {
                 // [Variables] | [Constants] | [Dependencies] | [Integration Points]
@@ -583,6 +585,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'HW_HW_%' OR ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'HW_HW_%'")
             db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} LIKE 'HW_HW_%'")
             db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} LIKE 'HW_HW_%'")
+            db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_TABLE)
+            db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_INDEX_POINT_DEVICE)
         } catch (e: Exception) { }
 
         // 🚀 Self-Healing diagnostic: Force-audit sys_log for 'level' column presence
@@ -682,9 +686,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             }
         }
 
-        // 🚀 Self-Healing: Verify PendingSyncQueueTable and DeviceVitalsTable presence
+        // 🚀 Self-Healing: Verify PendingSyncQueueTable, SyncQueueTable, and DeviceVitalsTable presence
         try {
             db.execSQL(PendingSyncQueueTable.CREATE_TABLE)
+            db.execSQL(SyncQueueTable.CREATE_TABLE)
             db.execSQL(DeviceVitalsTable.CREATE_TABLE)
         } catch (e: Exception) { }
 
@@ -733,6 +738,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_sharing_nodes ON ${DeviceSharingTable.TABLE_NAME} (${DeviceSharingTable.COL_MASTER_DEVICE_ID}, ${DeviceSharingTable.COL_SUBMASTER_DEVICE_ID}, ${DeviceSharingTable.COL_TARGET_DEVICE_ID})")
+
+            // 🛡️ Self-Healing V83: Device Sharing & Transaction Ledger
+            try {
+                db.execSQL(DeviceSharingTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_LOOKUP)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_STATUS)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_INDEX_SHARE_TIME)
+            } catch (_: Exception) { }
 
             // 🛡️ Self-Healing: Verify DevicePairingTable multi-device role and code columns
             val devicePairingCols = listOf(
@@ -830,25 +845,45 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         // [Dependencies]: SQLiteDatabase, SystemLogger, Table contracts
         // [Integration Points]: onOpen, onCreate, onUpgrade, ForensicVaultExplorerActivity
         
-        // 🛡️ Migration: Check if legacy physical table sync_queue exists, migrate to pending_sync_queue, and drop table so it can become a VIEW
+        // 🛡️ Self-Healing & Parity: Ensure sync_queue is a physical table with sync_id column, not a view
         try {
-            var isTable = false
+            db.execSQL("DROP TRIGGER IF EXISTS trg_sync_queue_insert")
+            var isView = false
+            var tableExists = false
             db.rawQuery("SELECT type FROM sqlite_master WHERE name = 'sync_queue'", null).use { c ->
                 if (c.moveToFirst()) {
-                    isTable = "table".equals(c.getString(0), ignoreCase = true)
+                    tableExists = true
+                    isView = "view".equals(c.getString(0), ignoreCase = true)
                 }
             }
-            if (isTable) {
-                try {
-                    db.execSQL("""
-                        INSERT OR IGNORE INTO ${PendingSyncQueueTable.TABLE_NAME} (
-                            ${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, ${PendingSyncQueueTable.COL_TARGET_UID}, ${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_CREATED_ON}
-                        ) SELECT entity_type, entity_id, status, created_on FROM sync_queue
-                    """.trimIndent())
-                } catch (_: Exception) {}
-                db.execSQL("DROP TABLE IF EXISTS sync_queue")
+            if (isView) {
+                db.execSQL("DROP VIEW IF EXISTS sync_queue")
+                tableExists = false
             }
-        } catch (_: Exception) {}
+
+            var hasSyncId = false
+            if (tableExists) {
+                db.rawQuery("PRAGMA table_info(sync_queue)", null).use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (nameIdx != -1 && "sync_id".equals(c.getString(nameIdx), ignoreCase = true)) {
+                            hasSyncId = true
+                            break
+                        }
+                    }
+                }
+            }
+
+            if (!hasSyncId) {
+                if (tableExists) {
+                    SystemLogger.w("DB", "sync_queue missing sync_id column! Migrating and recreating physical table.")
+                    db.execSQL("DROP TABLE IF EXISTS sync_queue")
+                }
+                db.execSQL(SyncQueueTable.CREATE_TABLE)
+            }
+        } catch (ex: Exception) {
+            SystemLogger.e("DB", "SyncQueueTable physical verification: ${ex.message}")
+        }
 
         val views = listOf(
             Pair("devices", "SELECT * FROM ${DeviceTable.TABLE_NAME} ORDER BY ${DeviceTable.COL_UPDATED_AT} DESC, ${DeviceTable.COL_DEVICE_ID} DESC"),
@@ -861,7 +896,6 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             Pair("device_pairings", "SELECT * FROM ${DevicePairingTable.TABLE_NAME} ORDER BY ${DevicePairingTable.COL_UPDATED_AT} DESC, ${DevicePairingTable.COL_PAIR_ID} DESC"),
             Pair("alerts", "SELECT * FROM ${AlertHistoryTable.TABLE_NAME} ORDER BY ${AlertHistoryTable.COL_TIMESTAMP} DESC, ${AlertHistoryTable.COL_ID} DESC"),
             Pair("locations", "SELECT * FROM ${LocationEventTable.TABLE_NAME} ORDER BY ${LocationEventTable.COL_TIMESTAMP} DESC, ${LocationEventTable.COL_ID} DESC"),
-            Pair("sync_queue", "SELECT * FROM ${PendingSyncQueueTable.TABLE_NAME} ORDER BY ${PendingSyncQueueTable.COL_TIMESTAMP} DESC, ${PendingSyncQueueTable.COL_ID} DESC"),
             Pair("MASTER_ROSTER", "SELECT * FROM ${GroupMemberTable.TABLE_NAME} ORDER BY ${GroupMemberTable.COL_JOINED_AT} DESC, ${GroupMemberTable.COL_ID} DESC"),
             Pair("master_roster", "SELECT * FROM ${GroupMemberTable.TABLE_NAME} ORDER BY ${GroupMemberTable.COL_JOINED_AT} DESC, ${GroupMemberTable.COL_ID} DESC"),
             Pair("organizations", "SELECT * FROM ${OrganizationTable.TABLE_NAME} ORDER BY ${OrganizationTable.COL_UPDATED_AT} DESC, ${OrganizationTable.COL_ORG_ID} DESC"),
@@ -944,38 +978,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 END;
             """.trimIndent())
 
-            db.execSQL("""
-                CREATE TRIGGER IF NOT EXISTS trg_sync_queue_insert INSTEAD OF INSERT ON sync_queue
-                BEGIN
-                    INSERT INTO ${PendingSyncQueueTable.TABLE_NAME} (
-                        ${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, ${PendingSyncQueueTable.COL_TARGET_UID}, ${PendingSyncQueueTable.COL_LAT}, 
-                        ${PendingSyncQueueTable.COL_LNG}, ${PendingSyncQueueTable.COL_BEARING}, ${PendingSyncQueueTable.COL_SPEED}, 
-                        ${PendingSyncQueueTable.COL_BATTERY}, ${PendingSyncQueueTable.COL_IS_SOS}, ${PendingSyncQueueTable.COL_TIMESTAMP}, 
-                        ${PendingSyncQueueTable.COL_STATUS}, ${PendingSyncQueueTable.COL_RETRY_COUNT}, ${PendingSyncQueueTable.COL_EXTRA_DATA}, 
-                        ${PendingSyncQueueTable.COL_ACCURACY}, ${PendingSyncQueueTable.COL_ALTITUDE}, ${PendingSyncQueueTable.COL_MOTION_STATE}, 
-                        ${PendingSyncQueueTable.COL_CREATED_ON}, ${PendingSyncQueueTable.COL_LAST_ATTEMPT_TS}, ${PendingSyncQueueTable.COL_ERROR_MESSAGE}
-                    ) VALUES (
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_PAYLOAD_TYPE}, 'LOCATION'),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_TARGET_UID}, 'UNKNOWN'),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_LAT}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_LNG}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_BEARING}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_SPEED}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_BATTERY}, 100),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_IS_SOS}, 0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_TIMESTAMP}, CAST(strftime('%s', 'now') AS INTEGER) * 1000),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_STATUS}, 'PENDING'),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_RETRY_COUNT}, 0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_EXTRA_DATA}, ''),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_ACCURACY}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_ALTITUDE}, 0.0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_MOTION_STATE}, 'UNKNOWN'),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_CREATED_ON}, strftime('%Y-%m-%d %H:%M:%S', 'now')),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_LAST_ATTEMPT_TS}, 0),
-                        COALESCE(NEW.${PendingSyncQueueTable.COL_ERROR_MESSAGE}, '')
-                    );
-                END;
-            """.trimIndent())
+            // Physical sync_queue handles its own direct inserts via SyncQueueTable; purge any legacy view trigger
+            db.execSQL("DROP TRIGGER IF EXISTS trg_sync_queue_insert")
         } catch (trigEx: Exception) {
             com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "Trigger creation note: ${trigEx.message}")
         }
@@ -1015,7 +1019,14 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             "alert_history_ttl_days" to Triple("30", "Emergency Alert History Retention in Days", 0L),
             "max_geocode_cache_size" to Triple("5000", "Maximum Reverse Geocode Cache Records", 0L),
             "default_page_limit" to Triple("50", "Forensic Vault Grid Page Row Count", 0L),
-            "retention_days" to Triple("7", "Historical Telemetry Cloud & Local Retention Ceiling in Days", 0L)
+            "retention_days" to Triple("7", "Historical Telemetry Cloud & Local Retention Ceiling in Days", 0L),
+            "butterfly_arrival_radius_meters" to Triple("50.0", "Butterfly Point Arrival Perimeter Radius in Meters", 0L),
+            "butterfly_expiry_hours" to Triple("4", "Butterfly Point Default Expiration Lifespan in Hours", 0L),
+            "butterfly_hysteresis_meters" to Triple("15.0", "Butterfly Point Arrival Hysteresis Deadband in Meters", 0L),
+            "butterfly_max_distance_km" to Triple("500.0", "Butterfly Point Distance Safeguard Warning Threshold in KM", 0L),
+            "butterfly_rag_amber_multiplier" to Triple("2.0", "Butterfly Point RAG Amber Distance Multiplier", 0L),
+            "butterfly_rag_red_multiplier" to Triple("3.0", "Butterfly Point RAG Red Distance Multiplier", 0L),
+            "device_corresponding_group" to Triple("UNIVERSAL_FLEET", "Device group-by hierarchy mapping", 0L)
         )
         for ((key, triple) in defaults) {
             try {
@@ -1037,6 +1048,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(DeviceTable.CREATE_TABLE)
             db.execSQL(GroupTable.CREATE_TABLE)
             db.execSQL(SafeZoneTable.CREATE_TABLE)
+            db.execSQL(ButterflyPointTable.CREATE_TABLE)
+            db.execSQL(ButterflyPointTable.CREATE_INDEX_ACTIVE)
             db.execSQL(SecurityMasterKeysTable.CREATE_TABLE)
             db.execSQL(OrganizationTable.CREATE_TABLE)
 
@@ -1048,6 +1061,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(DevicePolicyTable.CREATE_TABLE)
             db.execSQL(GroupMemberTable.CREATE_TABLE)
             db.execSQL(SafeZoneUserMapTable.CREATE_TABLE)
+            db.execSQL(ButterflyPointDeviceMapTable.CREATE_TABLE)
+            db.execSQL(ButterflyPointDeviceMapTable.CREATE_INDEX_STATUS)
+            ensureButterflyDeviceMapColumns(db)
+            db.execSQL(DeviceSharingTable.CREATE_TABLE)
+            db.execSQL(DeviceSharingTable.CREATE_INDEX_LOOKUP)
+            db.execSQL(DeviceSharingTable.CREATE_INDEX_STATUS)
             db.execSQL(StealthScheduleConfigTable.CREATE_TABLE)
             db.execSQL(ReverseGeocodeCacheTable.CREATE_TABLE)
 
@@ -1056,6 +1075,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(PendingSyncQueueTable.CREATE_TABLE)
             db.execSQL(DeviceVitalsTable.CREATE_TABLE)
             db.execSQL(AlertHistoryTable.CREATE_TABLE)
+            db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_TABLE)
+            db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_INDEX_POINT_DEVICE)
+            db.execSQL(DeviceSharingTransactionTable.CREATE_TABLE)
+            db.execSQL(DeviceSharingTransactionTable.CREATE_INDEX_SHARE_TIME)
             db.execSQL(WatchdogResurrectionTable.CREATE_TABLE)
             db.execSQL(TelemetryFailoverRoutesTable.CREATE_TABLE)
             db.execSQL(UserProfileTable.CREATE_TABLE_SYS_LOG)
@@ -1094,6 +1117,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_sharing_nodes ON ${DeviceSharingTable.TABLE_NAME} (${DeviceSharingTable.COL_MASTER_DEVICE_ID}, ${DeviceSharingTable.COL_SUBMASTER_DEVICE_ID}, ${DeviceSharingTable.COL_TARGET_DEVICE_ID})")
+
+            // 🛡️ Self-Healing V83: Device Sharing & Transaction Ledger
+            try {
+                db.execSQL(DeviceSharingTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_LOOKUP)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_STATUS)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_INDEX_SHARE_TIME)
+            } catch (_: Exception) { }
             } catch (ex: Exception) { }
 
             // Dynamic Config Defaults & Compatibility SQL Views (13 Zero-Loss Latest-Data Views)
@@ -1289,7 +1322,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             "geofence_events" -> GeofenceEventTable.TABLE_NAME
             "alerts" -> AlertHistoryTable.TABLE_NAME
             "locations" -> LocationEventTable.TABLE_NAME
-            "sync_queue" -> PendingSyncQueueTable.TABLE_NAME
+            "sync_queue" -> SyncQueueTable.TABLE_NAME
+            "pending_sync_queue" -> PendingSyncQueueTable.TABLE_NAME
             "device_policy", "device_policies", "device_policy_state" -> DevicePolicyTable.TABLE_NAME
             "device_pairings" -> DevicePairingTable.TABLE_NAME
             "organizations" -> OrganizationTable.TABLE_NAME
@@ -1334,8 +1368,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val db = writableDatabase
             val iId = resolveInternalId(uid1)
             if (iId != -1L) {
-                // Use the passed groupId — never hardcode DEFAULT_GROUP for real group members
-                val realGroupId = if (groupId.isBlank()) "DEFAULT_GROUP" else groupId
+                // Use the passed groupId — dynamic device-corresponding group partition
+                val realGroupId = if (!groupId.isNullOrBlank() && groupId != "DEFAULT_GROUP") {
+                    groupId
+                } else {
+                    com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+                }
                 val roleToSave = famRole.takeIf { it != "None" && it.isNotBlank() } ?: frRole.takeIf { it != "None" && it.isNotBlank() } ?: "Member"
                 GroupMemberTable.upsert(db, realGroupId, iId, roleToSave, System.currentTimeMillis())
                 true
@@ -2154,6 +2192,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_pairing ON ${DevicePairingTable.TABLE_NAME} (${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID})")
                     db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_safe_zone_user ON ${SafeZoneUserMapTable.TABLE_NAME} (${SafeZoneUserMapTable.COL_ZONE_ID}, ${SafeZoneUserMapTable.COL_IDENTITY_ID})")
                     db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_org ON ${UserOrgMapTable.TABLE_NAME} (${UserOrgMapTable.COL_IDENTITY_ID}, ${UserOrgMapTable.COL_ORG_ID})")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS uq_device_sharing_nodes ON ${DeviceSharingTable.TABLE_NAME} (${DeviceSharingTable.COL_MASTER_DEVICE_ID}, ${DeviceSharingTable.COL_SUBMASTER_DEVICE_ID}, ${DeviceSharingTable.COL_TARGET_DEVICE_ID})")
+
+            // 🛡️ Self-Healing V83: Device Sharing & Transaction Ledger
+            try {
+                db.execSQL(DeviceSharingTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_LOOKUP)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_STATUS)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_INDEX_SHARE_TIME)
+            } catch (_: Exception) { }
                 } catch (e: Exception) { }
 
                 // 4. Compatibility Views (13 Zero-Loss Latest-Data Views)
@@ -2163,6 +2211,40 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 android.util.Log.i("DatabaseHelper", "V81 Schema Migration: 25-Table Tri-Tier Enterprise Schema Refabricated.")
             } catch (e: Exception) {
                 android.util.Log.e("DatabaseHelper", "V81 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 82) {
+            db.beginTransaction()
+            try {
+                db.execSQL(ButterflyPointTable.CREATE_TABLE)
+                db.execSQL(ButterflyPointTable.CREATE_INDEX_ACTIVE)
+                db.execSQL(ButterflyPointDeviceMapTable.CREATE_TABLE)
+                db.execSQL(ButterflyPointDeviceMapTable.CREATE_INDEX_STATUS)
+                ensureButterflyDeviceMapColumns(db)
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V82 Schema Migration: Butterfly Point Master & Sub-Master Tables Created.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V82 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
+
+        if (oldVersion < 83) {
+            db.beginTransaction()
+            try {
+                db.execSQL(DeviceSharingTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_LOOKUP)
+                db.execSQL(DeviceSharingTable.CREATE_INDEX_STATUS)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_TABLE)
+                db.execSQL(DeviceSharingTransactionTable.CREATE_INDEX_SHARE_TIME)
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V83 Schema Migration: Sub-Master DeviceSharing & DeviceSharingTransaction Tables Created.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V83 Migration Failure: ${e.message}")
             } finally {
                 db.endTransaction()
             }
@@ -2311,7 +2393,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
             // STEP 4: ROSTER TABLE (Group Header + Member) - Tier 3
             if (groupData != null) {
-                val groupId = groupData["group_id"] ?: "DEFAULT_GROUP"
+                val groupId = groupData["group_id"]?.takeIf { it.isNotBlank() && it != "DEFAULT_GROUP" } ?: com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
                 GroupTable.upsert(db, groupId, groupData["group_name"], iId)
                 GroupMemberTable.addMember(db, groupId, iId, role)
                 
@@ -2452,8 +2534,12 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 nodeIndex = nIdx
             )
 
-            // 🔧 FIX DB-05: Use real groupId, never hardcode DEFAULT_GROUP for real roster
-            val realGroupId = if (!activeGroupId.isNullOrBlank()) activeGroupId else "DEFAULT_GROUP"
+            // 🔧 FIX DB-05: Use real groupId, dynamic device-corresponding group partition
+            val realGroupId = if (!activeGroupId.isNullOrBlank() && activeGroupId != "DEFAULT_GROUP") {
+                activeGroupId
+            } else {
+                com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+            }
 
             // Write to V57 Relationships (GroupMember) with permissionsMask & agentId parity
             GroupMemberTable.upsert(
@@ -2893,23 +2979,31 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         var pruned = 0
         try {
             val db = writableDatabase
+            // 🛡️ CRITICAL INVARIANT: NEVER prune paired peer devices, circle members, or network nodes!
+            val protectedPairedSet = try {
+                val set = getAllPairedDeviceIds().toMutableSet()
+                set.addAll(getConnectedDeviceIds(currentCanonicalId))
+                set
+            } catch (_: Exception) {
+                emptySet<String>()
+            }
+
             val cursor = db.rawQuery(
                 """
                 SELECT i.id, i.uid_1 
                 FROM ${UserIdentityTable.TABLE_NAME} i
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} p ON i.id = p.identity_id
-                LEFT JOIN ${DeviceTable.TABLE_NAME} d ON i.id = d.identity_id
-                WHERE (p.${UserProfileTable.COL_PHONE} = ? OR d.${DeviceTable.COL_DEVICE_MODEL} = ? OR p.${UserProfileTable.COL_NAME} = ? OR p.${UserProfileTable.COL_NICKNAME} = ? OR p.${UserProfileTable.COL_DISPLAY_NAME} = ?) 
+                WHERE p.${UserProfileTable.COL_PHONE} = ? 
                   AND i.uid_1 != ? 
                   AND i.status != 'DELETED'
                 """.trimIndent(),
-                arrayOf(phoneOrModel, phoneOrModel, phoneOrModel, phoneOrModel, phoneOrModel, currentCanonicalId)
+                arrayOf(phoneOrModel, currentCanonicalId)
             )
             val orphanUids = mutableListOf<String>()
             cursor.use {
                 while (it.moveToNext()) {
                     val orphanUid = it.getString(1)
-                    if (!orphanUid.isNullOrBlank()) {
+                    if (!orphanUid.isNullOrBlank() && !protectedPairedSet.contains(orphanUid)) {
                         orphanUids.add(orphanUid)
                     }
                 }
@@ -3018,7 +3112,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                   AND e.${LocationEventTable.COL_TIMESTAMP} >= ?
                   AND e.${LocationEventTable.COL_TIMESTAMP} <= ?
                   AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
-                ORDER BY e.${LocationEventTable.COL_TIMESTAMP} ASC
+                ORDER BY e.${LocationEventTable.COL_TIMESTAMP} DESC
             """.trimIndent()
             val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, uid1, startTsStr, endTsStr))
             cursor.use {
@@ -3505,6 +3599,46 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * [Variables] deviceId, grpId, grpName, db, sql, cursor, fallbackGrp, titleCase
+     * [Constants] GroupMemberTable, GroupTable, UserIdentityTable
+     * [Dependencies] SQLiteDatabase, RegistryManager
+     * [Integration Points] ButterflyPointDialog, NetworkGatewayActivity, FamilyFriendsActivity
+     *
+     * 👥 SSOT: Resolves a device's corresponding group ID and human-readable Group/Circle name.
+     */
+    fun getDeviceGroupInfo(deviceId: String): Pair<String, String> {
+        if (deviceId.isBlank()) return Pair("UNIVERSAL_FLEET", "Universal Fleet")
+        try {
+            val db = readableDatabase
+            val sql = """
+                SELECT 
+                    COALESCE(g.${GroupTable.COL_GROUP_ID}, m.${GroupMemberTable.COL_GROUP_ID}, '') as grp_id,
+                    COALESCE(g.${GroupTable.COL_GROUP_NAME}, m.${GroupMemberTable.COL_CIRCLE_TYPE}, 'General Group') as grp_name
+                FROM ${GroupMemberTable.TABLE_NAME} m
+                LEFT JOIN ${GroupTable.TABLE_NAME} g ON m.${GroupMemberTable.COL_GROUP_ID} = g.${GroupTable.COL_GROUP_ID}
+                LEFT JOIN ${UserIdentityTable.TABLE_NAME} i ON m.${GroupMemberTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
+                WHERE m.${GroupMemberTable.COL_AGENT_ID} = ? 
+                   OR i.${UserIdentityTable.COL_UID_1} = ? 
+                   OR i.${UserIdentityTable.COL_UID_2} = ? 
+                   OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?
+                LIMIT 1
+            """.trimIndent()
+            db.rawQuery(sql, arrayOf(deviceId, deviceId, deviceId, deviceId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val gId = cursor.getString(0) ?: ""
+                    val gName = cursor.getString(1) ?: "General Group"
+                    if (gId.isNotBlank()) return Pair(gId, gName)
+                }
+            }
+        } catch (_: Exception) {}
+        val fallbackGrp = com.jdroidx.jfindme.utils.RegistryManager.getDeviceCorrespondingGroup(context)
+        val titleCase = fallbackGrp.replace('_', ' ').lowercase().split(' ').joinToString(" ") { word ->
+            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+        }
+        return Pair(fallbackGrp, titleCase)
+    }
+
+    /**
      * 🛡️ SSOT: Retrieve all unique paired device IDs across DevicePairingTable and UserIdentityTable.
      */
     fun getAllPairedDeviceIds(): Set<String> {
@@ -3552,8 +3686,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
-     * [Variables] result: MutableSet<String>, cleanFocal: String, query: String, queryIdentity: String | [Constants] DevicePairingTable, UserIdentityTable | [Dependencies] FirebaseComm, RegistryManager, SystemLogger | [Integration Points] MapActivity, LocationRepository, FamilyFriendsViewModel, PersonDetailsActivity, NetworkGatewayActivity
-     * 🛡️ Scoped Connected Device SSOT: Retrieves only devices explicitly paired or connected to the focal device.
+     * [Variables] result: MutableSet<String>, cleanFocal: String, query: String, queryIdentity: String, queryGroup: String, primeChildQuery: String, candidates: MutableList<String?> | [Constants] DevicePairingTable, UserIdentityTable, GroupMemberTable | [Dependencies] FirebaseComm, RegistryManager, SystemLogger | [Integration Points] MapActivity, LocationRepository, FamilyFriendsViewModel, PersonDetailsActivity, NetworkGatewayActivity
+     * 🛡️ Scoped Connected Device SSOT: Retrieves only devices explicitly paired, connected, or in shared active circle with the focal device.
+     * 🚀 Master Temporal Query Invariant: All sub-queries strictly order by updated/joined timestamp descending.
+     * 🧸 Prime Objective: Child / Protected Ward target is dynamically anchored via RegistryManager / DB relationships.
      */
     fun getConnectedDeviceIds(focalDeviceId: String): Set<String> {
         val cleanFocal = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(focalDeviceId)
@@ -3563,6 +3699,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         val result = mutableSetOf<String>()
         try {
             val db = readableDatabase
+            // 1. DevicePairingTable (Direct bidirectional handshakes, newest first)
             val query = """
                 SELECT 
                     CASE 
@@ -3572,6 +3709,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 FROM ${DevicePairingTable.TABLE_NAME}
                 WHERE (${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?)
                   AND (${DevicePairingTable.COL_PAIR_STATUS} = 'PAIRED' OR ${DevicePairingTable.COL_PAIR_STATUS} = 'ACTIVE')
+                ORDER BY ${DevicePairingTable.COL_UPDATED_AT} DESC
             """.trimIndent()
             db.rawQuery(query, arrayOf(cleanFocal, cleanFocal)).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -3584,13 +3722,41 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 }
             }
 
-            // 🛡️ UserIdentityTable SSOT: capture legacy pairings, dual uids, and multi-linked agent relationships
+            // 2. 🛡️ GroupMemberTable SSOT: Include all circle members sharing an active group with focal device (newest joined first)
+            try {
+                val queryGroup = """
+                    SELECT m2.${GroupMemberTable.COL_AGENT_ID}
+                    FROM ${GroupMemberTable.TABLE_NAME} m1
+                    JOIN ${GroupMemberTable.TABLE_NAME} m2 ON m1.${GroupMemberTable.COL_GROUP_ID} = m2.${GroupMemberTable.COL_GROUP_ID}
+                    WHERE (m1.${GroupMemberTable.COL_AGENT_ID} = ? OR m1.${GroupMemberTable.COL_IDENTITY_ID} IN (
+                        SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} 
+                        WHERE ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
+                    ))
+                      AND (m2.${GroupMemberTable.COL_STATUS} IS NULL OR m2.${GroupMemberTable.COL_STATUS} != 'DELETED')
+                    ORDER BY m2.${GroupMemberTable.COL_JOINED_AT} DESC
+                """.trimIndent()
+                db.rawQuery(queryGroup, arrayOf(cleanFocal, cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val rawPeer = cursor.getString(0)
+                        val cleanPeer = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(rawPeer)
+                        if (cleanPeer != cleanFocal && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanPeer) &&
+                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeer)) {
+                            result.add(cleanPeer)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "GroupMember circle lookup note: ${e.message}")
+            }
+
+            // 3. 🛡️ UserIdentityTable SSOT: capture legacy pairings, dual uids, and multi-linked agent relationships (newest first)
             val queryIdentity = """
                 SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}, ${UserIdentityTable.COL_VALID_LINKED_AGENTS}
                 FROM ${UserIdentityTable.TABLE_NAME}
                 WHERE ${UserIdentityTable.COL_UID_1} = ? 
                    OR ${UserIdentityTable.COL_UID_2} = ? 
                    OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
+                ORDER BY ${UserIdentityTable.COL_UPDATED_AT} DESC
             """.trimIndent()
             db.rawQuery(queryIdentity, arrayOf(cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -3622,10 +3788,60 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     }
                 }
             }
+
+            // 4. 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target
+            try {
+                val primeTargetId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+                val primeChildQuery = """
+                    SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}
+                    FROM ${UserIdentityTable.TABLE_NAME}
+                    WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR ${UserIdentityTable.COL_STATUS} != 'DELETED')
+                      AND (${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
+                           OR UPPER(${UserIdentityTable.COL_FULL_NAME}) LIKE '%RIDDHI%')
+                    ORDER BY ${UserIdentityTable.COL_UPDATED_AT} DESC
+                """.trimIndent()
+                db.rawQuery(primeChildQuery, arrayOf(primeTargetId, primeTargetId, primeTargetId)).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        for (i in 0..2) {
+                            val id = cursor.getString(i)?.let { com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(it) }
+                            if (!id.isNullOrBlank() && id != cleanFocal && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(id)) {
+                                result.add(id)
+                            }
+                        }
+                    }
+                }
+                result.add(primeTargetId)
+            } catch (e: Exception) {
+                val fallbackTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+                result.add(fallbackTarget)
+            }
         } catch (e: Exception) {
             com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Failed reading scoped connected devices for $cleanFocal: ${e.message}")
         }
         return result
+    }
+
+    /**
+     * [Variables] roster, role, name, id | [Constants] None | [Dependencies] getOfflineRoster, FirebaseComm | [Integration Points] RegistryManager, MapActivity, LocationRepository
+     * 🛡️ Dynamically discovers the primary child or ward target device from local roster relationships.
+     */
+    fun getPrimaryWardDeviceId(): String? {
+        try {
+            val roster = getOfflineRoster()
+            for (node in roster) {
+                val role = (node["role_type"] as? String ?: node["role"] as? String ?: "").uppercase()
+                val name = (node["fullName"] as? String ?: node["display_name"] as? String ?: "").uppercase()
+                if (role.contains("CHILD") || role.contains("WARD") || role.contains("DAUGHTER") || role.contains("SON") || role.contains("DEPENDENT") || name.contains("RIDDHI")) {
+                    val id = (node["uid_1"] as? String ?: node["uid"] as? String ?: node["connected_id"] as? String)?.trim()
+                    if (!id.isNullOrBlank() && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(id)) {
+                        return id
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "getPrimaryWardDeviceId failed: ${e.message}")
+        }
+        return null
     }
 
     /**
@@ -3827,13 +4043,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 LEFT JOIN ${DeviceVitalsTable.TABLE_NAME} v ON (
                     v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_UID_1} OR 
                     v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_UID_2} OR 
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_CONNECTED_ID} OR 
                     v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_UID_1} OR 
-                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_UID_2}
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_UID_2} OR
+                    v.${DeviceVitalsTable.COL_HARDWARE_ID} = 'HW_' || i.${UserIdentityTable.COL_CONNECTED_ID}
                 )
                 WHERE i.${UserIdentityTable.COL_UID_1} IS NOT NULL 
                   AND i.${UserIdentityTable.COL_UID_1} != '' 
                   AND (i.${UserIdentityTable.COL_STATUS} IS NULL OR i.${UserIdentityTable.COL_STATUS} != 'DELETED')
                 GROUP BY i.${UserIdentityTable.COL_UID_1}
+                ORDER BY last_seen_ts DESC, i.${UserIdentityTable.COL_ID} DESC
             """.trimIndent()
             
             val cursor = db.rawQuery(sql, null)
@@ -4303,6 +4522,324 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * Retrieves all active, unarchived Butterfly Points from local SQLite Master DB.
+     */
+    fun getActiveButterflyPoints(): List<com.jdroidx.jfindme.data.model.ButterflyPoint> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.ButterflyPoint>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                ButterflyPointTable.TABLE_NAME,
+                null,
+                "${ButterflyPointTable.COL_IS_ACTIVE} = 1 AND (${ButterflyPointTable.COL_IS_ARCHIVED} = 0 OR ${ButterflyPointTable.COL_IS_ARCHIVED} IS NULL)",
+                null, null, null, "${ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP} ASC"
+            )
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val pId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_ID)) ?: ""
+                    val cDevId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATOR_DEVICE_ID)) ?: ""
+                    val pName = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_NAME)) ?: "Butterfly Point"
+                    val addr = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ADDRESS)) ?: ""
+                    val lat = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LAT))
+                    val lng = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LNG))
+                    val geohash = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_GEOHASH)) ?: ""
+                    val rTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP))
+                    val expTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_EXPIRY_TIMESTAMP))
+                    val radius = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ARRIVAL_RADIUS_METERS))
+                    val notes = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_NOTES)) ?: ""
+                    val iconType = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ICON_TYPE)) ?: "BUTTERFLY_STANDARD"
+                    val act = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ACTIVE)) == 1
+                    val arch = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ARCHIVED)) == 1
+                    val cAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATED_AT)) ?: ""
+                    val uAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_UPDATED_AT)) ?: ""
+
+                    val now = System.currentTimeMillis()
+                    val maxDays = com.jdroidx.jfindme.utils.RegistryManager.getButterflyMaxAvailabilityDays(context)
+                    val maxRetentionMs = maxDays * 24L * 3600L * 1000L
+                    val isPastRetention = (rTs > 0L && now > (rTs + maxRetentionMs))
+                    val isPastDue = (expTs in 1..<now) || isPastRetention || (rTs > 0L && expTs == 0L && now > (rTs + 24 * 3600 * 1000L))
+                    if (isPastDue) {
+                        archiveButterflyPoint(pId)
+                        continue
+                    }
+
+                    val pt = com.jdroidx.jfindme.data.model.ButterflyPoint(
+                        pointId = pId,
+                        creatorDeviceId = cDevId,
+                        pointName = pName,
+                        address = addr,
+                        lat = lat,
+                        lng = lng,
+                        geohash = geohash,
+                        rendezvousTimestamp = rTs,
+                        expiryTimestamp = expTs,
+                        arrivalRadiusMeters = radius,
+                        notes = notes,
+                        iconType = iconType,
+                        isActive = act,
+                        isArchived = arch,
+                        createdAt = cAt,
+                        updatedAt = uAt
+                    )
+                    // Populate participating devices from Sub-Master / Fact DB
+                    val devList = getButterflyDevicesForPoint(pId)
+                    devList.forEach { d -> pt.devices[d.deviceId] = d }
+                    list.add(pt)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Error loading active butterfly points: ${e.message}")
+        }
+        try {
+            val maxDays = com.jdroidx.jfindme.utils.RegistryManager.getButterflyMaxAvailabilityDays(context)
+            val maxRetentionMs = maxDays * 24L * 3600L * 1000L
+            com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.purgeExpiredTelemetry(writableDatabase, maxRetentionMs)
+        } catch (_: Exception) {}
+        return list
+    }
+
+    /**
+     * Retrieves a specific Butterfly Point by ID with its participating devices roster.
+     */
+    fun getButterflyPoint(pointId: String): com.jdroidx.jfindme.data.model.ButterflyPoint? {
+        if (pointId.isBlank()) return null
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                ButterflyPointTable.TABLE_NAME,
+                null,
+                "${ButterflyPointTable.COL_POINT_ID} = ?",
+                arrayOf(pointId),
+                null, null, null
+            )
+            cursor.use { c ->
+                if (c.moveToNext()) {
+                    val pId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_ID)) ?: ""
+                    val cDevId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATOR_DEVICE_ID)) ?: ""
+                    val pName = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_NAME)) ?: "Butterfly Point"
+                    val addr = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ADDRESS)) ?: ""
+                    val lat = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LAT))
+                    val lng = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LNG))
+                    val geohash = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_GEOHASH)) ?: ""
+                    val rTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP))
+                    val expTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_EXPIRY_TIMESTAMP))
+                    val radius = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ARRIVAL_RADIUS_METERS))
+                    val notes = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_NOTES)) ?: ""
+                    val iconType = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ICON_TYPE)) ?: "BUTTERFLY_STANDARD"
+                    val act = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ACTIVE)) == 1
+                    val arch = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ARCHIVED)) == 1
+                    val cAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATED_AT)) ?: ""
+                    val uAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_UPDATED_AT)) ?: ""
+
+                    val pt = com.jdroidx.jfindme.data.model.ButterflyPoint(
+                        pointId = pId,
+                        creatorDeviceId = cDevId,
+                        creatorName = "",
+                        pointName = pName,
+                        address = addr,
+                        lat = lat,
+                        lng = lng,
+                        geohash = geohash,
+                        rendezvousTimestamp = rTs,
+                        expiryTimestamp = expTs,
+                        arrivalRadiusMeters = radius,
+                        notes = notes,
+                        iconType = iconType,
+                        isActive = act,
+                        isArchived = arch,
+                        createdAt = cAt,
+                        updatedAt = uAt
+                    )
+                    val devList = getButterflyDevicesForPoint(pId)
+                    devList.forEach { d -> pt.devices[d.deviceId] = d }
+                    return pt
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Error loading butterfly point $pointId: ${e.message}")
+        }
+        return null
+    }
+
+    /**
+     * Retrieves all participating devices for a specific Butterfly Point from Sub-Master / Fact DB.
+     */
+    fun getButterflyDevicesForPoint(pointId: String): List<com.jdroidx.jfindme.data.model.ButterflyDeviceEntry> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.ButterflyDeviceEntry>()
+        if (pointId.isBlank()) return list
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                ButterflyPointDeviceMapTable.TABLE_NAME,
+                null,
+                "${ButterflyPointDeviceMapTable.COL_POINT_ID} = ?",
+                arrayOf(pointId),
+                null, null, "${ButterflyPointDeviceMapTable.COL_CREATED_AT} ASC"
+            )
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val dId = c.getString(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_DEVICE_ID)) ?: ""
+                    val status = c.getString(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_STATUS)) ?: "PENDING"
+                    val rej = c.getString(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_REJECTION_REASON)) ?: ""
+                    val dist = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_DISTANCE_METERS))
+                    val etaSec = c.getInt(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_ETA_SECONDS))
+                    val lastTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_LAST_TELEMETRY_TS))
+                    val arrTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointDeviceMapTable.COL_ARRIVAL_TIMESTAMP))
+
+                    val batIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_BATTERY_PCT)
+                    val bat = if (batIdx >= 0) c.getInt(batIdx) else -1
+                    val sosIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_IS_SOS)
+                    val isSos = if (sosIdx >= 0) c.getInt(sosIdx) == 1 else false
+                    val ragIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_RAG_STATUS)
+                    val rag = if (ragIdx >= 0) c.getString(ragIdx) ?: "GREY" else "GREY"
+                    val reasonIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_RAG_REASON)
+                    val ragReason = if (reasonIdx >= 0) c.getString(reasonIdx) ?: "" else ""
+                    val latIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_LAST_LAT)
+                    val lastLat = if (latIdx >= 0) c.getDouble(latIdx) else 0.0
+                    val lngIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_LAST_LNG)
+                    val lastLng = if (lngIdx >= 0) c.getDouble(lngIdx) else 0.0
+                    val invIdx = c.getColumnIndex(ButterflyPointDeviceMapTable.COL_INVITED_BY)
+                    val invitedBy = if (invIdx >= 0) c.getString(invIdx) ?: "" else ""
+
+                    list.add(
+                        com.jdroidx.jfindme.data.model.ButterflyDeviceEntry(
+                            deviceId = dId,
+                            status = status,
+                            rejectionReason = rej,
+                            distanceMeters = dist,
+                            etaMinutes = etaSec / 60,
+                            lastLat = lastLat,
+                            lastLng = lastLng,
+                            lastUpdated = lastTs,
+                            arrivalTimestamp = arrTs,
+                            batteryPct = bat,
+                            isSosActive = isSos,
+                            ragStatus = rag,
+                            ragReason = ragReason,
+                            invitedBy = invitedBy
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Error loading butterfly point devices: ${e.message}")
+        }
+        return list
+    }
+
+    /**
+     * Safe schema alignment: ensures all columns exist in butterfly_point_device_map without dropping table.
+     */
+    private fun ensureButterflyDeviceMapColumns(db: SQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_BATTERY_PCT} INTEGER DEFAULT -1")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_IS_SOS} INTEGER DEFAULT 0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_RAG_STATUS} TEXT DEFAULT 'GREY'")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_RAG_REASON} TEXT")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_LAST_LAT} REAL DEFAULT 0.0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_LAST_LNG} REAL DEFAULT 0.0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE ${ButterflyPointDeviceMapTable.TABLE_NAME} ADD COLUMN ${ButterflyPointDeviceMapTable.COL_INVITED_BY} TEXT")
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Archives an active Butterfly Point in both local SQLite and Firebase RTDB with closed-loop cascade to participant inboxes.
+     */
+    fun archiveButterflyPoint(pointId: String) {
+        if (pointId.isBlank()) return
+        try {
+            ButterflyPointTable.archive(writableDatabase, pointId)
+            val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance().reference
+            rtdb.child("butterfly_points").child(pointId)
+                .updateChildren(mapOf("is_active" to false, "is_archived" to true))
+
+            // 🔄 Closed-Loop Cloud Cascade: Mirror sunset to each participating device's invitation inbox
+            val devices = getButterflyDevicesForPoint(pointId)
+            for (dev in devices) {
+                val cleanId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(dev.deviceId)
+                com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(cleanId)
+                    .child("butterfly_invitations").child(pointId)
+                    .updateChildren(mapOf("is_active" to false, "is_archived" to true))
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "archiveButterflyPoint error: ${e.message}")
+        }
+    }
+
+    /**
+     * Extends the rendezvous time of an active Butterfly Point in SQLite and Firebase RTDB with closed-loop participant cascade.
+     */
+    fun extendButterflyPointTime(pointId: String, additionalMinutes: Long) {
+        if (pointId.isBlank() || additionalMinutes <= 0) return
+        try {
+            val addMs = additionalMinutes * 60 * 1000L
+            val db = writableDatabase
+            db.execSQL(
+                "UPDATE ${ButterflyPointTable.TABLE_NAME} SET " +
+                "${ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP} = ${ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP} + $addMs, " +
+                "${ButterflyPointTable.COL_EXPIRY_TIMESTAMP} = ${ButterflyPointTable.COL_EXPIRY_TIMESTAMP} + $addMs " +
+                "WHERE ${ButterflyPointTable.COL_POINT_ID} = ?",
+                arrayOf(pointId)
+            )
+            val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance().reference.child("butterfly_points").child(pointId)
+            rtdb.child("rendezvous_timestamp").runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                    val curr = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(currentData.value) ?: return com.google.firebase.database.Transaction.success(currentData)
+                    currentData.value = curr + addMs
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
+                override fun onComplete(error: com.google.firebase.database.DatabaseError?, committed: Boolean, currentData: com.google.firebase.database.DataSnapshot?) {}
+            })
+            rtdb.child("expiry_timestamp").runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                    val curr = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(currentData.value) ?: return com.google.firebase.database.Transaction.success(currentData)
+                    currentData.value = curr + addMs
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
+                override fun onComplete(error: com.google.firebase.database.DatabaseError?, committed: Boolean, currentData: com.google.firebase.database.DataSnapshot?) {}
+            })
+
+            // 🔄 Closed-Loop Participant Inbox Cascade
+            val devices = getButterflyDevicesForPoint(pointId)
+            for (dev in devices) {
+                val cleanId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(dev.deviceId)
+                val inboxRef = com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(cleanId)
+                    .child("butterfly_invitations").child(pointId)
+                inboxRef.child("rendezvous_timestamp").runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                    override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                        val curr = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(currentData.value) ?: return com.google.firebase.database.Transaction.success(currentData)
+                        currentData.value = curr + addMs
+                        return com.google.firebase.database.Transaction.success(currentData)
+                    }
+                    override fun onComplete(error: com.google.firebase.database.DatabaseError?, committed: Boolean, currentData: com.google.firebase.database.DataSnapshot?) {}
+                })
+                inboxRef.child("expiry_timestamp").runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                    override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                        val curr = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(currentData.value) ?: return com.google.firebase.database.Transaction.success(currentData)
+                        currentData.value = curr + addMs
+                        return com.google.firebase.database.Transaction.success(currentData)
+                    }
+                    override fun onComplete(error: com.google.firebase.database.DatabaseError?, committed: Boolean, currentData: com.google.firebase.database.DataSnapshot?) {}
+                })
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "extendButterflyPointTime error: ${e.message}")
+        }
+    }
+
+    /**
      * Resolves the canonical Agent ID of the creator of a safe zone.
      */
     fun getSafeZoneCreatorAgentId(zoneId: String): String? {
@@ -4404,7 +4941,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val cursor = db.query(
                 PendingSyncQueueTable.TABLE_NAME,
                 null,
-                null,
+                "${PendingSyncQueueTable.COL_STATUS} = 'PENDING'",
                 null, null, null,
                 "${PendingSyncQueueTable.COL_TIMESTAMP} DESC",
                 limit.toString()
@@ -4526,6 +5063,45 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val db = writableDatabase
             DeviceVitalsTable.upsertVitals(db, hardwareId, battery, isCharging, networkType, signalDbm, isMockGps, isRooted, timestamp)
         } catch (e: Exception) { }
+    }
+
+    /**
+     * 🚀 Telemetry SSOT Backfill: Atomically updates DeviceVitalsTable with incoming live GPS fix telemetry
+     * and broadcasts a notification to MasterDataSyncSentinel to keep Map, Roster, and Gateway perfectly synced.
+     */
+    @JvmOverloads
+    fun updateDeviceVitalsTelemetry(
+        hardwareId: String,
+        batteryLevel: Int,
+        lastSeenTs: Long,
+        isCharging: Boolean = false,
+        motionState: String? = null
+    ) {
+        try {
+            val db = writableDatabase
+            DeviceVitalsTable.upsertVitals(
+                db = db,
+                hardwareId = hardwareId,
+                battery = batteryLevel,
+                isCharging = isCharging,
+                networkType = "UNKNOWN",
+                signalDbm = 0,
+                isMockGps = false,
+                isRooted = false,
+                timestamp = lastSeenTs,
+                motionState = motionState
+            )
+            try {
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                    context,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_DEVICE_VITALS,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
+                    hardwareId
+                )
+            } catch (_: Exception) {}
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "updateDeviceVitalsTelemetry error: ${e.message}")
+        }
     }
 
     fun updateTelemetryAck(hardwareId: String, ackTimestamp: Long, rttMs: Long, activeRoute: String? = null) {
@@ -5062,6 +5638,278 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             WatchdogResurrectionTable.logResurrection(db, triggerAction, success)
         } catch (e: Exception) {
             -1L
+        }
+    }
+
+    // =========================================================================
+    // 🛡️ SUB-MASTER: DEVICE SHARING & TRANSACTIONAL STATE MACHINE HELPERS (V83)
+    // =========================================================================
+
+    // [Variables] shareId: String, masterDev: String, submasterDev: String, targetDev: String, relType: String, mask: Int, status: String, isActive: Boolean, retryCount: Int, validUntil: Long
+    // [Constants] DeviceSharingTable, DeviceSharingTransactionTable
+    // [Dependencies] SQLiteDatabase, ContentValues, FirebaseComm, SystemLogger
+    // [Integration Points] PairingRepository.kt, MapActivity.java, PersonDetailsViewModel.kt
+    @JvmOverloads
+    fun upsertDeviceSharing(
+        shareId: String,
+        masterDev: String,
+        submasterDev: String,
+        targetDev: String,
+        relType: String = "CO_GUARDIAN",
+        mask: Int = 0xFF,
+        status: String = "REQUESTED",
+        isActive: Boolean = true,
+        retryCount: Int = 0,
+        validUntil: Long = 0L
+    ): Long {
+        return try {
+            val db = writableDatabase
+            val rowId = DeviceSharingTable.upsert(
+                db, shareId, masterDev, submasterDev, targetDev, relType, mask, status, isActive, retryCount, validUntil
+            )
+            syncSharingToLegacyTables(masterDev, submasterDev, targetDev, relType, status)
+            rowId
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "upsertDeviceSharing failed: ${e.message}")
+            -1L
+        }
+    }
+
+    @JvmOverloads
+    fun recordDeviceSharingTransaction(
+        shareId: String,
+        actorDev: String,
+        recipientDev: String,
+        prevStage: String,
+        newStage: String,
+        attempt: Int = 1,
+        channel: String = "CLOUD_FIREBASE",
+        reason: String = ""
+    ): Long {
+        return try {
+            val db = writableDatabase
+            DeviceSharingTransactionTable.record(
+                db, shareId, actorDev, recipientDev, prevStage, newStage, attempt, channel, reason
+            )
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "recordDeviceSharingTransaction failed: ${e.message}")
+            -1L
+        }
+    }
+
+    @JvmOverloads
+    fun updateDeviceSharingStage(
+        shareId: String,
+        newStage: String,
+        actorDev: String,
+        reason: String = ""
+    ): Boolean {
+        return try {
+            val db = writableDatabase
+            var prevStage = "NONE"
+            var recipientDev = ""
+            var attempt = 1
+            var masterDev = ""
+            var submasterDev = ""
+            var targetDev = ""
+
+            db.query(
+                DeviceSharingTable.TABLE_NAME,
+                arrayOf(
+                    DeviceSharingTable.COL_CURRENT_STATUS,
+                    DeviceSharingTable.COL_MASTER_DEVICE_ID,
+                    DeviceSharingTable.COL_SUBMASTER_DEVICE_ID,
+                    DeviceSharingTable.COL_TARGET_DEVICE_ID,
+                    DeviceSharingTable.COL_RETRY_COUNT
+                ),
+                "${DeviceSharingTable.COL_SHARE_ID} = ?",
+                arrayOf(shareId),
+                null, null, null
+            ).use { c ->
+                if (c.moveToFirst()) {
+                    prevStage = c.getString(0) ?: "NONE"
+                    masterDev = c.getString(1) ?: ""
+                    submasterDev = c.getString(2) ?: ""
+                    targetDev = c.getString(3) ?: ""
+                    attempt = c.getInt(4)
+                }
+            }
+
+            recipientDev = if (actorDev == masterDev) submasterDev else masterDev
+            val isActive = (newStage == DeviceSharingTransactionTable.STAGE_ACTIVE ||
+                    newStage == DeviceSharingTransactionTable.STAGE_ACCEPTED ||
+                    newStage == DeviceSharingTransactionTable.STAGE_APPROVED)
+
+            val now = FirebaseComm.getForensicTimestamp()
+            val cv = ContentValues().apply {
+                put(DeviceSharingTable.COL_CURRENT_STATUS, newStage)
+                put(DeviceSharingTable.COL_IS_ACTIVE, if (isActive) 1 else 0)
+                if (newStage == DeviceSharingTransactionTable.STAGE_RE_REQUESTED) {
+                    put(DeviceSharingTable.COL_RETRY_COUNT, attempt + 1)
+                }
+                put(DeviceSharingTable.COL_UPDATED_AT, now)
+            }
+            db.update(DeviceSharingTable.TABLE_NAME, cv, "${DeviceSharingTable.COL_SHARE_ID} = ?", arrayOf(shareId))
+
+            DeviceSharingTransactionTable.record(
+                db, shareId, actorDev, recipientDev, prevStage, newStage,
+                if (newStage == DeviceSharingTransactionTable.STAGE_RE_REQUESTED) attempt + 1 else attempt,
+                "CLOUD_FIREBASE", reason
+            )
+
+            syncSharingToLegacyTables(masterDev, submasterDev, targetDev, "CO_GUARDIAN", newStage)
+            true
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "updateDeviceSharingStage failed: ${e.message}")
+            false
+        }
+    }
+
+    fun getDeviceSharingRecord(shareId: String): com.jdroidx.jfindme.data.model.DeviceSharingRecord? {
+        return try {
+            val db = readableDatabase
+            db.query(
+                DeviceSharingTable.TABLE_NAME,
+                null,
+                "${DeviceSharingTable.COL_SHARE_ID} = ?",
+                arrayOf(shareId),
+                null, null, null
+            ).use { c ->
+                if (c.moveToFirst()) parseDeviceSharingRecord(c) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun getActiveSharesForTarget(targetDeviceId: String): List<com.jdroidx.jfindme.data.model.DeviceSharingRecord> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.DeviceSharingRecord>()
+        try {
+            val db = readableDatabase
+            db.query(
+                DeviceSharingTable.TABLE_NAME,
+                null,
+                "${DeviceSharingTable.COL_TARGET_DEVICE_ID} = ? AND ${DeviceSharingTable.COL_IS_ACTIVE} = 1",
+                arrayOf(targetDeviceId),
+                null, null,
+                "${DeviceSharingTable.COL_UPDATED_AT} DESC"
+            ).use { c ->
+                while (c.moveToNext()) {
+                    list.add(parseDeviceSharingRecord(c))
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "getActiveSharesForTarget error: ${e.message}")
+        }
+        return list
+    }
+
+    fun getActiveSharesForSubmaster(submasterDeviceId: String): List<com.jdroidx.jfindme.data.model.DeviceSharingRecord> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.DeviceSharingRecord>()
+        try {
+            val db = readableDatabase
+            db.query(
+                DeviceSharingTable.TABLE_NAME,
+                null,
+                "${DeviceSharingTable.COL_SUBMASTER_DEVICE_ID} = ? AND ${DeviceSharingTable.COL_IS_ACTIVE} = 1",
+                arrayOf(submasterDeviceId),
+                null, null,
+                "${DeviceSharingTable.COL_UPDATED_AT} DESC"
+            ).use { c ->
+                while (c.moveToNext()) {
+                    list.add(parseDeviceSharingRecord(c))
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "getActiveSharesForSubmaster error: ${e.message}")
+        }
+        return list
+    }
+
+    fun getDeviceSharingTransactions(shareId: String): List<com.jdroidx.jfindme.data.model.DeviceSharingTransactionRecord> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.DeviceSharingTransactionRecord>()
+        try {
+            val db = readableDatabase
+            db.query(
+                DeviceSharingTransactionTable.TABLE_NAME,
+                null,
+                "${DeviceSharingTransactionTable.COL_SHARE_ID} = ?",
+                arrayOf(shareId),
+                null, null,
+                "${DeviceSharingTransactionTable.COL_EPOCH_MS} DESC"
+            ).use { c ->
+                while (c.moveToNext()) {
+                    list.add(
+                        com.jdroidx.jfindme.data.model.DeviceSharingTransactionRecord(
+                            transactionId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_TRANSACTION_ID)),
+                            shareId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_SHARE_ID)),
+                            actorDeviceId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_ACTOR_DEVICE_ID)),
+                            recipientDeviceId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_RECIPIENT_DEVICE_ID)),
+                            previousStage = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_PREVIOUS_STAGE)) ?: "NONE",
+                            newStage = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_NEW_STAGE)),
+                            attemptNumber = c.getInt(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_ATTEMPT_NUMBER)),
+                            channelMode = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_CHANNEL_MODE)) ?: "CLOUD_FIREBASE",
+                            notesOrReason = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_NOTES_OR_REASON)) ?: "",
+                            epochMs = c.getLong(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_EPOCH_MS)),
+                            forensicTimestamp = c.getString(c.getColumnIndexOrThrow(DeviceSharingTransactionTable.COL_FORENSIC_TIMESTAMP)) ?: ""
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "getDeviceSharingTransactions error: ${e.message}")
+        }
+        return list
+    }
+
+    private fun parseDeviceSharingRecord(c: android.database.Cursor): com.jdroidx.jfindme.data.model.DeviceSharingRecord {
+        return com.jdroidx.jfindme.data.model.DeviceSharingRecord(
+            shareId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_SHARE_ID)),
+            masterDeviceId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_MASTER_DEVICE_ID)),
+            submasterDeviceId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_SUBMASTER_DEVICE_ID)),
+            targetDeviceId = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_TARGET_DEVICE_ID)),
+            relationshipType = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_RELATIONSHIP_TYPE)) ?: "CO_GUARDIAN",
+            permissionsMask = c.getInt(c.getColumnIndexOrThrow(DeviceSharingTable.COL_PERMISSIONS_MASK)),
+            currentStatus = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_CURRENT_STATUS)) ?: "REQUESTED",
+            isActive = c.getInt(c.getColumnIndexOrThrow(DeviceSharingTable.COL_IS_ACTIVE)) == 1,
+            retryCount = c.getInt(c.getColumnIndexOrThrow(DeviceSharingTable.COL_RETRY_COUNT)),
+            validUntil = c.getLong(c.getColumnIndexOrThrow(DeviceSharingTable.COL_VALID_UNTIL)),
+            createdOn = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_CREATED_ON)) ?: "",
+            updatedAt = c.getString(c.getColumnIndexOrThrow(DeviceSharingTable.COL_UPDATED_AT)) ?: ""
+        )
+    }
+
+    /**
+     * 🛡️ Zero-Redundancy Backward Compatibility Bridge:
+     * Mirrors active sub-master sharing contracts down to DevicePairingTable and GroupMemberTable
+     * so that legacy UI screens (MapActivity, FamilyFriendsActivity, PersonDetailsActivity) render
+     * the submaster relationship immediately without breaking changes.
+     */
+    fun syncSharingToLegacyTables(
+        masterDev: String,
+        submasterDev: String,
+        targetDev: String,
+        role: String,
+        status: String
+    ) {
+        if (submasterDev.isBlank() || targetDev.isBlank()) return
+        try {
+            val db = writableDatabase
+            val pairId1 = "PAIR_${submasterDev}_${targetDev}"
+            val pairId2 = "PAIR_${masterDev}_${submasterDev}"
+            val activeStatus = if (status == "ACTIVE" || status == "ACCEPTED" || status == "APPROVED") "PAIRED" else status
+
+            // 1. Maintain DevicePairingTable
+            DevicePairingTable.logPairingWithRoles(db, pairId1, submasterDev, targetDev, role, "WARD", null, activeStatus)
+            if (masterDev.isNotBlank() && masterDev != submasterDev) {
+                DevicePairingTable.logPairingWithRoles(db, pairId2, masterDev, submasterDev, "MASTER", role, null, activeStatus)
+            }
+
+            // 2. Ensure Roster Nodes exist
+            val subName = getDeviceCentricName(submasterDev).ifEmpty { "Submaster $submasterDev" }
+            saveRosterNode(submasterDev, subName, role, activeStatus, false, false)
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "syncSharingToLegacyTables warning: ${e.message}")
         }
     }
 }

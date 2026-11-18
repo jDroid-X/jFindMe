@@ -199,7 +199,7 @@ object FirebasePairingManager {
             val hostName = handshakeSnap.child("host_name").getValue(String::class.java) ?: "Admin"
             
             identitiesEndpoint.child(finalHostId).child("Identity").get().addOnSuccessListener { hostIdentitySnap ->
-                val hostGroup = hostIdentitySnap.child("active_group").getValue(String::class.java) ?: "GRP_${System.currentTimeMillis()}"
+                val hostGroup = hostIdentitySnap.child("active_group").getValue(String::class.java)?.takeIf { it.isNotBlank() } ?: "GRP_$finalHostId"
                 val now = System.currentTimeMillis()
                 val cleanHostGroup = FirebaseComm.sanitizePathKey(hostGroup)
                 val cleanHostId = FirebaseComm.sanitizePathKey(finalHostId)
@@ -353,7 +353,11 @@ object FirebasePairingManager {
 
                         if (hostId.isNotEmpty()) {
                             val isHostFriend = finalHostRole.equals("Friends", ignoreCase = true) || finalHostRole.equals("Friend", ignoreCase = true)
-                            val effectiveGroup = activeGroup.ifEmpty { "DEFAULT_GROUP" }
+                            val effectiveGroup = if (activeGroup.isNotEmpty() && activeGroup != "DEFAULT_GROUP") {
+                                activeGroup
+                            } else {
+                                com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+                            }
                             val vRoster = android.content.ContentValues().apply {
                                 put(com.jdroidx.jfindme.data.local.DatabaseHelper.COL_UID_1, hostId)
                                 put("fullName", hostName)
@@ -383,12 +387,12 @@ object FirebasePairingManager {
                                     if (isFriendSelf) "None" else finalChildRole,
                                     if (isFriendSelf) "Friends" else "None",
                                     isFriendSelf,
-                                    activeGroup.ifEmpty { "DEFAULT_GROUP" }
+                                    effectiveGroup
                                 )
                             }
 
-                            if (activeGroup.isNotEmpty()) {
-                                prefs.edit().putString("active_group", activeGroup).apply()
+                            if (effectiveGroup.isNotEmpty()) {
+                                com.jdroidx.jfindme.utils.RegistryManager.setActiveGroup(context, effectiveGroup)
                             }
                         }
                         com.jdroidx.jfindme.utils.AngelLoader.hide(context)

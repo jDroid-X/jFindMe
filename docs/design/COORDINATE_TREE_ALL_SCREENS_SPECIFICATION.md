@@ -334,9 +334,52 @@ ROOT: MAP_ACTIVITY_MASTER_PLAN (com.jdroidx.jfindme.ui.map.MapActivity)
 │    ├── 🖱️ [EL]₅․₁₃: Picture-in-Picture (PiP) Mode Toggle & Close Button
 │    │    ├── 🖥️ [FE]₅․₁₃․₁: PiP Enter Button and PiP Close Action (`btnPipClose`)
 │    │    │    └── ⚙️ [BE]₅․₁₃․₁․₁: Activity.enterPictureInPictureMode(PictureInPictureParams)
-│    └── 🖱️ [EL]₅․₁₄: Version & Silicon Identity Footer
-│         ├── 🖥️ [FE]₅․₁₄․₁: Monospace Footer Label (`tvVersionFooter`: "v3.1.0 • Node: HW_2T929153")
-│         │    └── ⚙️ [BE]₅․₁₄․₁․₁: DeviceIdentityHelper Hardware Provider
+│    ├── 🖱️ [EL]₅․₁₄: Version & Silicon Identity Footer
+│    │    ├── 🖥️ [FE]₅․₁₄․₁: Monospace Footer Label (`tvVersionFooter`: "v3.1.0 • Node: HW_2T929153")
+│    │    │    └── ⚙️ [BE]₅․₁₄․₁․₁: DeviceIdentityHelper Hardware Provider
+│    └── 🖱️ [EL]₅․₁₅: Ghost Icon Affordance & Butterfly Point Rendezvous Hub (`ACTION_GHOST`)
+│         ├── 🖥️ [FE]₅․₁₅․₁: Floating Ghost Action Button on Side Action Panel (`ACTION_GHOST`)
+│         │    ├── Validation & Conditional Rules:
+│         │    │    ├── FR₅․₁₅․₁․₁: Tapping Ghost Icon queries active Butterfly Points synchronously from `ButterflyPointViewModel`.
+│         │    │    ├── FR₅․₁₅․₁․₂: If active points > 0: Launches Expandable Rendezvous Cards Sheet showing meeting point metadata, address, scheduled time, and recipient device acceptance status.
+│         │    │    ├── FR₅․₁₅․₁․₃: If active points == 0 (or on "Create New"): Launches Location Identification & Creation Studio with options (Search Place, My GPS, Saved SafeZones, Peer Device, Pin on Map).
+│         │    │    └── FR₅․₁₅․₁․₄: Long-press retains legacy immediate Privacy Ghost Mode toggle (Precise, Fuzzy, Frozen).
+│         │    ├── Testing Scenarios:
+│         │    │    ├── Pass: Single click opens `ButterflyPointBottomSheetDialog` in < 150ms without UI hitch.
+│         │    │    └── Fail: Unhandled null pointer if ViewModel uninitialized.
+│         │    └── ⚙️ [BE]₅․₁₅․₁․₁: Butterfly Point Router & Telemetry Origin-Shift Engine (`ButterflyPointEngine`)
+│         │         ├── Logic & Business Rules:
+│         │         │    ├── BFR₅․₁₅․₁․₁․₁: Shifting reference origin: Reuses existing `TrackingService` and `MultiMarkerEngine` telemetry pipeline; computes Haversine distance, speed, and ETA relative to Butterfly Point center $(Lat_{BP}, Lon_{BP})$.
+│         │         │    ├── BFR₅․₁₅․₁․₁․₂: Selective Ingress: Dispatches invitation only to user-ticked connected devices (`device_pairing` status = 'PAIRED').
+│         │         │    ├── BFR₅․₁₅․₁․₁․₃: Real-time Indicator Matrix: Computes states (`PENDING`, `ACCEPTED`, `REJECTED`, `ON_MOVE`, `REACHED` with 50m threshold and 15m hysteresis).
+│         │         │    └── BFR₅․₁₅․₁․₁․₄: Max-Radius Auto-Centering: Dynamically computes `LatLngBounds` encompassing Butterfly Point + all participating devices; animates camera on device selection.
+│         │         ├── 🗄️ [Master DB [Offline]]₅․₁₅․₁․₁․₁: SQLite `butterfly_point` (master metadata: point_id, name, lat, lng, address, schedule, arrival_radius)
+│         │         ├── 🗄️ [Master DB [Online]]₅․₁₅․₁․₁․₂: Firebase RTDB `/butterfly_points/{pointId}`
+│         │         ├── 🗄️ [Sub Master/Fact DB]₅․₁₅․₁․₁․₃: Connected Devices (Accepted/Rejected status & invitations: SQLite `butterfly_point_device_map` / Firebase `/butterfly_points/{pointId}/devices/{deviceId}`), `change_log`, and `location_event`
+│         │         └── 🗄️ [Transaction DB]₅․₁₅․₁․₁․₄: `sys_log`, `alert_history`, and connected device locations (high-velocity telemetry snapshots)
+│    └── 🖱️ [EL]₅․₁₆: Tactical Target Action Sheet & Unified Device Sharing Hub (`<Device Sharing>`)
+│         ├── 🖥️ [FE]₅․₁₆․₁: Consolidated Action Sheet Item & Mode Selector (`📱 Device Sharing`)
+│         │    ├── Validation & Conditional Rules:
+│         │    │    ├── FR₅․₁₆․₁․₁: Replaces 4 fragmented legacy items with single `<Device Sharing>` option on Target Action Sheet.
+│         │    │    ├── FR₅․₁₆․₁․₂: Step 1: Mode selection (Direct Peer B➔C, Fleet Tickbox Multi-Select, Co-Guardian Oversight, 1-Code Attachment).
+│         │    │    ├── FR₅․₁₆․₁․₃: Step 2: Recipient selection (Device C candidates from live locations, offline roster, or manual token entry).
+│         │    │    ├── FR₅․₁₆․₁․₄: Step 3: Role Matrix (Parent/Guardian, Child/Ward, Spouse, Sibling, Friend, Colleague, Emergency Contact) with bidirectional inverse mapping.
+│         │    │    ├── FR₅․₁₆․₁․₅: Step 4: Angel Butterfly Progress Matrix (`AngelLoader.show`): Starts flapping animated butterfly vector (`butterfly_angel.json`) with centered progress script card while synchronization executes.
+│         │    │    ├── FR₅․₁₆․₁․₆: Step 5: Parity Notification: When all participating devices are synchronized, butterfly stops flapping (`AngelLoader.hide`); triggers slide-in banner: `✅ Device B is synced with Device C [Role: B ↔ C] | Circle: GRP_XXX | Latency: XXms`.
+│         │    │    └── FR₅․₁₆․₁․₇: Step 6: Watchdog & Fallback: If sync does not complete within standard 15-second time limit ($\Delta t_{std} = 15s$), butterfly stops flapping; renders Diagnostic Feedback Dialog with explicit reason (`ERR_TIMEOUT_PEER_OFFLINE`, `ERR_CLOUD_LATENCY`, `ERR_ACL_CONFLICT`) and actionable options: `[RETRY]` or `[EXIT / TRY LATER]`.
+│         │    ├── Testing Scenarios:
+│         │    │    ├── Pass: Full Device A ➔ Share Device B ➔ to Device C workflow completes in < 3500ms; butterfly halts smoothly and metadata banner presents.
+│         │    │    └── Fail: Peer unresponsive for 15s; triggers feedback dialog with reason and clean retry/exit paths.
+│         │    └── ⚙️ [BE]₅․₁₆․₁․₁: Device Sharing & Mesh Sync Sentinel (`PairingRepository.linkDevicesWithRoles`)
+│         │         ├── Logic & Business Rules:
+│         │         │    ├── BFR₅․₁₆․₁․₁․₁: Arm 15s watchdog via `Handler.postDelayed`; track state parity via thread-safe `AtomicBoolean`.
+│         │         │    ├── BFR₅․₁₆․₁․₁․₂: Atomically mutate local SQLite (`device_pairings`, `group_members`, `user_profile`) and Firebase RTDB (`/relationships/{circleId}/device_pairings`).
+│         │         │    ├── BFR₅․₁₆․₁․₁․₃: Dispatch `refresh_roster` timestamp pulse to cloud mesh to trigger peer listener sync.
+│         │         │    └── BFR₅․₁₆․₁․₁․₄: On exit/deferred sync, serialize payload to SQLite `offline_events` queue with status `PENDING_RETRY`.
+│         │         ├── 🗄️ [Master DB [Offline]]₅․₁₆․₁․₁․₁: SQLite `device_pairings` & `user_profile`
+│         │         ├── 🗄️ [Master DB [Online]]₅․₁₆․₁․₁․₂: Firebase RTDB `/relationships/{circleId}/device_pairings`
+│         │         ├── 🗄️ [Sub Master/Fact DB]₅․₁₆․₁․₁․₃: `change_log` (entity_type = 'DEVICE_SHARING_SYNC')
+│         │         └── 🗄️ [Transaction DB]₅․₁₆․₁․₁․₄: `sys_log.sync_watchdog_trace` and `offline_events`
 ```
 
 ---

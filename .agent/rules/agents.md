@@ -1,85 +1,79 @@
-# jFindMe Specialist Agent Registry (V3.0 Enterprise Taskforce)
+# Antigravity Enterprise AI Agent Protocol & Specialist Agent Registry (V5.0 Enterprise Taskforce)
+## Codename: jDroid-X | Lead Operator: JEET
 
-> **Mandatory Reference Order**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)`
+> **Mandatory Reference Pipeline**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)` ➔ `Branding (.agent/rules/branding.md)`
 
-This registry defines the seven specialized AI agents collaborating under an OOPS-based Waterfall MVVM architecture to build, optimize, secure, and maintain `jFindMe`.
-
----
-
-## Agent 1: Product Architect & Hardware Identity Sentinel
-* **Core Mission**: Defines product requirements, system specifications, API contracts, and strict hardware identity resolution.
-* **Hardware Root Anchor Mandate**:
-  - The physical silicon key (`ro.ril.oem.sno`, `ro.ril.oem.psno`, OEM serials, or Canonical Hardware Agent ID e.g., `BE5A234A` via `DeviceIdentityHelper`) is the **only immutable Single Source of Truth (SSOT)** for device identity.
-  - Software UUIDs or unverified temporary auth tokens must never replace or overwrite hardware agent identities.
-  - Reclaim & Restore operations must perform strict 3-way pairing verification before nodes are injected into local circles.
-* **Deliverables**: API contracts, structural specifications, folder organization, and security identity mappings.
+This registry defines the 22 Specialized Enterprise AI Agents organized across 5 Workforce Domains, collaborating under the Dynamic OOPS-based MVC/MVVM Closed-Loop Waterfall architecture to build, optimize, secure, and maintain `jFindMe` and `jButterFly`. Full specifications are recorded in `.agent/enterprise-22-agents/Agent-Registry.md`.
 
 ---
 
-## Agent 2: Dual-Engine Database & Backend Logic Architect
-* **Core Mission**: Builds unified SQLite database schemas, Firebase Realtime Database structures, ViewModels, and background telemetry services.
-* **Closed-Loop SSOT Synchronization**:
-  - Maintains atomic synchronization between local SQLite (`MASTER_ROSTER`, `SAFE_ZONES`, `TRACKING_HISTORY`, `DEVICE_METADATA`) and Firebase Cloud (`/devices/{id}/profile`, `/locations/{id}`).
-  - Any update to a common element (Avatar, Device Name, SafeZone, Relationship Role) must automatically propagate across all screens and local tables without duplicate or orphaned data.
-* **Standardized Centralized RAG Status Engine**:
-  - 🟢 **ACTIVE (LIVE)**: Heartbeat / location update `< 15 minutes` (`#22C55E` Emerald Green).
-  - 🟡 **INACTIVE (< 6H)**: Last seen between `15m – 6 hours` OR Battery `≤ 20%` (`#F59E0B` Amber Orange).
-  - 🔴 **INACTIVE (> 6H)**: Last seen `> 6 hours` (`#EF4444` Rose Red).
-  - 🚨 **EMERGENCY SOS**: `isSos == true` (`#EF4444` Pulsing Crimson).
-  - ⚪ **UNLINKED / GHOST**: Deleted, unlinked, or Ghost Mode (`#64748B` Slate Gray).
-* **Master Temporal Query Invariant (Latest-Data-First SSOT Rule)**:
-  - Every database query (SQLite and Firebase RTDB) across all screens, background workers, and view models MUST fetch latest data ordered by timestamp descending (`ORDER BY timestamp DESC`).
-  - All 13 Zero-Loss Compatibility Views must be defined with explicit `ORDER BY ... DESC`.
+## 🏛️ Workforce Domains & 22-Agent Master Matrix
+
+### Domain 1: Orchestrator & Governance (Agents 1 – 4)
+- **Agent 1: Master Orchestrator & Hardware Identity Sentinel**:
+  - SSOT Root Anchor (`ro.ril.oem.sno`, `ro.ril.oem.psno`, `Settings.Secure.ANDROID_ID`).
+  - Zero hardcoded device identities. Router between modules and life-cycle state machines.
+- **Agent 2: Requirements Analysis & Specification Architect**:
+  - Formulates BRD/PRD specifications, anti-GIGO taxonomies, and the 6-layer Coordinate Tree `(ROOT⊃BR⊃EL⊃FE⊃BE⊃DB)`.
+- **Agent 3: System Design & Enterprise HLD Architect**:
+  - Enforces system-wide High-Level Design (HLD), clean Separation of Concerns (SoC), and dual-module parity (`app` ⟷ `jButterFly`).
+- **Agent 4: Governance, Compliance & Safety Gatekeeper**:
+  - Enforces the 4 Hard Gates (Minors, Irreversible ops, Live-fire targets, CSAM) and Red-Line Monitoring Invariants.
+
+### Domain 2: Intelligence & Business (Agents 5 – 8)
+- **Agent 5: Business Logic & Workflow Engine Architect**:
+  - Reciprocal mesh pairing, 4-in-1 Device Sharing Hub logic (Device A ➔ Share Device B ➔ to Device C), Butterfly Point state machines (`ACTION_GHOST`).
+- **Agent 6: GIS, Spatial & Geofencing Architect**:
+  - Ray-Casting polygon containment, Haversine distance, 2D Kalman filter, and 50m proximity floating avatar panels.
+- **Agent 7: Telemetry & Multi-Modal Streaming Specialist**:
+  - Adaptive cadence (15s live movement vs 15m stationary heartbeat), baseband cellular tower triangulation (MCC/MNC/LAC/CID), and battery duty cycles.
+- **Agent 8: Analytics, RAG Vitals & Reporting Engine**:
+  - Centralized RAG vitals calculation (Emerald Green `< 15m`, Amber Orange `15m – 6h` / $\le 20\%$ batt, Rose Red `> 6h`, Crimson Pulsing SOS, Slate Gray Ghost).
+  - Bounded output contract: $\le 100\text{ KB}$, max 10 sample slices.
+
+### Domain 3: Technology & Architecture (Agents 9 – 13)
+- **Agent 9: Dual-Engine Database & Backend Logic Architect**:
+  - SQLite V81.2 Northwind 2003 schema (27 normalized tables + 13 compatibility views) ↔ Firebase RTDB closed loop.
+  - Master Temporal Invariant: Descending chronological ordering (`ORDER BY timestamp DESC`).
+- **Agent 10: Cloud Infrastructure & Firebase RTDB Sentinel**:
+  - Cloud Realtime Database rules (`database.rules.json`), security validation, indexing (`lookup_indices`), and atomic multi-path commits.
+- **Agent 11: Security, Cryptography & Hardware Anchor Specialist**:
+  - Android Keystore, SELinux audit denial bypasses, device fingerprint sealing, and local SQLite cipher encryption.
+- **Agent 12: Network Resilience & Failover Mesh Architect**:
+  - 5-Tier Telemetry Failover Router (Cellular WebSocket ➔ Wi-Fi ➔ SMS Beacon ➔ Encrypted SQLite Queue ➔ Delayed Resync with Cloud ACK $< 5\text{s}$).
+- **Agent 13: Clean Architecture, OOPS & Refactoring Sentinel**:
+  - 20-Year Senior Developer dynamic OOPS standards, Ponytail 1,920-line ceiling, Strangler Fig pattern, zero code duplication, non-destructive code evolution.
+
+### Domain 4: AI Engineering & Frontend UI/UX (Agents 14 – 17)
+- **Agent 14: Frontend UI/UX & Lightweight Viewport Architect**:
+  - L7 Enterprise UI Standard (`UiArchitect`): Two-point linear gradients, Glassmorphism, 16f-30f card radii, 50f capsule buttons with 25f elevation.
+  - Mandatory fields marked with red asterisk `(*)` in label & hint via `Html.fromHtml`.
+- **Agent 15: Map Viewport & Spatial Rendering Architect**:
+  - Mapbox/Google Map viewport, `MultiMarkerEngine`, Lightweight Marker Standard (Pill + Avatar + Dot + Chevron, no heavy canvas glow layers), $\ge 250\text{ ms}$ render throttling.
+- **Agent 16: Dynamic Theme & Brand Identity Specialist**:
+  - 12 Dynamic Themes (`ThemeManager.THEMES`), real-time theme switching observable patterns, zero hardcoded colors, strict branding enforcement (`.agent/rules/branding.md`).
+- **Agent 17: Accessibility, Navigation & Interaction Specialist**:
+  - Universal 5-Stage scaling (LIBERAL, STANDARD, COMPACT, SLIM, ULTRA_SLIM), D-Pad/Enter key support (`IME_ACTION_DONE`), deterministic Tab sequences, predictive back navigation.
+
+### Domain 5: Quality & Operations (Agents 18 – 22)
+- **Agent 18: Integration, QA & Cross-Module Parity Verifier**:
+  - 100% byte/line parity between `app` and `jButterFly` across all 14 twin pairs. Pre-change declarations `[Variables] | [Constants] | [Dependencies] | [Integration Points]`.
+- **Agent 19: Crash & Silent Failure Hunter (Diagnostic Sentinel)**:
+  - Doze mode & ForegroundService survival, Coroutine boundaries, null safety deserialization (`safeLong`, `safeInt`).
+- **Agent 20: Performance, Memory & Battery Optimization Specialist**:
+  - Battery longevity, $< 16\text{ms}$ SQLite queries, memory leak prevention, bitmap sampling (`REMOTE_HQ_`), rolling SQLite `VACUUM`.
+- **Agent 21: Build Quarantine & Release Gatekeeper**:
+  - Strict Build Quarantine Protocol: autonomous `./gradlew` execution strictly prohibited.
+- **Agent 22: Self-Healing, Silent Update & In-Place Migration Engineer**:
+  - Silent APK updates (`SilentUpdateWorker`), SHA-256 hash validation, dynamic PRAGMA migrations, factory reset sanitization.
 
 ---
 
-## Agent 3: Frontend UI/UX & Lightweight Viewport Architect
-* **Core Mission**: Implements user interfaces, responsive activity layouts, custom components, and navigation flows.
-* **Clean Live Map Standard**:
-  - Map markers must remain lightweight and clutter-free: Top Name Callout Pill (with Role Color border & RAG font color) + Clean Direct Avatar + Live Status Dot + Motion Heading Chevron.
-  - Avoid heavy canvas glow layers and map-pin battery badges directly on the map surface; detailed telemetry is cleanly organized in bottom sheets, radar dialogs, and detail dossiers.
-* **Standardized Enterprise UI Controls (`UiArchitect`)**:
-  - Buttons (Primary, Secondary, Accent, Destructive, Outlined, Icon).
-  - Validated Textboxes, Floating Labels, and Search Bars.
-  - Dynamic On/Off Switches and Segmented Left/Right Toggles.
-  - Animated View Flippers and Dropdown List Boxes.
-  - Slide-Out Right Drawer for sub-settings and detail popups (2-column compact fit, smooth vertical scroll).
-* **Navigation Mandate**: Zero dead navigation paths; back buttons always return correctly to the parent interface.
-
----
-
-## Agent 4: Integration, QA & Build Quarantine Agent
-* **Core Mission**: Connects frontend with backend, manages lifecycle resilience, validates offline/online transitions, and enforces build quarantine rules.
-* **Closed-Loop Feedback & Exception Handling**:
-  - Validates all user inputs, permissions, and network edge cases with friendly actionable dialogs.
-  - Ensures seamless recovery and offline caching during poor network conditions.
-* **Strict Build Quarantine Protocol**:
-  - **NEVER execute Gradle builds (`./gradlew`, `./gradlew.bat installDebug`) autonomously.**
-  - Code generation, structural auditing, and refactoring are decoupled from build tasks until the user explicitly commands a compilation and deployment.
-
----
-
-## Agent 5: Crash & Silent Failure Hunter (Diagnostic Sentinel)
-* **Core Mission**: Monitors, catches, and resolves background service crashes, ANRs, threading race conditions, and unhandled exceptions across the Android lifecycle.
-* **Historical Crash Protection Mandate**:
-  - Audits `ForegroundService`, `LocationCallback`, and coroutine scopes to prevent silent terminations when Android OS aggressively restricts background processes (Doze mode, Android 13/14 battery optimization).
-  - Guarantees strict null safety and error-boundary containment during network disconnects, database read timeouts, and JSON/Firebase serialization edge cases (e.g. `safeLong`, `safeInt`).
-* **Deliverables**: Root cause analyses, crash-proofing patches, and proactive watchdog error handlers.
-
----
-
-## Agent 6: GIS, Spatial & Geofencing Architect
-* **Core Mission**: Governs geographical calculations, geofence boundary detection, trajectory tracking, and map layer rendering efficiency.
-* **Spatial Engine Mandate**:
-  - Implements low-latency mathematical models (Haversine distance, Ray-Casting polygon containment for SafeZones) without heavy dependencies.
-  - Manages marker smoothing, bearing calculation (Heading Chevrons), cluster rendering, and offline map tile management.
-* **Deliverables**: Geofence calculation engines, SafeZone hierarchy math, and location smoothing filters.
-
----
-
-## Agent 7: Performance & Battery Optimization Agent
-* **Core Mission**: Maximizes system battery longevity, minimizes network payload size, and optimizes local SQLite query throughput.
-* **Adaptive Telemetry Mandate**:
-  - Enforces dynamic polling intervals: high frequency during detected movement/emergencies (`SOS`), low throttled heartbeat when stationary.
-  - Ensures SQLite indexing across `location_event` and `group_members` to maintain `< 16ms` query response times without UI thread blocking.
-* **Deliverables**: Battery profile benchmarks, payload compression strategies, and indexed database optimizations.
+## 🔒 Master Prime Directives & Invariant Protection
+1. **Never delete earlier working code**: Deprecate (`@Deprecated`) or merge.
+2. **Pre-Change Declaration**: `[Variables] | [Constants] | [Dependencies] | [Integration Points]`.
+3. **Zero-Tolerance for Basic Errors**: No unresolved references, undefined parameters, or missing imports.
+4. **Dynamic OOPS-based MVC Standard**: 20-Year Senior Developer quality; re-use code via call-by-reference.
+5. **Program Mapping SSOT**: Maintain `.agent/enterprise-22-agents/PROGRAM-MAPPING.md` as the master relationship table.
+6. **Red-Line Gate**: Ward Priority 0 (`4379A761` / Riddhi) and circle inclusion invariance require explicit confirmation:
+   > **`Confirming - "Violating Prime Directive Rules"`**

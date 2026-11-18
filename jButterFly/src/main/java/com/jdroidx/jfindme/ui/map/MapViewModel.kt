@@ -85,26 +85,26 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         loadSafeZones()
     }
 
+    // [Variables] db, myAgentId, scopedIds, pairedIds, offlineRoster, u1, u2, connId, primeTarget | [Constants] KEY_PRIME_TARGET_DEVICE_ID | [Dependencies] DatabaseHelper, DeviceIdentityHelper, RegistryManager, SystemLogger | [Integration Points] applyTacticalFilter, MapActivity
     fun syncLocalMeshIds() {
         try {
             val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
             val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
             val scopedIds = db.getConnectedDeviceIds(myAgentId)
-            if (scopedIds.isNotEmpty()) {
-                familyMeshIds.clear()
-                familyMeshIds.addAll(scopedIds)
-            } else {
-                val pairedIds = db.getAllPairedDeviceIds()
-                familyMeshIds.addAll(pairedIds)
-            }
+            val pairedIds = db.getAllPairedDeviceIds()
+            familyMeshIds.addAll(scopedIds)
+            familyMeshIds.addAll(pairedIds)
+            // 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target via RegistryManager
+            val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(getApplication())
+            familyMeshIds.add(primeTarget)
             val offlineRoster = db.getOfflineRoster()
             for (node in offlineRoster) {
                 val u1 = node["uid_1"] as? String
                 val u2 = node["uid_2"] as? String
                 val connId = node["connected_id"] as? String
-                if (!u1.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(u1.trim()))) familyMeshIds.add(u1.trim())
-                if (!u2.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(u2.trim()))) familyMeshIds.add(u2.trim())
-                if (!connId.isNullOrBlank() && (scopedIds.isEmpty() || scopedIds.contains(connId.trim()))) familyMeshIds.add(connId.trim())
+                if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
+                if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
+                if (!connId.isNullOrBlank()) familyMeshIds.add(connId.trim())
             }
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Failed syncing local mesh IDs", e)
@@ -127,9 +127,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 _safeZones.postValue(localZones)
             }
             
-            val currentGroupId = getApplication<Application>()
-                .getSharedPreferences("system_registry", Application.MODE_PRIVATE)
-                .getString("current_group_id", null) ?: "DEFAULT_GROUP"
+            val currentGroupId = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(getApplication())
 
             FirebaseDatabase.getInstance().reference.child("safe_zones").child(currentGroupId)
                 .addListenerForSingleValueEvent(object : ValueEventListener {
@@ -210,12 +208,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
         
         // Step 1: Baseline Group Mesh Isolation (Cloud Mesh OR Local SQLite Handshake)
+        val cleanSelfId = selfAgentId.replace("HW_", "").trim()
         val authorized = rawLocationCache.filter { loc ->
             val uid = loc.getResolvedUserId()
-            val isDel = deletedDeviceCache.getOrPut(uid) { db.isDeviceDeleted(uid) }
-            val isPair = pairedDeviceCache.getOrPut(uid) { db.isDevicePaired(uid) }
+            val cleanUid = uid.replace("HW_", "").trim()
+            val isDel = deletedDeviceCache.getOrPut(uid) { db.isDeviceDeleted(uid) || db.isDeviceDeleted(cleanUid) || db.isDeviceDeleted("HW_$cleanUid") }
+            val isPair = pairedDeviceCache.getOrPut(uid) { db.isDevicePaired(uid) || db.isDevicePaired(cleanUid) || db.isDevicePaired("HW_$cleanUid") }
+            val isPrime = isChildOrPrimeTarget(uid, loc.role_family, loc.userName) || isChildOrPrimeTarget(cleanUid, loc.role_family, loc.userName)
+            val inMesh = familyMeshIds.any { 
+                val cleanMesh = it.replace("HW_", "").trim()
+                cleanMesh.equals(cleanUid, ignoreCase = true) || it.equals(uid, ignoreCase = true)
+            }
+            val isCanonical = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(cleanUid)
+
             !isDel && (
-                familyMeshIds.contains(uid) || uid == selfAgentId || (safeUid.isNotEmpty() && uid == safeUid) || isPair || familyMeshIds.isEmpty()
+                isPrime || isCanonical || inMesh || cleanUid.equals(cleanSelfId, ignoreCase = true) || (safeUid.isNotEmpty() && uid == safeUid) || isPair || familyMeshIds.isEmpty()
             )
         }
         
@@ -238,10 +245,36 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             else -> authorized // ALL
         }.sortedWith(
             compareByDescending<com.jdroidx.jfindme.data.model.UserLocation> { it.isSosActive }
+                .thenByDescending { isChildOrPrimeTarget(it.getResolvedUserId(), it.role_family, it.userName) }
                 .thenByDescending { it.getLongTimestamp() }
         )
         
         _filteredLocations.postValue(filtered)
+    }
+
+    /**
+     * 🧸 PRIME OBJECTIVE: Evaluates whether a peer node is a Child / Protected Ward target (dynamic SSOT via RegistryManager)
+     */
+    private fun isChildOrPrimeTarget(uid: String, roleFamily: String?, userName: String?): Boolean {
+        val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(getApplication())
+        if (uid.equals(primeTarget, ignoreCase = true) || uid.contains(primeTarget, ignoreCase = true)) return true
+        if (userName != null && userName.contains("RIDDHI", ignoreCase = true)) return true
+        val role = roleFamily ?: ""
+        if (role.equals("Child", ignoreCase = true) ||
+            role.equals("Daughter", ignoreCase = true) ||
+            role.equals("Son", ignoreCase = true) ||
+            role.equals("Ward", ignoreCase = true) ||
+            role.equals("Dependent", ignoreCase = true) ||
+            role.equals("DEPENDENT_CHILD", ignoreCase = true)) {
+            return true
+        }
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplication())
+        val dbRole = roleDeviceCache.getOrPut(uid) { db.getRoleForDevice(uid) ?: "" }
+        return dbRole.contains("Child", ignoreCase = true) ||
+               dbRole.contains("Daughter", ignoreCase = true) ||
+               dbRole.contains("Son", ignoreCase = true) ||
+               dbRole.contains("Ward", ignoreCase = true) ||
+               dbRole.contains("Dependent", ignoreCase = true)
     }
     
     private fun bindSecureFamilyMesh() {
@@ -289,8 +322,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 return
                             }
                             
-                            val defaultGroup = "GRP_" + finalId
-                            val effectiveGroup = if (!myGroupId.isNullOrBlank() && myGroupId != "DEFAULT_GROUP") myGroupId else defaultGroup
+                            val effectiveGroup = if (!myGroupId.isNullOrBlank() && myGroupId != "DEFAULT_GROUP") myGroupId else com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(getApplication())
                             
                             // 🚀 Strict Security: Only query real private group relationships, never global DEFAULT_GROUP
                             val relMembersRef = FirebaseComm.relationshipsRef.child(effectiveGroup)

@@ -102,12 +102,16 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvSosFanoutVal;
     private TextView tvOfflineQueueVal;
     private TextView tvGuardianPinVal;
+    private TextView tvPrimeTargetVal;
     private TextView tvPauseDurationVal;
     private TextView tvPinTtlVal;
     private TextView tvPurgePhraseVal;
     private TextView tvClosedLoopTimeoutVal;
+    private TextView tvDeviceSharingTimeoutVal;
+    private TextView tvPairingTimeoutVal;
     private TextView tvMaxAckFailuresVal;
     private TextView tvFailoverSmsVal;
+    private TextView tvGoogleMapsApiKeyVal;
 
     // [Variables]: settingsController, settingsModel, tvSparkPlanQuotaVal, tvDeadReckoningVal, tvPresencePulseVal, tvDeviceGroupVal, tvStorageRetentionVal, tvGeocodeCacheVal, tvDatabaseEngineTtlVal
     // [Constants]: None
@@ -122,6 +126,14 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvStorageRetentionVal;
     private TextView tvGeocodeCacheVal;
     private TextView tvDatabaseEngineTtlVal;
+    private TextView tvButterflyArrivalRadiusVal;
+    private TextView tvButterflyExpiryVal;
+    private TextView tvButterflyHysteresisVal;
+    private TextView tvButterflyMaxDistanceVal;
+    private TextView tvButterflyInvitationTimeoutVal;
+    private TextView tvButterflyOverdueGraceVal;
+    private TextView tvButterflyForegroundSyncVal;
+    private TextView tvButterflyMaxAvailabilityVal;
 
     // Live Badges (Tab 2 Screen Modules)
     private TextView badgeRosterTv;
@@ -397,6 +409,9 @@ public class SettingsActivity extends BaseActivityJava {
         String pinStatus = (currentPin != null && !currentPin.trim().isEmpty()) ? "●●●● (PIN Configured & Active)" : "Not Set (Click to Establish Master PIN)";
         secCard.addView(createSettingTile("GUARDIAN MASTER SECURITY PIN", pinStatus, com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> showGuardianMasterPinDialog(), tv -> tvGuardianPinVal = tv), btnLp);
 
+        String primeTarget = RegistryManager.getPrimeTargetDeviceId(this);
+        secCard.addView(createSettingTile("PRIMARY CHILD / WARD TARGET DEVICE", "Target ID: " + primeTarget + " (Priority 0 Monitored Ward)", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> showPrimeTargetDeviceDialog(), tv -> tvPrimeTargetVal = tv), btnLp);
+
         int pauseMins = RegistryManager.getLocationPauseDurationMin(this);
         secCard.addView(createSettingTile("LOCATION PAUSE APPROVAL WINDOW", "Window: " + pauseMins + " Min (Standby pause duration before auto-resume)", android.R.drawable.ic_menu_recent_history, v -> showLocationPauseDurationDialog(), tv -> tvPauseDurationVal = tv), btnLp);
 
@@ -420,6 +435,11 @@ public class SettingsActivity extends BaseActivityJava {
         String drainWarning = currInterval < 30 ? " ⚠️ HIGH BATTERY DRAIN" : "";
         String pingSub = "Active Cadence: " + currInterval + "s" + drainWarning + " | Preset/Stepper Mode";
         gpsCard.addView(createSettingTile("BATTERY OPTIMIZER & PING HUB", pingSub, com.jdroidx.jfindme.R.drawable.ic_device_health, v -> showBatteryOptimizerDialog(), tv -> tvPingIntervalVal = tv), btnLp);
+
+        gpsCard.addView(createSettingTile("OEM AUTOSTART & BATTERY SHIELD", "Punch through MIUI, OneUI, ColorOS background process killing", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
+            boolean dispatched = com.jdroidx.jfindme.utils.DeviceIdentityHelper.requestOemBatteryExemption(this);
+            UiArchitect.showSlideNotificationBanner(this, "Battery Shield", dispatched ? "OEM optimization screen opened. Grant autostart & unconstrained battery." : "Battery settings unconstrained.", false, 3500, null, null);
+        }, null), btnLp);
 
         // Hardware Motion Co-Processor (Parent Switch)
         boolean actRecogEnabled = RegistryManager.isActivityRecognitionEnabled(this);
@@ -770,6 +790,26 @@ public class SettingsActivity extends BaseActivityJava {
             tv -> tvClosedLoopTimeoutVal = tv
         ), btnLp);
 
+        long shareTimeout = RegistryManager.getDeviceSharingTimeoutMs(this);
+        String shareTimeoutSub = "Deadline: " + (shareTimeout / 1000) + "s (Angel Butterfly progress & sync watchdog)";
+        failoverCard.addView(createSettingTile(
+            "DEVICE SHARING SYNC TIMEOUT",
+            shareTimeoutSub,
+            com.jdroidx.jfindme.R.drawable.ic_family_friends,
+            v -> showDeviceSharingTimeoutDialog(),
+            tv -> tvDeviceSharingTimeoutVal = tv
+        ), btnLp);
+
+        long pairingTimeout = RegistryManager.getPairingTimeoutMs(this);
+        String pairingTimeoutSub = "Validity: " + (pairingTimeout / 60000) + " Mins (Invite code & multi-device session TTL)";
+        failoverCard.addView(createSettingTile(
+            "PAIRING CODE EXPIRATION TIMEOUT",
+            pairingTimeoutSub,
+            com.jdroidx.jfindme.R.drawable.ic_settings_gears,
+            v -> showPairingTimeoutDialog(),
+            tv -> tvPairingTimeoutVal = tv
+        ), btnLp);
+
         int maxFailures = RegistryManager.getMaxAckFailures(this);
         String maxFailuresSub = "Threshold: " + maxFailures + " Timeouts (Circuit breaker threshold before route switch)";
         failoverCard.addView(createSettingTile(
@@ -815,10 +855,112 @@ public class SettingsActivity extends BaseActivityJava {
         });
         mapPrefsCard.addView(clusterSwitch, btnLp);
 
+        String mapApiKey = RegistryManager.getGoogleMapsApiKey(this);
+        String maskedKey = (mapApiKey != null && mapApiKey.length() > 10)
+            ? mapApiKey.substring(0, 8) + "..." + mapApiKey.substring(mapApiKey.length() - 4)
+            : "Default Key";
+        String mapKeySub = "Credentials: " + maskedKey + " (Tap to edit Google Cloud Maps API Key)";
+        mapPrefsCard.addView(createSettingTile(
+            "GOOGLE MAPS API CREDENTIALS",
+            mapKeySub,
+            com.jdroidx.jfindme.R.drawable.ic_nav_map,
+            v -> showGoogleMapsApiKeyDialog(),
+            tv -> tvGoogleMapsApiKeyVal = tv
+        ), btnLp);
+
         mapPrefsCard.addView(createIconButton("GLOBAL UI & ICON ARCHITECT", com.jdroidx.jfindme.R.drawable.ic_edit, v -> safeLaunch(UiConfigActivity.class)), btnLp);
         mapPrefsCard.addView(createIconButton("VISUAL THEME & COMPONENT GALLERY", com.jdroidx.jfindme.R.drawable.ic_nav_map, v -> safeLaunch(UiGalleryActivity.class)), btnLp);
 
         content.addView(mapPrefsCard, getCardParams());
+
+        // ══════════════════════════════════════════════════════════════════════
+        // CARD 9: 🦋 BUTTERFLY POINT & RENDEZVOUS HUB (PRIORITY 9)
+        // ══════════════════════════════════════════════════════════════════════
+        content.addView(createSectionHeader("🦋 BUTTERFLY POINT & RENDEZVOUS HUB (PRIORITY 9)"));
+        LinearLayout butterflyCard = new LinearLayout(this);
+        butterflyCard.setOrientation(LinearLayout.VERTICAL);
+
+        float arrivalRad = RegistryManager.getButterflyArrivalRadius(this);
+        String arrivalSub = "Perimeter: " + ((int) arrivalRad) + "m (Dynamic geofence arrival detection)";
+        butterflyCard.addView(createSettingTile(
+            "ARRIVAL DETECTION PERIMETER",
+            arrivalSub,
+            com.jdroidx.jfindme.R.drawable.ic_butterfly_point,
+            v -> showButterflyArrivalRadiusDialog(),
+            tv -> tvButterflyArrivalRadiusVal = tv
+        ), btnLp);
+
+        int expiryHrs = RegistryManager.getButterflyExpiryHours(this);
+        String expirySub = "Lifespan: " + expiryHrs + " Hours (Default auto-archive TTL window)";
+        butterflyCard.addView(createSettingTile(
+            "RENDEZVOUS EXPIRATION WINDOW",
+            expirySub,
+            android.R.drawable.ic_menu_recent_history,
+            v -> showButterflyExpiryDialog(),
+            tv -> tvButterflyExpiryVal = tv
+        ), btnLp);
+
+        float hystMeters = RegistryManager.getButterflyHysteresisMeters(this);
+        String hystSub = "Deadband: " + ((int) hystMeters) + "m (Anti-flutter arrival latch threshold)";
+        butterflyCard.addView(createSettingTile(
+            "ARRIVAL HYSTERESIS DEADBAND",
+            hystSub,
+            android.R.drawable.ic_menu_compass,
+            v -> showButterflyHysteresisDialog(),
+            tv -> tvButterflyHysteresisVal = tv
+        ), btnLp);
+
+        float maxDistKm = RegistryManager.getButterflyMaxDistanceKm(this);
+        String maxDistSub = "Safeguard: " + ((int) maxDistKm) + " km (Human-in-the-loop warning confirmation)";
+        butterflyCard.addView(createSettingTile(
+            "DISTANCE SAFEGUARD THRESHOLD",
+            maxDistSub,
+            android.R.drawable.ic_dialog_alert,
+            v -> showButterflyMaxDistanceDialog(),
+            tv -> tvButterflyMaxDistanceVal = tv
+        ), btnLp);
+
+        int timeoutHrs = RegistryManager.getButterflyInvitationTimeoutHours(this);
+        String timeoutSub = "Timeout: " + timeoutHrs + " Hours (Auto-revoke stale pending invitations)";
+        butterflyCard.addView(createSettingTile(
+            "INVITATION TIMEOUT (DEFAULT 24H)",
+            timeoutSub,
+            android.R.drawable.ic_menu_recent_history,
+            v -> showButterflyInvitationTimeoutDialog(),
+            tv -> tvButterflyInvitationTimeoutVal = tv
+        ), btnLp);
+
+        int graceMins = RegistryManager.getButterflyOverdueGraceMinutes(this);
+        String graceSub = "Grace Window: " + graceMins + " Minutes (Arrival window before auto-archive)";
+        butterflyCard.addView(createSettingTile(
+            "OVERDUE GRACE PERIOD (DEFAULT 2H)",
+            graceSub,
+            android.R.drawable.ic_menu_agenda,
+            v -> showButterflyOverdueGraceDialog(),
+            tv -> tvButterflyOverdueGraceVal = tv
+        ), btnLp);
+
+        int syncSec = RegistryManager.getButterflyForegroundSyncIntervalSec(this);
+        String syncSub = "Interval: " + syncSec + "s (Active rendezvous GPS motion cadence)";
+        butterflyCard.addView(createSettingTile(
+            "FOREGROUND TELEMETRY INTERVAL",
+            syncSub,
+            android.R.drawable.ic_menu_mylocation,
+            v -> showButterflyForegroundSyncDialog(),
+            tv -> tvButterflyForegroundSyncVal = tv
+        ), btnLp);
+
+        int maxDays = RegistryManager.getButterflyMaxAvailabilityDays(this);
+        String maxDaysSub = "Availability: " + maxDays + " Days (Rendezvous point retention before archival purge)";
+        butterflyCard.addView(createSettingTile(
+            "MAX AVAILABILITY WINDOW (DEFAULT 7 DAYS)",
+            maxDaysSub,
+            android.R.drawable.ic_menu_recent_history,
+            v -> showButterflyMaxAvailabilityDialog(),
+            tv -> tvButterflyMaxAvailabilityVal = tv
+        ), btnLp);
+
+        content.addView(butterflyCard, getCardParams());
 
         return content;
     }
@@ -1201,7 +1343,8 @@ public class SettingsActivity extends BaseActivityJava {
         return lp;
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart());
@@ -1353,10 +1496,40 @@ public class SettingsActivity extends BaseActivityJava {
         if (tvPauseDurationVal != null) tvPauseDurationVal.setText("Window: 30 Min (Standby pause duration before auto-resume)");
         if (tvPinTtlVal != null) tvPinTtlVal.setText("TTL: 5 Min (NIST SP 800-63B pairing countdown)");
         if (tvClosedLoopTimeoutVal != null) tvClosedLoopTimeoutVal.setText("Timeout: " + RegistryManager.getClosedLoopAckTimeoutMs(this) + "ms (Server ACK round-trip deadline before failover)");
+        if (tvDeviceSharingTimeoutVal != null) tvDeviceSharingTimeoutVal.setText("Deadline: " + (RegistryManager.getDeviceSharingTimeoutMs(this) / 1000) + "s (Angel Butterfly progress & sync watchdog)");
+        if (tvPairingTimeoutVal != null) tvPairingTimeoutVal.setText("Validity: " + (RegistryManager.getPairingTimeoutMs(this) / 60000) + " Mins (Invite code & multi-device session TTL)");
         if (tvMaxAckFailuresVal != null) tvMaxAckFailuresVal.setText("Threshold: " + RegistryManager.getMaxAckFailures(this) + " Timeouts (Circuit breaker threshold before route switch)");
         if (tvFailoverSmsVal != null) {
             String sms = RegistryManager.getFailoverSmsTarget(this);
             tvFailoverSmsVal.setText((sms != null && !sms.trim().isEmpty()) ? "Recipient: " + sms + " (Level N3 zero-data beacon)" : "Not Configured (Tap to set Emergency SOS SMS Number)");
+        }
+        if (tvGoogleMapsApiKeyVal != null) {
+            String mKey = RegistryManager.getGoogleMapsApiKey(this);
+            String masked = (mKey != null && mKey.length() > 10)
+                ? mKey.substring(0, 8) + "..." + mKey.substring(mKey.length() - 4)
+                : "Default Key";
+            tvGoogleMapsApiKeyVal.setText("Credentials: " + masked + " (Tap to edit Google Cloud Maps API Key)");
+        }
+        if (tvButterflyArrivalRadiusVal != null) {
+            tvButterflyArrivalRadiusVal.setText("Perimeter: " + ((int) RegistryManager.getButterflyArrivalRadius(this)) + "m (Dynamic geofence arrival detection)");
+        }
+        if (tvButterflyExpiryVal != null) {
+            tvButterflyExpiryVal.setText("Lifespan: " + RegistryManager.getButterflyExpiryHours(this) + " Hours (Default auto-archive TTL window)");
+        }
+        if (tvButterflyHysteresisVal != null) {
+            tvButterflyHysteresisVal.setText("Deadband: " + ((int) RegistryManager.getButterflyHysteresisMeters(this)) + "m (Anti-flutter arrival latch threshold)");
+        }
+        if (tvButterflyMaxDistanceVal != null) {
+            tvButterflyMaxDistanceVal.setText("Safeguard: " + ((int) RegistryManager.getButterflyMaxDistanceKm(this)) + " km (Human-in-the-loop warning confirmation)");
+        }
+        if (tvButterflyInvitationTimeoutVal != null) {
+            tvButterflyInvitationTimeoutVal.setText("Timeout: " + RegistryManager.getButterflyInvitationTimeoutHours(this) + " Hours (Auto-revoke stale pending invitations)");
+        }
+        if (tvButterflyOverdueGraceVal != null) {
+            tvButterflyOverdueGraceVal.setText("Grace Window: " + RegistryManager.getButterflyOverdueGraceMinutes(this) + " Minutes (Arrival window before auto-archive)");
+        }
+        if (tvButterflyForegroundSyncVal != null) {
+            tvButterflyForegroundSyncVal.setText("Interval: " + RegistryManager.getButterflyForegroundSyncIntervalSec(this) + "s (Active rendezvous GPS motion cadence)");
         }
     }
 
@@ -2181,6 +2354,113 @@ public class SettingsActivity extends BaseActivityJava {
             .show();
     }
 
+    private void showDeviceSharingTimeoutDialog() {
+        String[] options = new String[]{
+            "⏱️ 10 Seconds (Fast Mesh / Local Wi-Fi)",
+            "⏱️ 15 Seconds (Standard SLA Baseline - Recommended)",
+            "⏱️ 30 Seconds (High-Latency Cellular / Low Signal)",
+            "⏱️ 60 Seconds (Extended Global Roaming Timeout)"
+        };
+        long[] values = new long[]{10000L, 15000L, 30000L, 60000L};
+        long current = RegistryManager.getDeviceSharingTimeoutMs(this);
+        int selected = 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏱️ Device Sharing Sync Timeout")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                long chosen = values[which];
+                RegistryManager.setDeviceSharingTimeoutMs(this, chosen);
+                if (tvDeviceSharingTimeoutVal != null) {
+                    tvDeviceSharingTimeoutVal.setText("Deadline: " + (chosen / 1000) + "s (Angel Butterfly progress & sync watchdog)");
+                }
+                UiArchitect.showSlideNotificationBanner(this, "SHARING TIMEOUT MUTATED", "Device sharing timeout set to " + (chosen / 1000) + "s", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showPairingTimeoutDialog() {
+        String[] options = new String[]{
+            "⏱️ 5 Minutes (Strict Security)",
+            "⏱️ 10 Minutes (Standard Pairing)",
+            "⏱️ 15 Minutes (Fleet Multi-Device Rollout)",
+            "⏱️ 30 Minutes (Extended Classroom / Family Session)",
+            "⏱️ 60 Minutes (Max Administrative Grace Period)"
+        };
+        long[] values = new long[]{5 * 60 * 1000L, 10 * 60 * 1000L, 15 * 60 * 1000L, 30 * 60 * 1000L, 60 * 60 * 1000L};
+        long current = RegistryManager.getPairingTimeoutMs(this);
+        int selected = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏱️ Pairing Code Expiration Timeout")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                long chosen = values[which];
+                RegistryManager.setPairingTimeoutMs(this, chosen);
+                if (tvPairingTimeoutVal != null) {
+                    tvPairingTimeoutVal.setText("Validity: " + (chosen / 60000) + " Mins (Invite code & multi-device session TTL)");
+                }
+                UiArchitect.showSlideNotificationBanner(this, "PAIRING TIMEOUT MUTATED", "Pairing code expiration set to " + (chosen / 60000) + " minutes", false, 2500, null, null);
+                dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showGoogleMapsApiKeyDialog() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int pad = getResponsivePaddingQuota();
+        container.setPadding(pad, pad / 2, pad, pad / 2);
+
+        int overlayColor = getGradientOverlayText();
+        TextView tvHelp = new TextView(this);
+        tvHelp.setText("Enter your Google Cloud Console Maps API Key for package com.jdroidx.jfindme. This key is used dynamically by the Map Engine to authenticate vector tiles and Google Play Services.");
+        tvHelp.setTextSize(11f);
+        tvHelp.setTextColor(overlayColor == Color.WHITE ? Color.parseColor("#CCFFFFFF") : Color.DKGRAY);
+        tvHelp.setPadding(0, 0, 0, 16);
+        container.addView(tvHelp);
+
+        EditText et = new EditText(this);
+        et.setHint("AIzaSy...");
+        et.setText(RegistryManager.getGoogleMapsApiKey(this));
+        et.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        et.setTextColor(overlayColor);
+        et.setHintTextColor(overlayColor == Color.WHITE ? Color.parseColor("#99FFFFFF") : Color.GRAY);
+        et.setPadding(30, 25, 30, 25);
+        et.setBackground(getSolidDrawable(overlayColor == Color.WHITE ? Color.parseColor("#26FFFFFF") : Color.parseColor("#26000000"), 20f));
+        container.addView(et);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("🗺️ Google Maps API Key")
+            .setView(container)
+            .setPositiveButton("SAVE KEY", (d, which) -> {
+                String input = et.getText().toString().trim();
+                RegistryManager.setGoogleMapsApiKey(this, input);
+                if (tvGoogleMapsApiKeyVal != null) {
+                    String masked = (input.length() > 10) ? input.substring(0, 8) + "..." + input.substring(input.length() - 4) : "Default Key";
+                    tvGoogleMapsApiKeyVal.setText("Credentials: " + masked + " (Tap to edit Google Cloud Maps API Key)");
+                }
+                UiArchitect.showSlideNotificationBanner(this, "Maps Credentials Saved", "New Google Maps API Key persisted. Restart Map to apply.", false, 3500, null, null);
+                android.widget.Toast.makeText(this, "✅ Google Maps API Key saved dynamically.", android.widget.Toast.LENGTH_SHORT).show();
+            })
+            .setNeutralButton("RESET DEFAULT", (d, which) -> {
+                RegistryManager.setGoogleMapsApiKey(this, "");
+                if (tvGoogleMapsApiKeyVal != null) {
+                    tvGoogleMapsApiKeyVal.setText("Credentials: Default Key (Tap to edit Google Cloud Maps API Key)");
+                }
+                UiArchitect.showSlideNotificationBanner(this, "Reset to Default", "Reverted to application default Google Maps key.", false, 2500, null, null);
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
     private void showMaxAckFailuresDialog() {
         int current = RegistryManager.getMaxAckFailures(this);
         int[] values = {1, 2, 3, 5};
@@ -2227,6 +2507,30 @@ public class SettingsActivity extends BaseActivityJava {
                         tvFailoverSmsVal.setText(!clean.isEmpty() ? "Recipient: " + clean + " (Level N3 zero-data beacon)" : "Not Configured (Tap to set Emergency SOS SMS Number)");
                     }
                     UiArchitect.showSlideNotificationBanner(this, "SOS SMS Target Saved", !clean.isEmpty() ? "Failover SMS recipient set to: " + clean : "Failover SMS beacon disabled.", false, 3000, null, null);
+                }
+            }
+        );
+    }
+
+    // [Variables] currentTarget, clean | [Constants] DEFAULT_PRIME_TARGET_ID | [Dependencies] RegistryManager, UiArchitect, FirebaseComm | [Integration Points] SettingsActivity, MapActivity, MapViewModel, LocationRepository
+    private void showPrimeTargetDeviceDialog() {
+        String currentTarget = RegistryManager.getPrimeTargetDeviceId(this);
+        UiArchitect.showInputPromptDialog(this,
+            "Primary Child / Ward Target Device",
+            "Enter the 8-character Agent ID for the primary Child / Protected Ward to anchor at Priority 0 (Default: 4379A761):",
+            currentTarget != null ? currentTarget : "4379A761",
+            newTarget -> {
+                if (newTarget != null) {
+                    String clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(newTarget).trim();
+                    if (!clean.isEmpty()) {
+                        RegistryManager.setPrimeTargetDeviceId(this, clean);
+                        if (tvPrimeTargetVal != null) {
+                            tvPrimeTargetVal.setText("Target ID: " + clean + " (Priority 0 Monitored Ward)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Target Ward Updated", "Primary monitored ward set to: " + clean, false, 3000, null, null);
+                    } else {
+                        UiArchitect.showSlideNotificationBanner(this, "Invalid Target ID", "Device ID cannot be empty.", true, 3000, null, null);
+                    }
                 }
             }
         );
@@ -3167,6 +3471,488 @@ public class SettingsActivity extends BaseActivityJava {
                 updateSparkPlanQuotaSubtitle();
                 UiArchitect.showSlideNotificationBanner(this, "Monthly Limit Updated", "Monthly quota cap set to " + chosen + " GB", false, 2500, null, null);
                 dialog.dismiss();
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyArrivalRadiusDialog() {
+        float current = RegistryManager.getButterflyArrivalRadius(this);
+        String[] options = new String[]{
+            "25m (Tactical / Precision Building)",
+            "50m (Standard Perimeter)",
+            "100m (Neighborhood Block)",
+            "250m (Staging / Large Campus)",
+            "500m (Rural / Wide Area)",
+            "Custom Perimeter..."
+        };
+        float[] values = new float[]{25.0f, 50.0f, 100.0f, 250.0f, 500.0f, -1.0f};
+        int selected = -1;
+        for (int i = 0; i < values.length - 1; i++) {
+            if (Math.abs(values[i] - current) < 1.0f) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Butterfly Arrival Perimeter")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomButterflyArrivalRadiusPrompt();
+                } else {
+                    float chosen = values[which];
+                    RegistryManager.setButterflyArrivalRadius(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyArrivalRadiusM(chosen);
+                    if (tvButterflyArrivalRadiusVal != null) {
+                        tvButterflyArrivalRadiusVal.setText("Perimeter: " + ((int) chosen) + "m (Dynamic geofence arrival detection)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Arrival Perimeter Updated", "Perimeter set to " + ((int) chosen) + "m", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyArrivalRadiusPrompt() {
+        float current = RegistryManager.getButterflyArrivalRadius(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf((int) current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Arrival Perimeter")
+            .setMessage("Enter arrival perimeter radius in meters (10 - 5000):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    float val = Float.parseFloat(input.getText().toString().trim());
+                    if (val >= 10.0f && val <= 5000.0f) {
+                        RegistryManager.setButterflyArrivalRadius(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyArrivalRadiusM(val);
+                        if (tvButterflyArrivalRadiusVal != null) {
+                            tvButterflyArrivalRadiusVal.setText("Perimeter: " + ((int) val) + "m (Dynamic geofence arrival detection)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Arrival Perimeter Updated", "Perimeter set to " + ((int) val) + "m", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Please enter a radius between 10m and 5000m", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyExpiryDialog() {
+        int current = RegistryManager.getButterflyExpiryHours(this);
+        String[] options = new String[]{
+            "1 Hour (Short Rendezvous)",
+            "2 Hours (Standard Meeting)",
+            "4 Hours (Recommended Half-Day)",
+            "8 Hours (Full Working Shift)",
+            "24 Hours (Full Day Operations)",
+            "Custom Lifespan..."
+        };
+        int[] values = new int[]{1, 2, 4, 8, 24, -1};
+        int selected = -1;
+        for (int i = 0; i < values.length - 1; i++) {
+            if (values[i] == current) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Rendezvous Default Lifespan")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomButterflyExpiryPrompt();
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setButterflyExpiryHours(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyExpiryHours(chosen);
+                    if (tvButterflyExpiryVal != null) {
+                        tvButterflyExpiryVal.setText("Lifespan: " + chosen + " Hours (Default auto-archive TTL window)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Lifespan Updated", "Rendezvous expiry set to " + chosen + " hours", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyExpiryPrompt() {
+        int current = RegistryManager.getButterflyExpiryHours(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Rendezvous Lifespan")
+            .setMessage("Enter default lifespan in hours (1 - 168):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val >= 1 && val <= 168) {
+                        RegistryManager.setButterflyExpiryHours(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyExpiryHours(val);
+                        if (tvButterflyExpiryVal != null) {
+                            tvButterflyExpiryVal.setText("Lifespan: " + val + " Hours (Default auto-archive TTL window)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Lifespan Updated", "Rendezvous expiry set to " + val + " hours", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter lifespan between 1 and 168 hours", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyHysteresisDialog() {
+        float current = RegistryManager.getButterflyHysteresisMeters(this);
+        String[] options = new String[]{
+            "5m (Tight / Low Jitter Area)",
+            "10m (City Street / Nominal)",
+            "15m (Recommended Standard Deadband)",
+            "25m (Wide / High Urban Multi-path)",
+            "50m (Rural / Low Accuracy)",
+            "Custom Deadband..."
+        };
+        float[] values = new float[]{5.0f, 10.0f, 15.0f, 25.0f, 50.0f, -1.0f};
+        int selected = -1;
+        for (int i = 0; i < values.length - 1; i++) {
+            if (Math.abs(values[i] - current) < 1.0f) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Arrival Hysteresis Deadband")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomButterflyHysteresisPrompt();
+                } else {
+                    float chosen = values[which];
+                    RegistryManager.setButterflyHysteresisMeters(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyHysteresisM(chosen);
+                    if (tvButterflyHysteresisVal != null) {
+                        tvButterflyHysteresisVal.setText("Deadband: " + ((int) chosen) + "m (Anti-flutter arrival latch threshold)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Hysteresis Updated", "Arrival deadband set to " + ((int) chosen) + "m", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyHysteresisPrompt() {
+        float current = RegistryManager.getButterflyHysteresisMeters(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf((int) current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Hysteresis Deadband")
+            .setMessage("Enter deadband filter in meters (2 - 200):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    float val = Float.parseFloat(input.getText().toString().trim());
+                    if (val >= 2.0f && val <= 200.0f) {
+                        RegistryManager.setButterflyHysteresisMeters(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyHysteresisM(val);
+                        if (tvButterflyHysteresisVal != null) {
+                            tvButterflyHysteresisVal.setText("Deadband: " + ((int) val) + "m (Anti-flutter arrival latch threshold)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Hysteresis Updated", "Arrival deadband set to " + ((int) val) + "m", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter deadband between 2m and 200m", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyMaxDistanceDialog() {
+        float current = RegistryManager.getButterflyMaxDistanceKm(this);
+        String[] options = new String[]{
+            "100 km (Local Metropolitan)",
+            "250 km (Regional District)",
+            "500 km (Recommended Standard Threshold)",
+            "1000 km (National Inter-State)",
+            "2500 km (Cross-Continental)",
+            "Custom Safeguard..."
+        };
+        float[] values = new float[]{100.0f, 250.0f, 500.0f, 1000.0f, 2500.0f, -1.0f};
+        int selected = -1;
+        for (int i = 0; i < values.length - 1; i++) {
+            if (Math.abs(values[i] - current) < 1.0f) { selected = i; break; }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Distance Safeguard Warning Threshold")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomButterflyMaxDistancePrompt();
+                } else {
+                    float chosen = values[which];
+                    RegistryManager.setButterflyMaxDistanceKm(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyMaxDistanceKm(chosen);
+                    if (tvButterflyMaxDistanceVal != null) {
+                        tvButterflyMaxDistanceVal.setText("Safeguard: " + ((int) chosen) + " km (Human-in-the-loop warning confirmation)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Safeguard Updated", "Warning threshold set to " + ((int) chosen) + " km", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyMaxDistancePrompt() {
+        float current = RegistryManager.getButterflyMaxDistanceKm(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf((int) current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Distance Safeguard")
+            .setMessage("Enter safeguard distance in km (10 - 20000):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    float val = Float.parseFloat(input.getText().toString().trim());
+                    if (val >= 10.0f && val <= 20000.0f) {
+                        RegistryManager.setButterflyMaxDistanceKm(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyMaxDistanceKm(val);
+                        if (tvButterflyMaxDistanceVal != null) {
+                            tvButterflyMaxDistanceVal.setText("Safeguard: " + ((int) val) + " km (Human-in-the-loop warning confirmation)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Safeguard Updated", "Warning threshold set to " + ((int) val) + " km", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter distance between 10 km and 20000 km", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyInvitationTimeoutDialog() {
+        int current = RegistryManager.getButterflyInvitationTimeoutHours(this);
+        String[] options = {
+            "6 Hours (Fast-paced)",
+            "12 Hours (Half-day)",
+            "24 Hours (Standard Default)",
+            "48 Hours (Extended)",
+            "Custom Hours..."
+        };
+        int[] values = {6, 12, 24, 48};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Invitation Timeout Duration")
+            .setItems(options, (dialog, which) -> {
+                if (which == 4) {
+                    showCustomButterflyInvitationTimeoutPrompt();
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setButterflyInvitationTimeoutHours(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyInvitationTimeoutHours(chosen);
+                    if (tvButterflyInvitationTimeoutVal != null) {
+                        tvButterflyInvitationTimeoutVal.setText("Timeout: " + chosen + " Hours (Auto-revoke stale pending invitations)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Timeout Configured", "Pending invitations expire after " + chosen + " hours", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyInvitationTimeoutPrompt() {
+        int current = RegistryManager.getButterflyInvitationTimeoutHours(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Invitation Timeout")
+            .setMessage("Enter timeout in hours (1 - 168):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val >= 1 && val <= 168) {
+                        RegistryManager.setButterflyInvitationTimeoutHours(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyInvitationTimeoutHours(val);
+                        if (tvButterflyInvitationTimeoutVal != null) {
+                            tvButterflyInvitationTimeoutVal.setText("Timeout: " + val + " Hours (Auto-revoke stale pending invitations)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Timeout Configured", "Pending invitations expire after " + val + " hours", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 1 and 168 hours", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyOverdueGraceDialog() {
+        int current = RegistryManager.getButterflyOverdueGraceMinutes(this);
+        String[] options = {
+            "30 Minutes (Tight arrival window)",
+            "60 Minutes (1 Hour)",
+            "120 Minutes (2 Hours - Default)",
+            "240 Minutes (4 Hours)",
+            "Custom Minutes..."
+        };
+        int[] values = {30, 60, 120, 240};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Overdue Grace Period")
+            .setItems(options, (dialog, which) -> {
+                if (which == 4) {
+                    showCustomButterflyOverdueGracePrompt();
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setButterflyOverdueGraceMinutes(this, chosen);
+                    if (settingsModel != null) settingsModel.setButterflyOverdueGraceMinutes(chosen);
+                    if (tvButterflyOverdueGraceVal != null) {
+                        tvButterflyOverdueGraceVal.setText("Grace Window: " + chosen + " Minutes (Arrival window before auto-archive)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Grace Period Configured", "Arrival window set to " + chosen + " minutes past rendezvous", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showCustomButterflyOverdueGracePrompt() {
+        int current = RegistryManager.getButterflyOverdueGraceMinutes(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Overdue Grace Period")
+            .setMessage("Enter grace period in minutes (5 - 1440):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val >= 5 && val <= 1440) {
+                        RegistryManager.setButterflyOverdueGraceMinutes(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyOverdueGraceMinutes(val);
+                        if (tvButterflyOverdueGraceVal != null) {
+                            tvButterflyOverdueGraceVal.setText("Grace Window: " + val + " Minutes (Arrival window before auto-archive)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Grace Period Configured", "Arrival window set to " + val + " minutes past rendezvous", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 5 and 1440 minutes", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ignored) {}
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyForegroundSyncDialog() {
+        int current = RegistryManager.getButterflyForegroundSyncIntervalSec(this);
+        String[] options = {
+            "2 Seconds (High precision / Fast motion)",
+            "4 Seconds (Standard Balance - Default)",
+            "8 Seconds (Battery Saver)",
+            "15 Seconds (Low Bandwidth)"
+        };
+        int[] values = {2, 4, 8, 15};
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Foreground Telemetry Cadence")
+            .setItems(options, (dialog, which) -> {
+                int chosen = values[which];
+                RegistryManager.setButterflyForegroundSyncIntervalSec(this, chosen);
+                if (settingsModel != null) settingsModel.setButterflyForegroundSyncIntervalSec(chosen);
+                if (tvButterflyForegroundSyncVal != null) {
+                    tvButterflyForegroundSyncVal.setText("Interval: " + chosen + "s (Active rendezvous GPS motion cadence)");
+                }
+                UiArchitect.showSlideNotificationBanner(this, "Cadence Configured", "Foreground rendezvous sync set to every " + chosen + " seconds", false, 2500, null, null);
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyMaxAvailabilityDialog() {
+        int current = RegistryManager.getButterflyMaxAvailabilityDays(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Max Availability Days (1 - 30)")
+            .setMessage("Set the maximum number of days a Butterfly Meeting Point remains active/available before automated archival and cloud purge.\n\nExchange of tracking telemetry and vectors only occurs during this window.")
+            .setView(input)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val >= 1 && val <= 30) {
+                        RegistryManager.setButterflyMaxAvailabilityDays(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyMaxAvailabilityDays(val);
+                        if (tvButterflyMaxAvailabilityVal != null) {
+                            tvButterflyMaxAvailabilityVal.setText("Availability: " + val + " Days (Rendezvous point retention before archival purge)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Retention Window Saved", "Meeting point max availability set to " + val + " days", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 1 and 30 days", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ex) {
+                    android.widget.Toast.makeText(this, "Invalid number", android.widget.Toast.LENGTH_SHORT).show();
+                }
             })
             .setNegativeButton("CANCEL", null)
             .show();

@@ -385,12 +385,12 @@ public class HealthActivity extends BaseActivityJava {
             .get()
             .addOnSuccessListener(snapshot -> {
                 if (snapshot.exists()) {
-                    Long bat = snapshot.child("battery_level").getValue(Long.class);
+                    Long bat = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(snapshot.child("battery_level"));
                     Boolean charging = snapshot.child("is_charging").getValue(Boolean.class);
                     String net = snapshot.child("network_type").getValue(String.class);
                     Boolean mock = snapshot.child("is_mock_gps").getValue(Boolean.class);
                     Boolean root = snapshot.child("is_rooted").getValue(Boolean.class);
-                    Long signal = snapshot.child("signal_dbm").getValue(Long.class);
+                    Long signal = com.jdroidx.jfindme.data.remote.FirebaseComm.safeLong(snapshot.child("signal_dbm"));
 
                     if (tvBattery != null && bat != null) {
                         tvBattery.setText(bat + "% " + (Boolean.TRUE.equals(charging) ? "(⚡ CHARGING)" : "(DISCHARGING)"));
@@ -584,7 +584,8 @@ public class HealthActivity extends BaseActivityJava {
         }
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart()); // Native OS Match Protocol

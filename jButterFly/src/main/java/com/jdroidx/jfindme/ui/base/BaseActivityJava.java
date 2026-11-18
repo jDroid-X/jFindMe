@@ -402,9 +402,9 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         return theme;
     }
 
-    protected int getPrimaryColor() { return ThemeManager.getScreenBackgroundColor(getResolvedThemeId()); }
-    protected int getTextColor() { return ThemeManager.getTextPrimaryColor(getResolvedThemeId()); }
-    protected int getAccentColor() { return ThemeManager.getGradientStart(getResolvedThemeId()); } // Fallback
+    public int getPrimaryColor() { return ThemeManager.getScreenBackgroundColor(getResolvedThemeId()); }
+    public int getTextColor() { return ThemeManager.getTextPrimaryColor(getResolvedThemeId()); }
+    public int getAccentColor() { return ThemeManager.getGradientStart(getResolvedThemeId()); } // Fallback
     
     public android.graphics.drawable.GradientDrawable getBorderDrawable(int color, int strokeWidth, float radius) {
         android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
@@ -581,10 +581,26 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     if (intent != null && "com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED".equals(intent.getAction())) {
+                        // [Variables] category, changeType, entityId, senderId
+                        // [Constants] EXTRA_CATEGORY, EXTRA_CHANGE_TYPE, EXTRA_ENTITY_ID, EXTRA_SENDER_ID
+                        // [Dependencies] Intent, BroadcastReceiver
+                        // [Integration Points] Real-time master data refresh for MapActivity and SettingsActivity
                         String category = intent.getStringExtra("EXTRA_CATEGORY");
+                        if (category == null) {
+                            category = intent.getStringExtra("category");
+                        }
                         String changeType = intent.getStringExtra("EXTRA_CHANGE_TYPE");
+                        if (changeType == null) {
+                            changeType = intent.getStringExtra("change_type");
+                        }
                         String entityId = intent.getStringExtra("EXTRA_ENTITY_ID");
+                        if (entityId == null) {
+                            entityId = intent.getStringExtra("entity_id");
+                        }
                         String senderId = intent.getStringExtra("EXTRA_SENDER_ID");
+                        if (senderId == null) {
+                            senderId = intent.getStringExtra("sender_id");
+                        }
                         onMasterDataUpdated(category, changeType, entityId, senderId);
                     }
                 }
@@ -677,6 +693,55 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         });
 
         return tile;
+    }
+
+    /**
+     * [Variables]: header, hPad
+     * [Constants]: None
+     * [Dependencies]: TextView, Typeface, UiArchitect
+     * [Integration Points]: SettingsActivity, ProfileActivity, PersonDetailsActivity, HistoryActivity, GeofenceActivity, HealthActivity, UiConfigActivity, PrivacyActivity
+     *
+     * 🚀 V83 OOPS-based Base Section Header Method.
+     * Inherited by all child activities, eliminating 8 duplicate implementations.
+     */
+    protected View createSectionHeader(String text) {
+        TextView header = new TextView(this);
+        header.setText(text);
+        header.setTextColor(getGradientStart());
+        header.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_HEADER"));
+        header.setTypeface(null, Typeface.BOLD);
+        int hPad = getResponsivePaddingQuota();
+        header.setPadding(hPad / 2, hPad * 2, 0, hPad);
+        return header;
+    }
+
+    /**
+     * Standardized Grid Table Cell constructor.
+     */
+    protected TextView createGridCell(String text, boolean isHeader) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setPadding(scale(25), scale(20), scale(25), scale(20));
+        tv.setTextColor(isHeader ? getGradientStart() : getTextColor());
+        tv.setTypeface(null, isHeader ? Typeface.BOLD : Typeface.NORMAL);
+        return tv;
+    }
+
+    /**
+     * Standardized Small Icon constructor.
+     */
+    protected ImageView createSmallIcon(int res, int color, View.OnClickListener listener) {
+        ImageView iv = new ImageView(this);
+        iv.setImageResource(res);
+        iv.setColorFilter(color);
+        int pad = scale(12);
+        iv.setPadding(pad, pad, pad, pad);
+        if (listener != null) {
+            iv.setClickable(true);
+            iv.setFocusable(true);
+            iv.setOnClickListener(listener);
+        }
+        return iv;
     }
 
     /**

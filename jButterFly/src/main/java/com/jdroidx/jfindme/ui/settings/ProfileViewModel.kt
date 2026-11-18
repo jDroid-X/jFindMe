@@ -295,7 +295,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                 launch(Dispatchers.IO) {
                     val dossier = profilePayload.mapValues { (_, value) -> value.toString() }
                     val orgDossier = mapOf("orgName" to orgName, "deptName" to deptName, "userAddress" to addressVal, "designation" to "Professional")
-                    val effectiveGrp = if (!activeGrp.isNullOrBlank() && activeGrp != "DEFAULT_GROUP") activeGrp else "GRP_$safeUid"
+                    val effectiveGrp = if (!activeGrp.isNullOrBlank() && activeGrp != "DEFAULT_GROUP") activeGrp else com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
                     val groupData = mapOf("group_id" to effectiveGrp, "group_name" to "My Circle")
                     
                     // [Variables] cleanHwUid: String, canonicalHwUid: String | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] executeTieredHandshake SSOT

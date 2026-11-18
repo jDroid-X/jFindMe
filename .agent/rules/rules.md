@@ -1,10 +1,10 @@
-# jFindMe Enterprise Rules & Standards (The Constitution V3.0)
+# jFindMe Enterprise Rules & Standards (The Constitution V5.0)
 
-> **Mandatory Reference Order**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)`
+> **Mandatory Reference Pipeline**: `Workflow (.agent/rules/workflow.md)` ➔ `Rules (.agent/rules/rules.md)` ➔ `Agents (.agent/rules/agents.md)` ➔ `Skills (.agent/rules/skills.md)` ➔ `Branding (.agent/rules/branding.md)`
 
 ---
 
-## Tier 1: Universal Rules (Apply to ALL Changes)
+## 🏛️ Tier 1: Universal Rules (Apply to ALL Changes)
 
 Every modification, update, bug fix, or new feature—regardless of target file or screen—must pass these universal gates first:
 
@@ -16,7 +16,7 @@ $$\text{[Variables]} \quad\vert\quad \text{[Constants]} \quad\vert\quad \text{[D
 
 ### 2. Dual-Module Parity (`app` ⟷ `jButterFly`)
 * Every change made to files in `app/src/main/...` (Java, Kotlin, XML layouts, drawables, manifests) must have its exact twin synchronized in `jButterFly/src/main/...`.
-* No feature or patch may be committed with module drift. Both modules must maintain 100% byte/line parity.
+* No feature or patch may be committed with module drift. Both modules must maintain 100% byte/line parity across all 14 twin pairs.
 
 ### 3. Non-Destructive Code Evolution (Deprecate or Merge)
 * **Never delete earlier working code outright**: Either deprecate gracefully (`@Deprecated`) with fallback bridges or add/merge the new logic alongside existing call-sites.
@@ -24,7 +24,7 @@ $$\text{[Variables]} \quad\vert\quad \text{[Constants]} \quad\vert\quad \text{[D
 * Follow dynamic OOPS-based MVC/MVVM standards: re-use existing utility methods and singleton engines via call-by-reference rather than duplicating code.
 
 ### 4. Hardware Root Anchor & SSOT
-* The physical silicon serial or Android ID (`DeviceIdentityHelper.getRawAndroidId`) is the **only immutable Single Source of Truth (SSOT)** for device identity.
+* The physical silicon serial or Android ID (`DeviceIdentityHelper.getRawAndroidId`, `ro.ril.oem.sno`, `ro.ril.oem.psno`) is the **only immutable Single Source of Truth (SSOT)** for device identity.
 * Software UUIDs, unverified temporary tokens, or Firebase push keys must never overwrite physical identity anchors.
 * On Android 10+ (API 29+), `Settings.Secure.ANDROID_ID` is used directly with thread-safe caching to avoid SELinux audit denials.
 
@@ -65,85 +65,104 @@ All multi-component features, device-to-device pairing handshakes, and role-scop
 - **BE**: Backend ViewModels, Repositories & Handlers (e.g. PairingRepository, LocationRepository, MapViewModel)
 - **DB**: Dual Storage SSOT (SQLite Normalized Tables & Compatibility Views ↔ Firebase RTDB Mesh)
 
+### 11. Target Resolution & Audit Fast-Exit Circuit Breaker (Cold-Context Guard)
+* **Pre-Flight Scoping Gate**: When an audit, RAG report, or test scenario is requested without an explicit screen or module:
+  1. **Check Warm Context:** If an active screen/file was evaluated or modified in the current or immediate prior turn ($\le 3$ turns), scope execution *strictly* to that anchor.
+  2. **Check Git Delta:** If context is cold, run `git status -s` ($\le 1$ sec). If files were modified, scope the audit *exclusively* to those modified files.
+  3. **Cold Baseline Fallback (Zero Speculative Crawling):** If no files are modified and no target screen is named in the prompt, **agents are STRICTLY FORBIDDEN from crawling the filesystem, scanning ASTs, or reading files across `app` and `jButterFly`**. Invert all untouched screens to `[N/A]` upfront. Either run the targeted test runner or immediately exit in 1 turn asking for the target screen/module ($\le 1$ tool call).
+* **Strict Folder Exclusion**: Search tools must explicitly exclude `.gradle/`, `.idea/`, `build/`, `bin/`, `out/`, `node_modules/`, `.git/`.
+* **Exception-Focused RAG Table**: Collapse GREEN (passing) into a single aggregate count line (`✅ N tests passed`). Detail ONLY RED (critical failures) and AMBER (degraded risks).
+
+### 12. Red-Line Hard Gate: Monitoring Priority, Circle Scoping & Temporal Invariant Protection
+* **STRICT PROHIBITION**: The following architectural invariants are locked:
+  1. **Prime Objective Monitoring Hierarchy**: Child / Ward / Dependent (`4379A761` / Riddhi) guaranteed Top Position 0 sorting across Map, Flipper HUD, and Family & Friends.
+  2. **Connected Device Scoping**: Unconditional inclusion of all active circle members, bidirectional pairings, and ward targets in `DatabaseHelper.getConnectedDeviceIds`.
+  3. **Real-time Target Ingestion**: Cloud listener subscription loops in `LocationRepository.updateTargetListeners()`.
+  4. **Master Temporal Invariant**: Descending chronological ordering (`ORDER BY timestamp DESC`).
+* **MANDATORY CONFIRMATION GATE**: These rules MUST NOT be changed without explicit user permission. If any request or modification threatens to touch or alter them, it must be exclusively marked in **RED** and halted with the confirmation prompt:
+  > **`Confirming - "Violating Prime Directive Rules"`**
+
+### 13. The 4 Hard Gates (Enterprise Safety & Irreversibility)
+* **Gate 1 (Minors Protection)**: Zero-tolerance for exposing telemetry or identity of minors outside the designated family circle.
+* **Gate 2 (Irreversible Operations)**: Operations involving destructive file deletion, table drops, database overwrite, remote deployment, or cloud purge require exactly one confirmation prompt before execution.
+* **Gate 3 (Live-Fire Target Guard)**: Immediate stop before executing live-fire network or telemetry transmissions against unverified production endpoints.
+* **Gate 4 (CSAM Policy)**: Strict zero-tolerance lockdown.
+
+### 14. Lifecycle Hardware & Software Pre-Flight Protocol (Install / Upgrade / Teardown)
+All installation, in-place upgrade, and uninstallation workflows must comply strictly with the 7 Scenario-Based Human-In-The-Loop SOPs in `.agent/rules/lifecycle_rules.md`:
+* **SOP-01 (Zero-State Onboarding)**: Hardware qualification $\to$ Silicon serial anchoring $\to$ 5-Stage permission ladder $\to$ OEM Auto-Start $\to$ SQLite seeding $\to$ Mesh enrollment.
+* **SOP-02 (Silent OTA Upgrade)**: Battery $\ge 15\%$, storage $\ge 150\text{ MB}$, in-flight SHA-256, API 31+ `USER_ACTION_NOT_REQUIRED`, `ACTION_MY_PACKAGE_REPLACED` non-destructive SQLite PRAGMA migrate & service revive.
+* **SOP-03 (HITL Settings Update)**: 1-Click check $\to$ Differential changelog card $\to$ "Install unknown apps" permission router $\to$ Glassmorphic bandwidth HUD $\to$ Installation handoff.
+* **SOP-04 (Signature Mismatch Bridge)**: Pre-check intercepts key differences (Debug vs Release) $\to$ Automated 1-Click Vault export to `/Documents/jFindMe_Vault/` & Firebase $\to$ Guided uninstall/reinstall $\to$ Automatic Day-0 database restore.
+* **SOP-05 (Rollback & Circuit Breaker)**: Instant cache eviction of corrupt `.apk` $\to$ 3-strike failure limit $\to$ 48h backoff & Firebase alert.
+* **SOP-06 (Pre-Uninstall Teardown)**: Forensic table audit $\to$ Gate 2 JEET confirmation $\to$ Offline cloud telemetry flush $\to$ Forensic dump export $\to$ Sentinel termination $\to$ SQLite purge $\to$ Native OS `ACTION_DELETE`.
+* **SOP-07 (OEM Battery Aggression)**: Telephony detection for Xiaomi HyperOS/MIUI, Samsung OneUI, Huawei EMUI $\to$ Deep-link auto-start routing $\to$ Sticky foreground notification with live GPS/Cellular badge.
+
 ---
 
-## Tier 2: Screen-Dependent Subset Rules
+## 📱 Tier 2: Screen-Dependent Subset Rules
 
 If Tier 1 universal checks pass, identify the target screen/domain and apply its specific subset rules:
 
 ### Subset A: Live Tactical Map (`MapActivity`, `MultiMarkerEngine`, `activity_map.xml`)
 1. **Lightweight Marker Standard**:
-   * Map markers must only render: Top Name Callout Pill (Role border + RAG font) + Direct Avatar + Status Dot + Motion Heading Chevron.
-   * Avoid heavy canvas glow layers and map-pin battery badges directly on the map viewport; surface detailed telemetry in bottom sheets or radar dialogs.
+   - Map markers must only render: Top Name Callout Pill (Role border + RAG font) + Direct Avatar + Status Dot + Motion Heading Chevron.
+   - Avoid heavy canvas glow layers and map-pin battery badges directly on the map viewport; surface detailed telemetry in bottom sheets or radar dialogs.
 2. **Render Throttling**:
-   * Marker recalculations and spiderfication updates must be throttled via MainLooper `Handler` ($\ge 250\text{ ms}$) to prevent UI frame drops during high-frequency location streams.
+   - Marker recalculations and spiderfication updates must be throttled via MainLooper `Handler` ($\ge 250\text{ ms}$) to prevent UI frame drops during high-frequency location streams.
 3. **Floating Distant Device Panel**:
-   * Peer devices strictly $> 50\text{ m}$ away appear in the top-left floating carousel (`@+id/floating_device_scroll` / `@+id/floating_device_panel`). Clicking a card smoothly pans camera and updates address marquee.
+   - Peer devices strictly $> 50\text{ m}$ away appear in the top-left floating panel (`@+id/floating_device_scroll` / `@+id/floating_device_panel`) as prominent circular Avatar Icons (zero floating text). Tapping an avatar smoothly pans camera and updates address marquee.
 4. **PiP Isolation**:
-   * In Picture-in-Picture mode (`onPictureInPictureModeChanged`), hide all headers, marquees, floating side panels, and dashboards (`View.GONE`), displaying only the map and the circular close CTA (`btn_pip_close`). Restore conditionally on exit.
-5. **ViewBinding Parity**:
-   * Every ID referenced in `MapActivity.java` via `binding.<id>` must be declared in both `app/src/main/res/layout/activity_map.xml` and `jButterFly/src/main/res/layout/activity_map.xml`.
+   - PiP mode strips all overlays, floating panels, and action sheets, maintaining only the focused device marker and real-time breadcrumbs.
 
-### Subset B: User Profile & Identity Hub (`ProfileActivity`, `ProfileViewModel`, `AuthViewModel`)
-1. **Tri-Tier Profile Rehydration**:
-   * **Tier 1**: Fetch local SQLite forensic dossier (`getLocalDossier`).
-   * **Tier 2**: Fall back to `SharedPreferences` (`system_registry`) and hardware identity.
-   * **Tier 3**: Deep cloud fallback from `/devices/{id}/profile`.
-2. **Offline-Online Preference Closure**:
-   * Any save operation (`verifyAndSaveProfile`) must atomically write all fields (`name`, `phone`, `dob`, `gender`, `address`, `city`, `state`, `country`, `pincode`, `org_name`, `dept_name`) to `SharedPreferences`, local SQLite (`executeTieredHandshake`), and Firebase (`syncForensicHeartbeat`).
-3. **Mandatory Field Indicators**:
-   * All mandatory fields must render with a red asterisk (`*`) in both Label and Hint using `Html.fromHtml`.
-4. **Slide-Out Right Drawer for Sub-Settings**:
-   * Edits and supplementary profile dialogs must slide in from the right edge with a 2-column compact layout and smooth vertical scrolling.
+### Subset B: Device Sharing & Butterfly Point (`DeviceSharingHub`, `ButterflyPointHub`)
+1. **Consolidated 4-in-1 Handshake**:
+   - Device A initiates ➔ shares Device B ➔ to target Device C with mutual verification codes.
+2. **Butterfly Point Protocol (`ACTION_GHOST`)**:
+   - Ghost mode suppresses broadcasting while maintaining local encrypted trail in `butterfly_point` table.
+3. **Timeout Watchdog**:
+   - Pairing handshakes enforce a 15s timeout with `AngelLoader` progress feedback and fallback to offline QR/SMS beacon.
 
-### Subset C: Circles, Family & Friends Roster (`FamilyFriendsActivity`, `FamilyFriendsViewModel`)
-1. **Type-Safe Cloud Deserialization**:
-   * All Firebase snapshot listeners for telemetry/heartbeats must use `safeLong()` and `safeInt()` helpers. Never call raw `snap.getValue(Long::class.java)` directly to prevent String-to-Number conversion crashes.
-2. **Topology Scoping & RBAC**:
-   * Enforce the 5-Phase Pairing Matrix: Members (Friends, Dependents) must only see nodes authorized by their parent/host circle. Never cross-expose unlinked peers.
-3. **Avatar Cache Isolation**:
-   * Remote avatars must be keyed per device (`REMOTE_HQ_{deviceId}_{avatarId}_...`) to prevent avatar bleeding between different members sharing identical avatar index numbers.
+### Subset C: Family & Friends & Master Roster (`FamilyFriendsActivity`, `PersonDetailsActivity`)
+1. **Master Roster SSOT**:
+   - Multi-tier group listing (`MASTER_ROSTER`) sorted with Wards/Children at Position 0, followed by active guardians, then friends.
+2. **Profile Parity**:
+   - Profile edits (Avatar, Name, Role) immediately trigger `ACTION_PROFILE_SYNCED` broadcast across SQLite and Firebase RTDB.
 
-### Subset D: Co-Parent Linking & Pairing Gateway (`PairingRepository`, `NetworkGatewayActivity`)
-1. **Co-Parent Link for Dependent Children (MANDATORY)**:
-   * When a parent assigns a member the role `🧸 Dependent Child / Ward` (or inspects a child node in quick actions), the app MUST present the option:
-     `👨‍👩‍👧 Link Other Parent / Co-Guardian` ("Assign a second parent/guardian, such as spouse, to co-manage this child").
-   * Linking must use the exact same Child ID across both parents:
-     - Writes reciprocal relationship under `/devices/{coParentId}/relationships/{childId}` (`role: Child`) and `/devices/{childId}/relationships/{coParentId}` (`role: GUARDIAN`).
-     - Appends `childId` to the co-parent's `/devices/{coParentId}/identity/valid_linked_agents` CSV list.
-     - Logs reciprocal pairing in local SQLite `device_pairing` (`DevicePairingTable.logPairing`).
-     - Signals roster refresh via `/relationships/{groupId}/signals/refresh_roster`.
-2. **3-Way Cryptographic Pairing**:
-   * QR payload must contain `{agent_id, active_group, public_key, timestamp}` and commit atomically to `/relationships/{group_id}/devices/{member_id}`.
-3. **Self-Healing Column Verification**:
-   * Queries accessing `group_members` or `device_pairings` must be wrapped in self-healing column checks (`PRAGMA table_info`) before query execution.
+### Subset D: Geofence & Safe Zones (`GeofenceActivity`, `GeofenceNotificationActivity`)
+1. **Mathematical Containment**:
+   - Ray-Casting algorithm for polygonal fences, Haversine for circular fences.
+2. **Deduplication Engine**:
+   - Prevent overlapping identical zones via `idx_safe_zones_dedupe`.
+3. **Event Latching**:
+   - State transition events (`ENTER` / `EXIT`) must persist state latch in `geofence_events` with timestamp descending order.
 
-### Subset E: SafeZones & Geofencing Engine (`SafeZoneActivity`, `GeofenceHelper`)
-1. **Low-Latency Spatial Math**:
-   * Polygon boundary detection must use ray-casting algorithms and Haversine distance without blocking the main UI thread.
-2. **SafeZone Deduplication**:
-   * SafeZone creation must use atomic `INSERT OR REPLACE` with unique index constraints (`idx_safe_zones_dedupe`) on `zone_id`.
-3. **Dual Notification Dispatch**:
-   * Breach/dwell events must dispatch both a local notification channel alert and a cloud alert node entry (`/alerts/{group_id}`).
+### Subset E: History & Trajectory Playback (`HistoryActivity`)
+1. **Linear Trajectory Mode**:
+   - The *only* legitimate exception to the descending query invariant: time-series replay uses `ORDER BY timestamp ASC`.
+2. **Interpolation Smoothing**:
+   - Filter noisy GPS spikes ($> 150\text{ km/h}$ delta without altitude acceleration) via 2D Kalman smoothing.
 
-### Subset F: Historical Trajectory & Forensic Vault (`HistoryActivity`, `ForensicVaultExplorerActivity`)
-1. **Chronological Exception**:
-   * Trajectory playback and breadcrumb animations are the **only** routines permitted to use `ORDER BY timestamp ASC`.
-2. **Bounded Sample Slicing**:
-   * Vault data exports and table audits must enforce bounded output schemas: summary metrics + maximum 10-record sample slices ($\le 100\text{ KB}$).
+### Subset F: Settings, Themes & UI Config (`SettingsActivity`, `UiConfigActivity`, `UiGalleryActivity`)
+1. **Dynamic 12-Theme Selection**:
+   - Modulo calculation uses `ThemeManager.THEMES.length` (never hardcode 8).
+   - Zero hardcoded colors; read from `theme.getSurfaceBackground()`, `theme.getGradientStart()`, `theme.getGradientEnd()`.
+2. **Universal 5-Stage Scaling**:
+   - Validate layouts against LIBERAL (25dp), STANDARD (20dp), COMPACT (15dp), SLIM (10dp), ULTRA_SLIM (5dp).
 
-### Subset G: Background Sentinel, Telemetry & Watchdog (`TrackingService`, `BackgroundJobManager`)
-1. **Adaptive Telemetry Polling**:
-   * High-frequency updates ($15\text{s} - 30\text{s}$) during movement or `SOS`.
-   * Throttled heartbeat ($5\text{m} - 15\text{m}$) when stationary or screen is off.
-2. **Silent Failure & Doze Recovery**:
-   * Background coroutine scopes must be wrapped in try-catch error boundaries.
-   * Watchdog self-resurrection ledger must log restart events without crashing the host process.
+### Subset G: Device Health, Cellular Triangulation & Telemetry (`HealthActivity`)
+1. **Baseband Cell Tower Sentinel**:
+   - Collect and display cellular carrier vitals (MCC/MNC/LAC/CID) for dead-reckoning fallback.
+2. **14-Condition Connectivity Audit**:
+   - Screen tests for Doze restrictions, background data throttling, carrier APN blocks, and GPS accuracy.
 
-### Subset H: Database & Cloud Synchronization (`DatabaseHelper`, `FirebaseComm`, `AvatarSyncEngine`)
-1. **Selective Field Heartbeat Patching**:
-   * Heartbeat payloads sent to Firebase must only patch non-empty fields to prevent erasing cloud dossiers during partial background syncs.
-2. **Physical Table vs. View Integrity**:
-   * Before dropping or replacing any view, verify via `SELECT type FROM sqlite_master` that the target is a `view` and **never a physical table**.
-3. **Atomic Handshake**:
-   * Local SQLite tables (`MASTER_ROSTER`, `SAFE_ZONES`, `TRACKING_HISTORY`, `DEVICE_METADATA`) must remain synchronized with Firebase Cloud SSOT (`/devices/{id}/profile`, `/locations/{id}`).
+### Subset H: Forensic Vault, Logs & Administrative Maintenance
+1. **Encrypted SQLite Explorer (`ForensicVaultExplorerActivity`)**:
+   - Read-only inspection of 27 normalized tables and 13 compatibility views.
+2. **Rolling System Logs (`SystemLogActivity`)**:
+   - Circular buffer capped at 5,000 entries; older rows trimmed automatically on SQLite transaction boundary.
+3. **Silent In-Place Update & Pre-Uninstall Teardown (`SystemUpdateActivity`, `FactoryResetActivity`)**:
+   - Strictly enforces the Tri-Phase Lifecycle Protocol (`.agent/rules/lifecycle_rules.md`).
+   - Hardware pre-flight (Battery $\ge 15\%$, Storage $\ge 150\text{ MB}$, Silicon ID).
+   - Software pre-flight (Keystore signature match, version code monotonicity, API 31+ unattended install).
+   - Pre-uninstall clean teardown: stop all background services, flush offline queues to cloud, offer forensic SQLite dump, then launch OS `ACTION_DELETE` intent. Zero orphaned background processes.

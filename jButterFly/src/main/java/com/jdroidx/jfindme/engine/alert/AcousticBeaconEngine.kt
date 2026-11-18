@@ -89,13 +89,17 @@ object AcousticBeaconEngine {
                 triggerContinuousVibration(context, effectiveDuration)
             }
 
-            // Launch full-screen interactive overlay
-            val sirenIntent = Intent(context, AcousticSirenActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra("INITIATOR_NAME", initiatorName)
-                putExtra("DURATION_SEC", effectiveDuration)
+            // Launch full-screen interactive overlay safely without killing siren audio if background launch is restricted
+            try {
+                val sirenIntent = Intent(context, AcousticSirenActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("INITIATOR_NAME", initiatorName)
+                    putExtra("DURATION_SEC", effectiveDuration)
+                }
+                context.startActivity(sirenIntent)
+            } catch (actEx: Exception) {
+                SystemLogger.w(TAG, "Full-screen siren activity launch restricted by OS background policy; acoustic siren audio & haptics continue uninterrupted: ${actEx.message}")
             }
-            context.startActivity(sirenIntent)
 
             scheduleAutoStop(context, effectiveDuration)
 

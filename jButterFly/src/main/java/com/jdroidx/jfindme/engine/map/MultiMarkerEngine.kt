@@ -111,10 +111,10 @@ object MultiMarkerEngine {
         )
 
         // 1. Gather all active candidate targets (Strictly deduplicated by canonical identity)
+        // [Variables] rawDeviceId, isMe, deviceId, candidateLat, candidateLng, hist, visibleBounds, isFarOffScreen, smoothed, rawLatLng | [Constants] 100, 10f | [Dependencies] RoadSmoothingEngine, DatabaseHelper, LatLngBounds | [Integration Points] processViewModelLocations, MapActivity
         for (ul in sortedLocations) {
             val rawDeviceId = ul.getResolvedUserId()
             if (rawDeviceId.isEmpty()) continue
-            if (ul.latitude == 0.0 && ul.longitude == 0.0) continue
 
             val isMe = (rawDeviceId == selfAgentId || 
                         rawDeviceId == selfHwUid || 
@@ -125,6 +125,17 @@ object MultiMarkerEngine {
                         (myUid.isNotEmpty() && rawDeviceId.equals(myUid, ignoreCase = true)) ||
                         (selfAgentId.isNotEmpty() && rawDeviceId.equals(selfAgentId, ignoreCase = true)))
             val deviceId = if (isMe) canonicalSelfId else rawDeviceId
+
+            var candidateLat = ul.latitude
+            var candidateLng = ul.longitude
+            if (candidateLat == 0.0 && candidateLng == 0.0 && !isMe) {
+                val hist = db.getLatestHistoricalLocation(rawDeviceId)
+                if (hist != null) {
+                    candidateLat = (hist["lat"] as? Double) ?: 0.0
+                    candidateLng = (hist["lng"] as? Double) ?: 0.0
+                }
+            }
+            if (candidateLat == 0.0 && candidateLng == 0.0) continue
 
             if (isMe) {
                 if (selfIncluded) continue // Reject duplicate Self node!
@@ -141,7 +152,7 @@ object MultiMarkerEngine {
                 val paddedNorth = visibleBounds.northeast.latitude + 0.15
                 val paddedWest = visibleBounds.southwest.longitude - 0.15
                 val paddedEast = visibleBounds.northeast.longitude + 0.15
-                ul.latitude < paddedSouth || ul.latitude > paddedNorth || ul.longitude < paddedWest || ul.longitude > paddedEast
+                candidateLat < paddedSouth || candidateLat > paddedNorth || candidateLng < paddedWest || candidateLng > paddedEast
             } else {
                 false
             }
@@ -153,8 +164,8 @@ object MultiMarkerEngine {
             // 🛣️ Filter GPS coordinates through 2D Kalman Filter & calculate road-aligned heading azimuth
             val smoothed = RoadSmoothingEngine.processLocation(
                 deviceId = deviceId,
-                rawLat = ul.latitude,
-                rawLng = ul.longitude,
+                rawLat = candidateLat,
+                rawLng = candidateLng,
                 accuracyMeters = 10f,
                 rawSpeedMps = ul.speed,
                 rawBearing = ul.bearing,
@@ -286,21 +297,22 @@ object MultiMarkerEngine {
         val targetSpacingDp = configuredSpacingDp.coerceIn(MIN_SPACING_DP, MAX_SPACING_DP)
         val collisionThresholdPx = targetSpacingDp.toFloat() * density * 1.30f
 
+        // [Variables] projection, density, targetSpacingDp, collisionThresholdPx, displayMetrics, screenW, screenH, validPt, pt | [Constants] MIN_SPACING_DP, MAX_SPACING_DP | [Dependencies] GoogleMap, Point, Context | [Integration Points] MapActivity, MultiMarkerEngine
+        val displayMetrics = context.resources.displayMetrics
+        val screenW = displayMetrics.widthPixels
+        val screenH = displayMetrics.heightPixels
+
         for (c in candidates) {
-            c.screenPoint = if (projection != null) {
+            var validPt: Point? = null
+            if (projection != null) {
                 try {
                     val pt = projection.toScreenLocation(c.rawLatLng)
-                    if (pt.x == 0 && pt.y == 0) {
-                        Point((c.rawLatLng.longitude * 10000).toInt(), (c.rawLatLng.latitude * 10000).toInt())
-                    } else {
-                        pt
+                    if (pt != null && !(pt.x == 0 && pt.y == 0) && pt.x > -1000 && pt.x < screenW + 1000 && pt.y > -1000 && pt.y < screenH + 1000) {
+                        validPt = pt
                     }
-                } catch (e: Exception) {
-                    Point((c.rawLatLng.longitude * 10000).toInt(), (c.rawLatLng.latitude * 10000).toInt())
-                }
-            } else {
-                Point((c.rawLatLng.longitude * 10000).toInt(), (c.rawLatLng.latitude * 10000).toInt())
+                } catch (ignored: Exception) {}
             }
+            c.screenPoint = validPt ?: Point(Int.MIN_VALUE, Int.MIN_VALUE)
         }
 
         // 🛡️ Transitive Connected Component Clustering (BFS - guarantees 3-node Triangle and 4-node Square)
@@ -323,15 +335,17 @@ object MultiMarkerEngine {
                 for (neighbor in candidates) {
                     if (visited.contains(neighbor.deviceId)) continue
 
-                    val isColliding = if (projection != null && curr.screenPoint.x != 0 && neighbor.screenPoint.x != 0) {
+                    val isColliding = if (curr.screenPoint.x != Int.MIN_VALUE && neighbor.screenPoint.x != Int.MIN_VALUE) {
                         val dx = (curr.screenPoint.x - neighbor.screenPoint.x).toDouble()
                         val dy = (curr.screenPoint.y - neighbor.screenPoint.y).toDouble()
                         val distPx = sqrt(dx * dx + dy * dy)
                         distPx < collisionThresholdPx
                     } else {
-                        val geoDeltaLat = abs(curr.rawLatLng.latitude - neighbor.rawLatLng.latitude)
-                        val geoDeltaLng = abs(curr.rawLatLng.longitude - neighbor.rawLatLng.longitude)
-                        geoDeltaLat < 0.00080 && geoDeltaLng < 0.00080
+                        com.jdroidx.jfindme.utils.SpatialMathUtil.isWithinDistance(
+                            curr.rawLatLng.latitude, curr.rawLatLng.longitude,
+                            neighbor.rawLatLng.latitude, neighbor.rawLatLng.longitude,
+                            50.0f
+                        )
                     }
 
                     if (isColliding) {
@@ -354,19 +368,13 @@ object MultiMarkerEngine {
                 continue
             }
 
-            val centroidX = cluster.map { it.screenPoint.x }.average()
-            val centroidY = cluster.map { it.screenPoint.y }.average()
+            val hasValidScreenCluster = cluster.all { it.screenPoint.x != Int.MIN_VALUE }
+            val centroidX = if (hasValidScreenCluster) cluster.map { it.screenPoint.x }.average() else 0.0
+            val centroidY = if (hasValidScreenCluster) cluster.map { it.screenPoint.y }.average() else 0.0
             val avgLat = cluster.map { it.rawLatLng.latitude }.average()
             val avgLng = cluster.map { it.rawLatLng.longitude }.average()
             val trueCentroid = LatLng(avgLat, avgLng)
 
-            // 🎯 Precise Geometric Progression:
-            // 2 Devices -> Symmetrical Horizontal Line
-            // 3 Devices -> Equilateral Triangle with top apex (Δ)
-            // 4 Devices -> Square with horizontal/vertical bounds (□)
-            // 5 Devices -> Regular Pentagon (⬟)
-            // 6 Devices -> Regular Hexagon (⬡)
-            // 7+ Devices -> Regular N-gon smoothly converging into a continuous Circle (◯)
             val dispersionRadiusPx = (calculateDispersionRadius(targetSpacingDp, count) * density).toFloat()
 
             val baseAngle = when (count) {
@@ -383,19 +391,16 @@ object MultiMarkerEngine {
                 node.centroidLatLng = trueCentroid
 
                 val angle = baseAngle + (2.0 * PI * idx / count)
-                val rawOffsetX = (centroidX + dispersionRadiusPx * cos(angle)).toInt()
-                val rawOffsetY = (centroidY + dispersionRadiusPx * sin(angle)).toInt()
 
-                // 🛡️ Edge Bezel Clamping: Prevent dispersion off-screen when centroid is near bezel
-                val displayMetrics = context.resources.displayMetrics
-                val marginInsetPx = (28f * density).toInt()
-                val clampedX = rawOffsetX.coerceIn(marginInsetPx, displayMetrics.widthPixels - marginInsetPx)
-                val clampedY = rawOffsetY.coerceIn(marginInsetPx, displayMetrics.heightPixels - marginInsetPx)
-
-                if (projection != null) {
+                if (hasValidScreenCluster && projection != null && centroidX > 0 && centroidX < screenW && centroidY > 0 && centroidY < screenH) {
+                    val rawOffsetX = (centroidX + dispersionRadiusPx * cos(angle)).toInt()
+                    val rawOffsetY = (centroidY + dispersionRadiusPx * sin(angle)).toInt()
+                    val marginInsetPx = (28f * density).toInt()
+                    val clampedX = rawOffsetX.coerceIn(marginInsetPx, screenW - marginInsetPx)
+                    val clampedY = rawOffsetY.coerceIn(marginInsetPx, screenH - marginInsetPx)
                     try {
                         val dispersedLatLng = projection.fromScreenLocation(Point(clampedX, clampedY))
-                        node.dispersedLatLng = dispersedLatLng ?: node.rawLatLng
+                        node.dispersedLatLng = dispersedLatLng ?: applyGeoOffsetFallback(trueCentroid, angle, dispersionRadiusPx, density)
                     } catch (e: Exception) {
                         node.dispersedLatLng = applyGeoOffsetFallback(trueCentroid, angle, dispersionRadiusPx, density)
                     }
@@ -597,7 +602,8 @@ object MultiMarkerEngine {
         val speedKmh = (candidate.speedMps * 3.6f).toInt()
         val batBucket = if (candidate.batteryLevel >= 0) (candidate.batteryLevel / 10) * 10 else -1
         val spdBucket = if (candidate.speedMps > 1.5f) (candidate.speedMps * 3.6f / 5).toInt() * 5 else 0
-        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|${candidate.isSos}|$batBucket|$spdBucket"
+        val brgBucket = if (candidate.speedMps > 1.0f) ((candidate.bearing / 15).toInt() * 15) else 0
+        val currentMeta = "${candidate.name}|${candidate.avatarId}|${candidate.stackTotal}|$calculatedRole|$showName|${candidate.isSos}|$batBucket|$spdBucket|$brgBucket"
         var customIconConfig = iconCache[deviceId]
         var iconChanged = false
 

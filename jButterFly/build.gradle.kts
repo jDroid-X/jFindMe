@@ -32,14 +32,20 @@ if (versionPropsFile.exists()) {
 val vMajor = versionProps.getProperty("VERSION_MAJOR", "1").toInt()
 val vMinor = versionProps.getProperty("VERSION_MINOR", "0").toInt()
 val vPatch = versionProps.getProperty("VERSION_PATCH", "1").toInt()
-var vCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
 
-// Check if running a release build task (e.g. assembleRelease / bundleRelease)
-val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
-if (isReleaseBuild) {
-    vCode += 1
-    versionProps["VERSION_CODE"] = vCode.toString()
-    versionProps.store(versionPropsFile.writer(), "Auto-incremented on Release Build")
+// 🛡️ Multi-Module Parity Sentinel: Synchronize version code once across both app and jButterFly modules
+val vCode: Int = if (rootProject.extra.has("SHARED_VERSION_CODE")) {
+    rootProject.extra["SHARED_VERSION_CODE"] as Int
+} else {
+    var rawCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
+    val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    if (isReleaseBuild) {
+        rawCode += 1
+        versionProps["VERSION_CODE"] = rawCode.toString()
+        versionProps.store(versionPropsFile.writer(), "Auto-incremented on Release Build")
+    }
+    rootProject.extra["SHARED_VERSION_CODE"] = rawCode
+    rawCode
 }
 
 val computedVersionName = "$vMajor.$vMinor.$vPatch"
@@ -49,10 +55,12 @@ android {
     compileSdk = 34
 
     signingConfigs {
-        val targetKeystore = if (keystorePropertiesFile.exists()) {
-            file(keystoreProperties["storeFile"] as String)
+        val rawPath = if (keystorePropertiesFile.exists()) keystoreProperties["storeFile"] as String else "../keystore/debug.keystore"
+        val targetKeystore = if (File(rawPath).isAbsolute) {
+            File(rawPath)
         } else {
-            file("../keystore/debug.keystore")
+            val rootRelative = rootProject.file(rawPath.removePrefix("../"))
+            if (rootRelative.exists()) rootRelative else file(rawPath)
         }
         val targetStorePassword = if (keystorePropertiesFile.exists()) keystoreProperties["storePassword"] as String else "android"
         val targetKeyAlias = if (keystorePropertiesFile.exists()) keystoreProperties["keyAlias"] as String else "androiddebugkey"

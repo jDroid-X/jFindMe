@@ -21,6 +21,20 @@ object DeviceIdentityHelper {
     private const val HW_PREFIX = "HW_"
     private const val FALLBACK_RAW = "UNKNOWN_NODE"
     private const val KEY_CACHED_RAW_HARDWARE_ID = "cached_raw_hardware_id"
+    private const val KEYSTORE_ALIAS_SILICON = "jfindme_silicon_anchor_key"
+    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+    val CANONICAL_ROSTER_IDS = listOf("2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789")
+
+    /**
+     * [Variables] agentId | [Constants] CANONICAL_ROSTER_IDS | [Dependencies] List | [Integration Points] AuthViewModel, SplashActivity
+     * 🛡️ Validates whether an agent ID matches a permanent canonical silicon anchor defined in PROGRAM-MAPPING.md
+     */
+    @JvmStatic
+    fun isCanonicalRosterId(agentId: String?): Boolean {
+        if (agentId.isNullOrBlank()) return false
+        return CANONICAL_ROSTER_IDS.contains(agentId)
+    }
+
     @Volatile
     private var agentIdCache: String? = null // Thread-safe cache for generated IDs
     @Volatile
@@ -56,38 +70,36 @@ object DeviceIdentityHelper {
 
         var resolved: String? = null
 
-        // On Android 10+ (API 29+), untrusted apps cannot read ro.* serial properties or Build.getSerial().
-        // Settings.Secure.ANDROID_ID is the official, fast, zero-denial standard.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            val oemProps = listOf("ro.ril.oem.sno", "ro.boot.serialno", "ro.serialno", "ro.ril.oem.psno")
-            for (prop in oemProps) {
-                val valStr = getSystemProperty(prop)
-                if (!valStr.isNullOrBlank()) {
-                    val clean = valStr.uppercase().filter { it.isLetterOrDigit() }
-                    if (clean.length >= 8 && clean != "UNKNOWN") {
-                        resolved = clean
-                        break
-                    }
+        // [Variables] oemProps, valStr, clean, serial, cleanSerial | [Constants] "ro.ril.oem.sno", "ro.boot.serialno", "ro.serialno", "ro.ril.oem.psno" | [Dependencies] getSystemProperty, Build | [Integration Points] SSOT Silicon Hardware Identity
+        // Unconditionally probe OEM physical silicon properties via reflection across all Android versions
+        val oemProps = listOf("ro.ril.oem.sno", "ro.boot.serialno", "ro.serialno", "ro.ril.oem.psno")
+        for (prop in oemProps) {
+            val valStr = getSystemProperty(prop)
+            if (!valStr.isNullOrBlank()) {
+                val clean = valStr.uppercase().filter { it.isLetterOrDigit() }
+                if (clean.length >= 8 && clean != "UNKNOWN") {
+                    resolved = clean
+                    break
                 }
             }
+        }
 
-            if (resolved == null) {
-                try {
-                    val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        try { Build.getSerial() } catch (e: SecurityException) { Build.SERIAL }
-                    } else {
-                        @Suppress("DEPRECATION")
-                        Build.SERIAL
-                    }
-                    if (!serial.isNullOrBlank() && serial != "UNKNOWN") {
-                        val cleanSerial = serial.uppercase().filter { it.isLetterOrDigit() }
-                        if (cleanSerial.length >= 8) {
-                            resolved = cleanSerial
-                        }
-                    }
-                } catch (e: Exception) {
-                    SystemLogger.w(TAG, "Serial probe fallback: ${e.message}")
+        if (resolved == null) {
+            try {
+                val serial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try { Build.getSerial() } catch (e: SecurityException) { Build.SERIAL }
+                } else {
+                    @Suppress("DEPRECATION")
+                    Build.SERIAL
                 }
+                if (!serial.isNullOrBlank() && serial != "UNKNOWN") {
+                    val cleanSerial = serial.uppercase().filter { it.isLetterOrDigit() }
+                    if (cleanSerial.length >= 8 && cleanSerial != "UNKNOWN") {
+                        resolved = cleanSerial
+                    }
+                }
+            } catch (e: Exception) {
+                SystemLogger.w(TAG, "Serial probe fallback: ${e.message}")
             }
         }
 
@@ -155,16 +167,45 @@ object DeviceIdentityHelper {
             return anchorId
         }
 
+        // 🛡️ Hardware KeyStore TEE / StrongBox Silicon Attestation Probe
+        val keyStoreAnchor = getHardwareKeyStoreSiliconAnchor(context)
+        if (isValidAgentId(keyStoreAnchor)) {
+            val validKeyAnchor = keyStoreAnchor!!
+            savePersistentAnchor(context, validKeyAnchor)
+        }
+
         val rawHw = getRawAndroidId(context).uppercase().filter { it.isLetterOrDigit() }
         val model = (Build.MODEL ?: "").uppercase()
         val brand = (Build.BRAND ?: "").uppercase()
         val device = (Build.DEVICE ?: "").uppercase()
+        val product = (Build.PRODUCT ?: "").uppercase()
+        val hardware = (Build.HARDWARE ?: "").uppercase()
+
+        // [Variables] canonicalRosterId | [Constants] "2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789" | [Dependencies] Build, PROGRAM-MAPPING | [Integration Points] SSOT Fleet Hardware Re-anchoring
+        // 🛡️ Canonical SSOT Hardware Roster Resolution (.agent/enterprise-22-agents/PROGRAM-MAPPING.md)
+        // Matches permanent hardware silicon profile to prevent orphan ID proliferation across reinstalls:
+        val canonicalRosterId = when {
+            rawHw.contains("2T92") || device.contains("VIOLET") || product.contains("VIOLET") || model.contains("NOTE 7 PRO") || model.contains("REDMI NOTE 7 PRO") -> "2T929153"
+            rawHw.contains("2C81") || device.contains("WHYRED") || product.contains("WHYRED") || model.contains("REDMI NOTE 5 PRO") || model.contains("REDMI 5PRO") -> "2C811042"
+            rawHw.contains("F8CA") || device.contains("SWEET") || product.contains("SWEET") || model.contains("NOTE 10 PRO") || model.contains("REDMI NOTE 10 PRO") -> "F8CAFC67"
+            rawHw.contains("4379") || model.contains("RIDDHI") -> "4379A761"
+            rawHw.contains("2D11") || model.contains("INNOVANT") -> "2D113789"
+            else -> null
+        }
+
+        if (canonicalRosterId != null && isValidAgentId(canonicalRosterId)) {
+            RegistryManager.putString(context, RegistryManager.KEY_AGENT_ID, canonicalRosterId)
+            agentIdCache = canonicalRosterId
+            savePersistentAnchor(context, canonicalRosterId)
+            SystemLogger.i(TAG, "Re-anchored Canonical Agent ID ($canonicalRosterId) for hardware ($device / $model / $rawHw)")
+            return canonicalRosterId
+        }
 
         // Generic Silicon Hardware Derivation
         val derivedId = if (rawHw.length >= 8 && rawHw != FALLBACK_RAW) {
             rawHw.take(4) + rawHw.takeLast(4)
         } else {
-            val hwFingerprint = "${brand}_${model}_${Build.BOARD}_${Build.HARDWARE}_${device}"
+            val hwFingerprint = "${brand}_${model}_${Build.BOARD}_${hardware}_${device}"
             try {
                 val md = java.security.MessageDigest.getInstance("SHA-256")
                 val digest = md.digest(hwFingerprint.toByteArray())
@@ -193,36 +234,59 @@ object DeviceIdentityHelper {
         return safeId
     }
 
-    private fun getPersistentAnchorFile(context: Context): java.io.File? {
-        return try {
-            val mediaDirs = context.externalMediaDirs
-            val targetDir = mediaDirs.firstOrNull { it != null } 
-                ?: java.io.File(android.os.Environment.getExternalStorageDirectory(), "Android/media/" + context.packageName)
-            if (!targetDir.exists()) targetDir.mkdirs()
-            java.io.File(targetDir, ".silicon_anchor")
-        } catch (e: Exception) {
-            null
-        }
+    private fun getPersistentAnchorFiles(context: Context): List<java.io.File> {
+        val targets = mutableListOf<java.io.File>()
+        try {
+            // 1. External Media directory (survives app clear data)
+            context.externalMediaDirs.filterNotNull().forEach { dir ->
+                targets.add(java.io.File(dir, ".silicon_anchor"))
+            }
+        } catch (e: Exception) { }
+
+        try {
+            // 2. Public Downloads Directory (SURVIVES full app uninstall & reinstall on Android!)
+            val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (downloadDir != null) {
+                targets.add(java.io.File(downloadDir, ".jfindme_silicon_anchor"))
+            }
+        } catch (e: Exception) { }
+
+        try {
+            // 3. Public Documents Directory (SURVIVES full app uninstall & reinstall on Android!)
+            val docDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS)
+            if (docDir != null) {
+                targets.add(java.io.File(docDir, ".jfindme_silicon_anchor"))
+            }
+        } catch (e: Exception) { }
+
+        return targets
     }
 
     private fun savePersistentAnchor(context: Context, agentId: String) {
-        try {
-            val file = getPersistentAnchorFile(context) ?: return
-            file.writeText(agentId.trim().uppercase())
-            SystemLogger.d(TAG, "Persisted silicon anchor to external storage: $agentId")
-        } catch (e: Exception) { }
+        if (!isValidAgentId(agentId)) return
+        val clean = agentId.trim().uppercase()
+        for (file in getPersistentAnchorFiles(context)) {
+            try {
+                file.parentFile?.mkdirs()
+                file.writeText(clean)
+                SystemLogger.d(TAG, "Persisted silicon anchor to: ${file.absolutePath} ($clean)")
+            } catch (e: Exception) { }
+        }
     }
 
     private fun readPersistentAnchor(context: Context): String? {
-        return try {
-            val file = getPersistentAnchorFile(context)
-            if (file != null && file.exists()) {
-                val text = file.readText().trim().uppercase()
-                if (isValidAgentId(text)) text else null
-            } else null
-        } catch (e: Exception) {
-            null
+        for (file in getPersistentAnchorFiles(context)) {
+            try {
+                if (file.exists() && file.canRead()) {
+                    val text = file.readText().trim().uppercase()
+                    if (isValidAgentId(text)) {
+                        SystemLogger.i(TAG, "Restored silicon anchor from: ${file.absolutePath} -> $text")
+                        return text
+                    }
+                }
+            } catch (e: Exception) { }
         }
+        return null
     }
 
     /**
@@ -365,4 +429,156 @@ object DeviceIdentityHelper {
 
     @JvmStatic
     fun getHardwareSerial(context: Context): String = getHardwareUid(context)
+
+    // [Variables] prefs, filter, status, rawLevel, scale, plugged, isCharging, pct, bm, cap | [Constants] ACTION_BATTERY_CHANGED | [Dependencies] Context, Intent, BatteryManager | [Integration Points] TrackingService, StealthAlarmSentinelEngine, BackgroundJobManager
+    /**
+     * 🔋 Dual-Probe Hardware Battery & Charging Vitals Resolver
+     * Uses Intent.ACTION_BATTERY_CHANGED with BatteryManager.BATTERY_PROPERTY_CAPACITY and SharedPreferences fallback.
+     */
+    @JvmStatic
+    fun getResolvedBatteryAndCharging(context: Context): Pair<Int, Boolean> {
+        val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+        return try {
+            val filter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+            val status = context.registerReceiver(null, filter)
+            val rawLevel = status?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = status?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val plugged = status?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+            val isCharging = plugged == android.os.BatteryManager.BATTERY_PLUGGED_AC ||
+                             plugged == android.os.BatteryManager.BATTERY_PLUGGED_USB ||
+                             plugged == android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS
+            var pct = if (rawLevel >= 0 && scale > 0) (rawLevel * 100) / scale else rawLevel
+            if (pct < 0) {
+                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                if (bm != null) {
+                    val cap = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    if (cap in 0..100) pct = cap
+                }
+            }
+            if (pct < 0) {
+                pct = prefs.getInt("last_known_battery", 100)
+            } else {
+                prefs.edit().putInt("last_known_battery", pct).apply()
+            }
+            Pair(pct, isCharging)
+        } catch (e: Exception) {
+            Pair(prefs.getInt("last_known_battery", 100), false)
+        }
+    }
+
+    /**
+     * 🛡️ Android KeyStore TEE / StrongBox Hardware-Backed Silicon Root Attestation
+     * Generates or retrieves an immutable hardware cryptographic keypair in the device's secure enclave.
+     * Extracts SHA-256 public key fingerprint to produce an 8-character hardware anchor.
+     */
+    @JvmStatic
+    fun getHardwareKeyStoreSiliconAnchor(context: Context): String? {
+        return try {
+            val keyStore = java.security.KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (!keyStore.containsAlias(KEYSTORE_ALIAS_SILICON)) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val kpg = java.security.KeyPairGenerator.getInstance(
+                        android.security.keystore.KeyProperties.KEY_ALGORITHM_EC,
+                        ANDROID_KEYSTORE
+                    )
+                    val spec = android.security.keystore.KeyGenParameterSpec.Builder(
+                        KEYSTORE_ALIAS_SILICON,
+                        android.security.keystore.KeyProperties.PURPOSE_SIGN or android.security.keystore.KeyProperties.PURPOSE_VERIFY
+                    ).apply {
+                        setDigests(android.security.keystore.KeyProperties.DIGEST_SHA256)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            try {
+                                setIsStrongBoxBacked(true)
+                            } catch (ignored: Exception) { }
+                        }
+                    }.build()
+                    kpg.initialize(spec)
+                    kpg.generateKeyPair()
+                }
+            }
+            val cert = keyStore.getCertificate(KEYSTORE_ALIAS_SILICON)
+            if (cert != null) {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val digest = md.digest(cert.publicKey.encoded)
+                val rawHex = digest.joinToString("") { "%02X".format(it) }
+                rawHex.take(4) + rawHex.takeLast(4)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Hardware KeyStore silicon anchor probe: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 🛡️ OEM Aggressive Battery Optimizer & Autostart Intent Dispatcher
+     * Bypasses Xiaomi (MIUI/HyperOS), Samsung (OneUI), Huawei (EMUI), Oppo/Realme (ColorOS), Vivo (FuntouchOS)
+     * and falls back to standard ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
+     * Returns true if an OEM or system intent was successfully dispatched.
+     */
+    @JvmStatic
+    fun requestOemBatteryExemption(context: Context): Boolean {
+        val pkgName = context.packageName
+
+        val oemIntents = listOf(
+            // Xiaomi / Redmi / Poco (MIUI / HyperOS Autostart)
+            android.content.Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            android.content.Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings")),
+            // Samsung (OneUI Battery Device Care)
+            android.content.Intent().setComponent(android.content.ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity")),
+            android.content.Intent().setComponent(android.content.ComponentName("com.samsung.android.sm", "com.samsung.android.sm.ui.battery.BatteryActivity")),
+            // Huawei / Honor (EMUI Startup Manager)
+            android.content.Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+            android.content.Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")),
+            // Oppo / Realme (ColorOS Startup)
+            android.content.Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
+            android.content.Intent().setComponent(android.content.ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
+            // Vivo / iQOO (FuntouchOS Background Run)
+            android.content.Intent().setComponent(android.content.ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")),
+            android.content.Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"))
+        )
+
+        for (intent in oemIntents) {
+            try {
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                    SystemLogger.i(TAG, "Dispatched OEM battery autostart intent: ${intent.component?.flattenToShortString()}")
+                    return true
+                }
+            } catch (ignored: Exception) { }
+        }
+
+        // Generic Android 6.0+ Battery Optimization Exemption Request
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                if (powerManager != null && !powerManager.isIgnoringBatteryOptimizations(pkgName)) {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = android.net.Uri.parse("package:$pkgName")
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(intent)
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                SystemLogger.w(TAG, "Standard battery optimization request fallback: ${e.message}")
+            }
+        }
+
+        // Final Fallback: Open General Application Details Settings
+        return try {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$pkgName")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

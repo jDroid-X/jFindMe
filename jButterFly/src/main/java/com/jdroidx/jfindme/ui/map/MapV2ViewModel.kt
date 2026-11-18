@@ -197,16 +197,10 @@ class MapV2ViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Calculates the Haversine distance between two coordinates in meters.
+     * Delegated to SpatialMathUtil for enterprise OOPS deduplication.
      */
     private fun calculateHaversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6371000.0 // Earth radius in meters
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLon / 2) * sin(dLon / 2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return r * c
+        return com.jdroidx.jfindme.utils.SpatialMathUtil.computeDistanceBetween(lat1, lon1, lat2, lon2)
     }
 
     override fun onCleared() {

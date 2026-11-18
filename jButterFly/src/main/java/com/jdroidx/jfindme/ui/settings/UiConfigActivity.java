@@ -1259,7 +1259,8 @@ public class UiConfigActivity extends BaseActivityJava {
         content.addView(scrollWrapper, getSectionParams());
     }
 
-    private View createSectionHeader(String text) {
+    @Override
+    protected View createSectionHeader(String text) {
         TextView header = new TextView(this);
         header.setText(text);
         header.setTextColor(getGradientStart());

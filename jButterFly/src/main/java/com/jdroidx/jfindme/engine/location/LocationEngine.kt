@@ -182,12 +182,19 @@ class LocationEngine(private val context: Context, private val onLocationChanged
         EngineRegistry.heartbeat(EngineRegistry.ENGINE_LOCATION)
     }
 
-    fun setLowPowerMode(enabled: Boolean) {
+    fun setLowPowerMode(enabled: Boolean, nearGeofencePerimeter: Boolean = false) {
         val userChoice = RegistryManager.getTrackingInterval(context)
-        trackingPriority = if (enabled) Priority.PRIORITY_BALANCED_POWER_ACCURACY else PRIORITY_HIGH_ACCURACY
-        updateInterval = if (enabled) maxOf(userChoice, 300000L) else userChoice
+        trackingPriority = if (enabled && !nearGeofencePerimeter) Priority.PRIORITY_BALANCED_POWER_ACCURACY else Priority.PRIORITY_HIGH_ACCURACY
+        // If near a geofence perimeter (within 150m), hold cadence at max 30s to detect breaches promptly
+        updateInterval = if (nearGeofencePerimeter) {
+            minOf(userChoice, 30000L)
+        } else if (enabled) {
+            maxOf(userChoice, 60000L) // Capped at 60s instead of 300s
+        } else {
+            userChoice
+        }
         updateTrackingParams()
-        SystemLogger.i(TAG, "LowPowerMode=" + enabled + " -> interval=" + updateInterval + "ms")
+        SystemLogger.i(TAG, "LowPowerMode=$enabled, NearGeofence=$nearGeofencePerimeter -> interval=${updateInterval}ms")
     }
 
     @SuppressLint("MissingPermission")

@@ -68,6 +68,9 @@ object ApkInstallerHelper {
      */
     fun resolveDirectDownloadUrl(rawUrl: String): String {
         val trimmed = rawUrl.trim()
+        if (trimmed.isEmpty()) {
+            return RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
+        }
 
         // 1. Google Drive direct file download
         val fileId = extractDriveFileId(trimmed)
@@ -75,43 +78,132 @@ object ApkInstallerHelper {
             return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
         }
 
-        // 2. Google Drive Folder fallback: Web folders cannot stream binary APKs; fallback to master binary release
+        // 2. Google Drive Folder fallback: Web folders cannot stream binary APKs; fallback to canonical Git LFS binary release
         if (trimmed.contains("drive.google.com/drive/folders/") || trimmed.contains("drive.google.com/drive/u/")) {
             SystemLogger.i(TAG, "Drive folder URL detected. Resolving to primary direct GitHub binary release.")
-            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
+            return RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
         }
 
-        // 3. GitHub Delta Patches: Retain patch path with media.githubusercontent.com direct endpoint
-        if (trimmed.contains("/patches/")) {
-            return if (trimmed.contains("github.com/jDroid-X/jButterfly/raw/")) {
-                trimmed.replace("github.com/jDroid-X/jButterfly/raw/", "media.githubusercontent.com/media/jDroid-X/jButterfly/")
-            } else if (trimmed.contains("raw.githubusercontent.com/jDroid-X/jButterfly/")) {
-                trimmed.replace("raw.githubusercontent.com/jDroid-X/jButterfly/", "media.githubusercontent.com/media/jDroid-X/jButterfly/")
+        // [Variables] trimmed: Sanitized input URL | apkName: Extracted canonical APK filename
+        // [Constants] RegistryManager.DEFAULT_GITHUB_UPDATE_LINK, RegistryManager.DEFAULT_GITHUB_WEB_LINK
+        // [Dependencies] Regex, SystemLogger, RegistryManager
+        // [Integration Points] downloadAndInstall, downloadApkInBackground, SystemUpdateViewModel
+
+        // 3. Direct GitHub LFS Media Endpoint for jButterFly (media CDN serves raw binary with 200 OK)
+        if (trimmed.contains("github.com/jDroid-X/jButterfly", ignoreCase = true) ||
+            trimmed.contains("media.githubusercontent.com/media/jDroid-X/jButterfly", ignoreCase = true) ||
+            trimmed.contains("raw.githubusercontent.com/jDroid-X/jButterfly", ignoreCase = true) ||
+            trimmed.contains("github.com/jDroid-X/jFindMe", ignoreCase = true)) {
+            
+            // Normalize filename casing strictly: GitHub media CDN requires exact case "jButterFly"
+            val verMatch = Regex("(?:jbutterFly|jbutterfly)_V([0-9]+)\\.apk", RegexOption.IGNORE_CASE).find(trimmed)
+            val apkName = if (verMatch != null) {
+                "jButterFly_V${verMatch.groupValues[1]}.apk"
             } else {
-                trimmed
+                "jButterFly.apk"
             }
+            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jButterFly/$apkName"
         }
 
-        // 4. Direct GitHub binary endpoint for jButterFly Full APK (media CDN serves raw binary with 200 OK)
-        if (trimmed.contains("github.com/jDroid-X/jButterfly") || 
-            trimmed.contains("raw.githubusercontent.com/jDroid-X/jButterfly") ||
-            trimmed.contains("media.githubusercontent.com/media/jDroid-X/jButterfly")) {
-            return "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jbutterfly/jButterFly.apk"
-        }
-
-        // 5. Generic GitHub repository / tree / blob / raw normalization
-        if (trimmed.contains("github.com/") && (trimmed.contains("/tree/") || trimmed.contains("/blob/") || trimmed.endsWith(".apk"))) {
-            var converted = trimmed.replace("github.com/", "media.githubusercontent.com/media/")
-            converted = converted.replace("/blob/", "/")
-            converted = converted.replace("/tree/", "/")
-            converted = converted.replace("/raw/", "/")
-            if (!converted.endsWith(".apk")) {
-                converted = converted.trimEnd('/') + "/jButterFly.apk"
-            }
-            return converted
+        // 4. Generic GitHub repository / tree / blob / raw normalization
+        if (trimmed.contains("github.com/") || trimmed.contains("githubusercontent.com/")) {
+            return RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
         }
 
         return trimmed
+    }
+
+    /**
+     * 🚀 GitHubReleaseCandidate: Autonomous release model parsed directly from GitHub directory.
+     */
+    data class GitHubReleaseCandidate(
+        val hasNewVersion: Boolean,
+        val latestVersionCode: Int,
+        val latestVersionName: String,
+        val fileName: String,
+        val downloadUrl: String,
+        val packageSizeFormatted: String,
+        val isOnlineSuccess: Boolean = true
+    )
+
+    /**
+     * 🌐 Queries GitHub Contents API directly to detect the latest APK in https://github.com/jDroid-X/jButterfly/tree/main/jButterFly
+     * Automatically extracts highest version number from files like jButterFly_V190.apk without requiring manual database entries.
+     */
+    @JvmStatic
+    fun scanGitHubForLatestRelease(context: Context, onResult: (GitHubReleaseCandidate) -> Unit) {
+        // [Variables] currentCode: Installed app build | maxCode: Discovered remote highest build | bestFileName: Target APK | isOnlineSuccess: Verification flag
+        // [Constants] GITHUB_API_URL, DEFAULT_GITHUB_UPDATE_LINK
+        // [Dependencies] HttpURLConnection, JSONArray, Dispatchers.IO, SystemLogger
+        // [Integration Points] SystemUpdateViewModel.executeUpdate, SilentUpdateWorker
+        CoroutineScope(Dispatchers.IO).launch {
+            val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
+            var maxCode = currentCode
+            var bestFileName = "jButterFly.apk"
+            val bestSize = "84.6 MB"
+            var foundHigher = false
+            var isOnlineSuccess = false
+
+            try {
+                val apiUrl = URL("https://api.github.com/repos/jDroid-X/jButterfly/contents/jButterFly")
+                val conn = (apiUrl.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 8000
+                    readTimeout = 10000
+                    setRequestProperty("User-Agent", "jButterFly-Android")
+                    setRequestProperty("Accept", "application/vnd.github.v3+json")
+                }
+
+                if (conn.responseCode in 200..299) {
+                    isOnlineSuccess = true
+                    val rawJson = conn.inputStream.bufferedReader().use { it.readText() }
+                    val array = org.json.JSONArray(rawJson)
+                    val versionPattern = Regex("(?:jButterFly|jbutterfly)_V([0-9]+)\\.apk", RegexOption.IGNORE_CASE)
+
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val name = obj.optString("name", "")
+                        val match = versionPattern.find(name)
+                        if (match != null) {
+                            val code = match.groupValues[1].toIntOrNull() ?: 0
+                            if (code > maxCode) {
+                                maxCode = code
+                                bestFileName = "jButterFly_V${match.groupValues[1]}.apk"
+                                foundHigher = true
+                            }
+                        }
+                    }
+                } else {
+                    SystemLogger.w(TAG, "GitHub API HTTP ${conn.responseCode}: Fallback to canonical endpoint.")
+                }
+            } catch (e: Exception) {
+                SystemLogger.w(TAG, "GitHub contents API scan fallback: ${e.message}")
+            }
+
+            // If a higher version was found (e.g. jButterFly_V190.apk), use it; otherwise use canonical jButterFly.apk
+            val targetDownloadUrl = if (foundHigher) {
+                "https://media.githubusercontent.com/media/jDroid-X/jButterfly/main/jButterFly/$bestFileName"
+            } else {
+                RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
+            }
+
+            // [Variables] candidate: GitHubReleaseCandidate | targetDownloadUrl: Resolved direct media endpoint
+            // [Constants] RegistryManager.DEFAULT_GITHUB_UPDATE_LINK, BuildConfig.VERSION_NAME
+            // [Dependencies] GitHubReleaseCandidate, SystemLogger
+            // [Integration Points] SystemUpdateViewModel 1-Click Update Sentinel
+            val candidate = GitHubReleaseCandidate(
+                hasNewVersion = foundHigher || maxCode > currentCode,
+                latestVersionCode = if (maxCode > currentCode) maxCode else currentCode,
+                latestVersionName = if (foundHigher) "Build $maxCode" else com.jdroidx.jfindme.BuildConfig.VERSION_NAME,
+                fileName = bestFileName,
+                downloadUrl = targetDownloadUrl,
+                packageSizeFormatted = bestSize,
+                isOnlineSuccess = isOnlineSuccess
+            )
+
+            withContext(Dispatchers.Main) {
+                onResult(candidate)
+            }
+        }
     }
 
     /**
@@ -258,7 +350,7 @@ object ApkInstallerHelper {
 
         // Header: Application Identity
         val tvHeader = TextView(activity).apply {
-            text = "🦋 jButterFly"
+            text = "🦋 jFindMe"
             setTextColor(gradStart)
             textSize = 18f
             typeface = Typeface.DEFAULT_BOLD
@@ -321,7 +413,9 @@ object ApkInstallerHelper {
             } else "97.0% Saved"
             "$deltaSz ($savings vs Full APK)"
         } else {
-            metadata?.fullSizeFormatted?.ifEmpty { "80.5 MB" } ?: "80.5 MB"
+            // [Variables] metadata: UpdatePackageMetadata
+            // [Constants] RegistryManager.DEFAULT_PACKAGE_SIZE: 84.6 MB canonical media CDN binary size
+            metadata?.fullSizeFormatted?.ifEmpty { RegistryManager.DEFAULT_PACKAGE_SIZE } ?: RegistryManager.DEFAULT_PACKAGE_SIZE
         }
 
         val tvSizeChannel = TextView(activity).apply {
@@ -595,6 +689,7 @@ object ApkInstallerHelper {
 
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Download error: ${e.message}", e)
+                try { if (apkFile.exists()) apkFile.delete() } catch (ignored: Exception) {}
                 withContext(Dispatchers.Main) {
                     if (dialog.isShowing) dialog.dismiss()
                     if (!isCancelled) {
@@ -1211,11 +1306,24 @@ object ApkInstallerHelper {
 
     /**
      * Opens URL explicitly in a Web Browser (Chrome/Firefox/Samsung) bypassing Google Drive app.
+     * Preserves web page browsing URLs (e.g. GitHub tree/releases) instead of force-converting to direct .apk downloads.
      */
     fun openInWebBrowser(activity: Activity, rawUrl: String) {
         try {
-            val direct = resolveDirectDownloadUrl(rawUrl)
-            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(direct)).apply {
+            // [Variables] trimmed: Cleaned URL, urlToOpen: Final browsable or download URL
+            // [Constants] CATEGORY_BROWSABLE, FLAG_ACTIVITY_NEW_TASK
+            // [Dependencies] Intent, Uri, Toast
+            // [Integration Points] Direct download failure fallback UI
+            val trimmed = rawUrl.trim()
+            val urlToOpen = if (trimmed.contains("/tree/") ||
+                trimmed.contains("/blob/") ||
+                trimmed.contains("/releases") ||
+                (trimmed.contains("github.com") && !trimmed.endsWith(".apk", ignoreCase = true))) {
+                trimmed
+            } else {
+                resolveDirectDownloadUrl(trimmed)
+            }
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(urlToOpen)).apply {
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -1226,11 +1334,20 @@ object ApkInstallerHelper {
     }
 
     private fun showDownloadErrorDialog(activity: Activity, originalUrl: String, errorMsg: String) {
+        // [Variables] browserUrl: Safe web URL for repository navigation
+        // [Constants] RegistryManager.DEFAULT_GITHUB_WEB_LINK
+        // [Dependencies] AlertDialog, RegistryManager
+        // [Integration Points] Direct download failure fallback UI
+        val browserUrl = if (originalUrl.endsWith(".apk", ignoreCase = true) || originalUrl.contains("media.githubusercontent.com") || originalUrl.contains("raw.githubusercontent.com")) {
+            RegistryManager.DEFAULT_GITHUB_WEB_LINK
+        } else {
+            originalUrl
+        }
         AlertDialog.Builder(activity)
             .setTitle("⚠️ Direct Download Notice")
-            .setMessage("Direct in-app download encountered an issue:\n$errorMsg\n\nWould you like to open the download link directly in your Web Browser (Chrome / Samsung Internet)?")
+            .setMessage("Direct in-app download encountered an issue:\n$errorMsg\n\nWould you like to open the releases repository directly in your Web Browser (Chrome / Samsung Internet)?")
             .setPositiveButton("🌐 OPEN IN BROWSER") { _, _ ->
-                openInWebBrowser(activity, originalUrl)
+                openInWebBrowser(activity, browserUrl)
             }
             .setNegativeButton("CANCEL", null)
             .show()
@@ -1334,6 +1451,46 @@ object ApkInstallerHelper {
                 try { inputStream?.close() } catch (ignored: Exception) {}
                 connection?.disconnect()
             }
+        }
+    }
+
+    /**
+     * 📥 Enqueues system-level background download via Android DownloadManager.
+     * Writes directly into /sdcard/Download/ with native OS progress notification.
+     * Bypasses app background execution limits and permission restrictions across Android 8-16.
+     */
+    @JvmStatic
+    fun enqueueSystemDownload(
+        context: Context,
+        downloadUrl: String,
+        fileName: String,
+        title: String = "jButterFly System Update",
+        isWifiOnly: Boolean = false
+    ): Long {
+        return try {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? android.app.DownloadManager ?: return -1L
+            val directUrl = resolveDirectDownloadUrl(downloadUrl)
+            val uri = android.net.Uri.parse(directUrl)
+            val request = android.app.DownloadManager.Request(uri).apply {
+                setTitle(title)
+                setDescription("Downloading $fileName to /sdcard/Download/...")
+                setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+                setMimeType("application/vnd.android.package-archive")
+                if (isWifiOnly) {
+                    setAllowedNetworkTypes(android.app.DownloadManager.Request.NETWORK_WIFI)
+                } else {
+                    setAllowedNetworkTypes(android.app.DownloadManager.Request.NETWORK_WIFI or android.app.DownloadManager.Request.NETWORK_MOBILE)
+                }
+                setAllowedOverMetered(!isWifiOnly)
+                setAllowedOverRoaming(true)
+            }
+            val downloadId = dm.enqueue(request)
+            SystemLogger.i(TAG, "📥 Android DownloadManager enqueued: ID=$downloadId -> /sdcard/Download/$fileName")
+            downloadId
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "DownloadManager enqueue failed: ${e.message}", e)
+            -1L
         }
     }
 
@@ -1463,6 +1620,7 @@ object ApkInstallerHelper {
     /**
      * 🔋 Checks if the device has adequate battery (>= minLevel) or is actively charging.
      */
+    // [Variables] filter, batteryStatus, level, scale, plugged, isCharging, pct, bm, cap | [Constants] minLevel = 20 | [Dependencies] IntentFilter, BatteryManager | [Integration Points] SilentUpdateWorker, SystemUpdateActivity
     @JvmStatic
     @JvmOverloads
     fun hasAdequateBattery(context: Context, minLevel: Int = 20): Boolean {
@@ -1476,8 +1634,15 @@ object ApkInstallerHelper {
                              plugged == android.os.BatteryManager.BATTERY_PLUGGED_USB ||
                              plugged == android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS
             if (isCharging) return true
-            val pct = if (level >= 0 && scale > 0) (level * 100) / scale else level
-            pct >= minLevel
+            var pct = if (level >= 0 && scale > 0) (level * 100) / scale else level
+            if (pct < 0) {
+                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                if (bm != null) {
+                    val cap = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    if (cap in 0..100) pct = cap
+                }
+            }
+            if (pct < 0) true else pct >= minLevel
         } catch (e: Exception) {
             true // Fail open if battery query is restricted
         }

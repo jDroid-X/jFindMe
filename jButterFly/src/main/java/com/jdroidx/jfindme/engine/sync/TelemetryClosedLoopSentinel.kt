@@ -189,10 +189,10 @@ object TelemetryClosedLoopSentinel {
             activeFeedbackRef = feedbackRef
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
-                    val serverAckTs = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
+                    val serverAckTs = FirebaseComm.safeLong(snapshot.child("timestamp")) ?: 0L
                     val commandAck = snapshot.child("command").getValue(String::class.java) ?: ""
-                    val clientTs = snapshot.child("clientTs").getValue(Long::class.java)
-                        ?: (snapshot.child("client_timestamp").getValue(Long::class.java) ?: 0L)
+                    val clientTs = FirebaseComm.safeLong(snapshot.child("clientTs"))
+                        ?: (FirebaseComm.safeLong(snapshot.child("client_timestamp")) ?: 0L)
                     val now = System.currentTimeMillis()
                     val rttMs = if (clientTs > 0L && now >= clientTs) (now - clientTs) else (if (serverAckTs > 0L && now >= serverAckTs) (now - serverAckTs) else 0L)
 

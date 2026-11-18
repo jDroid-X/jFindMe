@@ -534,9 +534,9 @@ object BackgroundJobManager {
                 if (user != null) {
                     FirebaseComm.resolveHardwareIdentity(user.uid) { agentId ->
                         val finalId = agentId ?: user.uid
-                        FirebaseComm.getLiveRef(finalId).child("status").setValue("ONLINE")
-                        FirebaseComm.getLiveRef(finalId).child("timestamp").setValue(FirebaseComm.getForensicTimestamp())
-                        callback(true, "Real-time presence pulse sent to Firebase matrix.")
+                        val (bat, _) = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getResolvedBatteryAndCharging(context)
+                        FirebaseComm.syncPresencePulse(user.uid, finalId, bat)
+                        callback(true, "Real-time presence pulse sent to Firebase matrix (Battery: $bat%).")
                     }
                 } else {
                     callback(false, "No active user logged in.")

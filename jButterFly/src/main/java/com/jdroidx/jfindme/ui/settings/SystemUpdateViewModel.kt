@@ -125,6 +125,26 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     private val _remoteVersionName = MutableLiveData<String>()
     val remoteVersionName: LiveData<String> get() = _remoteVersionName
 
+    // 👥 Dynamic Device & Group Identifiers (Eliminating hardcoded values)
+    private val _agentId = MutableLiveData<String>()
+    val agentId: LiveData<String> get() = _agentId
+
+    private val _activeGroup = MutableLiveData<String>()
+    val activeGroup: LiveData<String> get() = _activeGroup
+
+    // 🚀 Streamlined 1-Click Release Observables (Autonomous GitHub Scanning)
+    private val _hasUpdateReady = MutableLiveData<Boolean>(false)
+    val hasUpdateReady: LiveData<Boolean> get() = _hasUpdateReady
+
+    private val _discoveredLatestFileName = MutableLiveData<String>("jButterFly.apk")
+    val discoveredLatestFileName: LiveData<String> get() = _discoveredLatestFileName
+
+    private val _discoveredLatestCode = MutableLiveData<Int>(com.jdroidx.jfindme.BuildConfig.VERSION_CODE)
+    val discoveredLatestCode: LiveData<Int> get() = _discoveredLatestCode
+
+    private val _discoveredDirectDownloadUrl = MutableLiveData<String>(RegistryManager.DEFAULT_GITHUB_UPDATE_LINK)
+    val discoveredDirectDownloadUrl: LiveData<String> get() = _discoveredDirectDownloadUrl
+
     data class InstallPromptData(
         val downloadUrl: String,
         val targetVersion: String,
@@ -156,6 +176,13 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     }
 
     fun initData(context: Context) {
+        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
+        // Variables: context
+        // Constants: KEY_LAST_KNOWN_VERSION_CODE
+        // Dependencies: RegistryManager
+        // Integration Points: Runtime self-healing verification
+        RegistryManager.checkAndCloseUpdateFeedbackLoop(context)
+
         val currentLink = RegistryManager.getSystemUpdateLink(context)
         _driveLink.value = normalizeDownloadUrl(currentLink)
 
@@ -169,10 +196,14 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         val savedSavingsStr = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0")
         val savedSavings = savedSavingsStr.toDoubleOrNull() ?: 97.0
         val savedFrom = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_FROM_BUILD, com.jdroidx.jfindme.BuildConfig.VERSION_CODE.toString()).toIntOrNull() ?: com.jdroidx.jfindme.BuildConfig.VERSION_CODE
-        val savedTo = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, "99").toIntOrNull() ?: 99
+        val savedTo = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1).toString()).toIntOrNull() ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
 
+        // [Variables] installedSizeBytes: Long | fullSizeStr: String
+        // [Constants] CANONICAL_APK_SIZE: "84.6 MB" (matching actual GitHub LFS binary)
+        // [Dependencies] FirebaseComm.getInstalledPackageSizeBytes, FirebaseComm.formatByteSize
+        // [Integration Points] hero banner dynamic APK size presentation
         val installedSizeBytes = com.jdroidx.jfindme.data.remote.FirebaseComm.getInstalledPackageSizeBytes(context)
-        val fullSizeStr = if (installedSizeBytes > 0) com.jdroidx.jfindme.data.remote.FirebaseComm.formatByteSize(installedSizeBytes) else "80.5 MB"
+        val fullSizeStr = if (installedSizeBytes > 0) com.jdroidx.jfindme.data.remote.FirebaseComm.formatByteSize(installedSizeBytes) else RegistryManager.DEFAULT_PACKAGE_SIZE
 
         _latestDeltaPatchSize.value = savedDeltaSize
         _latestDeltaSavingsPct.value = savedSavings
@@ -180,7 +211,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         _latestDeltaFromBuild.value = savedFrom
         _latestDeltaTargetBuild.value = savedTo
 
-        val savedRemoteVer = RegistryManager.getString(context, "latest_remote_version_name", "1.0.16")
+        val savedRemoteVer = RegistryManager.getString(context, "latest_remote_version_name", com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
         _remoteVersionName.value = savedRemoteVer
 
         // Load Silent Update state and forensic timestamps via RegistryManager
@@ -214,6 +245,32 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             "$lastFailedTs • $lastFailedReason" + (if (isBufferActive) " [24h Buffer Active: ${remHours}h left]" else " [Buffer Expired]")
         } else {
             "None (No Recorded Failures)"
+        }
+
+        // Dynamic Device & Group Identity
+        val dynamicAgentId = RegistryManager.getAgentId(context).ifEmpty { "NODE_STANDALONE" }
+        val dynamicGroup = RegistryManager.getActiveGroup(context).ifEmpty { "GLOBAL_FLEET" }
+        _agentId.value = dynamicAgentId
+        _activeGroup.value = dynamicGroup
+
+        // 🌐 Autonomous GitHub scan on screen launch to pick latest APK candidate
+        ApkInstallerHelper.scanGitHubForLatestRelease(context) { candidate ->
+            _discoveredLatestCode.postValue(candidate.latestVersionCode)
+            _discoveredLatestFileName.postValue(candidate.fileName)
+            _discoveredDirectDownloadUrl.postValue(candidate.downloadUrl)
+            if (!candidate.isOnlineSuccess) {
+                _hasUpdateReady.postValue(false)
+                _updateStatusInfo.postValue("OFFLINE / STANDBY")
+                _updateAvailableInfo.postValue("GitHub Unreachable (Check Connection)")
+            } else if (candidate.hasNewVersion) {
+                _hasUpdateReady.postValue(true)
+                _updateAvailableInfo.postValue("${candidate.fileName} (Build ${candidate.latestVersionCode})")
+                _updateStatusInfo.postValue("UPDATE READY: Build ${candidate.latestVersionCode}")
+            } else {
+                _hasUpdateReady.postValue(false)
+                _updateAvailableInfo.postValue("None (Build ${candidate.latestVersionCode} Installed)")
+                _updateStatusInfo.postValue("UP TO DATE (Build ${candidate.latestVersionCode})")
+            }
         }
 
         val deltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
@@ -352,9 +409,9 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         val savings = savingsStr.toDoubleOrNull() ?: 97.0
         val sha256 = RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_SHA256, "")
         val toBuild = _latestDeltaTargetBuild.value?.takeIf { it > 0 }
-            ?: (RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, "115").toIntOrNull() ?: 115)
+            ?: (RegistryManager.getString(activity, RegistryManager.KEY_LATEST_DELTA_TO_BUILD, (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1).toString()).toIntOrNull() ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1))
         val toVer = _remoteVersionName.value?.takeIf { it.isNotEmpty() }
-            ?: RegistryManager.getString(activity, "latest_remote_version_name", "1.0.16")
+            ?: RegistryManager.getString(activity, "latest_remote_version_name", com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
 
         val meta = ApkInstallerHelper.UpdatePackageMetadata(
             targetVersionName = toVer,
@@ -364,7 +421,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             downloadUrl = directUrl,
             deltaUrl = deltaUrl,
             deltaSizeFormatted = deltaSize,
-            fullSizeFormatted = _latestFullApkSize.value ?: "80.5 MB",
+            fullSizeFormatted = _latestFullApkSize.value ?: RegistryManager.DEFAULT_PACKAGE_SIZE,
             deltaSavingsPct = savings,
             sha256Expected = sha256
         )
@@ -381,7 +438,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             downloadUrl = fullUrl,
             deltaUrl = item.deltaUrl,
             deltaSizeFormatted = item.deltaSizeFormatted,
-            fullSizeFormatted = _latestFullApkSize.value ?: "80.5 MB",
+            fullSizeFormatted = _latestFullApkSize.value ?: RegistryManager.DEFAULT_PACKAGE_SIZE,
             deltaSavingsPct = item.savingsPct,
             sha256Expected = item.deltaSha256
         )
@@ -436,22 +493,8 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             val link = _driveLink.value ?: RegistryManager.getSystemUpdateLink(context)
             val normalized = normalizeDownloadUrl(link)
 
-            // Persistence: Update successful installation markers via RegistryManager
-            val now = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date())
-            _lastUpdateInfo.value = "LAST UPDATE: $now"
-            _updateStatusInfo.value = "UPDATED: YES [V${com.jdroidx.jfindme.BuildConfig.VERSION_NAME}]"
-
-            RegistryManager.putString(context, RegistryManager.KEY_LAST_UPDATE_TS, now)
-            RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, true)
-            RegistryManager.putString(context, RegistryManager.KEY_UPDATE_STATUS_TS, now)
-
-            val agentId = RegistryManager.getAgentId(context)
-            if (agentId.isNotEmpty()) {
-                com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, agentId)
-                com.jdroidx.jfindme.data.remote.FirebaseComm.syncVersionUpdateMetadata(context, agentId, "INSTALLED")
-            }
-
-            // Notify Activity once to perform the single install/download handshake
+            // Defensive State Transition: Do not commit KEY_IS_UPDATED optimistically before download completes.
+            // Handoff normalized URL to activity for secure streaming and verification.
             _installPackageUrl.value = normalized
         }
     }
@@ -459,11 +502,11 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
     fun installFullApk(activity: android.app.Activity) {
         val githubLink = _githubLink.value?.takeIf { it.isNotEmpty() } ?: RegistryManager.getGithubUpdateLink(activity)
         val directUrl = ApkInstallerHelper.resolveDirectDownloadUrl(githubLink)
-        val fullSize = _latestFullApkSize.value ?: "80.5 MB"
+        val fullSize = _latestFullApkSize.value ?: RegistryManager.DEFAULT_PACKAGE_SIZE
         val targetCode = _latestDeltaTargetBuild.value?.takeIf { it > 0 }
             ?: RegistryManager.getInt(activity, "latest_remote_version_code", com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
         val targetVer = _remoteVersionName.value?.takeIf { it.isNotEmpty() }
-            ?: RegistryManager.getString(activity, "latest_remote_version_name", "1.0.16")
+            ?: RegistryManager.getString(activity, "latest_remote_version_name", com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
         val meta = ApkInstallerHelper.UpdatePackageMetadata(
             targetVersionName = targetVer,
             targetVersionCode = targetCode,
@@ -475,19 +518,40 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         ApkInstallerHelper.downloadAndInstall(activity, directUrl, meta)
     }
 
+    fun triggerOneClickUpdate(activity: android.app.Activity) {
+        // [Variables] targetUrl: Canonical media CDN endpoint | fileName: Target APK filename | targetCode: Target build code | fullSize: Size
+        // [Constants] RegistryManager.DEFAULT_GITHUB_UPDATE_LINK
+        // [Dependencies] ApkInstallerHelper.downloadAndInstall
+        // [Integration Points] SystemUpdateActivity 1-click update action button
+        val targetUrl = _discoveredDirectDownloadUrl.value?.takeIf { it.isNotEmpty() } ?: RegistryManager.getGithubUpdateLink(activity)
+        val fileName = _discoveredLatestFileName.value ?: "jButterFly.apk"
+        val targetCode = _discoveredLatestCode.value?.takeIf { it > 0 } ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
+        val fullSize = _latestFullApkSize.value ?: RegistryManager.DEFAULT_PACKAGE_SIZE
+
+        val meta = ApkInstallerHelper.UpdatePackageMetadata(
+            targetVersionName = "Build $targetCode",
+            targetVersionCode = targetCode,
+            releaseTitle = "jButterFly System Update ($fileName)",
+            packageType = "FULL_APK",
+            downloadUrl = targetUrl,
+            fullSizeFormatted = fullSize
+        )
+        ApkInstallerHelper.downloadAndInstall(activity, targetUrl, meta)
+    }
+
     fun resetInstallPackageUrl() {
         _installPackageUrl.value = null
     }
 
     fun executeUpdate(context: Context) {
+        // [Variables] currentCode: Active build | now: Forensic timestamp | effectiveAgentId: Cloud Node ID
+        // [Constants] RegistryManager.KEY_LAST_CHECK_TS, RegistryManager.KEY_IS_UPDATED
+        // [Dependencies] ApkInstallerHelper.scanGitHubForLatestRelease, FirebaseComm
+        // [Integration Points] 1-Click Update UI & Background Scheduler
         viewModelScope.launch {
             _isLoading.value = true
-            _loadingStatus.value = "Scanning for System Deltas in Cloud Firebase..."
-            delay(800)
-            _loadingStatus.value = "Comparing Enterprise Version Matrices..."
-            delay(600)
+            _loadingStatus.value = "Scanning GitHub Repository for Latest Releases..."
 
-            val agentId = RegistryManager.getAgentId(context)
             val now = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date())
             val currentName = com.jdroidx.jfindme.BuildConfig.VERSION_NAME
             val currentCode = com.jdroidx.jfindme.BuildConfig.VERSION_CODE
@@ -496,88 +560,82 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             RegistryManager.putString(context, RegistryManager.KEY_LAST_CHECK_TS, now)
             _lastCheckInfo.postValue(now)
 
-            val effectiveAgentId = if (agentId.isNotEmpty()) agentId else "NODE_DEFAULT"
-            val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
-            if (currentUser == null) {
+            // 🌐 Step 1: Autonomous Direct GitHub Release Scan (Direct from https://github.com/jDroid-X/jButterfly/tree/main/jButterFly)
+            ApkInstallerHelper.scanGitHubForLatestRelease(context) { candidate ->
                 _isLoading.postValue(false)
-                _loadingStatus.postValue("Standby: App in offline mode awaiting user authentication.")
-                return@launch
-            }
-            com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, effectiveAgentId)
-            com.jdroidx.jfindme.data.remote.FirebaseComm.checkForVersionDifference(context, effectiveAgentId) { hasNew, remoteVersion, remoteCode, downloadUrl, size ->
-                _isLoading.postValue(false)
-                _remoteVersionName.postValue(remoteVersion)
-                RegistryManager.putString(context, "latest_remote_version_name", remoteVersion)
-                RegistryManager.putInt(context, "latest_remote_version_code", remoteCode)
+                _discoveredLatestCode.postValue(candidate.latestVersionCode)
+                _discoveredLatestFileName.postValue(candidate.fileName)
+                _discoveredDirectDownloadUrl.postValue(candidate.downloadUrl)
+                _remoteVersionName.postValue(candidate.latestVersionName)
+                _latestFullApkSize.postValue(candidate.packageSizeFormatted)
+                RegistryManager.putString(context, "latest_remote_version_name", candidate.latestVersionName)
+                RegistryManager.putInt(context, "latest_remote_version_code", candidate.latestVersionCode)
 
-                val curDeltaUrl = RegistryManager.getString(context, "latest_delta_patch_url", "")
-                val curDeltaSize = RegistryManager.getString(context, "latest_delta_patch_size", "")
-                val curSavings = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SAVINGS_PCT, "97.0").toDoubleOrNull() ?: 97.0
-                if (curDeltaUrl.isNotEmpty()) {
-                    _patchAvailableInfo.postValue("$curDeltaSize Smart Patch [Available • SHA-256 Verified]")
-                    _latestDeltaPatchSize.postValue(curDeltaSize)
-                } else {
-                    _patchAvailableInfo.postValue("None (Running Current Architecture)")
-                }
-                _latestDeltaSavingsPct.postValue(curSavings)
-                _latestFullApkSize.postValue(size)
-                _latestDeltaFromBuild.postValue(currentCode)
-                _latestDeltaTargetBuild.postValue(remoteCode)
-                _patchAuditLog.postValue(RegistryManager.getPatchHistoryFormatted(context))
-
-                val onlineVer = "V$remoteVersion (Build $remoteCode) [$size]"
-                val whichIsLatestText: String
-
-                if (hasNew) { // remoteCode > currentCode
-                    whichIsLatestText = "📢 ONLINE REPOSITORY IS LATEST:\nOnline release ($onlineVer) is NEWER than your currently installed app ($currentVer)."
-                    _updateAvailableInfo.postValue(onlineVer)
-                    _updateStatusInfo.postValue("UPDATE PENDING (New Build Available)")
-
-                    val hasDelta = curDeltaUrl.isNotEmpty()
-                    _showInstallPrompt.postValue(InstallPromptData(
-                        downloadUrl = downloadUrl,
-                        targetVersion = remoteVersion,
-                        packageSizeEst = size,
-                        sha256Verification = RegistryManager.getString(context, RegistryManager.KEY_LATEST_DELTA_SHA256, ""),
-                        isDelta = hasDelta,
-                        deltaSizeFormatted = curDeltaSize,
-                        savingsPct = curSavings,
-                        remoteCode = remoteCode,
-                        deltaUrl = curDeltaUrl
+                if (!candidate.isOnlineSuccess) {
+                    _hasUpdateReady.postValue(false)
+                    _updateStatusInfo.postValue("OFFLINE / STANDBY")
+                    _updateAvailableInfo.postValue("GitHub Unreachable (Check Connection)")
+                    _checkResultDialog.postValue(Pair(
+                        "⚠️ Network Connection Notice",
+                        "Could not connect to GitHub repository.\n\n" +
+                        "📱 Current Installed: $currentVer\n" +
+                        "🕒 Attempted: $now\n\n" +
+                        "Please verify your Wi-Fi or mobile data connection and tap 'SCAN' to retry."
                     ))
-                } else if (remoteCode == currentCode) {
-                    whichIsLatestText = "✅ VERSIONS ARE IDENTICAL:\nYour installed app ($currentVer) matches the latest online production build ($onlineVer)."
-                    _updateAvailableInfo.postValue("None (Matches Online $onlineVer)")
-                    _updateStatusInfo.postValue("UP TO DATE ($currentVer)")
+                } else if (candidate.hasNewVersion) {
+                    _hasUpdateReady.postValue(true)
+                    val updateText = "${candidate.fileName} (Build ${candidate.latestVersionCode})"
+                    _updateAvailableInfo.postValue(updateText)
+                    _updateStatusInfo.postValue("UPDATE READY: Build ${candidate.latestVersionCode}")
+                    RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, false)
+
+                    _checkResultDialog.postValue(Pair(
+                        "🚀 Update Available",
+                        "A newer build is ready on GitHub:\n\n" +
+                        "📦 File: ${candidate.fileName}\n" +
+                        "🏷️ Target Build: Build ${candidate.latestVersionCode}\n" +
+                        "📱 Current Installed: $currentVer\n" +
+                        "📊 Size: ${candidate.packageSizeFormatted}\n\n" +
+                        "Tap 'UPDATE' to download and install automatically."
+                    ))
+                } else if (candidate.latestVersionCode == currentCode) {
+                    _hasUpdateReady.postValue(false)
+                    _updateAvailableInfo.postValue("None (Build $currentCode Installed)")
+                    _updateStatusInfo.postValue("UP TO DATE (Build $currentCode)")
                     RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, true)
 
                     _checkResultDialog.postValue(Pair(
-                        "📊 System Version Matrix",
-                        "📊 COMPREHENSIVE VERSION AUDIT:\n\n" +
-                        "📱 CURRENT INSTALLED:\n$currentVer\n\n" +
-                        "🌐 ONLINE REPOSITORY:\n$onlineVer\n\n" +
-                        "🔍 WHICH ONE IS LATEST:\n$whichIsLatestText\n\n" +
-                        "• Database Schema: V${com.jdroidx.jfindme.data.local.DatabaseHelper.DATABASE_VERSION}\n" +
-                        "• Last Verified: $now\n\n" +
-                        "To re-flash or install fresh from storage, tap 'INSTALL VERSION'."
+                        "✅ System Up To Date",
+                        "Your device is running the latest public release:\n\n" +
+                        "📱 Current Installed: $currentVer\n" +
+                        "🌐 GitHub Repository: Build ${candidate.latestVersionCode} (${candidate.fileName})\n" +
+                        "🕒 Verified: $now"
                     ))
-                } else { // currentCode > remoteCode
-                    whichIsLatestText = "🛠️ LOCAL BUILD IS AHEAD:\nYour installed development build ($currentVer) is NEWER than the public online release ($onlineVer)."
-                    _updateAvailableInfo.postValue("Installed Ahead of Online ($onlineVer)")
+                } else {
+                    _hasUpdateReady.postValue(false)
+                    _updateAvailableInfo.postValue("Developer Track (Ahead of Public ${candidate.latestVersionCode})")
                     _updateStatusInfo.postValue("DEVELOPER TRACK ($currentVer)")
                     RegistryManager.putBoolean(context, RegistryManager.KEY_IS_UPDATED, true)
 
                     _checkResultDialog.postValue(Pair(
-                        "📊 System Version Matrix",
-                        "📊 COMPREHENSIVE VERSION AUDIT:\n\n" +
-                        "📱 CURRENT INSTALLED:\n$currentVer (Active Development)\n\n" +
-                        "🌐 ONLINE REPOSITORY:\n$onlineVer (Public Release)\n\n" +
-                        "🔍 WHICH ONE IS LATEST:\n$whichIsLatestText\n\n" +
-                        "• Database Schema: V${com.jdroidx.jfindme.data.local.DatabaseHelper.DATABASE_VERSION}\n" +
-                        "• Last Verified: $now"
+                        "🛠️ Developer Track",
+                        "Your installed build is ahead of the public repository:\n\n" +
+                        "📱 Local Development Build: $currentVer\n" +
+                        "🌐 Public Repository Build: Build ${candidate.latestVersionCode}\n" +
+                        "🕒 Verified: $now"
                     ))
                 }
             }
+
+            // ☁️ Step 2: Non-blocking Background Firebase Sync for telemetry
+            try {
+                val agentId = RegistryManager.getAgentId(context)
+                val effectiveAgentId = if (agentId.isNotEmpty()) agentId else "NODE_DEFAULT"
+                val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                if (currentUser != null) {
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.syncDeviceAccessPermissions(context, effectiveAgentId)
+                }
+            } catch (ignored: Exception) {}
 
             com.jdroidx.jfindme.data.remote.FirebaseComm.checkForLiveHotPatch(context) { hasHot, patchInfo ->
                 if (hasHot && patchInfo != null) {

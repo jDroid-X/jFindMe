@@ -30,6 +30,8 @@ object SafeZoneTable {
     const val COL_ACTIVE_SCHEDULE_JSON = "active_schedule_json"
     const val COL_ASSIGNED_AGENT_ID = "assigned_agent_id" // Group/Target link
     const val COL_IS_ALERTS_ENABLED = "is_alerts_enabled"
+    const val COL_ALERTS_ENABLED = COL_IS_ALERTS_ENABLED // Backward-compatibility alias
+    const val COL_ADDRESS = "address" // Backward-compatibility alias
     const val COL_IS_ACTIVE = "is_active"
     const val COL_IS_ARCHIVED = "is_archived"
     const val COL_POLYGON_POINTS = "polygon_points" // JSON string of [{lat, lng}, ...]
