@@ -147,19 +147,23 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         if ("CHILD".equalsIgnoreCase(requestedFocusCategory)) {
             tvHeaderTitle.setText("CHILDREN DEVICES");
             tvHeaderSubtitle.setText("Monitored Dependents & Kids Roster");
-            collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", true);
-            collapsedBranches.put("💍 SPOUSE ENTITIES", true);
+            collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", false);
+            collapsedBranches.put("💍 SPOUSE ENTITIES", false);
             collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", false);
         } else if ("GUARDIAN".equalsIgnoreCase(requestedFocusCategory)) {
             tvHeaderTitle.setText("GUARDIANS & FAMILY");
             tvHeaderSubtitle.setText("Primary Caregivers & Family Roster");
             collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", false);
-            collapsedBranches.put("💍 SPOUSE ENTITIES", true);
-            collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", true);
+            collapsedBranches.put("💍 SPOUSE ENTITIES", false);
+            collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", false);
         } else if ("FRIEND".equalsIgnoreCase(requestedFocusCategory) || activeTab == TAB_FRIENDS) {
             tvHeaderTitle.setText("MEETMYFRIEND GROUPS");
             tvHeaderSubtitle.setText("Social Circles & Peer Network");
             activeTab = TAB_FRIENDS;
+        } else {
+            collapsedBranches.put("👑 CO-GUARDIANS & PARENTS", false);
+            collapsedBranches.put("💍 SPOUSE ENTITIES", false);
+            collapsedBranches.put("🧸 DEPENDENT TARGETS (CHILDREN)", false);
         }
 
         header.addView(titleCluster);

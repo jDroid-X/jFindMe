@@ -308,8 +308,8 @@ object RegistryManager {
     @JvmStatic fun get(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    @JvmStatic fun getString(context: Context, key: String, default: String = ""): String =
-        get(context).getString(key, default) ?: default
+    @JvmStatic fun getString(context: Context, key: String, default: String? = ""): String =
+        get(context).getString(key, default ?: "") ?: (default ?: "")
 
     @JvmStatic fun getInt(context: Context, key: String, default: Int = 0): Int =
         try {
@@ -1824,6 +1824,12 @@ object RegistryManager {
     }
 
     @JvmStatic fun addDecommissionedAgentId(context: Context, id: String) {
+        val cleanId = id.trim().uppercase().removePrefix("HW_")
+        val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context).uppercase().removePrefix("HW_")
+        if (cleanId.isNotBlank() && (cleanId == selfId || cleanId == "SELF_USER" || cleanId == "YOU")) {
+            SystemLogger.w("RegistryManager", "Rejected self-decommissioning of host device: $id")
+            return
+        }
         val current = getDecommissionedAgentIds(context).toMutableSet()
         current.add(id.trim().uppercase())
         setDecommissionedAgentIds(context, current)
@@ -1852,6 +1858,10 @@ object RegistryManager {
         if (agentId.isNullOrBlank()) return false
         val clean = agentId.trim().uppercase()
         val cleanNorm = if (clean.startsWith("HW_")) clean.substring(3).trim() else clean
+        val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context).uppercase().removePrefix("HW_")
+        if (cleanNorm.isNotBlank() && (cleanNorm == selfId || clean == selfId || clean == "SELF_USER" || clean == "YOU")) {
+            return false // Host self device is NEVER decommissioned!
+        }
         val decomSet = getDecommissionedAgentIds(context)
         return decomSet.contains(clean) || decomSet.contains(cleanNorm) || decomSet.any { cleanNorm == it || clean == it }
     }

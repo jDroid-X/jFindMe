@@ -180,6 +180,17 @@ public class TacticalCameraController {
         String name = peer.getUserName() != null && !peer.getUserName().isEmpty() ? peer.getUserName() : "Peer Node";
 
         if (!isValidCoordinate(lat, lng)) {
+            try {
+                com.jdroidx.jfindme.data.repository.DeviceRepository repo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context);
+                java.util.Map<String, Object> hist = repo.getLatestHistoricalLocation(devId);
+                if (hist != null && hist.get("lat") instanceof Double && hist.get("lng") instanceof Double) {
+                    lat = (Double) hist.get("lat");
+                    lng = (Double) hist.get("lng");
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (!isValidCoordinate(lat, lng)) {
             Toast.makeText(context, "Peer coordinates unacquired", Toast.LENGTH_SHORT).show();
             return;
         }

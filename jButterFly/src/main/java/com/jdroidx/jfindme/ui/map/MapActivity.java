@@ -2640,6 +2640,9 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                         || rawTitle.equals(l.getUserName())
                         || rawTitle.equals(devCentricName)) {
                         selectedUserId = uid;
+                        if (cameraController != null) {
+                            cameraController.focusOnPeer(l);
+                        }
                         updateAddressMarquee(l);
                         showTacticalTargetActionSheet(l);
                         return true;
@@ -4285,7 +4288,8 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
             float distMeters = entry.second;
             String dId = ul.getResolvedUserId();
 
-            String displayName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveTruncatedName(this, dId, ul.getUserName(), 10);
+            // [Variables] displayName, finalDisplayName, dId, ul | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] Tactical Floating Device Card
+            String displayName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, dId, ul.getUserName());
 
             String distText = (distMeters >= 1000f) 
                 ? String.format(java.util.Locale.US, "%.1f km", distMeters / 1000f) 
@@ -4302,11 +4306,11 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
 
             if (!isExpanded) {
                 // =========================================================================
-                // 🔘 STATE 1 (DEFAULT): 45dp Circular Avatar (20% less size than 56dp Map Avatar)
+                // 🔘 STATE 1 (DEFAULT): 56dp Circular Avatar (Exact same size as 56dp Map Avatar)
                 // Zero text, zero icons at top; On click -> converts to rectangle metadata card
                 // =========================================================================
                 FrameLayout roundContainer = new FrameLayout(this);
-                int roundSize = scale(45); // Exactly 20% less size than 56dp Map Avatar (56 * 0.8 = 44.8 ~ 45dp)
+                int roundSize = scale(56); // 🚀 Exact same size as 56dp Live Map Avatar
                 LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(roundSize, roundSize);
                 rLp.bottomMargin = scale(8);
                 rLp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -4320,7 +4324,7 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 roundContainer.setElevation(scale(4));
 
                 ImageView ivAvatar = new ImageView(this);
-                int avSize = scale(36);
+                int avSize = scale(46);
                 FrameLayout.LayoutParams avLp = new FrameLayout.LayoutParams(avSize, avSize);
                 avLp.gravity = Gravity.CENTER;
                 ivAvatar.setLayoutParams(avLp);
@@ -4399,17 +4403,19 @@ public class MapActivity extends BaseActivityJava implements OnMapReadyCallback 
                 textLayout.setOrientation(LinearLayout.VERTICAL);
 
                 TextView tvName = new TextView(this);
-                tvName.setText(displayName);
-                tvName.setTextSize(11f);
+                tvName.setText(displayName + " • " + roleStr);
+                tvName.setTextSize(11.5f);
                 tvName.setTextColor(0xFFFFFFFF);
                 tvName.setTypeface(null, Typeface.BOLD);
                 tvName.setMaxLines(1);
                 textLayout.addView(tvName);
 
                 TextView tvMeta = new TextView(this);
-                String metaText = distText + " • " + durationText + (ul.getBatteryLevel() >= 0 ? " • 🔋" + ul.getBatteryLevel() + "%" : "");
+                String batteryStr = (ul.getBatteryLevel() >= 0) ? " • 🔋" + ul.getBatteryLevel() + "%" : "";
+                String sosStr = ul.isSosActive() ? " • 🚨 SOS" : "";
+                String metaText = distText + " • " + durationText + batteryStr + sosStr;
                 tvMeta.setText(metaText);
-                tvMeta.setTextSize(9f);
+                tvMeta.setTextSize(9.5f);
                 tvMeta.setTextColor(0xFF00E5FF); // Neon cyan
                 tvMeta.setTypeface(null, Typeface.BOLD);
                 textLayout.addView(tvMeta);

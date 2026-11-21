@@ -195,8 +195,9 @@ public class SplashActivity extends Activity {
                 String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                 
                 boolean bypassNudge = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_bypass_nudge", false);
+                boolean profileOnboarded = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_onboarded", false);
                 
-                if (!bypassNudge && (agentId.isEmpty() || !db.isProfileComplete(agentId))) {
+                if (!bypassNudge && !profileOnboarded && (agentId.isEmpty() || !db.isProfileComplete(agentId))) {
                     com.jdroidx.jfindme.utils.SystemLogger.w(TAG, "Incomplete Profile Detected. Redirecting to Identity Hub.");
                     nextIntent = new Intent(SplashActivity.this, ProfileActivity.class);
                 } else {

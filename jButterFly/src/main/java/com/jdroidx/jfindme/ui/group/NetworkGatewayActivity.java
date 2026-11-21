@@ -277,7 +277,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         // Async Cloud Group Sync & Real-time Signal Listener
         // [Variables] activeGrp | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Cloud group sync
-        String activeGrp = RegistryManager.getString(this, "active_group", null);
+        String activeGrp = RegistryManager.getEffectiveActiveGroup(this);
         viewModel.syncCloudGroupToLocalDb(this, activeGrp);
         viewModel.setupSignalListener(safeUid, activeGrp, () -> {
             runOnUiThread(() -> viewModel.syncCloudGroupToLocalDb(this, activeGrp));

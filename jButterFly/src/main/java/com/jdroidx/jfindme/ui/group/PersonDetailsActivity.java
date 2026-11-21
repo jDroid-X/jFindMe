@@ -713,7 +713,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, isFriendRole);
                         
                         // [Variables] myGrp: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Member role sync
-                        String myGrp = RegistryManager.getString(this, "active_group", null);
+                        String myGrp = RegistryManager.getEffectiveActiveGroup(this);
                         if (myGrp != null) {
                             String effectiveRole = isFriendRole ? "Friends" : (famRole.equals("None") ? "Member" : famRole);
                             java.util.Map<String, Object> memberUpdates = new java.util.HashMap<>();
@@ -1475,7 +1475,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         super.onMasterDataUpdated(category, changeType, entityId, senderId);
         if (viewModel != null && targetUid != null) {
             // [Variables] activeGrp: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Dossier & roster refresh
-            String activeGrp = RegistryManager.getString(this, "active_group", null);
+            String activeGrp = RegistryManager.getEffectiveActiveGroup(this);
             viewModel.fetchDossier(this, activeGrp, targetUid);
             viewModel.fetchLocalRoster(this);
         }

@@ -565,8 +565,8 @@ object ButterflyPointEngine {
                     updates["rejection_reason"] = rejectionReason
                 }
 
-                rtdb.child("butterfly_points").child(pointId).child("devices").child(deviceId).updateChildren(updates)
                 val cleanDevId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(deviceId)
+                rtdb.child("butterfly_points").child(pointId).child("devices").child(cleanDevId).updateChildren(updates)
                 com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(cleanDevId)
                     .child("butterfly_invitations").child(pointId).child("status").setValue(newStatus)
 

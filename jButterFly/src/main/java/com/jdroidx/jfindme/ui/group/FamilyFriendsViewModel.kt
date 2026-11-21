@@ -880,10 +880,11 @@ class FamilyFriendsViewModel : ViewModel() {
         fun classifyCategory(role: String, isAdmin: Boolean, isFriend: Boolean): String {
             val upper = role.uppercase()
             return when {
-                isFriend || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") -> "FRIEND"
+                isFriend || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") || upper.contains("INNOVANT") -> "FRIEND"
                 upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER") -> "SPOUSE"
                 isAdmin || upper.contains("GUARDIAN") || upper.contains("FATHER") || upper.contains("MOTHER") || upper.contains("PARENT") || upper.contains("ADMIN") -> "GUARDIAN"
-                else -> "DEPENDENT_CHILD"
+                upper.contains("CHILD") || upper.contains("WARD") || upper.contains("SON") || upper.contains("DAUGHTER") || upper.contains("DEPENDENT") || upper.contains("KID") -> "DEPENDENT_CHILD"
+                else -> "FRIEND"
             }
         }
     }

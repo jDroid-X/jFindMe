@@ -1533,6 +1533,7 @@ public class ProfileActivity extends BaseActivityJava {
                     missingDialog.show();
                     applyDialogTheme(missingDialog);
                 } else {
+                    prefs.edit().putBoolean("profile_bypass_nudge", true).putBoolean("profile_onboarded", true).apply();
                     com.jdroidx.jfindme.utils.AvatarLoader.clearCache();
                     android.widget.Toast.makeText(ProfileActivity.this, "🛡️ Identity Verified. Proceeding to Dashboard.", android.widget.Toast.LENGTH_SHORT).show();
                     startActivity(new android.content.Intent(ProfileActivity.this, com.jdroidx.jfindme.ui.map.MapActivity.class)

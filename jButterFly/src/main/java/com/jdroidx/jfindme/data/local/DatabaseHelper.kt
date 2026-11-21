@@ -1605,6 +1605,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     @JvmOverloads fun isDeviceDeleted(uid1: String, groupId: String? = null): Boolean {
         return try {
             val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid1)
+            val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context).uppercase().removePrefix("HW_")
+            val cleanNorm = cleanUid.uppercase().removePrefix("HW_")
+            if (cleanNorm.isNotBlank() && (cleanNorm == selfId || cleanNorm == "SELF_USER" || cleanNorm == "YOU")) {
+                return false // Self host device is NEVER deleted!
+            }
             if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanUid) ||
                 com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, uid1)) {
                 return true
