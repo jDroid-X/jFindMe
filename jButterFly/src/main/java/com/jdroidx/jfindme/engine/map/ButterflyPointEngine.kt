@@ -80,6 +80,7 @@ object ButterflyPointEngine {
     @JvmStatic
     @JvmOverloads
     fun calculateEtaMinutes(distanceMeters: Double, speedKmh: Float, context: Context? = null): Int {
+        if (distanceMeters <= 0.0) return 0
         val minSpeed = if (context != null) com.jdroidx.jfindme.utils.RegistryManager.getButterflyMinSpeedKmh(context) else 3.0f
         val fallbackNominal = if (context != null) com.jdroidx.jfindme.utils.RegistryManager.getButterflyNominalSpeedKmh(context).toDouble() else 25.0
         val safeSpeed = if (speedKmh > minSpeed) speedKmh.toDouble() else fallbackNominal
@@ -118,13 +119,14 @@ object ButterflyPointEngine {
             return ButterflyPointDeviceMapTable.STATUS_REJECTED
         }
 
-        val wasArrived = arrivalLatchMap[deviceId] ?: false
+        val wasArrived = (arrivalLatchMap[deviceId] == true) || currentStatus.equals(ButterflyPointDeviceMapTable.STATUS_REACHED, ignoreCase = true)
         return if (wasArrived) {
             // Hysteresis release: Only revert to ON_MOVE if moved beyond arrival radius + deadband
             if (distanceMeters > (arrivalRadiusMeters + hysteresisDeadbandMeters)) {
                 arrivalLatchMap[deviceId] = false
                 ButterflyPointDeviceMapTable.STATUS_ON_MOVE
             } else {
+                arrivalLatchMap[deviceId] = true
                 ButterflyPointDeviceMapTable.STATUS_REACHED
             }
         } else {

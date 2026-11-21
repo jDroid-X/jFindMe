@@ -5380,6 +5380,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         if (pointId.isBlank()) return
         try {
             ButterflyPointTable.archive(writableDatabase, pointId)
+            // 🛑 Lifecycle Decoupling: Immediately stop real-time RTDB peer listeners and clear overlay
+            com.jdroidx.jfindme.engine.map.ButterflyPointEngine.stopActivePointPeerSync(pointId)
+            if (com.jdroidx.jfindme.engine.map.ButterflyPointEngine.activeButterflyPoint?.pointId == pointId) {
+                com.jdroidx.jfindme.engine.map.ButterflyPointEngine.clearButterflyOverlay()
+            }
             val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance().reference
             rtdb.child("butterfly_points").child(pointId)
                 .updateChildren(mapOf("is_active" to false, "is_archived" to true))

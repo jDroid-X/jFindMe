@@ -1314,4 +1314,76 @@ class EnterpriseUnitTestSuite {
         telemetrySyncAllowed = activePointsCount > 0
         assertFalse("Telemetry stream must be inhibited when zero active rendezvous points exist", telemetrySyncAllowed)
     }
+
+    @Test
+    fun testButterflyZeroDistanceEtaEvaluation() {
+        // [Variables] etaZero: Int, etaNegative: Int, etaPositive: Int
+        // [Constants] None
+        // [Dependencies] ButterflyPointEngine
+        // [Integration Points] ButterflyPointDialog, MapActivity callout telemetry
+        val etaZero = ButterflyPointEngine.calculateEtaMinutes(0.0, 25.0f)
+        val etaNegative = ButterflyPointEngine.calculateEtaMinutes(-5.0, 25.0f)
+        val etaPositive = ButterflyPointEngine.calculateEtaMinutes(1000.0, 60.0f)
+
+        assertEquals("ETA for 0 distance must be 0", 0, etaZero)
+        assertEquals("ETA for negative distance must be 0", 0, etaNegative)
+        assertEquals("ETA for 1000m at 60 km/h must be 1", 1, etaPositive)
+    }
+
+    @Test
+    fun testButterflyArrivalLatchPersistenceAcrossProcessDeath() {
+        // [Variables] testDevId: String, currentStatus: String, arrivalRadius: Double, deadband: Double
+        // [Constants] STATUS_REACHED, STATUS_ON_MOVE, STATUS_ACCEPTED
+        // [Dependencies] ButterflyPointEngine, ButterflyPointDeviceMapTable
+        // [Integration Points] FusedLocationProviderClient ⟷ ButterflyPointEngine.evaluateDeviceStatus
+        val testDevId = "TEST_DEVICE_RESTART_NODE"
+        val arrivalRadius = 50.0
+        val deadband = 15.0
+
+        // 1. Clean in-memory latch map to simulate Android OS Process Kill
+        ButterflyPointEngine.clearButterflyOverlay()
+
+        // 2. Device had already reached in SQLite (currentStatus = STATUS_REACHED)
+        // Now device sits inside hysteresis band (55m > 50m radius, but <= 65m ceiling)
+        val statusInsideHysteresis = ButterflyPointEngine.evaluateDeviceStatus(
+            deviceId = testDevId,
+            currentStatus = com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_REACHED,
+            distanceMeters = 55.0,
+            arrivalRadiusMeters = arrivalRadius,
+            hysteresisDeadbandMeters = deadband
+        )
+        assertEquals(
+            "Terminal arrival state must persist across process restarts within hysteresis band",
+            com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_REACHED,
+            statusInsideHysteresis
+        )
+
+        // 3. Device moves outside hysteresis ceiling (70m > 65m) -> Reverts to ON_MOVE
+        val statusDeparted = ButterflyPointEngine.evaluateDeviceStatus(
+            deviceId = testDevId,
+            currentStatus = com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_REACHED,
+            distanceMeters = 70.0,
+            arrivalRadiusMeters = arrivalRadius,
+            hysteresisDeadbandMeters = deadband
+        )
+        assertEquals(
+            "Device must revert to ON_MOVE only after breaching hysteresis ceiling (radius + deadband)",
+            com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_ON_MOVE,
+            statusDeparted
+        )
+
+        // 4. Device re-enters arrival perimeter (45m <= 50m) -> Re-latches to REACHED
+        val statusReEntered = ButterflyPointEngine.evaluateDeviceStatus(
+            deviceId = testDevId,
+            currentStatus = com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_ON_MOVE,
+            distanceMeters = 45.0,
+            arrivalRadiusMeters = arrivalRadius,
+            hysteresisDeadbandMeters = deadband
+        )
+        assertEquals(
+            "Device must re-latch to REACHED when crossing arrival perimeter",
+            com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.STATUS_REACHED,
+            statusReEntered
+        )
+    }
 }
