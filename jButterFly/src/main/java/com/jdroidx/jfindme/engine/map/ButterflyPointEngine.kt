@@ -78,8 +78,11 @@ object ButterflyPointEngine {
      * Calculates estimated travel duration in minutes based on real-time speed.
      */
     @JvmStatic
-    fun calculateEtaMinutes(distanceMeters: Double, speedKmh: Float): Int {
-        val safeSpeed = if (speedKmh > 3.0f) speedKmh.toDouble() else 25.0 // Fallback nominal speed 25 km/h
+    @JvmOverloads
+    fun calculateEtaMinutes(distanceMeters: Double, speedKmh: Float, context: Context? = null): Int {
+        val minSpeed = if (context != null) com.jdroidx.jfindme.utils.RegistryManager.getButterflyMinSpeedKmh(context) else 3.0f
+        val fallbackNominal = if (context != null) com.jdroidx.jfindme.utils.RegistryManager.getButterflyNominalSpeedKmh(context).toDouble() else 25.0
+        val safeSpeed = if (speedKmh > minSpeed) speedKmh.toDouble() else fallbackNominal
         val hours = (distanceMeters / 1000.0) / safeSpeed
         return (hours * 60.0).roundToInt().coerceAtLeast(1)
     }
@@ -195,9 +198,10 @@ object ButterflyPointEngine {
         currentButterflyMarker?.tag = "BUTTERFLY_POINT"
 
         // 2. Arrival Perimeter Circle
+        val effectiveRadius = if (point.arrivalRadiusMeters > 0) point.arrivalRadiusMeters else DEFAULT_ARRIVAL_RADIUS_METERS
         val circleOptions = CircleOptions()
             .center(center)
-            .radius(point.arrivalRadiusMeters)
+            .radius(effectiveRadius)
             .fillColor(COLOR_PERIMETER_FILL)
             .strokeColor(COLOR_PERIMETER_STROKE)
             .strokeWidth(3.0f)
@@ -253,6 +257,7 @@ object ButterflyPointEngine {
             } catch (_: Exception) {}
         }
         currentVectorLines.clear()
+        activeRendezvousPointId?.let { stopActivePointPeerSync(it) }
         activeButterflyPoint = null
         activeRendezvousPointId = null
         quorumAlertedPoints.clear()
@@ -381,6 +386,8 @@ object ButterflyPointEngine {
                     "rendezvous_timestamp" to point.rendezvousTimestamp,
                     "expiry_timestamp" to point.expiryTimestamp,
                     "arrival_radius_meters" to point.arrivalRadiusMeters,
+                    "notes" to point.notes,
+                    "icon_type" to point.iconType,
                     "is_active" to true,
                     "is_archived" to false,
                     "created_at" to FirebaseComm.getForensicTimestamp(),
@@ -412,18 +419,71 @@ object ButterflyPointEngine {
                 }
                 cloudMap["devices"] = devicesMap
 
+                // [Variables] pointUpdates: HashMap<String, Any>, rtdb: DatabaseReference | [Constants] ButterflyPointDeviceMapTable.STATUS_ACCEPTED, STATUS_PENDING | [Dependencies] FirebaseComm, ButterflyPointDeviceMapTable | [Integration Points] ButterflyPointEngine, Firebase RTDB /butterfly_points
+                // Directive 2 & GAP-04: Multi-path atomic updateChildren() rather than whole-object setValue() clobbering peer status
+                val pointUpdates = hashMapOf<String, Any>(
+                    "point_id" to point.pointId,
+                    "creator_device_id" to point.creatorDeviceId,
+                    "creator_name" to (point.creatorName.ifBlank { "Creator" }),
+                    "point_name" to point.pointName,
+                    "address" to point.address,
+                    "lat" to point.lat,
+                    "lng" to point.lng,
+                    "geohash" to point.geohash,
+                    "rendezvous_timestamp" to point.rendezvousTimestamp,
+                    "expiry_timestamp" to point.expiryTimestamp,
+                    "arrival_radius_meters" to point.arrivalRadiusMeters,
+                    "notes" to point.notes,
+                    "icon_type" to point.iconType,
+                    "is_active" to true,
+                    "is_archived" to false,
+                    "created_at" to (cloudMap["created_at"] ?: FirebaseComm.getForensicTimestamp()),
+                    "updated_at" to FirebaseComm.getForensicTimestamp()
+                )
+
+                // Directive 2: Ensure initial participant devices (pointUpdates["devices/$cleanDevId/..."]) are included so invited devices are not dropped
+                if (creatorDevId.isNotBlank()) {
+                    val cleanCreatorId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(creatorDevId)
+                    pointUpdates["devices/$cleanCreatorId/device_id"] = creatorDevId
+                    pointUpdates["devices/$cleanCreatorId/device_name"] = (point.creatorName.ifBlank { "Creator" })
+                    pointUpdates["devices/$cleanCreatorId/status"] = ButterflyPointDeviceMapTable.STATUS_ACCEPTED
+                    pointUpdates["devices/$cleanCreatorId/distance_meters"] = 0.0
+                    pointUpdates["devices/$cleanCreatorId/last_lat"] = point.lat
+                    pointUpdates["devices/$cleanCreatorId/last_lng"] = point.lng
+                    pointUpdates["devices/$cleanCreatorId/last_updated"] = System.currentTimeMillis()
+                }
+                for (devId in targetDeviceIds) {
+                    if (devId.equals(creatorDevId, ignoreCase = true)) continue
+                    val cleanDevId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(devId)
+                    pointUpdates["devices/$cleanDevId/device_id"] = devId
+                    pointUpdates["devices/$cleanDevId/status"] = ButterflyPointDeviceMapTable.STATUS_PENDING
+                    pointUpdates["devices/$cleanDevId/distance_meters"] = 0.0
+                    pointUpdates["devices/$cleanDevId/last_updated"] = System.currentTimeMillis()
+                }
+
                 // Start local real-time sync and notify success immediately for high-speed UI responsiveness
                 startActivePointPeerSync(context, point.pointId)
                 onSuccess()
 
-                // Asynchronous cloud dispatch
-                rtdb.child("butterfly_points").child(point.pointId).setValue(cloudMap)
+                // Asynchronous atomic cloud dispatch (Directive 2 & GAP-04)
+                rtdb.child("butterfly_points").child(point.pointId).updateChildren(pointUpdates)
                     .addOnSuccessListener {
-                        // Also mirror to each device's invitation inbox: /devices/{deviceId}/butterfly_invitations/{pointId}
+                        // Also mirror to each device's invitation inbox: /devices/{canonicalId}/butterfly_invitations/{pointId}
                         for (devId in targetDeviceIds) {
-                            val cleanDevId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(devId)
-                            com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(cleanDevId)
+                            val canonicalTargetId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(devId)
+                            com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(canonicalTargetId)
                                 .child("butterfly_invitations").child(point.pointId).setValue(cloudMap)
+                            // 🛰️ Cross-Identity Mirroring: dispatch to all associated alias IDs (e.g. auth_uid, hardware_id)
+                            try {
+                                val altIds = dbHelper.getAssociatedIds(devId)
+                                for (alt in altIds) {
+                                    val canonicalAltId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(alt)
+                                    if (canonicalAltId.isNotBlank() && canonicalAltId != canonicalTargetId) {
+                                        com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(canonicalAltId)
+                                            .child("butterfly_invitations").child(point.pointId).setValue(cloudMap)
+                                    }
+                                }
+                            } catch (_: Exception) {}
                         }
                     }
                     .addOnFailureListener { ex ->
@@ -565,37 +625,76 @@ object ButterflyPointEngine {
                         val dbHelper = DatabaseHelper.getInstance(context)
                         val db = dbHelper.writableDatabase
                         var hasChanges = false
+                        val locRepo = com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context)
+                        val curPt = activeButterflyPoint ?: dbHelper.getButterflyPoint(pointId)
                         for (child in snapshot.children) {
                             val devId = child.child("device_id").getValue(String::class.java) ?: child.key ?: continue
                             val status = child.child("status").getValue(String::class.java) ?: ButterflyPointDeviceMapTable.STATUS_PENDING
-                            val dist = child.child("distance_meters").getValue(Double::class.java) ?: 0.0
-                            val etaSec = child.child("eta_seconds").getValue(Int::class.java) ?: 0
                             val rejReason = child.child("rejection_reason").getValue(String::class.java)
                             val lastTs = FirebaseComm.safeLong(child.child("last_updated")) ?: System.currentTimeMillis()
                             val batPct = child.child("battery_pct").getValue(Int::class.java) ?: -1
                             val isSosActive = child.child("is_sos").getValue(Boolean::class.java) ?: false
-                            val ragStatus = child.child("rag_status").getValue(String::class.java) ?: "GREY"
-                            val ragReason = child.child("rag_reason").getValue(String::class.java) ?: ""
-                            val lastLat = child.child("last_lat").getValue(Double::class.java) ?: 0.0
-                            val lastLng = child.child("last_lng").getValue(Double::class.java) ?: 0.0
 
-                            // Update local Sub-Master SQLite
+                            // 🌟 SSOT Dynamic Origin-Shift: Resolve position from canonical location history table / repo!
+                            val canonicalLoc = locRepo.getLatestLocationFor(devId)
+                            val histLoc = if (canonicalLoc == null || (canonicalLoc.latitude == 0.0 && canonicalLoc.longitude == 0.0)) {
+                                dbHelper.getLatestHistoricalLocation(devId)
+                            } else null
+
+                            val resolvedLat = canonicalLoc?.latitude ?: ((histLoc?.get("lat") as? Number)?.toDouble() ?: child.child("last_lat").getValue(Double::class.java) ?: 0.0)
+                            val resolvedLng = canonicalLoc?.longitude ?: ((histLoc?.get("lng") as? Number)?.toDouble() ?: child.child("last_lng").getValue(Double::class.java) ?: 0.0)
+                            val resolvedSpeedKmh = if (canonicalLoc != null) com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.toKmh(canonicalLoc.speed)
+                                                   else ((histLoc?.get("speed") as? Number)?.toFloat() ?: 0.0f)
+                            val resolvedBat = if (canonicalLoc != null && canonicalLoc.batteryLevel > 0) canonicalLoc.batteryLevel
+                                              else if (histLoc != null && histLoc.containsKey("battery")) ((histLoc["battery"] as? Number)?.toInt() ?: batPct)
+                                              else batPct
+
+                            // Calculate Origin-Shifted Distance & ETA dynamically locally
+                            val dynamicDist = if (resolvedLat != 0.0 && resolvedLng != 0.0 && curPt != null) {
+                                calculateHaversineDistance(resolvedLat, resolvedLng, curPt.lat, curPt.lng)
+                            } else {
+                                child.child("distance_meters").getValue(Double::class.java) ?: 0.0
+                            }
+                            val dynamicEtaSec = if (dynamicDist > 0.0) {
+                                calculateEtaMinutes(dynamicDist, resolvedSpeedKmh, context) * 60
+                            } else {
+                                child.child("eta_seconds").getValue(Int::class.java) ?: 0
+                            }
+
+                            // Dynamically evaluate RAG status locally
+                            val dynamicEntry = ButterflyDeviceEntry(
+                                deviceId = devId,
+                                status = status,
+                                distanceMeters = dynamicDist,
+                                speedKmh = resolvedSpeedKmh,
+                                etaMinutes = dynamicEtaSec / 60,
+                                lastLat = resolvedLat,
+                                lastLng = resolvedLng,
+                                lastUpdated = lastTs,
+                                batteryPct = resolvedBat,
+                                isSosActive = isSosActive
+                            )
+                            val dynamicRag = if (curPt != null) evaluateButterflyRag(context, dynamicEntry, curPt.rendezvousTimestamp) else null
+                            val dynamicRagStatus = dynamicRag?.name ?: child.child("rag_status").getValue(String::class.java) ?: "GREY"
+                            val dynamicRagReason = dynamicEntry.ragReason.ifBlank { child.child("rag_reason").getValue(String::class.java) ?: "" }
+
+                            // Update local Sub-Master SQLite with locally computed origin-shifted metadata
                             ButterflyPointDeviceMapTable.assignDevice(db, pointId, devId, null, status)
-                            if (dist > 0.0 || status == ButterflyPointDeviceMapTable.STATUS_REACHED || batPct != -1 || isSosActive || lastLat != 0.0) {
+                            if (dynamicDist > 0.0 || status == ButterflyPointDeviceMapTable.STATUS_REACHED || resolvedBat != -1 || isSosActive || resolvedLat != 0.0) {
                                 ButterflyPointDeviceMapTable.updateTelemetry(
                                     db = db,
                                     pointId = pointId,
                                     deviceId = devId,
-                                    distanceMeters = dist,
-                                    etaSeconds = etaSec,
+                                    distanceMeters = dynamicDist,
+                                    etaSeconds = dynamicEtaSec,
                                     telemetryTs = lastTs,
                                     isArrived = (status == ButterflyPointDeviceMapTable.STATUS_REACHED),
-                                    batteryPct = batPct,
+                                    batteryPct = resolvedBat,
                                     isSos = isSosActive,
-                                    ragStatus = ragStatus,
-                                    ragReason = ragReason,
-                                    lastLat = lastLat,
-                                    lastLng = lastLng
+                                    ragStatus = dynamicRagStatus,
+                                    ragReason = dynamicRagReason,
+                                    lastLat = resolvedLat,
+                                    lastLng = resolvedLng
                                 )
                             }
                             if (rejReason != null) {
@@ -606,15 +705,15 @@ object ButterflyPointEngine {
                             val prevStatus = activeButterflyPoint?.devices?.get(devId)?.status
                             activeButterflyPoint?.devices?.get(devId)?.let { dEntry ->
                                 dEntry.status = status
-                                dEntry.distanceMeters = dist
-                                dEntry.etaMinutes = etaSec / 60
-                                if (lastLat != 0.0) dEntry.lastLat = lastLat
-                                if (lastLng != 0.0) dEntry.lastLng = lastLng
+                                dEntry.distanceMeters = dynamicDist
+                                dEntry.etaMinutes = dynamicEtaSec / 60
+                                if (resolvedLat != 0.0) dEntry.lastLat = resolvedLat
+                                if (resolvedLng != 0.0) dEntry.lastLng = resolvedLng
                                 dEntry.lastUpdated = lastTs
-                                dEntry.batteryPct = batPct
+                                dEntry.batteryPct = resolvedBat
                                 dEntry.isSosActive = isSosActive
-                                dEntry.ragStatus = ragStatus
-                                dEntry.ragReason = ragReason
+                                dEntry.ragStatus = dynamicRagStatus
+                                dEntry.ragReason = dynamicRagReason
                             }
 
                             // 🎯 Peer Arrival Alert Cascade: When remote peer transitions to REACHED, notify operator
@@ -701,6 +800,11 @@ object ButterflyPointEngine {
         activePointListeners.clear()
     }
 
+    @JvmStatic
+    fun isPeerSyncActive(pointId: String): Boolean {
+        return activePointListeners.containsKey(pointId)
+    }
+
     // [Variables] batIntent: Intent, batLevel: Int, prefs: SharedPreferences, isSos: Boolean, myEntry: ButterflyDeviceEntry, isParticipant: Boolean, currentStatus: String, dist: Double, newStatus: String, etaMinutes: Int, etaSec: Int, db: SQLiteDatabase, updateMap: HashMap
     // [Constants] None
     // [Dependencies] DatabaseHelper, ButterflyPointDeviceMapTable, FirebaseDatabase, AlertManager, SystemLogger, DeviceRagEngine
@@ -778,10 +882,12 @@ object ButterflyPointEngine {
             return com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN
         }
 
-        // 6. Pending Invitation Warning -> AMBER if < 45 mins to rendezvous, otherwise GREY; Timed Out if exceeded
+        // 6. Pending Invitation Warning -> AMBER if within approach window to rendezvous, otherwise GREY; Timed Out if exceeded
         if (deviceEntry.status.equals(ButterflyPointDeviceMapTable.STATUS_PENDING, ignoreCase = true)) {
             val timeoutHours = com.jdroidx.jfindme.utils.RegistryManager.getButterflyInvitationTimeoutHours(context)
             val timeoutMs = timeoutHours * 3600 * 1000L
+            val approachWindowMins = com.jdroidx.jfindme.utils.RegistryManager.getButterflyApproachWindowMinutes(context)
+            val approachWindowMs = approachWindowMins * 60 * 1000L
             val isTimedOut = (rendezvousTimestamp > 0L && now > rendezvousTimestamp) ||
                              (deviceEntry.lastUpdated > 0L && (now - deviceEntry.lastUpdated) > timeoutMs)
             if (isTimedOut) {
@@ -789,9 +895,9 @@ object ButterflyPointEngine {
                 deviceEntry.ragStatus = "RED"
                 deviceEntry.ragReason = "Invitation Timed Out (> ${timeoutHours}h)"
                 return com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.RED
-            } else if (rendezvousTimestamp > 0L && (rendezvousTimestamp - now) in 1..(45 * 60 * 1000L)) {
+            } else if (rendezvousTimestamp > 0L && (rendezvousTimestamp - now) in 1..approachWindowMs) {
                 deviceEntry.ragStatus = "AMBER"
-                deviceEntry.ragReason = "Pending Confirmation (< 45m)"
+                deviceEntry.ragReason = "Pending Confirmation (< ${approachWindowMins}m)"
                 return com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.AMBER
             } else {
                 deviceEntry.ragStatus = "GREY"
@@ -841,9 +947,10 @@ object ButterflyPointEngine {
             return com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.AMBER
         }
 
-        // 9d. Stationary Warning: Meeting in < 30m, distance > 1km, speed < 2 km/h -> AMBER
+        // 9d. Stationary Warning: Meeting in < 30m, distance > 1km, speed < minSpeedKmh -> AMBER
+        val minSpeedKmh = com.jdroidx.jfindme.utils.RegistryManager.getButterflyMinSpeedKmh(context)
         if (rendezvousTimestamp > 0L && (rendezvousTimestamp - now) in 1..(30 * 60 * 1000L) &&
-            deviceEntry.distanceMeters > 1000.0 && deviceEntry.speedKmh < 2.0f) {
+            deviceEntry.distanceMeters > 1000.0 && deviceEntry.speedKmh < minSpeedKmh) {
             deviceEntry.ragStatus = "AMBER"
             deviceEntry.ragReason = "Stationary (${formatDistance(deviceEntry.distanceMeters)} away)"
             return com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.AMBER
@@ -911,6 +1018,67 @@ object ButterflyPointEngine {
                 SystemLogger.e(TAG, "Failed to extend rendezvous time: ${e.message}")
             }
         }.start()
+    }
+
+    /**
+     * [Variables] dbHelper: DatabaseHelper, refreshIntent: Intent
+     * [Constants] None
+     * [Dependencies] DatabaseHelper, SystemLogger, Context
+     * [Integration Points] ButterflyPointDialog.java, MapActivity.java
+     *
+     * Dual-Engine Archival: Cleans up local SQLite and cloud Firebase RTDB state
+     * Stops peer real-time synchronization listeners to prevent leaks (GAP-04 & GAP-07).
+     */
+    @JvmStatic
+    fun archiveButterflyPoint(context: Context, pointId: String, onComplete: (() -> Unit)? = null) {
+        if (pointId.isBlank()) return
+        stopActivePointPeerSync(pointId)
+        if (activeButterflyPoint?.pointId == pointId) {
+            clearButterflyOverlay()
+        }
+        Thread {
+            try {
+                val dbHelper = DatabaseHelper.getInstance(context)
+                dbHelper.archiveButterflyPoint(pointId)
+                val refreshIntent = android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                    setPackage(context.packageName)
+                    putExtra("category", "BUTTERFLY_POINT")
+                    putExtra("EXTRA_CATEGORY", "BUTTERFLY_POINT")
+                    putExtra("EXTRA_ENTITY_ID", pointId)
+                    putExtra("EXTRA_CHANGE_TYPE", "DELETE")
+                }
+                context.sendBroadcast(refreshIntent)
+                SystemLogger.i(TAG, "Archived Butterfly Point: $pointId cleanly across SQLite and Cloud.")
+                onComplete?.invoke()
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Error archiving Butterfly Point: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * [Variables] dbHelper: DatabaseHelper, activeCount: Int, batteryInfo: Pair<Int, Boolean>, batteryPct: Int, isCharging: Boolean
+     * [Constants] MAX_ACTIVE_POINTS = 5, MIN_BATTERY_PCT = 10
+     * [Dependencies] DatabaseHelper, DeviceIdentityHelper, Context
+     * [Integration Points] ButterflyPointDialog.java, MapActivity.java
+     *
+     * Precondition Enforcer (GAP-10 Remediation):
+     * Validates quota availability (max 5 active points) and hardware battery health (> 10%).
+     */
+    @JvmStatic
+    fun canCreateButterflyPoint(context: Context): Pair<Boolean, String> {
+        val dbHelper = DatabaseHelper.getInstance(context)
+        val activeCount = dbHelper.getActiveButterflyPoints().size
+        if (activeCount >= 5) {
+            return Pair(false, "Maximum active rendezvous limit (5) reached. Please archive existing points before creating new ones.")
+        }
+        val batteryInfo = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getResolvedBatteryAndCharging(context)
+        val batteryPct = batteryInfo.first
+        val isCharging = batteryInfo.second
+        if (batteryPct in 1..10 && !isCharging) {
+            return Pair(false, "Battery critical ($batteryPct%). Connect charger before starting high-precision rendezvous tracking.")
+        }
+        return Pair(true, "OK")
     }
 
     /**
@@ -1083,6 +1251,17 @@ object ButterflyPointEngine {
                     val currentStatus = myEntry?.status ?: ButterflyPointDeviceMapTable.STATUS_ACCEPTED
                     if (currentStatus == ButterflyPointDeviceMapTable.STATUS_REJECTED) continue
 
+                    // ⏰ Closed-Loop Dynamic Approach-Window Lifecycle:
+                    // Auto-engage peer sync if inside approach window, auto-disengage if expired
+                    val approachWindowMs = com.jdroidx.jfindme.utils.RegistryManager.getButterflyApproachWindowMinutes(context) * 60 * 1000L
+                    val timeToRendezvous = pt.rendezvousTimestamp - now
+                    val isWithinApproach = timeToRendezvous in (-2 * 3600 * 1000L)..approachWindowMs
+                    if (isWithinApproach && !isPeerSyncActive(pt.pointId)) {
+                        startActivePointPeerSync(context, pt.pointId)
+                    } else if (!isWithinApproach && isPeerSyncActive(pt.pointId)) {
+                        stopActivePointPeerSync(pt.pointId)
+                    }
+
                     val dist = calculateHaversineDistance(latitude, longitude, pt.lat, pt.lng)
                     val newStatus = evaluateDeviceStatus(
                         deviceId = myAgentId,
@@ -1092,7 +1271,7 @@ object ButterflyPointEngine {
                         hysteresisDeadbandMeters = hysteresisDeadband
                     )
 
-                    val etaMinutes = calculateEtaMinutes(dist, speedKmh)
+                    val etaMinutes = calculateEtaMinutes(dist, speedKmh, context)
                     val etaSec = etaMinutes * 60
 
                     // Tactical RAG Status Evaluation
@@ -1110,76 +1289,95 @@ object ButterflyPointEngine {
                     )
                     evaluateButterflyRag(context, entryForRag, pt.rendezvousTimestamp)
 
-                    // 1. Update SQLite Sub-Master DB with RAG Telemetry
-                    val db = dbHelper.writableDatabase
-                    ButterflyPointDeviceMapTable.updateTelemetry(
-                        db = db,
-                        pointId = pt.pointId,
-                        deviceId = myAgentId,
-                        distanceMeters = dist,
-                        etaSeconds = etaSec,
-                        telemetryTs = now,
-                        isArrived = (newStatus == ButterflyPointDeviceMapTable.STATUS_REACHED),
-                        batteryPct = batLevel,
-                        isSos = isSos,
-                        ragStatus = entryForRag.ragStatus,
-                        ragReason = entryForRag.ragReason,
-                        lastLat = latitude,
-                        lastLng = longitude
-                    )
+                    // 🔋 Anti-Thrashing Stationary Jitter Suppression (Low-Cost Model):
+                    // When device is stationary (speed < minSpeed and displacement < deadband),
+                    // suppress redundant SQLite writes and breadcrumb logging to once per 15 mins.
+                    val prevLat = myEntry?.lastLat ?: 0.0
+                    val prevLng = myEntry?.lastLng ?: 0.0
+                    val displacementMeters = if (prevLat != 0.0 && prevLng != 0.0) {
+                        calculateHaversineDistance(latitude, longitude, prevLat, prevLng)
+                    } else {
+                        Double.MAX_VALUE
+                    }
+                    val minSpeedKmh = com.jdroidx.jfindme.utils.RegistryManager.getButterflyMinSpeedKmh(context)
+                    val isMoving = speedKmh >= minSpeedKmh || displacementMeters >= hysteresisDeadband
+                    val statusChanged = newStatus != currentStatus
+                    val previousSos = myEntry?.isSosActive ?: false
+                    val sosChanged = isSos != previousSos
+                    val timeSinceLastUpdateMs = now - (myEntry?.lastUpdated ?: 0L)
+                    val isStationaryHeartbeatDue = timeSinceLastUpdateMs >= 900000L // 15 min heartbeat
 
-                    // 1b. Tier 3: Transactional Database Breadcrumb
-                    com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.logTelemetry(
-                        db = db,
-                        pointId = pt.pointId,
-                        deviceId = myAgentId,
-                        lat = latitude,
-                        lng = longitude,
-                        speedKmh = speedKmh,
-                        distanceMeters = dist,
-                        etaSeconds = etaSec,
-                        batteryPct = batLevel,
-                        isSos = isSos,
-                        ragStatus = entryForRag.ragStatus,
-                        ragReason = entryForRag.ragReason,
-                        timestamp = now
-                    )
+                    val shouldPersistTelemetry = isMoving || statusChanged || sosChanged || isStationaryHeartbeatDue || (myEntry == null)
 
-                    // 2. Sync to Firebase Cloud SSOT
-                    val updateMap = hashMapOf<String, Any>(
-                        "device_id" to myAgentId,
-                        "status" to newStatus,
-                        "distance_meters" to dist,
-                        "speed_kmh" to speedKmh,
-                        "eta_minutes" to etaMinutes,
-                        "eta_seconds" to etaSec,
-                        "last_lat" to latitude,
-                        "last_lng" to longitude,
-                        "last_updated" to now,
-                        "battery_pct" to batLevel,
-                        "is_sos" to isSos,
-                        "rag_status" to entryForRag.ragStatus,
-                        "rag_reason" to entryForRag.ragReason
-                    )
-                    if (newStatus == ButterflyPointDeviceMapTable.STATUS_REACHED) {
-                        updateMap["arrival_timestamp"] = now
+                    if (shouldPersistTelemetry) {
+                        // 1. Update SQLite Sub-Master DB with RAG Telemetry
+                        val db = dbHelper.writableDatabase
+                        ButterflyPointDeviceMapTable.updateTelemetry(
+                            db = db,
+                            pointId = pt.pointId,
+                            deviceId = myAgentId,
+                            distanceMeters = dist,
+                            etaSeconds = etaSec,
+                            telemetryTs = now,
+                            isArrived = (newStatus == ButterflyPointDeviceMapTable.STATUS_REACHED),
+                            batteryPct = batLevel,
+                            isSos = isSos,
+                            ragStatus = entryForRag.ragStatus,
+                            ragReason = entryForRag.ragReason,
+                            lastLat = latitude,
+                            lastLng = longitude
+                        )
+
+                        // 1b. Tier 3: Transactional Database Breadcrumb
+                        com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.logTelemetry(
+                            db = db,
+                            pointId = pt.pointId,
+                            deviceId = myAgentId,
+                            lat = latitude,
+                            lng = longitude,
+                            speedKmh = speedKmh,
+                            distanceMeters = dist,
+                            etaSeconds = etaSec,
+                            batteryPct = batLevel,
+                            isSos = isSos,
+                            ragStatus = entryForRag.ragStatus,
+                            ragReason = entryForRag.ragReason,
+                            timestamp = now
+                        )
                     }
 
+                    // 2. 🛡️ Zero-Duplication Cloud SSOT Protocol:
+                    // Raw GPS coordinates, speed, and battery are ALREADY dispatched to /devices/{myAgentId}/location 
+                    // by the canonical TrackingService / LocationRepository pipeline.
+                    // We strictly avoid duplicating raw telemetry into /butterfly_points/{pointId}/telemetry.
+                    // We ONLY dispatch a cloud update to /butterfly_points/ if a critical state transition occurs:
+                    // (a) Member arrived within arrival perimeter (Terminal Arrival Latch)
+                    // (b) SOS Emergency activation
                     val cleanMyAgentId = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(myAgentId)
-                    // Tier 2: Sub-Master Latest State
-                    rtdb.child("butterfly_points").child(pt.pointId).child("devices").child(cleanMyAgentId)
-                        .updateChildren(updateMap)
-                    // Tier 3: Transactional High-Velocity Stream
-                    rtdb.child("butterfly_points").child(pt.pointId).child("telemetry").child(cleanMyAgentId)
-                        .setValue(updateMap)
-
-                    // 3. If reached and previously not reached: fire arrival notification
                     if (newStatus == ButterflyPointDeviceMapTable.STATUS_REACHED && currentStatus != ButterflyPointDeviceMapTable.STATUS_REACHED) {
-                        com.jdroidx.jfindme.engine.alert.AlertManager.showButterflyArrivalNotification(context, pt.pointName, "You")
-                    }
+                        val arrivalMap = hashMapOf<String, Any>(
+                            "status" to ButterflyPointDeviceMapTable.STATUS_REACHED,
+                            "arrival_timestamp" to now,
+                            "distance_meters" to dist,
+                            "last_updated" to now
+                        )
+                        rtdb.child("butterfly_points").child(pt.pointId).child("devices").child(cleanMyAgentId)
+                            .updateChildren(arrivalMap)
+                        // Also update personal invitation status
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getDeviceRef(cleanMyAgentId)
+                            .child("butterfly_invitations").child(pt.pointId).child("status")
+                            .setValue(ButterflyPointDeviceMapTable.STATUS_REACHED)
 
-                    // 4. Ensure real-time peer sync is active for this point
-                    startActivePointPeerSync(context, pt.pointId)
+                        // 3. Fire arrival notification locally
+                        com.jdroidx.jfindme.engine.alert.AlertManager.showButterflyArrivalNotification(context, pt.pointName, "You")
+                    } else if (sosChanged && isSos) {
+                        val sosMap = hashMapOf<String, Any>(
+                            "is_sos" to true,
+                            "last_updated" to now
+                        )
+                        rtdb.child("butterfly_points").child(pt.pointId).child("devices").child(cleanMyAgentId)
+                            .updateChildren(sosMap)
+                    }
                 }
 
             } catch (e: Exception) {

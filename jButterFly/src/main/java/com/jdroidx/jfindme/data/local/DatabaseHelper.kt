@@ -22,7 +22,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     companion object {
         const val DATABASE_NAME = "JFindMe_CitizenData.db"
-        const val DATABASE_VERSION = 83 // 🚀 V83: Sub-Master DeviceSharing & DeviceSharingTransaction Ledger Architecture // 🚀 V82: Butterfly Point Rendezvous Master & Sub-Master Subsystem // 🚀 V81: Complete 25-Table Tri-Tier Enterprise Schema Refabrication, Offline-to-Online Parity & Compatibility Views // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
+        const val DATABASE_VERSION = 84 // 🚀 V84: System Update History & Siren Execution Audit Tables (Gap Analysis & REA Resolution) // 🚀 V83: Sub-Master DeviceSharing & DeviceSharingTransaction Ledger Architecture // 🚀 V82: Butterfly Point Rendezvous Master & Sub-Master Subsystem // 🚀 V81: Complete 25-Table Tri-Tier Enterprise Schema Refabrication, Offline-to-Online Parity & Compatibility Views // 🚀 V80: Zero-Loss Sensor Telemetry Sync (Accuracy, Altitude, Motion State & Compound Sync Index) // 🛡️ V79: Master REA Schema Refabrication (Motion State, Parental Master PIN, Watchdog Ledger, Device Policy Sentinel & Dual-Module Parity) // 🛡️ V78: Granular Permission Mask & Zero-Regression Network Gateway Hardening // 🧬 V77: Stealth Schedule Config & Security Evasion Audit Log // 🧬 V76: Closed-Loop Telemetry Vitals & Failover Route Caching // 🧬 V75: Master Hardware Specifications & Dual-SIM Parity
         const val MAX_DATETIME = 253402300799000L
         
         // --- RELATIONAL ANCHORS ---
@@ -129,7 +129,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 "location_event", "pending_sync_queue", "device_vitals", "alert_history", "watchdog_resurrection_log",
                 "telemetry_failover_routes", "sys_log", "p2p_mesh_packets", "invitations", "sim_transactions",
                 "geofence_event", "sync_queue", "change_log", "security_audit_log",
-                "device_sharing", "device_sharing_transactions", "butterfly_points", "butterfly_point_device_map"
+                "device_sharing", "device_sharing_transactions", "butterfly_point", "butterfly_points", "butterfly_point_device_map",
+                "system_update_history", "siren_execution_audit"
             )
             try {
                 // [Variables] | [Constants] | [Dependencies] | [Integration Points]
@@ -324,6 +325,28 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             }
         } catch (e: Exception) { }
         return null
+    }
+
+    /**
+     * 🛰️ SSOT Multi-Identifier Resolution: Returns all linked IDs (uid_1, uid_2, connected_id, auth_uid)
+     * for a given device to ensure cross-identity message and invitation delivery.
+     */
+    fun getAssociatedIds(targetId: String): Set<String> {
+        val set = mutableSetOf<String>()
+        try {
+            val db = readableDatabase
+            val clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(targetId)
+            val sql = "SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}, ${UserIdentityTable.COL_AUTH_UID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?"
+            db.rawQuery(sql, arrayOf(clean, clean, clean, clean)).use { c ->
+                while (c.moveToNext()) {
+                    for (i in 0 until 4) {
+                        val s = c.getString(i)
+                        if (!s.isNullOrBlank()) set.add(s)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return set
     }
 
     // [Variables] cleanFocal: String, cleanPeer: String, db: SQLiteDatabase, currentCsv: String, set: MutableSet<String>, newCsv: String | [Constants] TABLE_NAME, COL_VALID_LINKED_AGENTS, COL_UID_1, COL_UID_2 | [Dependencies] FirebaseComm, SystemLogger | [Integration Points] PairingRepository, LocationRepository
@@ -562,6 +585,28 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     // --- SYSTEM LIFECYCLE ---
 
+    /**
+     * [Variables] db: SQLiteDatabase | [Constants] DevicePairingTable, ButterflyPointDeviceMapTable, DeviceVitalsTable, PendingSyncQueueTable | [Dependencies] SQLiteDatabase | [Integration Points] SSOT Canonical Identity Normalization
+     * 🛡️ Idempotent Non-Destructive Migration: Normalizes legacy 'HW_' prefixed device identifiers
+     * to canonical 8-character keys without dropping or altering records.
+     */
+    private fun normalizeStoredDeviceIdentifiers(db: SQLiteDatabase) {
+        try {
+            // 1. Normalize device_pairing peer references
+            db.execSQL("UPDATE ${DevicePairingTable.TABLE_NAME} SET ${DevicePairingTable.COL_DEVICE_A_ID} = SUBSTR(${DevicePairingTable.COL_DEVICE_A_ID}, 4) WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'HW_%'")
+            db.execSQL("UPDATE ${DevicePairingTable.TABLE_NAME} SET ${DevicePairingTable.COL_DEVICE_B_ID} = SUBSTR(${DevicePairingTable.COL_DEVICE_B_ID}, 4) WHERE ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'HW_%'")
+
+            // 2. Normalize butterfly rendezvous device map
+            db.execSQL("UPDATE ${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.TABLE_NAME} SET ${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} = SUBSTR(${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID}, 4) WHERE ${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} LIKE 'HW_%'")
+
+            // 3. Normalize device_vitals telemetry references
+            db.execSQL("UPDATE ${DeviceVitalsTable.TABLE_NAME} SET ${DeviceVitalsTable.COL_HARDWARE_ID} = SUBSTR(${DeviceVitalsTable.COL_HARDWARE_ID}, 4) WHERE ${DeviceVitalsTable.COL_HARDWARE_ID} LIKE 'HW_%'")
+
+            // 4. Normalize pending offline sync balance queue
+            db.execSQL("UPDATE ${PendingSyncQueueTable.TABLE_NAME} SET ${PendingSyncQueueTable.COL_TARGET_UID} = SUBSTR(${PendingSyncQueueTable.COL_TARGET_UID}, 4) WHERE ${PendingSyncQueueTable.COL_TARGET_UID} LIKE 'HW_%'")
+        } catch (_: Exception) {}
+    }
+
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.enableWriteAheadLogging()
@@ -582,11 +627,29 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} = ?", arrayOf(orphanId))
                 db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(orphanId))
             }
-            db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'HW_HW_%' OR ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'HW_HW_%'")
-            db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} LIKE 'HW_HW_%'")
-            db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} LIKE 'HW_HW_%'")
+            // 🧹 Enterprise SysLog Capping: Prevent unbounded table bloat and memory leaks
+            try {
+                db.execSQL("DELETE FROM sys_log WHERE id NOT IN (SELECT id FROM sys_log ORDER BY id DESC LIMIT 5000)")
+            } catch (_: Exception) {}
+            db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'HW_%' OR ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'HW_%'")
+            db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} LIKE 'HW_%'")
+            db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} LIKE 'HW_%'")
+            db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_IDENTITY_ID} NOT IN (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME})")
+            // 🛡️ Self-Healing Phantom Node Purge: Clean any artificial UNKNOWN_ or UNKNOWN0 ghost entries
+            try {
+                db.execSQL("DELETE FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_UID_1} LIKE 'UNKNOWN%' OR ${UserIdentityTable.COL_FULL_NAME} LIKE '%UNKNOWN%'")
+                db.execSQL("DELETE FROM ${DeviceTable.TABLE_NAME} WHERE ${DeviceTable.COL_DEVICE_ID} LIKE 'UNKNOWN%' OR ${DeviceTable.COL_HARDWARE_ID} LIKE 'UNKNOWN%'")
+                db.execSQL("DELETE FROM ${DevicePairingTable.TABLE_NAME} WHERE ${DevicePairingTable.COL_DEVICE_A_ID} LIKE 'UNKNOWN%' OR ${DevicePairingTable.COL_DEVICE_B_ID} LIKE 'UNKNOWN%'")
+                db.execSQL("DELETE FROM ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.TABLE_NAME} WHERE ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_TARGET_DEVICE_ID} LIKE 'UNKNOWN%' OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_MASTER_DEVICE_ID} LIKE 'UNKNOWN%'")
+                db.execSQL("DELETE FROM ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.TABLE_NAME} WHERE ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.COL_RECIPIENT_DEVICE_ID} LIKE 'UNKNOWN%' OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.COL_ACTOR_DEVICE_ID} LIKE 'UNKNOWN%'")
+                db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_AGENT_ID} LIKE 'UNKNOWN%'")
+            } catch (_: Exception) {}
             db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_TABLE)
             db.execSQL(com.jdroidx.jfindme.data.local.tables.ButterflyPointTelemetryTable.CREATE_INDEX_POINT_DEVICE)
+            // ⚡ V85 High-Performance B-Tree Indexes on LocationEventTable
+            db.execSQL(LocationEventTable.CREATE_INDEX_IDENTITY_TIMESTAMP)
+            db.execSQL(LocationEventTable.CREATE_INDEX_TIMESTAMP)
+            normalizeStoredDeviceIdentifiers(db)
         } catch (e: Exception) { }
 
         // 🚀 Self-Healing diagnostic: Force-audit sys_log for 'level' column presence
@@ -812,6 +875,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
         // 🛡️ V74 Anti-GIGO Deduplication Indexes
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_location_event_dedupe ON ${LocationEventTable.TABLE_NAME} (${LocationEventTable.COL_IDENTITY_ID}, ${LocationEventTable.COL_TIMESTAMP})")
+            db.execSQL(LocationEventTable.CREATE_INDEX_IDENTITY_TIMESTAMP)
+            db.execSQL(LocationEventTable.CREATE_INDEX_TIMESTAMP)
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_safe_zones_dedupe ON ${SafeZoneTable.TABLE_NAME} (${SafeZoneTable.COL_ZONE_ID})")
 
             // 🚀 V81 Self-Healing: Verify 25-Table Presence & Compatibility Views
@@ -826,6 +891,19 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 seedDefaultDynamicConfigs(db)
                 createLatestDataCompatibilityViews(db)
             } catch (ex: Exception) { }
+
+            // 🛡️ ERADICATE DUMMY/CATCH-ALL FLEET RADAR & ORPHAN ROWS (GAP-08)
+            try {
+                db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_GROUP_ID} = 'UNIVERSAL_FLEET' OR ${GroupMemberTable.COL_GROUP_ID} = 'DEFAULT_GROUP'")
+                db.execSQL("DELETE FROM ${GroupTable.TABLE_NAME} WHERE ${GroupTable.COL_GROUP_ID} = 'UNIVERSAL_FLEET' OR ${GroupTable.COL_GROUP_ID} = 'DEFAULT_GROUP'")
+                db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_IDENTITY_ID} NOT IN (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME})")
+                db.execSQL("DELETE FROM ${GroupMemberTable.TABLE_NAME} WHERE ${GroupMemberTable.COL_IDENTITY_ID} IN (SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE ${UserIdentityTable.COL_STATUS} = 'UNLINKED' OR ${UserIdentityTable.COL_STATUS} = 'DELETED')")
+                // Self-repair: Ensure local host agent is always Active and current session in user_identity
+                val myAid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                if (myAid.isNotBlank()) {
+                    db.execSQL("UPDATE ${UserIdentityTable.TABLE_NAME} SET ${UserIdentityTable.COL_STATUS} = 'Active', ${UserIdentityTable.COL_IS_CURRENT_SESSION} = 1 WHERE ${UserIdentityTable.COL_UID_1} = ?", arrayOf(myAid))
+                }
+            } catch (_: Exception) { }
         } catch (e: Exception) { }
     }
 
@@ -1026,7 +1104,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             "butterfly_max_distance_km" to Triple("500.0", "Butterfly Point Distance Safeguard Warning Threshold in KM", 0L),
             "butterfly_rag_amber_multiplier" to Triple("2.0", "Butterfly Point RAG Amber Distance Multiplier", 0L),
             "butterfly_rag_red_multiplier" to Triple("3.0", "Butterfly Point RAG Red Distance Multiplier", 0L),
-            "device_corresponding_group" to Triple("UNIVERSAL_FLEET", "Device group-by hierarchy mapping", 0L)
+            "device_corresponding_group" to Triple("", "Device group-by hierarchy mapping", 0L)
         )
         for ((key, triple) in defaults) {
             try {
@@ -1088,6 +1166,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             db.execSQL(GeofenceEventTable.CREATE_TABLE)
             db.execSQL(SyncQueueTable.CREATE_TABLE)
             db.execSQL(ChangeLogTable.CREATE_TABLE)
+            // 🚀 V84 Tables: System Update History & Siren Execution Audit (Gap Analysis & REA Resolution)
+            db.execSQL(SystemUpdateHistoryTable.CREATE_TABLE)
+            db.execSQL(SystemUpdateHistoryTable.CREATE_INDEX_STATUS)
+            db.execSQL(SirenExecutionAuditTable.CREATE_TABLE)
+            db.execSQL(SirenExecutionAuditTable.CREATE_INDEX_TRIGGERED)
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS security_audit_log (
                     log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1432,35 +1515,84 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-    // Group-Scoped Soft Deletion: Scopes unlinking to active group_members without poisoning physical user_identities
+    // [Variables] db, now, cleanUid, iId, cvUser, cvPair, prefs, currentCsv, updatedCsv, friendCsv, updatedFriend, authUid | [Constants] UserIdentityTable, GroupMemberTable, DevicePairingTable, SafeZoneUserMapTable, InvitationsTable | [Dependencies] DeviceIdentityHelper, FirebaseComm, LocationRepository | [Integration Points] SecurityDialogManager, DeviceRepository, TrackingService
+    // Group-Scoped Soft Deletion: Atomically unlinks target node, marks identity status UNLINKED, purges group members, and strips from live target listeners
     @JvmOverloads fun markRosterNodeDeleted(uid1: String, groupId: String? = null): Boolean {
         return try {
             val db = writableDatabase
             val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
-            val iId = resolveInternalId(uid1)
-            if (iId != -1L) {
-                if (!groupId.isNullOrBlank()) {
-                    db.delete(GroupMemberTable.TABLE_NAME, "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(iId.toString(), uid1, groupId))
-                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                } else {
-                    val cv = ContentValues().apply {
-                        put(UserIdentityTable.COL_STATUS, "DELETED")
-                        put(UserIdentityTable.COL_UPDATED_AT, now)
-                    }
-                    db.update(UserIdentityTable.TABLE_NAME, cv, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                }
-            } else if (!groupId.isNullOrBlank()) {
-                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
+            val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid1)
+            val iId = resolveInternalId(cleanUid).takeIf { it != -1L } ?: resolveInternalId(uid1)
+
+            // 1. Mark UserIdentityTable as UNLINKED across all possible identifier keys
+            val cvUser = ContentValues().apply {
+                put(UserIdentityTable.COL_STATUS, "UNLINKED")
+                put(UserIdentityTable.COL_UPDATED_AT, now)
             }
-            if (groupId.isNullOrBlank()) {
-                db.delete(DevicePairingTable.TABLE_NAME, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(uid1, uid1))
-                if (iId != -1L) {
-                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
-                }
-                val authUid = resolveAuthUidLocally(uid1)
-                com.jdroidx.jfindme.data.remote.FirebaseComm.purgeStaleLookupIndex(authUid, uid1)
+            if (iId != -1L) {
+                db.update(UserIdentityTable.TABLE_NAME, cvUser, "${UserIdentityTable.COL_ID} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?", arrayOf(iId.toString(), uid1, cleanUid, cleanUid, cleanUid, cleanUid))
+            } else {
+                db.update(UserIdentityTable.TABLE_NAME, cvUser, "${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?", arrayOf(uid1, cleanUid, cleanUid, cleanUid, cleanUid))
+            }
+
+            // 2. Mark DevicePairingTable as UNLINKED
+            val cvPair = ContentValues().apply {
+                put(DevicePairingTable.COL_PAIR_STATUS, "UNLINKED")
+                put(DevicePairingTable.COL_UPDATED_AT, now)
+            }
+            db.update(DevicePairingTable.TABLE_NAME, cvPair, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ? OR ${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(uid1, uid1, cleanUid, cleanUid))
+
+            // 3. Purge from GroupMemberTable across ALL circles/groups for this unlinked node
+            if (iId != -1L) {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(iId.toString(), uid1, cleanUid))
+                db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+            } else {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(uid1, cleanUid))
+            }
+
+            // 3b. 🛡️ Dynamic Decommission Anchor: Register in RegistryManager decommissioned sentinel
+            try {
+                com.jdroidx.jfindme.utils.RegistryManager.decommissionDevice(context, cleanUid)
+                com.jdroidx.jfindme.utils.RegistryManager.decommissionDevice(context, uid1)
+            } catch (_: Exception) {}
+
+            // 4. Clean Invitations and ButterflyPointDeviceMap
+            if (iId != -1L) {
+                db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
+            }
+            try {
+                db.delete(com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.TABLE_NAME, "${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} = ?", arrayOf(uid1, cleanUid))
+            } catch (_: Exception) {}
+
+            // 5. Update cached linked_devices_csv & friend_matrix_csv in SharedPreferences
+            try {
+                val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                val currentCsv = prefs.getString("linked_devices_csv", "") ?: ""
+                val updatedCsv = currentCsv.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it != cleanUid && it != uid1 }
+                    .joinToString(",")
+                    .let { if (it.isNotBlank()) "$it," else "" }
+                prefs.edit().putString("linked_devices_csv", updatedCsv).apply()
+
+                val friendCsv = prefs.getString("friend_matrix_csv", "") ?: ""
+                val updatedFriend = friendCsv.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it != cleanUid && it != uid1 }
+                    .joinToString(",")
+                    .let { if (it.isNotBlank()) "$it," else "" }
+                prefs.edit().putString("friend_matrix_csv", updatedFriend).apply()
+            } catch (_: Exception) {}
+
+            // 6. Evict target listener and active cache from LocationRepository
+            try {
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(cleanUid)
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(uid1)
+            } catch (_: Exception) {}
+
+            val authUid = resolveAuthUidLocally(uid1) ?: resolveAuthUidLocally(cleanUid)
+            if (!authUid.isNullOrBlank()) {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.purgeStaleLookupIndex(authUid, cleanUid)
             }
             true
         } catch (e: Exception) {
@@ -1468,17 +1600,44 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
+    // [Variables] db, cleanUid, cursorGlobal, isGloballyDeleted, cursorPair, isPairUnlinked, iId, curGrp, existsInGroup | [Constants] UserIdentityTable, DevicePairingTable, GroupMemberTable | [Dependencies] DeviceIdentityHelper, SQLiteDatabase, RegistryManager | [Integration Points] LocationRepository, HistoryViewModel, FamilyFriendsViewModel
+    // [Variables] cleanUid, cursorGlobal, isGloballyDeleted, cursorActive, hasActivePair, cursorPair, isPairUnlinked, iId, curGrp, existsInGroup | [Constants] UserIdentityTable, DevicePairingTable, GroupMemberTable | [Dependencies] DeviceIdentityHelper, SQLiteDatabase, RegistryManager | [Integration Points] LocationRepository, HistoryViewModel, FamilyFriendsViewModel, PairingRepository
     @JvmOverloads fun isDeviceDeleted(uid1: String, groupId: String? = null): Boolean {
         return try {
+            val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid1)
+            if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanUid) ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, uid1)) {
+                return true
+            }
+
             val db = readableDatabase
             val cursorGlobal = db.query(
                 UserIdentityTable.TABLE_NAME,
                 arrayOf(UserIdentityTable.COL_STATUS),
-                "(${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ?) AND ${UserIdentityTable.COL_STATUS} = 'DELETED'",
-                arrayOf(uid1, uid1), null, null, null
+                "(${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?) AND (${UserIdentityTable.COL_STATUS} = 'DELETED' OR ${UserIdentityTable.COL_STATUS} = 'UNLINKED')",
+                arrayOf(uid1, cleanUid, cleanUid, cleanUid, cleanUid), null, null, null
             )
             val isGloballyDeleted = cursorGlobal.use { it.moveToFirst() }
             if (isGloballyDeleted) return true
+
+            // 🛡️ OOPS MVC Integrity: If an active PAIRED record exists for this device, it is explicitly NOT deleted
+            val cursorActive = db.query(
+                DevicePairingTable.TABLE_NAME,
+                arrayOf(DevicePairingTable.COL_PAIR_STATUS),
+                "(${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?) AND ${DevicePairingTable.COL_PAIR_STATUS} = 'PAIRED'",
+                arrayOf(cleanUid, cleanUid), null, null, null
+            )
+            val hasActivePair = cursorActive.use { it.moveToFirst() }
+            if (hasActivePair) return false
+
+            val cursorPair = db.query(
+                DevicePairingTable.TABLE_NAME,
+                arrayOf(DevicePairingTable.COL_PAIR_STATUS),
+                "(${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ? OR ${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?) AND ${DevicePairingTable.COL_PAIR_STATUS} = 'UNLINKED'",
+                arrayOf(uid1, uid1, cleanUid, cleanUid), null, null, null
+            )
+            val isPairUnlinked = cursorPair.use { it.moveToFirst() }
+            if (isPairUnlinked) return true
 
             if (!groupId.isNullOrBlank()) {
                 val iId = resolveInternalId(uid1)
@@ -1486,7 +1645,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val curGrp = db.query(
                         GroupMemberTable.TABLE_NAME,
                         arrayOf(GroupMemberTable.COL_ROLE),
-                        "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?",
+                        "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ? AND (${GroupMemberTable.COL_STATUS} IS NULL OR (${GroupMemberTable.COL_STATUS} != 'DELETED' AND ${GroupMemberTable.COL_STATUS} != 'UNLINKED'))",
                         arrayOf(iId.toString(), uid1, groupId), null, null, null
                     )
                     curGrp.use { it.moveToFirst() }
@@ -1494,7 +1653,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     val curGrp = db.query(
                         GroupMemberTable.TABLE_NAME,
                         arrayOf(GroupMemberTable.COL_ROLE),
-                        "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?",
+                        "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ? AND (${GroupMemberTable.COL_STATUS} IS NULL OR (${GroupMemberTable.COL_STATUS} != 'DELETED' AND ${GroupMemberTable.COL_STATUS} != 'UNLINKED'))",
                         arrayOf(uid1, groupId), null, null, null
                     )
                     curGrp.use { it.moveToFirst() }
@@ -1562,48 +1721,322 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-    // Cascading Unlink Service: Group-scoped deletion prevents destroying identities participating in multiple circles
+    // [Variables] db, iId, cleanId, hwId, authUid, myAgentId, cmdPayload, curGroupId | [Constants] TABLE_NAME, COL_*, STAGE_REVOKED | [Dependencies] SQLiteDatabase, ContentValues, DeviceIdentityHelper, FirebaseComm, MasterDataSyncSentinel | [Integration Points] SecurityDialogManager, DeviceRepository, TrackingService
+    // 🛡️ Symmetrical Unlink Service: Handles both Standard Unlink (soft status change, circle removal, remote unpair) and Master Force Purge
     @JvmOverloads fun deleteRosterNode(uid1: String, groupId: String? = null): Boolean {
         markRosterNodeDeleted(uid1, groupId)
         return try {
             val db = writableDatabase
+            val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid1)
+            val hwId = if (cleanId.isNotBlank()) "HW_$cleanId" else ""
             val iId = resolveInternalId(uid1)
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+
+            // 1. Update SQLite Device Pairing Table to UNLINKED
+            val cvPair = android.content.ContentValues().apply {
+                put(DevicePairingTable.COL_PAIR_STATUS, "UNLINKED")
+                put(DevicePairingTable.COL_UPDATED_AT, FirebaseComm.getForensicTimestamp())
+            }
+            db.update(
+                DevicePairingTable.TABLE_NAME,
+                cvPair,
+                "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ? OR ${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?",
+                arrayOf(uid1, uid1, cleanId, cleanId)
+            )
+
+            // 2. Mark User Identity as UNLINKED
+            val cvUser = android.content.ContentValues().apply {
+                put(UserIdentityTable.COL_STATUS, "UNLINKED")
+                put(UserIdentityTable.COL_UPDATED_AT, FirebaseComm.getForensicTimestamp())
+            }
             if (iId != -1L) {
-                if (!groupId.isNullOrBlank()) {
-                    db.delete(GroupMemberTable.TABLE_NAME, "(${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?) AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(iId.toString(), uid1, groupId))
-                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                } else {
-                    db.delete(SecurityMasterKeysTable.TABLE_NAME, "${SecurityMasterKeysTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(TelemetryFailoverRoutesTable.TABLE_NAME, "${TelemetryFailoverRoutesTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(P2pMeshPacketsTable.TABLE_NAME, "${P2pMeshPacketsTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
-                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(UserOrgMapTable.TABLE_NAME, "${UserOrgMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(UserProfileTable.TABLE_NAME, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(LocationEventTable.TABLE_NAME, "${LocationEventTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(AlertHistoryTable.TABLE_NAME, "${AlertHistoryTable.COL_IDENTITY_ID} = ? OR ${AlertHistoryTable.COL_AGENT_ID} = ?", arrayOf(iId.toString(), uid1))
-                    db.delete(ChangeLogTable.TABLE_NAME, "${ChangeLogTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
-                    db.delete(SimTable.TABLE_NAME, "${SimTable.COL_DEVICE_ID} = ?", arrayOf(uid1))
-                    db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_ID} = ?", arrayOf(iId.toString()))
-                }
-            } else if (!groupId.isNullOrBlank()) {
-                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ? AND ${GroupMemberTable.COL_GROUP_ID} = ?", arrayOf(uid1, groupId))
+                db.update(
+                    UserIdentityTable.TABLE_NAME,
+                    cvUser,
+                    "${UserIdentityTable.COL_ID} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?",
+                    arrayOf(iId.toString(), uid1, cleanId, cleanId, cleanId, cleanId)
+                )
+            } else {
+                db.update(
+                    UserIdentityTable.TABLE_NAME,
+                    cvUser,
+                    "${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_AUTH_UID} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?",
+                    arrayOf(uid1, cleanId, cleanId, cleanId, cleanId)
+                )
             }
-            if (groupId.isNullOrBlank()) {
-                db.delete(DevicePairingTable.TABLE_NAME, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(uid1, uid1))
-                if (iId != -1L) {
-                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(iId.toString(), iId.toString()))
+
+            // 3. Revoke Active Device Sharing Sessions
+            try {
+                val cvShare = android.content.ContentValues().apply {
+                    put(com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_CURRENT_STATUS, "REVOKED")
+                    put(com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_IS_ACTIVE, 0)
+                    put(com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_UPDATED_AT, FirebaseComm.getForensicTimestamp())
                 }
-                val authUid = resolveAuthUidLocally(uid1)
-                com.jdroidx.jfindme.data.remote.FirebaseComm.deleteDeviceRemote(uid1, authUid)
+                db.update(
+                    com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.TABLE_NAME,
+                    cvShare,
+                    "${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_TARGET_DEVICE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_SUBMASTER_DEVICE_ID} = ?",
+                    arrayOf(cleanId, cleanId)
+                )
+            } catch (_: Exception) {}
+
+            // 4. Remove active circle mappings (GroupMembers, SafeZoneUserMap, ButterflyPointDeviceMap)
+            if (iId != -1L) {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ? OR ${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(iId.toString(), cleanId))
+                db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(iId.toString()))
+            } else {
+                db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(cleanId))
             }
+            try {
+                db.delete(com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.TABLE_NAME, "${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} = ?", arrayOf(cleanId))
+            } catch (_: Exception) {}
+
+            // 5. Send remote UNLINK signal to Peer Device via Firebase commands
+            if (cleanId.isNotBlank() && cleanId != myAgentId) {
+                try {
+                    val cmdPayload = mapOf(
+                        "action" to "UNLINK",
+                        "command" to "UNLINK",
+                        "from_agent" to myAgentId,
+                        "target_agent" to cleanId,
+                        "timestamp" to System.currentTimeMillis()
+                    )
+                    FirebaseComm.getDeviceRef(cleanId).child("commands").setValue(cmdPayload)
+                    FirebaseComm.getDeviceRef(cleanId).child("device").child("remote_command").setValue(cmdPayload)
+                } catch (e: Exception) {
+                    SystemLogger.w("DatabaseHelper", "Remote unlink command delivery warning: ${e.message}")
+                }
+            }
+
+            // 5b. Immediately update local linked_devices_csv cache
+            try {
+                val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                val currentCsv = prefs.getString("linked_devices_csv", "") ?: ""
+                val updatedCsv = currentCsv.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it != cleanId && it != uid1 }
+                    .joinToString(",")
+                    .let { if (it.isNotBlank()) "$it," else "" }
+                prefs.edit().putString("linked_devices_csv", updatedCsv).apply()
+            } catch (_: Exception) {}
+
+            // 6. Remove peer from active circle relationships in Firebase
+            val curGroupId = groupId ?: context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+            if (!curGroupId.isNullOrBlank() && cleanId.isNotBlank()) {
+                try {
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(cleanId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(uid1).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("members").child(cleanId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("members").child(uid1).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("citizen_dossiers").child(cleanId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("direct_pairs").child(cleanId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(myAgentId).child("paired_with").child(cleanId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(cleanId).child("paired_with").child(myAgentId).removeValue()
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(cleanId).child("joined_circles").child(curGroupId).removeValue()
+                    FirebaseComm.relationshipsRef.child(curGroupId).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+                } catch (_: Exception) {}
+            }
+
+            // 6b. Remove direct peer relationships
+            if (myAgentId.isNotBlank() && cleanId.isNotBlank()) {
+                try {
+                    FirebaseComm.getRelationshipsRef(myAgentId).child(cleanId).removeValue()
+                    FirebaseComm.getRelationshipsRef(cleanId).child(myAgentId).removeValue()
+                } catch (_: Exception) {}
+            }
+
+            // 6c. Evict target listener and active cache from LocationRepository
+            try {
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(cleanId)
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(uid1)
+            } catch (_: Exception) {}
+
+            // 7. Notify Master Data Sentinel for reactive UI refresh
+            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                context,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_DELETE,
+                cleanId
+            )
             true
         } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "deleteRosterNode failed: ${e.message}", e)
             false
         }
+    }
+
+    // [Variables] db, iId, cleanId, hwId, myAgentId | [Constants] ALL 22 TABLES | [Dependencies] SQLiteDatabase, FirebaseComm, MasterDataSyncSentinel | [Integration Points] SecurityDialogManager, DeviceRepository
+    // 🛡️ Master Administrative Force Purge: Atomically sanitizes ALL 22 SQLite tables and remote Firebase nodes for targetAgentId
+    fun purgeDeviceRecordsMaster(agentId: String): Boolean {
+        if (agentId.isBlank()) return false
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
+        val hwId = if (cleanId.isNotBlank()) "HW_$cleanId" else ""
+        val iId = resolveInternalId(agentId)
+        val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+
+        return try {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                // Purge across ALL related relational tables
+                val idStr = iId.toString()
+                val targetIds = listOf(agentId, cleanId, hwId).filter { it.isNotBlank() }
+
+                for (tid in targetIds) {
+                    db.delete(DevicePairingTable.TABLE_NAME, "${DevicePairingTable.COL_DEVICE_A_ID} = ? OR ${DevicePairingTable.COL_DEVICE_B_ID} = ?", arrayOf(tid, tid))
+                    try {
+                        db.delete(com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.TABLE_NAME, "${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_TARGET_DEVICE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_MASTER_DEVICE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.COL_SUBMASTER_DEVICE_ID} = ?", arrayOf(tid, tid, tid))
+                        db.delete(com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.TABLE_NAME, "${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.COL_RECIPIENT_DEVICE_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.COL_ACTOR_DEVICE_ID} = ?", arrayOf(tid, tid))
+                    } catch (_: Exception) {}
+                    try {
+                        db.delete(com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.TABLE_NAME, "${com.jdroidx.jfindme.data.local.tables.ButterflyPointDeviceMapTable.COL_DEVICE_ID} = ?", arrayOf(tid))
+                    } catch (_: Exception) {}
+                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_AGENT_ID} = ?", arrayOf(tid))
+                    db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_HARDWARE_ID} = ? OR ${DeviceTable.COL_DEVICE_ID} = ?", arrayOf(tid, tid))
+                    db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?", arrayOf(tid, tid))
+                    db.delete(SimTable.TABLE_NAME, "${SimTable.COL_DEVICE_ID} = ?", arrayOf(tid))
+                    db.delete(AlertHistoryTable.TABLE_NAME, "${AlertHistoryTable.COL_AGENT_ID} = ?", arrayOf(tid))
+                }
+
+                if (iId != -1L) {
+                    db.delete(UserIdentityTable.TABLE_NAME, "${UserIdentityTable.COL_ID} = ?", arrayOf(idStr))
+                    db.delete(DeviceTable.TABLE_NAME, "${DeviceTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(GroupMemberTable.TABLE_NAME, "${GroupMemberTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(SafeZoneUserMapTable.TABLE_NAME, "${SafeZoneUserMapTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(UserOrgMapTable.TABLE_NAME, "${UserOrgMapTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(UserProfileTable.TABLE_NAME, "${UserProfileTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(LocationEventTable.TABLE_NAME, "${LocationEventTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(AlertHistoryTable.TABLE_NAME, "${AlertHistoryTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(ChangeLogTable.TABLE_NAME, "${ChangeLogTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(SecurityMasterKeysTable.TABLE_NAME, "${SecurityMasterKeysTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(TelemetryFailoverRoutesTable.TABLE_NAME, "${TelemetryFailoverRoutesTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(P2pMeshPacketsTable.TABLE_NAME, "${P2pMeshPacketsTable.COL_IDENTITY_ID} = ?", arrayOf(idStr))
+                    db.delete(InvitationsTable.TABLE_NAME, "${InvitationsTable.COL_INITIATOR_IDENTITY_ID} = ? OR ${InvitationsTable.COL_ACCEPTED_IDENTITY_ID} = ?", arrayOf(idStr, idStr))
+                }
+
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+
+            // Remote Cloud Purge: Only wipe root device tree if self-purging (e.g. Factory Reset)
+            // When purging a peer node, ONLY strip the relationship bindings between this host and the peer!
+            if (cleanId.isNotBlank()) {
+                if (cleanId == myAgentId) {
+                    try {
+                        FirebaseComm.devicesRef.child(cleanId).removeValue()
+                        val authUid = resolveAuthUidLocally(cleanId)
+                        if (!authUid.isNullOrBlank()) {
+                            FirebaseComm.deleteDeviceRemote(cleanId, authUid)
+                        }
+                    } catch (_: Exception) {}
+                } else {
+                    val curGroupId = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE).getString("active_group", null)
+                    if (!curGroupId.isNullOrBlank()) {
+                        try {
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(cleanId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("members").child(cleanId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("citizen_dossiers").child(cleanId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("direct_pairs").child(cleanId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(myAgentId).child("paired_with").child(cleanId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("devices").child(cleanId).child("paired_with").child(myAgentId).removeValue()
+                            com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(cleanId).child("joined_circles").child(curGroupId).removeValue()
+                            FirebaseComm.relationshipsRef.child(curGroupId).child("signals").child("refresh_roster").setValue(System.currentTimeMillis())
+                        } catch (_: Exception) {}
+                    }
+                    try {
+                        FirebaseComm.getRelationshipsRef(myAgentId).child(cleanId).removeValue()
+                        FirebaseComm.getRelationshipsRef(cleanId).child(myAgentId).removeValue()
+                    } catch (_: Exception) {}
+
+                    // 5. Send remote UNLINK signal to Peer Device via Firebase commands
+                    if (cleanId.isNotBlank() && cleanId != myAgentId) {
+                        try {
+                            val cmdPayload = mapOf(
+                                "action" to "UNLINK",
+                                "command" to "UNLINK",
+                                "from_agent" to myAgentId,
+                                "target_agent" to cleanId,
+                                "timestamp" to System.currentTimeMillis()
+                            )
+                            FirebaseComm.getDeviceRef(cleanId).child("commands").setValue(cmdPayload)
+                            FirebaseComm.getDeviceRef(cleanId).child("device").child("remote_command").setValue(cmdPayload)
+                        } catch (e: Exception) {
+                            SystemLogger.w("DatabaseHelper", "Remote purge unlink command warning: ${e.message}")
+                        }
+                    }
+
+                    // 5b. Update local linked_devices_csv cache
+                    try {
+                        val prefs = context.getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                        val currentCsv = prefs.getString("linked_devices_csv", "") ?: ""
+                        val updatedCsv = currentCsv.split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() && it != cleanId && it != agentId }
+                            .joinToString(",")
+                            .let { if (it.isNotBlank()) "$it," else "" }
+                        prefs.edit().putString("linked_devices_csv", updatedCsv).apply()
+                    } catch (_: Exception) {}
+
+                    // 5c. Decommission anchor & evict from LocationRepository
+                    try {
+                        com.jdroidx.jfindme.utils.RegistryManager.decommissionDevice(context, cleanId)
+                        com.jdroidx.jfindme.utils.RegistryManager.decommissionDevice(context, agentId)
+                        com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(cleanId)
+                        com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(agentId)
+                    } catch (_: Exception) {}
+                }
+            }
+
+            // Reactive UI and Master Data notification
+            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                context,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_DELETE,
+                cleanId
+            )
+            SystemLogger.i("DatabaseHelper", "🛡️ Master Administrative Force Purge Completed for $agentId ($cleanId)")
+            true
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Master purge failed for $agentId: ${e.message}", e)
+            false
+        }
+    }
+
+    // [Variables] list, db, cursor, map | [Constants] TABLE_NAME | [Dependencies] SQLiteDatabase, Cursor | [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity
+    // 📜 Query Device Sharing History and Audit Log
+    fun getDeviceSharingHistory(): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        try {
+            val db = readableDatabase
+            val sql = "SELECT t.transaction_id, t.share_id, t.actor_device_id, t.recipient_device_id, " +
+                      "t.previous_stage, t.new_stage, t.notes_or_reason, t.epoch_ms, t.forensic_timestamp, " +
+                      "s.relationship_type, s.current_status " +
+                      "FROM ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.TABLE_NAME} t " +
+                      "LEFT JOIN ${com.jdroidx.jfindme.data.local.tables.DeviceSharingTable.TABLE_NAME} s ON t.share_id = s.share_id " +
+                      "ORDER BY t.epoch_ms DESC LIMIT 100"
+            val cursor = db.rawQuery(sql, null)
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val map = HashMap<String, Any>()
+                    map["transaction_id"] = c.getString(0) ?: ""
+                    map["share_id"] = c.getString(1) ?: ""
+                    map["actor_device_id"] = c.getString(2) ?: ""
+                    map["recipient_device_id"] = c.getString(3) ?: ""
+                    map["previous_stage"] = c.getString(4) ?: ""
+                    map["new_stage"] = c.getString(5) ?: ""
+                    map["notes_or_reason"] = c.getString(6) ?: ""
+                    map["epoch_ms"] = c.getLong(7)
+                    map["forensic_timestamp"] = c.getString(8) ?: ""
+                    map["relationship_type"] = c.getString(9) ?: "Standard"
+                    map["current_status"] = c.getString(10) ?: ""
+                    list.add(map)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.w("DatabaseHelper", "getDeviceSharingHistory query note: ${e.message}")
+        }
+        return list
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -2249,6 +2682,22 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 db.endTransaction()
             }
         }
+
+        if (oldVersion < 84) {
+            db.beginTransaction()
+            try {
+                db.execSQL(SystemUpdateHistoryTable.CREATE_TABLE)
+                db.execSQL(SystemUpdateHistoryTable.CREATE_INDEX_STATUS)
+                db.execSQL(SirenExecutionAuditTable.CREATE_TABLE)
+                db.execSQL(SirenExecutionAuditTable.CREATE_INDEX_TRIGGERED)
+                db.setTransactionSuccessful()
+                android.util.Log.i("DatabaseHelper", "V84 Schema Migration: System Update History & Siren Execution Audit Tables Created.")
+            } catch (e: Exception) {
+                android.util.Log.e("DatabaseHelper", "V84 Migration Failure: ${e.message}")
+            } finally {
+                db.endTransaction()
+            }
+        }
     }
 
     /**
@@ -2491,7 +2940,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         }
     }
 
-    // [Variables] uid1, name, role, status, isAdmin, isFriend, ownerName, uid2, connectedDeviceId, qrCode, avatarId, activeGroupId, permissionsMask | [Constants] None | [Dependencies] UserIdentityTable, GroupMemberTable, UserProfileTable | [Integration Points] FamilyFriendsViewModel, MasterDataSyncSentinel
+    // [Variables] uid1, name, role, status, isAdmin, isFriend, ownerName, uid2, connectedDeviceId, qrCode, avatarId, activeGroupId, permissionsMask, notifyPeers, existingAv, finalAv | [Constants] None | [Dependencies] UserIdentityTable, GroupMemberTable, UserProfileTable | [Integration Points] FamilyFriendsViewModel, MasterDataSyncSentinel
     @JvmOverloads
     fun saveRosterNode(
         uid1: String,
@@ -2506,8 +2955,21 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         qrCode: String? = null,
         avatarId: String? = null,
         activeGroupId: String? = null,
-        permissionsMask: String? = null
+        permissionsMask: String? = null,
+        notifyPeers: Boolean = false
     ) {
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid1)
+        if (status.equals("ACTIVE", ignoreCase = true) || status.equals("LIVE", ignoreCase = true)) {
+            try {
+                com.jdroidx.jfindme.utils.RegistryManager.undecommissionDevice(context, cleanId)
+                com.jdroidx.jfindme.utils.RegistryManager.undecommissionDevice(context, uid1)
+            } catch (_: Exception) {}
+        }
+        if (cleanId.isBlank() || cleanId.startsWith("HW_") || isDeviceDeleted(cleanId) || isDeviceDeleted(uid1)) {
+            SystemLogger.w("DatabaseHelper", "saveRosterNode rejected for unlinked/deleted/HW node: $uid1 (canonical: $cleanId)")
+            return
+        }
+
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -2519,13 +2981,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 // This collapses the partial+full record into one canonical row.
                 db.delete(UserIdentityTable.TABLE_NAME,
                     "${UserIdentityTable.COL_UID_1} = ? AND (${UserIdentityTable.COL_UID_2} IS NULL OR ${UserIdentityTable.COL_UID_2} != ?)",
-                    arrayOf(uid1, uid2)
+                    arrayOf(cleanId, uid2)
                 )
             }
 
             // 🧬 V68 Cleanup: No more HW_ROSTER_ dummy keys. Use NULL if unknown.
-            val nIdx = resolveNodeIndex(uid1, uid2 ?: "")
-            val iId = UserIdentityTable.insertOrUpdate(db, uid1, uid2, "", // auth_uid is blank
+            val nIdx = resolveNodeIndex(cleanId, uid2 ?: "")
+            val iId = UserIdentityTable.insertOrUpdate(db, cleanId, uid2, "", // auth_uid is blank
                 fullName = name,
                 isAdmin = if(isAdmin) "1" else "0",
                 owner = ownerName ?: "",
@@ -2548,11 +3010,23 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 agentId = uid1
             )
 
+            // 🎨 SSOT Safe Avatar Resolution: Preserve existing custom avatar if not explicitly overridden
+            val existingAv = getDeviceCentricAvatar(uid1)
+            val finalAv = when {
+                !avatarId.isNullOrBlank() && avatarId != "1" && avatarId != "butterfly" && avatarId != "avatar_custom_1" -> avatarId
+                !qrCode.isNullOrBlank() && (qrCode.startsWith("AV_") || (qrCode.startsWith("avatar_custom_") && qrCode != "avatar_custom_1")) -> qrCode
+                existingAv.isNotBlank() && existingAv != "1" && existingAv != "butterfly" && existingAv != "avatar_custom_1" -> existingAv
+                !avatarId.isNullOrBlank() && avatarId != "avatar_custom_1" -> avatarId
+                !qrCode.isNullOrBlank() && qrCode != "avatar_custom_1" -> qrCode
+                existingAv.isNotBlank() && existingAv != "butterfly" -> existingAv
+                else -> "avatar_custom_1"
+            }
+
             // Write to Profile (Tier 1) for name/avatar parity (Dual-Write for V60 backwards compatibility)
             val rosterProfile = mapOf<String, String>(
                 "name" to name,
                 "userName" to name,
-                "avatar_id" to (avatarId ?: "1"),
+                "avatar_id" to finalAv,
                 "role_title" to role
             )
             UserProfileTable.upsert(db, iId, rosterProfile)
@@ -2561,15 +3035,17 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         } finally {
             db.endTransaction()
         }
-        try {
-            com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
-                context,
-                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
-                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
-                uid1,
-                mapOf("uid" to uid1, "name" to name, "role" to role)
-            )
-        } catch (ignored: Exception) {}
+        if (notifyPeers) {
+            try {
+                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
+                    context,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_ROSTER,
+                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPSERT,
+                    uid1,
+                    mapOf("uid" to uid1, "name" to name, "role" to role)
+                )
+            } catch (ignored: Exception) {}
+        }
     }
 
     /**
@@ -3053,39 +3529,77 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     /**
      * 🛰️ Closed-Loop History Fallback: Retrieves the latest recorded historical location for a target node.
      */
+    // [Variables] db, cleanUid, rawClean, hwClean, identityId, fastSql, sql, cursor, fastCursor, map, speedIdx, battIdx, accIdx, brgIdx, altIdx, motIdx | [Constants] LocationEventTable.TABLE_NAME, LocationEventTable.COL_IDENTITY_ID, LocationEventTable.COL_TIMESTAMP, LocationEventTable.COL_LAT, LocationEventTable.COL_LNG | [Dependencies] LocationEventTable, UserIdentityTable, parseForensicStringToMillis, SystemLogger | [Integration Points] MultiMarkerEngine, LocationRepository
     fun getLatestHistoricalLocation(uid1: String): Map<String, Any>? {
         try {
             val db = readableDatabase
+            val cleanUid = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(uid1)
+            val rawClean = cleanUid.removePrefix("HW_")
+            val hwClean = if (cleanUid.startsWith("HW_")) cleanUid else "HW_$cleanUid"
+
+            val parseCursor: (android.database.Cursor) -> Map<String, Any> = { c ->
+                val map = mutableMapOf<String, Any>()
+                map["lat"] = c.getDouble(c.getColumnIndexOrThrow(LocationEventTable.COL_LAT))
+                map["lng"] = c.getDouble(c.getColumnIndexOrThrow(LocationEventTable.COL_LNG))
+                map["timestamp"] = parseForensicStringToMillis(c.getString(c.getColumnIndexOrThrow(LocationEventTable.COL_TIMESTAMP)))
+                map["address"] = c.getString(c.getColumnIndexOrThrow(LocationEventTable.COL_ADDRESS)) ?: ""
+                val speedIdx = c.getColumnIndex(LocationEventTable.COL_SPEED)
+                if (speedIdx >= 0) map["speed"] = c.getFloat(speedIdx)
+                val battIdx = c.getColumnIndex(LocationEventTable.COL_BATTERY)
+                if (battIdx >= 0) map["battery"] = c.getInt(battIdx)
+                val accIdx = c.getColumnIndex(LocationEventTable.COL_ACCURACY)
+                if (accIdx >= 0) map["accuracy"] = c.getFloat(accIdx)
+                val brgIdx = c.getColumnIndex(LocationEventTable.COL_BEARING)
+                if (brgIdx >= 0) map["bearing"] = c.getFloat(brgIdx)
+                val altIdx = c.getColumnIndex(LocationEventTable.COL_ALTITUDE)
+                if (altIdx >= 0) map["altitude"] = c.getDouble(altIdx)
+                val motIdx = c.getColumnIndex(LocationEventTable.COL_MOTION_STATE)
+                if (motIdx >= 0) map["motion_state"] = c.getString(motIdx) ?: "UNKNOWN"
+                map
+            }
+
+            // ⚡ FAST PATH: Indexed Single-Seek via internal identity ID (B-tree seek ~0.1ms vs 150ms table scan)
+            val identityId = resolveInternalId(cleanUid).takeIf { it > 0 }
+                ?: resolveInternalId(rawClean).takeIf { it > 0 }
+                ?: resolveInternalId(hwClean).takeIf { it > 0 }
+
+            if (identityId != null && identityId > 0) {
+                val fastSql = """
+                    SELECT * FROM ${LocationEventTable.TABLE_NAME}
+                    WHERE ${LocationEventTable.COL_IDENTITY_ID} = ?
+                      AND (${LocationEventTable.COL_LAT} != 0.0 OR ${LocationEventTable.COL_LNG} != 0.0)
+                    ORDER BY ${LocationEventTable.COL_TIMESTAMP} DESC
+                    LIMIT 1
+                """.trimIndent()
+                db.rawQuery(fastSql, arrayOf(identityId.toString())).use { fastCursor ->
+                    if (fastCursor.moveToFirst()) {
+                        return parseCursor(fastCursor)
+                    }
+                }
+            }
+
+            // Fallback path: Legacy JOIN for unmapped or virtual mesh nodes
             val sql = """
                 SELECT e.*, i.${UserIdentityTable.COL_UID_1} as uid_1, COALESCE(NULLIF(i.${UserIdentityTable.COL_FULL_NAME}, ''), 'Target Node') as fullName
                 FROM ${LocationEventTable.TABLE_NAME} e
                 JOIN ${UserIdentityTable.TABLE_NAME} i ON e.${LocationEventTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
-                WHERE (i.${UserIdentityTable.COL_UID_1} = ? OR i.${UserIdentityTable.COL_AUTH_UID} = ? OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? OR i.${UserIdentityTable.COL_UID_2} = ?)
+                WHERE (i.${UserIdentityTable.COL_UID_1} IN (?, ?, ?) 
+                    OR i.${UserIdentityTable.COL_AUTH_UID} IN (?, ?, ?) 
+                    OR i.${UserIdentityTable.COL_CONNECTED_ID} IN (?, ?, ?) 
+                    OR i.${UserIdentityTable.COL_UID_2} IN (?, ?, ?))
                   AND (e.${LocationEventTable.COL_LAT} != 0.0 OR e.${LocationEventTable.COL_LNG} != 0.0)
                 ORDER BY e.${LocationEventTable.COL_TIMESTAMP} DESC
                 LIMIT 1
             """.trimIndent()
-            val cursor = db.rawQuery(sql, arrayOf(uid1, uid1, uid1, uid1))
+            val cursor = db.rawQuery(sql, arrayOf(
+                cleanUid, rawClean, hwClean,
+                cleanUid, rawClean, hwClean,
+                cleanUid, rawClean, hwClean,
+                cleanUid, rawClean, hwClean
+            ))
             cursor.use {
                 if (it.moveToFirst()) {
-                    val map = mutableMapOf<String, Any>()
-                    map["lat"] = it.getDouble(it.getColumnIndexOrThrow(LocationEventTable.COL_LAT))
-                    map["lng"] = it.getDouble(it.getColumnIndexOrThrow(LocationEventTable.COL_LNG))
-                    map["timestamp"] = parseForensicStringToMillis(it.getString(it.getColumnIndexOrThrow(LocationEventTable.COL_TIMESTAMP)))
-                    map["address"] = it.getString(it.getColumnIndexOrThrow(LocationEventTable.COL_ADDRESS)) ?: ""
-                    val speedIdx = it.getColumnIndex(LocationEventTable.COL_SPEED)
-                    if (speedIdx >= 0) map["speed"] = it.getFloat(speedIdx)
-                    val battIdx = it.getColumnIndex(LocationEventTable.COL_BATTERY)
-                    if (battIdx >= 0) map["battery"] = it.getInt(battIdx)
-                    val accIdx = it.getColumnIndex(LocationEventTable.COL_ACCURACY)
-                    if (accIdx >= 0) map["accuracy"] = it.getFloat(accIdx)
-                    val brgIdx = it.getColumnIndex(LocationEventTable.COL_BEARING)
-                    if (brgIdx >= 0) map["bearing"] = it.getFloat(brgIdx)
-                    val altIdx = it.getColumnIndex(LocationEventTable.COL_ALTITUDE)
-                    if (altIdx >= 0) map["altitude"] = it.getDouble(altIdx)
-                    val motIdx = it.getColumnIndex(LocationEventTable.COL_MOTION_STATE)
-                    if (motIdx >= 0) map["motion_state"] = it.getString(motIdx) ?: "UNKNOWN"
-                    return map
+                    return parseCursor(it)
                 }
             }
         } catch (e: Exception) {
@@ -3377,10 +3891,18 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
         return res
     }
 
+    // [Variables] uid, clean, rawClean, hwClean, queryIds, map, db, placeholders, sql, args, cursor, cols | [Constants] UserProfileTable, UserIdentityTable, DeviceTable, UserOrgMapTable, OrganizationTable, GroupMemberTable | [Dependencies] SQLiteDatabase, DeviceIdentityHelper | [Integration Points] MapActivity, LocationRepository, DatabaseHelper
     fun getLocalDossier(uid: String): Map<String, String> {
         val map = mutableMapOf<String, String>()
+        if (uid.isBlank()) return map
         try {
+            val clean = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+            val rawClean = clean.removePrefix("HW_")
+            val hwClean = if (clean.startsWith("HW_")) clean else "HW_$clean"
+            val queryIds = listOf(clean, rawClean, hwClean, uid).distinct()
+
             val db = readableDatabase
+            val placeholders = queryIds.joinToString(",") { "?" }
             val sql = """
                 SELECT 
                     COALESCE(u.${UserProfileTable.COL_NAME}, i.${UserIdentityTable.COL_FULL_NAME}) as fullName,
@@ -3412,14 +3934,15 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 LEFT JOIN ${UserOrgMapTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${UserOrgMapTable.COL_IDENTITY_ID}
                 LEFT JOIN ${OrganizationTable.TABLE_NAME} o ON m.${UserOrgMapTable.COL_ORG_ID} = o.${OrganizationTable.COL_ORG_ID}
                 LEFT JOIN ${GroupMemberTable.TABLE_NAME} gm ON i.${UserIdentityTable.COL_ID} = gm.${GroupMemberTable.COL_IDENTITY_ID}
-                WHERE i.${UserIdentityTable.COL_UID_1} = ? 
-                   OR i.${UserIdentityTable.COL_AUTH_UID} = ? 
-                   OR i.${UserIdentityTable.COL_CONNECTED_ID} = ? 
-                   OR i.${UserIdentityTable.COL_UID_2} = ?
+                WHERE i.${UserIdentityTable.COL_UID_1} IN ($placeholders) 
+                   OR i.${UserIdentityTable.COL_AUTH_UID} IN ($placeholders) 
+                   OR i.${UserIdentityTable.COL_CONNECTED_ID} IN ($placeholders) 
+                   OR i.${UserIdentityTable.COL_UID_2} IN ($placeholders)
                 LIMIT 1
             """.trimIndent()
             
-            val cursor = db.rawQuery(sql, arrayOf(uid, uid, uid, uid))
+            val args = (queryIds + queryIds + queryIds + queryIds).toTypedArray()
+            val cursor = db.rawQuery(sql, args)
             cursor.use {
                 if (it.moveToFirst()) {
                     val cols = it.columnNames
@@ -3578,22 +4101,33 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     /**
      * 👑 SSOT: Universal Device Centric Avatar Resolver
+     * [Variables] deviceId, clean, rawClean, hwClean, candidateUids, dossier, av, roster, rAv | [Constants] "butterfly" | [Dependencies] DeviceIdentityHelper, getLocalDossier, getOfflineRoster | [Integration Points] MapActivity, LocationRepository, MultiMarkerEngine
      */
     fun getDeviceCentricAvatar(deviceId: String): String {
         if (deviceId.isBlank()) return "butterfly"
         try {
-            val dossier = getLocalDossier(deviceId)
-            val av = dossier["avatar_id"]?.takeIf { it.isNotBlank() }
-                ?: dossier["equipped_avatar_id"]?.takeIf { it.isNotBlank() }
-                ?: dossier["qr_code_ref"]?.takeIf { it.isNotBlank() }
-            if (av != null) return av.trim()
+            val clean = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(deviceId)
+            val rawClean = clean.removePrefix("HW_")
+            val hwClean = if (clean.startsWith("HW_")) clean else "HW_$clean"
+            val candidateUids = listOf(clean, rawClean, hwClean, deviceId).distinct()
 
-            val rosterMatch = getOfflineRoster().find {
-                it["uid_1"]?.toString() == deviceId || it["uid"]?.toString() == deviceId || 
-                it["uid_2"]?.toString() == deviceId || it["connected_id"]?.toString() == deviceId
+            for (cId in candidateUids) {
+                val dossier = getLocalDossier(cId)
+                val av = dossier["avatar_id"]?.takeIf { it.isNotBlank() }
+                    ?: dossier["equipped_avatar_id"]?.takeIf { it.isNotBlank() }
+                    ?: dossier["qr_code_ref"]?.takeIf { it.isNotBlank() }
+                if (av != null && av != "butterfly") return av.trim()
             }
-            val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() }
-            if (rAv != null) return rAv.trim()
+
+            val roster = getOfflineRoster()
+            for (cId in candidateUids) {
+                val rosterMatch = roster.find {
+                    it["uid_1"]?.toString() == cId || it["uid"]?.toString() == cId || 
+                    it["uid_2"]?.toString() == cId || it["connected_id"]?.toString() == cId
+                }
+                val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() }
+                if (rAv != null && rAv != "butterfly") return rAv.trim()
+            }
         } catch (e: Exception) { }
         return "butterfly"
     }
@@ -3607,7 +4141,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * 👥 SSOT: Resolves a device's corresponding group ID and human-readable Group/Circle name.
      */
     fun getDeviceGroupInfo(deviceId: String): Pair<String, String> {
-        if (deviceId.isBlank()) return Pair("UNIVERSAL_FLEET", "Universal Fleet")
+        if (deviceId.isBlank()) return Pair(com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context), "Primary Circle")
         try {
             val db = readableDatabase
             val sql = """
@@ -3617,10 +4151,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 FROM ${GroupMemberTable.TABLE_NAME} m
                 LEFT JOIN ${GroupTable.TABLE_NAME} g ON m.${GroupMemberTable.COL_GROUP_ID} = g.${GroupTable.COL_GROUP_ID}
                 LEFT JOIN ${UserIdentityTable.TABLE_NAME} i ON m.${GroupMemberTable.COL_IDENTITY_ID} = i.${UserIdentityTable.COL_ID}
-                WHERE m.${GroupMemberTable.COL_AGENT_ID} = ? 
+                WHERE (m.${GroupMemberTable.COL_AGENT_ID} = ? 
                    OR i.${UserIdentityTable.COL_UID_1} = ? 
                    OR i.${UserIdentityTable.COL_UID_2} = ? 
-                   OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?
+                   OR i.${UserIdentityTable.COL_CONNECTED_ID} = ?)
+                  AND (m.${GroupMemberTable.COL_GROUP_ID} IS NULL OR (m.${GroupMemberTable.COL_GROUP_ID} != 'UNIVERSAL_FLEET' AND m.${GroupMemberTable.COL_GROUP_ID} != 'DEFAULT_GROUP'))
                 LIMIT 1
             """.trimIndent()
             db.rawQuery(sql, arrayOf(deviceId, deviceId, deviceId, deviceId)).use { cursor ->
@@ -3642,27 +4177,30 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * 🛡️ SSOT: Retrieve all unique paired device IDs across DevicePairingTable and UserIdentityTable.
      */
     fun getAllPairedDeviceIds(): Set<String> {
-        // [Variables] result: MutableSet<String>, sanitizeAndAdd: (String?) -> Unit | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId, isAgentIdValid | [Integration Points] Master Peer Dispatch SSOT
+        // [Variables] result: MutableSet<String>, sanitizeAndAdd: (String?) -> Unit | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId, isAgentIdValid, isDeviceDeleted | [Integration Points] Master Peer Dispatch SSOT
         val result = mutableSetOf<String>()
         val sanitizeAndAdd = { raw: String? ->
-            if (!raw.isNullOrBlank() && raw != "HOST" && raw != "TARGET") {
+            if (!raw.isNullOrBlank() && raw != "HOST" && raw != "TARGET" && !raw.startsWith("HW_")) {
                 val clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(raw)
-                if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(clean) && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, clean)) {
+                if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(clean) && 
+                    !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, clean) &&
+                    !isDeviceDeleted(clean)) {
                     result.add(clean)
                 }
             }
         }
         try {
             val db = readableDatabase
-            // 1. DevicePairingTable
-            db.rawQuery("SELECT ${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID} FROM ${DevicePairingTable.TABLE_NAME}", null).use { cursor ->
+            // 1. DevicePairingTable (Active & Paired only)
+            val pairSql = "SELECT ${DevicePairingTable.COL_DEVICE_A_ID}, ${DevicePairingTable.COL_DEVICE_B_ID} FROM ${DevicePairingTable.TABLE_NAME} WHERE (${DevicePairingTable.COL_PAIR_STATUS} = 'PAIRED' OR ${DevicePairingTable.COL_PAIR_STATUS} = 'ACTIVE')"
+            db.rawQuery(pairSql, null).use { cursor ->
                 while (cursor.moveToNext()) {
                     sanitizeAndAdd(cursor.getString(0))
                     sanitizeAndAdd(cursor.getString(1))
                 }
             }
             // 2. UserIdentityTable
-            val idSql = "SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR ${UserIdentityTable.COL_STATUS} != 'DELETED')"
+            val idSql = "SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID} FROM ${UserIdentityTable.TABLE_NAME} WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR (${UserIdentityTable.COL_STATUS} != 'DELETED' AND ${UserIdentityTable.COL_STATUS} != 'UNLINKED')) AND ${UserIdentityTable.COL_UID_1} NOT LIKE 'HW_%'"
             db.rawQuery(idSql, null).use { cursor ->
                 while (cursor.moveToNext()) {
                     sanitizeAndAdd(cursor.getString(0))
@@ -3670,9 +4208,9 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                     sanitizeAndAdd(cursor.getString(2))
                 }
             }
-            // 3. GroupMemberTable (Active circle / group members)
+            // 3. GroupMemberTable (Active circle / group members excluding catch-all fleet groups)
             try {
-                val grpSql = "SELECT ${GroupMemberTable.COL_AGENT_ID} FROM ${GroupMemberTable.TABLE_NAME} WHERE (${GroupMemberTable.COL_STATUS} IS NULL OR ${GroupMemberTable.COL_STATUS} != 'DELETED')"
+                val grpSql = "SELECT ${GroupMemberTable.COL_AGENT_ID} FROM ${GroupMemberTable.TABLE_NAME} WHERE (${GroupMemberTable.COL_STATUS} IS NULL OR (${GroupMemberTable.COL_STATUS} != 'DELETED' AND ${GroupMemberTable.COL_STATUS} != 'UNLINKED')) AND ${GroupMemberTable.COL_AGENT_ID} NOT LIKE 'HW_%' AND ${GroupMemberTable.COL_GROUP_ID} != 'UNIVERSAL_FLEET' AND ${GroupMemberTable.COL_GROUP_ID} != 'DEFAULT_GROUP'"
                 db.rawQuery(grpSql, null).use { cursor ->
                     while (cursor.moveToNext()) {
                         sanitizeAndAdd(cursor.getString(0))
@@ -3711,7 +4249,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                   AND (${DevicePairingTable.COL_PAIR_STATUS} = 'PAIRED' OR ${DevicePairingTable.COL_PAIR_STATUS} = 'ACTIVE')
                 ORDER BY ${DevicePairingTable.COL_UPDATED_AT} DESC
             """.trimIndent()
-            db.rawQuery(query, arrayOf(cleanFocal, cleanFocal)).use { cursor ->
+            db.rawQuery(query, arrayOf(cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
                 while (cursor.moveToNext()) {
                     val rawPeer = cursor.getString(0)
                     val cleanPeer = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(rawPeer)
@@ -3732,7 +4270,13 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         SELECT ${UserIdentityTable.COL_ID} FROM ${UserIdentityTable.TABLE_NAME} 
                         WHERE ${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
                     ))
-                      AND (m2.${GroupMemberTable.COL_STATUS} IS NULL OR m2.${GroupMemberTable.COL_STATUS} != 'DELETED')
+                      AND (m1.${GroupMemberTable.COL_STATUS} IS NULL OR (m1.${GroupMemberTable.COL_STATUS} != 'DELETED' AND m1.${GroupMemberTable.COL_STATUS} != 'UNLINKED'))
+                      AND (m2.${GroupMemberTable.COL_STATUS} IS NULL OR (m2.${GroupMemberTable.COL_STATUS} != 'DELETED' AND m2.${GroupMemberTable.COL_STATUS} != 'UNLINKED'))
+                      AND m1.${GroupMemberTable.COL_GROUP_ID} != 'UNIVERSAL_FLEET'
+                      AND m1.${GroupMemberTable.COL_GROUP_ID} != 'DEFAULT_GROUP'
+                      AND m2.${GroupMemberTable.COL_GROUP_ID} != 'UNIVERSAL_FLEET'
+                      AND m2.${GroupMemberTable.COL_GROUP_ID} != 'DEFAULT_GROUP'
+                      AND m2.${GroupMemberTable.COL_AGENT_ID} NOT LIKE 'HW_%'
                     ORDER BY m2.${GroupMemberTable.COL_JOINED_AT} DESC
                 """.trimIndent()
                 db.rawQuery(queryGroup, arrayOf(cleanFocal, cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
@@ -3740,7 +4284,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         val rawPeer = cursor.getString(0)
                         val cleanPeer = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(rawPeer)
                         if (cleanPeer != cleanFocal && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanPeer) &&
-                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeer)) {
+                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeer) &&
+                            !isDeviceDeleted(cleanPeer)) {
                             result.add(cleanPeer)
                         }
                     }
@@ -3753,9 +4298,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val queryIdentity = """
                 SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}, ${UserIdentityTable.COL_VALID_LINKED_AGENTS}
                 FROM ${UserIdentityTable.TABLE_NAME}
-                WHERE ${UserIdentityTable.COL_UID_1} = ? 
+                WHERE (${UserIdentityTable.COL_UID_1} = ? 
                    OR ${UserIdentityTable.COL_UID_2} = ? 
-                   OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
+                   OR ${UserIdentityTable.COL_CONNECTED_ID} = ?)
+                  AND (${UserIdentityTable.COL_STATUS} IS NULL OR (${UserIdentityTable.COL_STATUS} != 'DELETED' AND ${UserIdentityTable.COL_STATUS} != 'UNLINKED'))
+                  AND ${UserIdentityTable.COL_UID_1} NOT LIKE 'HW_%'
                 ORDER BY ${UserIdentityTable.COL_UPDATED_AT} DESC
             """.trimIndent()
             db.rawQuery(queryIdentity, arrayOf(cleanFocal, cleanFocal, cleanFocal)).use { cursor ->
@@ -3781,8 +4328,10 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
                     for (cand in candidates) {
                         if (!cand.isNullOrBlank() && cand != cleanFocal &&
+                            !cand.startsWith("HW_") &&
                             com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cand) &&
-                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cand)) {
+                            !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cand) &&
+                            !isDeviceDeleted(cand)) {
                             result.add(cand)
                         }
                     }
@@ -3792,15 +4341,16 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             // 4. 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target
             try {
                 val primeTargetId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+                val primeTargetName = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetName(context).uppercase()
                 val primeChildQuery = """
                     SELECT ${UserIdentityTable.COL_UID_1}, ${UserIdentityTable.COL_UID_2}, ${UserIdentityTable.COL_CONNECTED_ID}
                     FROM ${UserIdentityTable.TABLE_NAME}
                     WHERE (${UserIdentityTable.COL_STATUS} IS NULL OR ${UserIdentityTable.COL_STATUS} != 'DELETED')
                       AND (${UserIdentityTable.COL_UID_1} = ? OR ${UserIdentityTable.COL_UID_2} = ? OR ${UserIdentityTable.COL_CONNECTED_ID} = ?
-                           OR UPPER(${UserIdentityTable.COL_FULL_NAME}) LIKE '%RIDDHI%')
+                           OR UPPER(${UserIdentityTable.COL_FULL_NAME}) LIKE ?)
                     ORDER BY ${UserIdentityTable.COL_UPDATED_AT} DESC
                 """.trimIndent()
-                db.rawQuery(primeChildQuery, arrayOf(primeTargetId, primeTargetId, primeTargetId)).use { cursor ->
+                db.rawQuery(primeChildQuery, arrayOf(primeTargetId, primeTargetId, primeTargetId, "%$primeTargetName%")).use { cursor ->
                     while (cursor.moveToNext()) {
                         for (i in 0..2) {
                             val id = cursor.getString(i)?.let { com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(it) }
@@ -3828,10 +4378,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     fun getPrimaryWardDeviceId(): String? {
         try {
             val roster = getOfflineRoster()
+            val primeName = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetName(context).uppercase()
             for (node in roster) {
                 val role = (node["role_type"] as? String ?: node["role"] as? String ?: "").uppercase()
                 val name = (node["fullName"] as? String ?: node["display_name"] as? String ?: "").uppercase()
-                if (role.contains("CHILD") || role.contains("WARD") || role.contains("DAUGHTER") || role.contains("SON") || role.contains("DEPENDENT") || name.contains("RIDDHI")) {
+                if (role.contains("CHILD") || role.contains("WARD") || role.contains("DAUGHTER") || role.contains("SON") || role.contains("DEPENDENT") || (primeName.isNotBlank() && name.contains(primeName))) {
                     val id = (node["uid_1"] as? String ?: node["uid"] as? String ?: node["connected_id"] as? String)?.trim()
                     if (!id.isNullOrBlank() && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(id)) {
                         return id
@@ -3878,7 +4429,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * and triggers Cloud Cascade (Firebase RTDB profile, live device, and group hubs) in a single operation.
      */
     fun updateUnifiedEntity(deviceId: String, name: String?, avatarId: String?, role: String?, activeGroup: String?) {
-        if (deviceId.isBlank()) return
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(deviceId)
+        if (deviceId.isBlank() || cleanId.startsWith("HW_") || isDeviceDeleted(deviceId) || isDeviceDeleted(cleanId)) return
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -4034,11 +4586,11 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                         WHEN UPPER(COALESCE(m.${GroupMemberTable.COL_ROLE}, '')) LIKE '%NEIGHBOR%' THEN 1
                         ELSE 0 
                     END as is_friend,
-                    COALESCE(v.${DeviceVitalsTable.COL_BATTERY_LEVEL}, 100) as battery_pct,
+                    COALESCE(v.${DeviceVitalsTable.COL_BATTERY_LEVEL}, -1) as battery_pct,
                     COALESCE(v.${DeviceVitalsTable.COL_LAST_SEEN}, 0) as last_seen_ts,
-                    'LIVE' as st_session_state
+                    COALESCE(i.${UserIdentityTable.COL_SESSION_STATE}, 'OFFLINE') as st_session_state
                 FROM ${UserIdentityTable.TABLE_NAME} i
-                ${if (!groupId.isNullOrBlank()) "JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID} AND m.${GroupMemberTable.COL_GROUP_ID} = '$groupId'" else "LEFT JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID}"}
+                ${if (!groupId.isNullOrBlank()) "JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID} AND m.${GroupMemberTable.COL_GROUP_ID} = '$groupId'" else "LEFT JOIN ${GroupMemberTable.TABLE_NAME} m ON i.${UserIdentityTable.COL_ID} = m.${GroupMemberTable.COL_IDENTITY_ID} AND m.${GroupMemberTable.COL_GROUP_ID} != 'UNIVERSAL_FLEET' AND m.${GroupMemberTable.COL_GROUP_ID} != 'DEFAULT_GROUP'"}
                 LEFT JOIN ${UserProfileTable.TABLE_NAME} u ON i.${UserIdentityTable.COL_ID} = u.${UserProfileTable.COL_IDENTITY_ID}
                 LEFT JOIN ${DeviceVitalsTable.TABLE_NAME} v ON (
                     v.${DeviceVitalsTable.COL_HARDWARE_ID} = i.${UserIdentityTable.COL_UID_1} OR 
@@ -4050,7 +4602,8 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 )
                 WHERE i.${UserIdentityTable.COL_UID_1} IS NOT NULL 
                   AND i.${UserIdentityTable.COL_UID_1} != '' 
-                  AND (i.${UserIdentityTable.COL_STATUS} IS NULL OR i.${UserIdentityTable.COL_STATUS} != 'DELETED')
+                  AND i.${UserIdentityTable.COL_UID_1} NOT LIKE 'HW_%'
+                  AND (i.${UserIdentityTable.COL_STATUS} IS NULL OR (i.${UserIdentityTable.COL_STATUS} != 'DELETED' AND i.${UserIdentityTable.COL_STATUS} != 'UNLINKED'))
                 GROUP BY i.${UserIdentityTable.COL_UID_1}
                 ORDER BY last_seen_ts DESC, i.${UserIdentityTable.COL_ID} DESC
             """.trimIndent()
@@ -4221,6 +4774,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
 
     @JvmOverloads
     fun saveSysLog(level: String, tag: String, message: String, extra: String? = null, timestamp: Long? = null) {
+        if (level == "D") return // Skip verbose debug logs in persistent SQLite to protect storage & memory
         try {
             val db = writableDatabase
             val v = ContentValues().apply {
@@ -4599,6 +5153,71 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * [Variables] list, db, cursor, pId, cDevId, pName, addr, lat, lng, geohash, rTs, expTs, radius, notes, iconType, act, arch, cAt, uAt, pt, devList
+     * [Constants] TABLE_NAME, COL_IS_ARCHIVED, COL_IS_ACTIVE, COL_RENDEZVOUS_TIMESTAMP
+     * [Dependencies] ButterflyPointTable, ButterflyPoint, DatabaseHelper, SystemLogger
+     * [Integration Points] DeviceRepository.kt, ButterflyPointDialog.java
+     * Retrieves historical / archived Butterfly Points.
+     */
+    fun getArchivedButterflyPoints(limit: Int = 20): List<com.jdroidx.jfindme.data.model.ButterflyPoint> {
+        val list = mutableListOf<com.jdroidx.jfindme.data.model.ButterflyPoint>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                ButterflyPointTable.TABLE_NAME,
+                null,
+                "${ButterflyPointTable.COL_IS_ARCHIVED} = 1 OR ${ButterflyPointTable.COL_IS_ACTIVE} = 0",
+                null, null, null, "${ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP} DESC", "$limit"
+            )
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    val pId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_ID)) ?: ""
+                    val cDevId = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATOR_DEVICE_ID)) ?: ""
+                    val pName = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_POINT_NAME)) ?: "Butterfly Point"
+                    val addr = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ADDRESS)) ?: ""
+                    val lat = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LAT))
+                    val lng = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_LNG))
+                    val geohash = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_GEOHASH)) ?: ""
+                    val rTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_RENDEZVOUS_TIMESTAMP))
+                    val expTs = c.getLong(c.getColumnIndexOrThrow(ButterflyPointTable.COL_EXPIRY_TIMESTAMP))
+                    val radius = c.getDouble(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ARRIVAL_RADIUS_METERS))
+                    val notes = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_NOTES)) ?: ""
+                    val iconType = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_ICON_TYPE)) ?: "BUTTERFLY_STANDARD"
+                    val act = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ACTIVE)) == 1
+                    val arch = c.getInt(c.getColumnIndexOrThrow(ButterflyPointTable.COL_IS_ARCHIVED)) == 1
+                    val cAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_CREATED_AT)) ?: ""
+                    val uAt = c.getString(c.getColumnIndexOrThrow(ButterflyPointTable.COL_UPDATED_AT)) ?: ""
+
+                    val pt = com.jdroidx.jfindme.data.model.ButterflyPoint(
+                        pointId = pId,
+                        creatorDeviceId = cDevId,
+                        pointName = pName,
+                        address = addr,
+                        lat = lat,
+                        lng = lng,
+                        geohash = geohash,
+                        rendezvousTimestamp = rTs,
+                        expiryTimestamp = expTs,
+                        arrivalRadiusMeters = radius,
+                        notes = notes,
+                        iconType = iconType,
+                        isActive = act,
+                        isArchived = arch,
+                        createdAt = cAt,
+                        updatedAt = uAt
+                    )
+                    val devList = getButterflyDevicesForPoint(pId)
+                    devList.forEach { d -> pt.devices[d.deviceId] = d }
+                    list.add(pt)
+                }
+            }
+        } catch (e: Exception) {
+            SystemLogger.e("DatabaseHelper", "Error loading archived butterfly points: ${e.message}")
+        }
+        return list
+    }
+
+    /**
      * Retrieves a specific Butterfly Point by ID with its participating devices roster.
      */
     fun getButterflyPoint(pointId: String): com.jdroidx.jfindme.data.model.ButterflyPoint? {
@@ -4926,6 +5545,29 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
     }
 
     /**
+     * Atomically batch-deletes synced records from the pending sync queue within a single SQLite transaction.
+     * Prevents lock contention during high-volume offline reconnects.
+     */
+    // [Variables] ids, db | [Constants] PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_ID | [Dependencies] SQLiteDatabase | [Integration Points] OfflineSyncManager
+    fun deletePendingSyncItems(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        try {
+            val db = writableDatabase
+            db.beginTransaction()
+            try {
+                for (id in ids) {
+                    db.delete(PendingSyncQueueTable.TABLE_NAME, "${PendingSyncQueueTable.COL_ID} = ?", arrayOf(id.toString()))
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.e("DatabaseHelper", "Failed to batch delete pending sync items: ${e.message}")
+        }
+    }
+
+    /**
      * [Variables] | [Constants] | [Dependencies] | [Integration Points]
      * Variables: limit, list, db, cursor, cols, map
      * Constants: PendingSyncQueueTable.TABLE_NAME, PendingSyncQueueTable.COL_TIMESTAMP
@@ -5091,16 +5733,49 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
                 timestamp = lastSeenTs,
                 motionState = motionState
             )
-            try {
-                com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.notifyMasterDataChanged(
-                    context,
-                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.CATEGORY_DEVICE_VITALS,
-                    com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.TYPE_UPDATE,
-                    hardwareId
-                )
-            } catch (_: Exception) {}
+            // 🛡️ Battery & Churn Optimization: Do NOT fan-out high-frequency vitals via MasterDataSyncSentinel on every GPS fix.
+            // Vitals are already synchronized via syncPartitionedLocationTrace to avoid infinite broadcast loops and thermal drain.
         } catch (e: Exception) {
             com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "updateDeviceVitalsTelemetry error: ${e.message}")
+        }
+    }
+
+    /**
+     * [Variables] db: SQLiteDatabase, cleanId: String, hwPrefixedId: String, query: String, cursor: Cursor | [Constants] DeviceVitalsTable.TABLE_NAME, DeviceVitalsTable.COL_BATTERY_LEVEL, DeviceVitalsTable.COL_HARDWARE_ID | [Dependencies] DeviceVitalsTable, SQLiteDatabase, SystemLogger | [Integration Points] LocationRepository.kt, FamilyFriendsViewModel.kt, NetworkGatewayActivity.java
+     * Directive 3 & GAP-01: Retrieves latest known battery level from SQLite DeviceVitalsTable. Returns -1 if not found.
+     */
+    fun getLatestBatteryLevel(hardwareId: String): Int {
+        if (hardwareId.isBlank()) return -1
+        return try {
+            val db = readableDatabase
+            val cleanId = hardwareId.removePrefix("HW_")
+            val hwPrefixedId = "HW_$cleanId"
+            val query = "SELECT ${DeviceVitalsTable.COL_BATTERY_LEVEL} FROM ${DeviceVitalsTable.TABLE_NAME} WHERE ${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ? OR ${DeviceVitalsTable.COL_HARDWARE_ID} = ? LIMIT 1"
+            db.rawQuery(query, arrayOf(hardwareId, cleanId, hwPrefixedId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getInt(0)
+                } else {
+                    -1
+                }
+            }
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "getLatestBatteryLevel error: ${e.message}")
+            -1
+        }
+    }
+
+    /**
+     * [Variables] db: SQLiteDatabase, agentId: String, state: String | [Constants] UserIdentityTable | [Dependencies] UserIdentityTable.kt, SystemLogger | [Integration Points] FirebaseComm.kt, TrackingService.kt
+     * GAP-02: Updates local session state ('ONLINE' / 'OFFLINE') in user_identity
+     */
+    fun updateSessionState(agentId: String, state: String): Int {
+        if (agentId.isBlank()) return 0
+        return try {
+            val db = writableDatabase
+            UserIdentityTable.updateSessionState(db, agentId, state)
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("DatabaseHelper", "updateSessionState error: ${e.message}")
+            0
         }
     }
 
@@ -5187,14 +5862,29 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
      * Purges expired telemetry history, orphaned vitals, logs, and completed sync items.
      * Executes SQLite VACUUM to reclaim filesystem disk blocks (prevents storage bloat).
      *
-     * @param retentionDays Max age of data in days to preserve (Default: 3 days)
+     * 🛡️ DUAL-CEILING HYBRID POLICY:
+     * 1. Absolute Maximum Hard Cap: 30 Days (never retain beyond 30 days under any circumstance).
+     * 2. Standard Retention: 7 Days (configurable from 1 to 30 days).
+     * 3. Size Ceiling: 25.0 MB. If on-disk SQLite size >= 25 MB, retention steps down towards 1-day safety floor.
+     *
+     * @param retentionDays Max age of data in days to preserve (Default: 7 days, max: 30 days)
      * @return Total number of records deleted across all tables
      */
     fun pruneExpiredData(retentionDays: Int = 0): Long {
         var totalDeleted: Long = 0
         try {
             val db = writableDatabase
-            val effectiveRetentionDays = if (retentionDays > 0) retentionDays else getDynamicConfigInt("retention_days", 3)
+            val configuredRetention = if (retentionDays > 0) retentionDays else getDynamicConfigInt("retention_days", 7)
+            // 🛡️ Absolute Maximum Hard Cap: 30 Days
+            var effectiveRetentionDays = configuredRetention.coerceIn(1, 30)
+
+            // 🛡️ Size Ceiling: If DB file size >= 25 MB, dynamically tighten retention down to 1 day floor
+            val currentDbSizeMb = getDatabaseStorageSizeMb()
+            if (currentDbSizeMb >= 25.0 && effectiveRetentionDays > 1) {
+                SystemLogger.w("DatabaseHelper", "🚨 DUAL-CEILING TRIGGER: DB size (${String.format(Locale.US, "%.2f", currentDbSizeMb)} MB) >= 25 MB. Tightening retention from ${effectiveRetentionDays}d to prevent out-of-disk condition.")
+                effectiveRetentionDays = (effectiveRetentionDays / 2).coerceAtLeast(1)
+            }
+
             val cal = Calendar.getInstance()
             cal.add(Calendar.DAY_OF_YEAR, -effectiveRetentionDays)
             
@@ -5204,7 +5894,7 @@ class DatabaseHelper private constructor(val context: Context) : SQLiteOpenHelpe
             val cutoffIso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(cal.time)
             val cutoffForensicFull = "${cutoffDayKey}00000000"
 
-            SystemLogger.i("DatabaseHelper", "🧹 Starting SQLite rolling purge. Cutoff: $cutoffIso (dayKey: $cutoffDayKey)")
+            SystemLogger.i("DatabaseHelper", "🧹 Starting SQLite rolling purge. Effective Retention: ${effectiveRetentionDays}d (Cap: 30d, Size Limit: 25MB). Cutoff: $cutoffIso")
 
             // 1. Purge time-series location events
             try {

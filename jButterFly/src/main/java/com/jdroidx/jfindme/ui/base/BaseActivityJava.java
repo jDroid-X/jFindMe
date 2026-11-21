@@ -42,6 +42,11 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
     private static final Handler registryHandler = new Handler(Looper.getMainLooper());
     private Runnable registryCheckRunnable;
 
+    // [Variables] sLastForegroundPresencePulseEpoch, sPresenceExecutor | [Constants] PRESENCE_PULSE_THROTTLE_MS | [Dependencies] Executors | [Integration Points] BaseActivityJava.onResume
+    private static volatile long sLastForegroundPresencePulseEpoch = 0L;
+    private static final long PRESENCE_PULSE_THROTTLE_MS = 20_000L;
+    private static final java.util.concurrent.ExecutorService sPresenceExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         prefs = getSharedPreferences("system_registry", Context.MODE_PRIVATE);
@@ -54,6 +59,16 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         prefs.registerOnSharedPreferenceChangeListener(this);
         
         super.onCreate(savedInstanceState);
+        
+        // 🚀 Universal OEM Shield: Block arbitrary vendor Force Dark distortion across Android 10+ (API 29+)
+        // [Variables] None | [Constants] Build.VERSION_CODES.Q | [Dependencies] Build, View | [Integration Points] Window Decor View
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            try {
+                if (getWindow() != null && getWindow().getDecorView() != null) {
+                    getWindow().getDecorView().setForceDarkAllowed(false);
+                }
+            } catch (Exception ignored) {}
+        }
         
         // Initialize Python Analytics Engine
         if (!SpatialProcessor.isStartedSafe()) {
@@ -192,6 +207,24 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
         registerNetworkMonitor();
         updateNetworkBorderState();
         registerMasterDataSyncReceiver();
+
+        // 💓 Instant Foreground Presence Pulse: Keep active running app ONLINE across fleet mesh (Throttled 20s via Pooled Executor)
+        // [Variables] now, selfAgentId, authUid, vitals, batt, db | [Constants] PRESENCE_PULSE_THROTTLE_MS | [Dependencies] DeviceIdentityHelper, FirebaseComm, DatabaseHelper | [Integration Points] BaseActivityJava.onResume
+        long now = System.currentTimeMillis();
+        if (now - sLastForegroundPresencePulseEpoch >= PRESENCE_PULSE_THROTTLE_MS) {
+            sLastForegroundPresencePulseEpoch = now;
+            sPresenceExecutor.execute(() -> {
+                try {
+                    String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(getApplicationContext());
+                    String authUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
+                    kotlin.Pair<Integer, Boolean> vitals = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getResolvedBatteryAndCharging(getApplicationContext());
+                    int batt = (vitals != null && vitals.getFirst() != null) ? vitals.getFirst() : 100;
+                    com.jdroidx.jfindme.data.remote.FirebaseComm.syncPresencePulse(authUid != null ? authUid : "", selfAgentId, batt);
+                    com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(getApplicationContext());
+                    db.updateSessionState(selfAgentId, "ONLINE");
+                } catch (Exception ignored) {}
+            });
+        }
     }
 
     @Override

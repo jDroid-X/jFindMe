@@ -166,3 +166,8 @@ If Tier 1 universal checks pass, identify the target screen/domain and apply its
    - Hardware pre-flight (Battery $\ge 15\%$, Storage $\ge 150\text{ MB}$, Silicon ID).
    - Software pre-flight (Keystore signature match, version code monotonicity, API 31+ unattended install).
    - Pre-uninstall clean teardown: stop all background services, flush offline queues to cloud, offer forensic SQLite dump, then launch OS `ACTION_DELETE` intent. Zero orphaned background processes.
+
+### 15. Sovereign Web Workspace Anchor (`jFindMeWeb`)
+* **MANDATORY SOVEREIGN WEB PATH**: All website, HTML, CSS, client-side JS, web dashboard, and web server development MUST strictly reference and operate within:
+  `C:\Users\jiten\jAnitGravity\jFindMeWeb\`
+* **Zero Web Files in Android Root**: Do NOT create standalone HTML web files inside `C:\Users\jiten\jAnitGravity\jFindMe\` root. All web presentation (`index.html`, `database-sync-settings.html`, `jButterflyGithubSync_v2.html`, `launcher.html`) and backend proxy routes (`js/server.js`, `js/static_server.js`) reside strictly in `jFindMeWeb`.

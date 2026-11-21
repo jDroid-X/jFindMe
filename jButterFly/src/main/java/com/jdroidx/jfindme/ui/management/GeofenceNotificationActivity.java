@@ -281,7 +281,7 @@ public class GeofenceNotificationActivity extends com.jdroidx.jfindme.ui.base.Ba
         // [Variables] agentName, n | [Constants] "MISSION ASSET", "Unknown" | [Dependencies] DatabaseHelper | [Integration Points] SSOT Geofence Notification Identity
         String agentName = n.getAvatarName();
         if (agentName == null || agentName.isEmpty() || agentName.equalsIgnoreCase("Unknown") || agentName.startsWith("Agent_")) {
-            String ssot = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(n.getAgentId());
+            String ssot = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getDeviceCentricName(n.getAgentId());
             if (ssot != null && !ssot.trim().isEmpty() && !ssot.startsWith("Agent_")) {
                 agentName = ssot;
             }

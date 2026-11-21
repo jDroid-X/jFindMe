@@ -9,7 +9,7 @@ import androidx.work.WorkManager;
 import com.google.android.gms.location.LocationServices;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.FirebaseDatabase;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.service.TrackingService;
 import com.jdroidx.jfindme.service.SIMTrackingService;
@@ -24,7 +24,8 @@ import java.util.*;
  */
 public class FactoryResetViewModel extends AndroidViewModel {
 
-    private final DatabaseHelper db;
+    // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] FactoryReset OOPS MVC ViewModel
+    private final DeviceRepository db;
     public final MutableLiveData<List<TableNode>> tableMatrix = new MutableLiveData<>();
     public final MutableLiveData<String> syncStatus = new MutableLiveData<>();
     public final MutableLiveData<Boolean> rebootTrigger = new MutableLiveData<>(false);
@@ -33,7 +34,7 @@ public class FactoryResetViewModel extends AndroidViewModel {
 
     public FactoryResetViewModel(Application app) {
         super(app);
-        db = DatabaseHelper.getInstance(app);
+        db = DeviceRepository.getInstance(app);
         loadLocalMatrix();
     }
 

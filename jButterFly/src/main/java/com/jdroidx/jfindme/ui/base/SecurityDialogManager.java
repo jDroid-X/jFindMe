@@ -5,7 +5,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.widget.Toast;
 import com.jdroidx.jfindme.R;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.utils.DeviceIdentityHelper;
 import com.jdroidx.jfindme.utils.RegistryManager;
@@ -58,10 +58,9 @@ public final class SecurityDialogManager {
                 performStandardUnlink(activity, targetUid, targetName, currentGroupId);
                 if (listener != null) listener.onActionSuccess("STANDARD_UNLINK", targetUid);
             } else {
-                // 2. Master Password Override
+                // 2. Master Password Override Force Purge
                 showMasterPurgeAuthDialog(activity, targetUid, targetName, () -> {
-                    performStandardUnlink(activity, targetUid, targetName, currentGroupId);
-                    Toast.makeText(activity, "🛡️ Force Administrative Purge Completed for " + targetName, Toast.LENGTH_LONG).show();
+                    performMasterPurge(activity, targetUid, targetName, currentGroupId);
                     if (listener != null) listener.onActionSuccess("MASTER_PURGE", targetUid);
                 });
             }
@@ -78,30 +77,87 @@ public final class SecurityDialogManager {
             String currentGroupId
     ) {
         try {
-            DatabaseHelper db = DatabaseHelper.getInstance(context);
+            DeviceRepository db = DeviceRepository.getInstance(context);
             if (currentGroupId == null || currentGroupId.isEmpty()) {
                 currentGroupId = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("active_group", null);
             }
 
-            db.deleteRosterNode(targetUid, currentGroupId);
+            String cleanTargetId = DeviceIdentityHelper.toCanonicalAgentId(targetUid);
+            if (cleanTargetId == null || cleanTargetId.isEmpty()) {
+                cleanTargetId = targetUid;
+            }
+
+            db.deleteRosterNode(cleanTargetId, currentGroupId);
 
             if (currentGroupId != null && !currentGroupId.isEmpty()) {
-                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("devices").child(targetUid).removeValue();
-                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("members").child(targetUid).removeValue();
-                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("citizen_dossiers").child(targetUid).removeValue();
-                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("direct_pairs").child(targetUid).removeValue();
-                com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(targetUid).child("joined_circles").child(currentGroupId).removeValue();
+                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("devices").child(cleanTargetId).removeValue();
+                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("members").child(cleanTargetId).removeValue();
+                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("citizen_dossiers").child(cleanTargetId).removeValue();
+                FirebaseComm.getRelationshipsRef().child(currentGroupId).child("direct_pairs").child(cleanTargetId).removeValue();
+                com.google.firebase.database.FirebaseDatabase.getInstance().getReference("users").child(cleanTargetId).child("joined_circles").child(currentGroupId).removeValue();
                 FirebaseComm.getRelationshipsRef().child(currentGroupId).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
             }
 
             String finalMyId = DeviceIdentityHelper.getOrGenerateAgentId(context);
-            FirebaseComm.getRelationshipsRef(finalMyId).child(targetUid).removeValue();
-            FirebaseComm.getRelationshipsRef(targetUid).child(finalMyId).removeValue();
+            FirebaseComm.getRelationshipsRef(finalMyId).child(cleanTargetId).removeValue();
+            FirebaseComm.getRelationshipsRef(cleanTargetId).child(finalMyId).removeValue();
+
+            // Evict target listener and active cache from LocationRepository
+            try {
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(cleanTargetId);
+                com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(targetUid);
+            } catch (Exception ignored) {}
+
+            // Anchor into decommission sentinel and broadcast UI refresh
+            try {
+                RegistryManager.decommissionDevice(context, cleanTargetId);
+                RegistryManager.decommissionDevice(context, targetUid);
+                android.content.Intent refreshIntent = new android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED");
+                refreshIntent.setPackage(context.getPackageName());
+                refreshIntent.putExtra("category", "ROSTER");
+                refreshIntent.putExtra("EXTRA_CATEGORY", "ROSTER");
+                context.sendBroadcast(refreshIntent);
+            } catch (Exception ignored) {}
 
             Toast.makeText(context, "Device " + targetName + " unlinked successfully.", Toast.LENGTH_SHORT).show();
-            SystemLogger.i(TAG, "Unlinked device " + targetUid + " (" + targetName + ")");
+            SystemLogger.i(TAG, "Unlinked device " + cleanTargetId + " (" + targetName + ")");
         } catch (Exception e) {
             SystemLogger.e(TAG, "Error executing standard unlink: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Executes Master Administrative Force Purge across all 22 tables.
+     */
+    public static void performMasterPurge(
+            Context context,
+            String targetUid,
+            String targetName,
+            String currentGroupId
+    ) {
+        try {
+            DeviceRepository repo = DeviceRepository.getInstance(context);
+            repo.purgeDeviceRecords(targetUid, success -> {
+                try {
+                    com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(targetUid);
+                    String cleanTid = DeviceIdentityHelper.toCanonicalAgentId(targetUid);
+                    com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context).removeTarget(cleanTid);
+                    RegistryManager.decommissionDevice(context, targetUid);
+                    RegistryManager.decommissionDevice(context, cleanTid);
+                    android.content.Intent refreshIntent = new android.content.Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED");
+                    refreshIntent.setPackage(context.getPackageName());
+                    refreshIntent.putExtra("category", "ROSTER");
+                    refreshIntent.putExtra("EXTRA_CATEGORY", "ROSTER");
+                    context.sendBroadcast(refreshIntent);
+                } catch (Exception ignored) {}
+                if (success) {
+                    Toast.makeText(context, "🛡️ Master Administrative Force Purge Completed for " + targetName, Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(context, "Purge finished for " + targetName, Toast.LENGTH_SHORT).show();
+                }
+            });
+        } catch (Exception e) {
+            SystemLogger.e(TAG, "Error executing master purge: " + e.getMessage());
         }
     }
 

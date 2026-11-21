@@ -13,7 +13,7 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.AngelLoader;
@@ -28,7 +28,8 @@ import java.util.*;
 public class ForensicVaultExplorerActivity extends BaseActivityJava {
 
     private String tableName, tableLabel;
-    private DatabaseHelper db;
+    // [Variables] db: DeviceRepository | [Constants] PROFILE_TABLE | [Dependencies] DeviceRepository | [Integration Points] Vault Explorer SSOT
+    private DeviceRepository db;
     private DatabaseReference cloudRef;
     private DatabaseReference activeTarget;
     
@@ -41,13 +42,13 @@ public class ForensicVaultExplorerActivity extends BaseActivityJava {
     protected View createLayout() {
         tableName = getIntent().getStringExtra("TABLE_NAME");
         if (tableName == null || tableName.trim().isEmpty()) {
-            tableName = DatabaseHelper.PROFILE_TABLE;
+            tableName = DeviceRepository.PROFILE_TABLE;
         }
         tableLabel = getIntent().getStringExtra("TABLE_LABEL");
         if (tableLabel == null || tableLabel.trim().isEmpty()) {
             tableLabel = tableName.replace("_", " ").toUpperCase();
         }
-        db = DatabaseHelper.getInstance(this);
+        db = DeviceRepository.getInstance(this);
         cloudRef = FirebaseDatabase.getInstance().getReference().child(tableName);
 
         // 🚀 NAVIGATION OVERRIDE: Check for requested View Mode

@@ -36,6 +36,12 @@ class OfflineSyncManager private constructor(context: Context) {
     private val gson = Gson()
     private var isNetworkMonitoringActive = false
 
+    // 🔋 SPARK QUOTA SENTINEL: Intelligent displacement & heartbeat throttling state
+    @Volatile private var lastDispatchedLat: Double = 0.0
+    @Volatile private var lastDispatchedLng: Double = 0.0
+    @Volatile private var lastDispatchedTs: Long = 0L
+    @Volatile private var lastDispatchedBattery: Int = -1
+
     // 📡 HUMAN-IN-THE-LOOP STATE BROADCASTERS
     val isOnlineLiveData = androidx.lifecycle.MutableLiveData<Boolean>(false)
     val pendingQueueCountLiveData = androidx.lifecycle.MutableLiveData<Int>(0)
@@ -55,7 +61,7 @@ class OfflineSyncManager private constructor(context: Context) {
     }
 
     fun getPendingQueueCount(): Int {
-        return syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()
+        return syncQueue.size + com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context).getPendingSyncCount()
     }
 
     companion object {
@@ -138,7 +144,7 @@ class OfflineSyncManager private constructor(context: Context) {
      * [Integration Points]: LocationRepository.finalizeLocationPush, Zero-Duplicate-Write Single-Push Guard
      */
     @JvmOverloads
-    fun syncLocation(location: UserLocation, dispatchCloud: Boolean = false) {
+    fun syncLocation(location: UserLocation, dispatchCloud: Boolean = true) {
         // 🛡️ Anti-GIGO Guard: Do not sync corrupt, NaN, or null-island coordinates
         if (!location.isValidLocation()) {
             SystemLogger.w(TAG, "Rejected invalid GPS ping (lat: ${location.latitude}, lng: ${location.longitude})")
@@ -170,8 +176,29 @@ class OfflineSyncManager private constructor(context: Context) {
 
         val isCloudReady = isNetworkAvailable && FirebaseComm.isAuthenticated()
         if (isCloudReady) {
-            // 🚀 Latest Data First Priority Rule: Live position dispatched to Firebase immediately
-            if (dispatchCloud || location.isSosActive) {
+            // 🚀 SPARK QUOTA OPTIMIZER: Throttle redundant stationary GPS jitter to protect free tier limit
+            val now = System.currentTimeMillis()
+            val minDisplacement = RegistryManager.getMinDisplacementMeters(context)
+            val distMoved = if (lastDispatchedLat != 0.0 && lastDispatchedLng != 0.0) {
+                val results = FloatArray(1)
+                android.location.Location.distanceBetween(lastDispatchedLat, lastDispatchedLng, location.latitude, location.longitude, results)
+                results[0]
+            } else {
+                Float.MAX_VALUE
+            }
+            val timeSinceLast = now - lastDispatchedTs
+            // 🔋 BATTERY & QUOTA SENTINEL: Enforce dynamic presence pulse interval (default 180s) when stationary
+            val presenceInterval = RegistryManager.getPresencePulseIntervalMs(context)
+            val isHeartbeatDue = timeSinceLast >= presenceInterval
+            val isSignificantMove = distMoved >= minDisplacement
+            val isBatteryChanged = kotlin.math.abs(location.batteryLevel.toInt() - lastDispatchedBattery) >= 3
+            val shouldDispatchCloud = location.isSosActive || isSignificantMove || isHeartbeatDue || isBatteryChanged
+
+            if (dispatchCloud && shouldDispatchCloud) {
+                lastDispatchedLat = location.latitude
+                lastDispatchedLng = location.longitude
+                lastDispatchedTs = now
+                lastDispatchedBattery = location.batteryLevel.toInt()
                 FirebaseComm.syncAnalyticalEvent(rUserId, location)
             }
             // If queue had backlogged items, flush them now in priority order
@@ -185,8 +212,8 @@ class OfflineSyncManager private constructor(context: Context) {
 
             // Also persist into SQLite PendingSyncQueueTable for Zero Data Loss
             try {
-                val db = DatabaseHelper.getInstance(context)
-                db.enqueuePendingSync(
+                val repo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+                repo.enqueuePendingSync(
                     payloadType = if (location.isSosActive) "SOS" else "LOCATION",
                     targetUid = rUserId,
                     lat = location.latitude,
@@ -203,7 +230,7 @@ class OfflineSyncManager private constructor(context: Context) {
                 SystemLogger.e(TAG, "SQLite pending queue enqueue error: ${e.message}")
             }
 
-            val totalPending = syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()
+            val totalPending = syncQueue.size + com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context).getPendingSyncCount()
             pendingQueueCountLiveData.postValue(totalPending)
             persistQueue()
             SystemLogger.d(TAG, "Offline: Location persisted to Secure Vault. Total: $totalPending (Limit: $maxQueue)")
@@ -240,24 +267,32 @@ class OfflineSyncManager private constructor(context: Context) {
 
     
     /**
-     * ⚖️ Reconciles all pending balance data accumulated between yesterday (T - 24h) and today (T_0).
-     * Synchronously extracts pending records from DatabaseHelper, pushes to Firebase, and marks as synced.
+     * ⚖️ Reconciles all pending balance data accumulated across the previous 26 hours (T - 26h) to today (T_0).
+     * Atomically extracts pending records from DatabaseHelper, pushes in a single atomic batch to Firebase,
+     * and marks as synced.
      */
+    // [Variables] now, hoursWindow, windowStartTime, itemsProcessed, db, deltaList, batchUpdates, candidates, countLatch, batchSucceeded, totalRemaining
+    // [Constants] limit = 100
+    // [Dependencies] DatabaseHelper, FirebaseAtomicGateway, FirebaseComm, RegistryManager
+    // [Integration Points] MaintenanceSyncScheduler, MasterDataSyncSentinel
     fun reconcileYesterdayTodayBalance(): Int {
         val now = System.currentTimeMillis()
-        val yesterday = now - (24 * 60 * 60 * 1000L)
+        val hoursWindow = RegistryManager.getInt(context, "maintenance_sync_window_hours", 26)
+        val windowStartTime = now - (hoursWindow * 60 * 60 * 1000L)
         var itemsProcessed = 0
 
         try {
             val db = DatabaseHelper.getInstance(context)
-            val deltaList = db.getBalanceDeltaQueue(yesterday, now, limit = 200)
+            // 🛡️ RECONNECTION RATE-LIMITER: Clamp to 100 records per cycle to prevent socket congestion
+            val deltaList = db.getBalanceDeltaQueue(windowStartTime, now, limit = 100)
             if (deltaList.isEmpty()) {
-                SystemLogger.i(TAG, "Balance delta reconciliation: Zero pending records between yesterday and today.")
+                SystemLogger.i(TAG, "Balance delta reconciliation: Zero pending records in previous ${hoursWindow}h window.")
                 return 0
             }
 
-            SystemLogger.i(TAG, "Balance delta reconciliation starting for ${deltaList.size} records.")
-            val syncedIds = mutableListOf<Long>()
+            SystemLogger.i(TAG, "Balance delta reconciliation starting for ${deltaList.size} records (window: ${hoursWindow}h).")
+            val batchUpdates = mutableMapOf<String, Any>()
+            val candidates = mutableListOf<Long>()
 
             for (item in deltaList) {
                 val id = (item["id"] as? Long) ?: continue
@@ -287,17 +322,25 @@ class OfflineSyncManager private constructor(context: Context) {
                         isSosActive = isSos,
                         timestamp = FirebaseComm.getForensicTimestamp(ts)
                     )
-                    FirebaseComm.syncAnalyticalEvent(targetUid, ul) { success ->
-                        if (success) {
-                            syncedIds.add(id)
-                            itemsProcessed++
-                        }
-                    }
+                    val updates = FirebaseComm.buildLocationUpdates(targetUid, ul)
+                    batchUpdates.putAll(updates)
+                    candidates.add(id)
                 }
             }
 
-            if (syncedIds.isNotEmpty()) {
-                db.markBalanceDeltaSynced(syncedIds)
+            if (batchUpdates.isNotEmpty()) {
+                val countLatch = java.util.concurrent.CountDownLatch(1)
+                var batchSucceeded = false
+                FirebaseAtomicGateway.updateChildrenAtomic(FirebaseComm.database.reference, batchUpdates) { success, _ ->
+                    batchSucceeded = success
+                    countLatch.countDown()
+                }
+                countLatch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+
+                if (batchSucceeded) {
+                    db.markBalanceDeltaSynced(candidates)
+                    itemsProcessed = candidates.size
+                }
             }
 
             val totalRemaining = syncQueue.size + db.getPendingSyncCount()
@@ -318,13 +361,24 @@ class OfflineSyncManager private constructor(context: Context) {
     }
 
     private fun processQueue() {
+        // [Variables] itemsProcessed, batchUpdates, syncedItemIds, expiredIds, db, sqlitePending, totalRemaining, poppedMemItems
+        // [Constants] None
+        // [Dependencies] DatabaseHelper, FirebaseAtomicGateway, FirebaseComm, UserLocation
+        // [Integration Points] TrackingService, LocationRepository, OfflineSyncWorker
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             var itemsProcessed = 0
-            // 🚀 Latest Data First Priority: Drain newest memory queued pings first
+            val batchUpdates = mutableMapOf<String, Any>()
+            val syncedItemIds = mutableListOf<Long>()
+            val expiredIds = mutableListOf<Long>()
+            val poppedMemItems = mutableListOf<UserLocation>()
+
+            // 🚀 Latest Data First Priority: Drain newest memory queued pings first into atomic batch
             while (syncQueue.isNotEmpty() && isNetworkAvailable) {
                 val location = syncQueue.pollFirst()
                 if (location != null) {
-                    FirebaseComm.syncAnalyticalEvent(location.getResolvedUserId(), location)
+                    val memUpdates = FirebaseComm.buildLocationUpdates(location.getResolvedUserId(), location)
+                    batchUpdates.putAll(memUpdates)
+                    poppedMemItems.add(location)
                     itemsProcessed++
                 }
             }
@@ -333,6 +387,10 @@ class OfflineSyncManager private constructor(context: Context) {
             try {
                 val db = DatabaseHelper.getInstance(context)
                 val sqlitePending = db.getLatestPendingSyncQueue(50)
+                val retentionDays = db.getDynamicConfigInt("retention_days", 7)
+                val maxAgeMs = retentionDays * 24 * 3600 * 1000L
+                val now = System.currentTimeMillis()
+
                 for (item in sqlitePending) {
                     val id = (item["id"] as? Long) ?: continue
                     val targetUid = (item["target_uid"] as? String) ?: ""
@@ -342,17 +400,15 @@ class OfflineSyncManager private constructor(context: Context) {
                     val speed = (item["speed"] as? Double)?.toFloat() ?: 0f
                     val battery = (item["battery"] as? Long)?.toInt() ?: 100
                     val isSos = (item["is_sos"] as? Long) == 1L
-                    val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
+                    val ts = (item["timestamp"] as? Long) ?: now
                     val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)
                     val altitude = (item["altitude"] as? Double) ?: ((item["altitude"] as? Long)?.toDouble() ?: 0.0)
                     val motionState = (item["motion_state"] as? String) ?: "UNKNOWN"
 
                     // 🛡️ Age Boundary Guard (TS-06): Suppress queue items older than dynamic retention ceiling
-                    val retentionDays = db.getDynamicConfigInt("retention_days", 7)
-                    val maxAgeMs = retentionDays * 24 * 3600 * 1000L
-                    val itemAge = System.currentTimeMillis() - ts
+                    val itemAge = now - ts
                     if (itemAge > maxAgeMs) {
-                        db.deletePendingSyncItem(id)
+                        expiredIds.add(id)
                         SystemLogger.w(TAG, "Suppressed expired outbox telemetry item $id (age: ${itemAge / 86400000}d > ${retentionDays}d ceiling)")
                         continue
                     }
@@ -371,13 +427,40 @@ class OfflineSyncManager private constructor(context: Context) {
                             isSosActive = isSos,
                             timestamp = FirebaseComm.getForensicTimestamp(ts)
                         )
-                        FirebaseComm.syncAnalyticalEvent(targetUid, ul) { success -> if (success) { db.deletePendingSyncItem(id); itemsProcessed++ } }
-                        // db.deletePendingSyncItem handled above upon verified ACK
-                        // itemsProcessed incremented upon verified ACK
+                        val updates = FirebaseComm.buildLocationUpdates(targetUid, ul)
+                        batchUpdates.putAll(updates)
+                        syncedItemIds.add(id)
+                    }
+                }
+
+                // Batch delete expired items in single SQLite transaction
+                if (expiredIds.isNotEmpty()) {
+                    db.deletePendingSyncItems(expiredIds)
+                }
+
+                // Dispatch single atomic batch multi-path update across all queued items
+                if (batchUpdates.isNotEmpty() && isNetworkAvailable) {
+                    val syncLatch = java.util.concurrent.CountDownLatch(1)
+                    var atomicSuccess = false
+                    FirebaseAtomicGateway.updateChildrenAtomic(FirebaseComm.database.reference, batchUpdates) { success, _ ->
+                        atomicSuccess = success
+                        syncLatch.countDown()
+                    }
+                    syncLatch.await(15, java.util.concurrent.TimeUnit.SECONDS)
+
+                    if (atomicSuccess && syncedItemIds.isNotEmpty()) {
+                        db.deletePendingSyncItems(syncedItemIds)
+                        itemsProcessed += syncedItemIds.size
+                    } else if (!atomicSuccess && poppedMemItems.isNotEmpty()) {
+                        // 🛡️ Zero Data Loss Rollback: If atomic write fails/times out, re-enqueue in-memory pings
+                        poppedMemItems.asReversed().forEach { syncQueue.offerFirst(it) }
                     }
                 }
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Error draining sqlite pending sync queue: ${e.message}")
+                if (poppedMemItems.isNotEmpty()) {
+                    poppedMemItems.asReversed().forEach { syncQueue.offerFirst(it) }
+                }
             }
 
             val totalRemaining = syncQueue.size + DatabaseHelper.getInstance(context).getPendingSyncCount()

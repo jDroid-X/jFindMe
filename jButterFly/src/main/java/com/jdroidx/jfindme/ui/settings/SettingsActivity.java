@@ -20,7 +20,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.jdroidx.jfindme.BuildConfig;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.ui.auth.AuthActivity;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.map.MapActivity;
@@ -103,6 +103,8 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvOfflineQueueVal;
     private TextView tvGuardianPinVal;
     private TextView tvPrimeTargetVal;
+    private TextView tvPrimeTargetNameVal;
+    private TextView tvUnifiedDeviceIdSyncVal;
     private TextView tvPauseDurationVal;
     private TextView tvPinTtlVal;
     private TextView tvPurgePhraseVal;
@@ -134,6 +136,9 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvButterflyOverdueGraceVal;
     private TextView tvButterflyForegroundSyncVal;
     private TextView tvButterflyMaxAvailabilityVal;
+    private TextView tvButterflyNominalSpeedVal;
+    private TextView tvButterflyApproachWindowVal;
+    private TextView tvButterflyTacticalRadiusVal;
 
     // Live Badges (Tab 2 Screen Modules)
     private TextView badgeRosterTv;
@@ -412,6 +417,9 @@ public class SettingsActivity extends BaseActivityJava {
         String primeTarget = RegistryManager.getPrimeTargetDeviceId(this);
         secCard.addView(createSettingTile("PRIMARY CHILD / WARD TARGET DEVICE", "Target ID: " + primeTarget + " (Priority 0 Monitored Ward)", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> showPrimeTargetDeviceDialog(), tv -> tvPrimeTargetVal = tv), btnLp);
 
+        String primeName = RegistryManager.getPrimeTargetName(this);
+        secCard.addView(createSettingTile("PRIMARY CHILD / WARD TARGET NAME", "Target Name: " + primeName + " (Priority 0 Monitored Ward Name)", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> showPrimeTargetNameDialog(), tv -> tvPrimeTargetNameVal = tv), btnLp);
+
         int pauseMins = RegistryManager.getLocationPauseDurationMin(this);
         secCard.addView(createSettingTile("LOCATION PAUSE APPROVAL WINDOW", "Window: " + pauseMins + " Min (Standby pause duration before auto-resume)", android.R.drawable.ic_menu_recent_history, v -> showLocationPauseDurationDialog(), tv -> tvPauseDurationVal = tv), btnLp);
 
@@ -437,8 +445,12 @@ public class SettingsActivity extends BaseActivityJava {
         gpsCard.addView(createSettingTile("BATTERY OPTIMIZER & PING HUB", pingSub, com.jdroidx.jfindme.R.drawable.ic_device_health, v -> showBatteryOptimizerDialog(), tv -> tvPingIntervalVal = tv), btnLp);
 
         gpsCard.addView(createSettingTile("OEM AUTOSTART & BATTERY SHIELD", "Punch through MIUI, OneUI, ColorOS background process killing", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
-            boolean dispatched = com.jdroidx.jfindme.utils.DeviceIdentityHelper.requestOemBatteryExemption(this);
-            UiArchitect.showSlideNotificationBanner(this, "Battery Shield", dispatched ? "OEM optimization screen opened. Grant autostart & unconstrained battery." : "Battery settings unconstrained.", false, 3500, null, null);
+            if (com.jdroidx.jfindme.utils.MiuiOptimizationHelper.isXiaomiOrRedmi()) {
+                com.jdroidx.jfindme.utils.MiuiOptimizationHelper.showMiuiOptimizationDialog(this);
+            } else {
+                boolean dispatched = com.jdroidx.jfindme.utils.DeviceIdentityHelper.requestOemBatteryExemption(this);
+                UiArchitect.showSlideNotificationBanner(this, "Battery Shield", dispatched ? "OEM optimization screen opened. Grant autostart & unconstrained battery." : "Battery settings unconstrained.", false, 3500, null, null);
+            }
         }, null), btnLp);
 
         // Hardware Motion Co-Processor (Parent Switch)
@@ -832,6 +844,18 @@ public class SettingsActivity extends BaseActivityJava {
             tv -> tvFailoverSmsVal = tv
         ), btnLp);
 
+        boolean isUnifiedSync = RegistryManager.isUnifiedDeviceIdSyncEnabled(this);
+        String unifiedSyncSub = isUnifiedSync
+            ? "Status: ACTIVE (Canonical single-path egress, zero HW_ duplication)"
+            : "Status: DUAL-PATH (Legacy mirror enabled: writes to both canonical & HW_)";
+        failoverCard.addView(createSettingTile(
+            "UNIFIED DEVICE ID RTDB SYNC",
+            unifiedSyncSub,
+            com.jdroidx.jfindme.R.drawable.ic_settings_gears,
+            v -> toggleUnifiedDeviceIdSync(),
+            tv -> tvUnifiedDeviceIdSyncVal = tv
+        ), btnLp);
+
         content.addView(failoverCard, getCardParams());
 
         // ══════════════════════════════════════════════════════════════════════
@@ -854,6 +878,17 @@ public class SettingsActivity extends BaseActivityJava {
             UiArchitect.showSlideNotificationBanner(this, "Clustering Updated", isChecked ? "Avatars within 10m will be grouped." : "Individual avatar pins active.", false, 2500, null, null);
         });
         mapPrefsCard.addView(clusterSwitch, btnLp);
+
+        // [Variables] distThreshold, distSub | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] RegistryManager, UiArchitect | [Integration Points] MapActivity Floating Avatar HUD, CARD 8 Map Preferences
+        distThreshold = RegistryManager.getDistantDeviceThresholdMeters(this);
+        distSub = "Panel Threshold: " + distThreshold + "m (Distance to float HUD panel)";
+        mapPrefsCard.addView(createSettingTile(
+            "DISTANT DEVICE PANEL THRESHOLD",
+            distSub,
+            android.R.drawable.ic_menu_compass,
+            v -> showDistantDeviceThresholdDialog(),
+            tv -> tvDistantVal = tv
+        ), btnLp);
 
         String mapApiKey = RegistryManager.getGoogleMapsApiKey(this);
         String maskedKey = (mapApiKey != null && mapApiKey.length() > 10)
@@ -960,6 +995,36 @@ public class SettingsActivity extends BaseActivityJava {
             tv -> tvButterflyMaxAvailabilityVal = tv
         ), btnLp);
 
+        float nominalSpeed = RegistryManager.getButterflyNominalSpeedKmh(this);
+        String nominalSub = "Nominal Speed: " + ((int) nominalSpeed) + " km/h (Fallback speed for travel ETA estimation)";
+        butterflyCard.addView(createSettingTile(
+            "NOMINAL TRAVEL SPEED (KM/H)",
+            nominalSub,
+            android.R.drawable.ic_menu_directions,
+            v -> showButterflyNominalSpeedDialog(),
+            tv -> tvButterflyNominalSpeedVal = tv
+        ), btnLp);
+
+        int approachMins = RegistryManager.getButterflyApproachWindowMinutes(this);
+        String approachSub = "TTR Horizon: " + approachMins + " Minutes (Time window to trigger active approach tracking)";
+        butterflyCard.addView(createSettingTile(
+            "APPROACH MONITORING WINDOW",
+            approachSub,
+            android.R.drawable.ic_menu_recent_history,
+            v -> showButterflyApproachWindowDialog(),
+            tv -> tvButterflyApproachWindowVal = tv
+        ), btnLp);
+
+        float tacticalKm = RegistryManager.getButterflyTacticalRadiusKm(this);
+        String tacticalSub = "Proximity Radius: " + ((int) tacticalKm) + " km (Threshold for high-velocity tactical vectors)";
+        butterflyCard.addView(createSettingTile(
+            "TACTICAL QUORUM RADIUS",
+            tacticalSub,
+            android.R.drawable.ic_menu_compass,
+            v -> showButterflyTacticalRadiusDialog(),
+            tv -> tvButterflyTacticalRadiusVal = tv
+        ), btnLp);
+
         content.addView(butterflyCard, getCardParams());
 
         return content;
@@ -1024,8 +1089,8 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         content.addView(createSectionHeader("👥 CIRCLE MESH & PAIRING GATEWAYS"));
         content.addView(registerScreenCard("NETWORK PAIRING GATEWAY", "Cloud PIN, QR Matrix Scanner & Nearby P2P Offline Discovery", "PAIRING", tv -> badgeRosterTv = tv, com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "pairing qr pin p2p wifi direct connect network gateway", v -> safeLaunch(NetworkGatewayActivity.class)));
-        content.addView(registerScreenCard("FAMILY & GUARDIANS ROSTER", "Multi-Tier Circle Management & Immediate Callout Matrix", "CIRCLE", null, com.jdroidx.jfindme.R.drawable.ic_family_friends, "family friends guardians roster members contacts", v -> safeLaunch(FamilyFriendsActivity.class)));
-        content.addView(registerScreenCard("CIRCLE GROUPS PARTITION", "Create, Edit & Swap Active Team/Family Circles", "GROUPS", null, com.jdroidx.jfindme.R.drawable.ic_people, "groups teams partition circles swap", v -> safeLaunch(GroupActivity.class, intent -> intent.putExtra("INITIAL_TAB", "GROUPS"))));
+        content.addView(registerScreenCard("DEVICE SHARING & MESH DELEGATION", "Delegate Access & Connect Peer Nodes via Master Orchestrator", "SHARING", null, com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "device sharing peer delegate link b to c mesh", v -> safeLaunch(FamilyFriendsActivity.class, intent -> intent.putExtra("OPEN_DEVICE_SHARING", true))));
+        content.addView(registerScreenCard("FAMILY & FRIENDS ROSTER", "Multi-Tier Circle Management, Guardians & Social Circles", "CIRCLE", null, com.jdroidx.jfindme.R.drawable.ic_family_friends, "family friends guardians roster members contacts", v -> safeLaunch(FamilyFriendsActivity.class)));
         content.addView(registerScreenCard("MEMBER DOSSIER & ACL", "Node Profile, Medical Notes & Granular Access Control List", "ACL", null, com.jdroidx.jfindme.R.drawable.ic_user_profile, "dossier acl permissions member medical notes person details", v -> safeLaunch(PersonDetailsActivity.class)));
 
         // ══════════════════════════════════════════════════════════════════════
@@ -1041,6 +1106,8 @@ public class SettingsActivity extends BaseActivityJava {
         // MODULE 4: 🌐 GEOSPATIAL & SAFE ZONE CLUSTER
         // ══════════════════════════════════════════════════════════════════════
         content.addView(createSectionHeader("🌐 GEOSPATIAL & SAFE ZONE CLUSTER"));
+        // [Variables] content, v | [Constants] "BUTTERFLY_POINT", "LAUNCH_PANEL" | [Dependencies] registerScreenCard, MapActivity, ButterflyPointDialog | [Integration Points] Settings Screen Directory ⟷ Butterfly Rendezvous Hub
+        content.addView(registerScreenCard("BUTTERFLY RENDEZVOUS HUB", "Dynamic Multi-Node Meeting Points, Vector Navigation & Fleet Quorum", "RENDEZVOUS", null, com.jdroidx.jfindme.R.drawable.ic_butterfly_point, "butterfly meeting point rendezvous rendezvous hub tracking fleet", v -> safeLaunch(MapActivity.class, intent -> intent.putExtra("LAUNCH_PANEL", "BUTTERFLY_POINT"))));
         content.addView(registerScreenCard("SAFE ZONE MANAGER", "Circular & Polygon Perimeter Geofence Editor with Schedules", "GEOFENCE", tv -> badgeZonesTv = tv, com.jdroidx.jfindme.R.drawable.ic_safe_zone, "safe zones geofence polygon circle perimeter schedule", v -> safeLaunch(GeofenceActivity.class)));
         content.addView(registerScreenCard("TRANSITION AUDIT LEDGER", "Perimeter Breach Ingress/Egress History, Filters & CSV Export", "LOGS", null, com.jdroidx.jfindme.R.drawable.ic_nav_notice, "geofence notification transitions audit ingress egress breach export", v -> safeLaunch(GeofenceNotificationActivity.class)));
         content.addView(registerScreenCard("LOCATION LOGS & REPLAY", "Historical GPS Trajectory Playback with 1x/2x/5x Speeds", "REPLAY", tv -> badgeHistoryTv = tv, com.jdroidx.jfindme.R.drawable.ic_location_history, "history breadcrumbs replay trajectory route waypoints", v -> safeLaunch(HistoryActivity.class)));
@@ -1112,25 +1179,10 @@ public class SettingsActivity extends BaseActivityJava {
             int safeZoneCount = 0;
             int historyCount = 0;
             try {
-                DatabaseHelper dbHelper = DatabaseHelper.getInstance(this);
-                SQLiteDatabase db = dbHelper.getReadableDatabase();
-                if (db != null && db.isOpen()) {
-                    Cursor c1 = db.rawQuery("SELECT COUNT(*) FROM " + DatabaseHelper.MASTER_ROSTER, null);
-                    if (c1 != null) {
-                        if (c1.moveToFirst()) rosterCount = c1.getInt(0);
-                        c1.close();
-                    }
-                    Cursor c2 = db.rawQuery("SELECT COUNT(*) FROM " + DatabaseHelper.TABLE_SAFE_ZONES, null);
-                    if (c2 != null) {
-                        if (c2.moveToFirst()) safeZoneCount = c2.getInt(0);
-                        c2.close();
-                    }
-                    Cursor c3 = db.rawQuery("SELECT COUNT(*) FROM " + DatabaseHelper.TABLE_HISTORY, null);
-                    if (c3 != null) {
-                        if (c3.moveToFirst()) historyCount = c3.getInt(0);
-                        c3.close();
-                    }
-                }
+                com.jdroidx.jfindme.data.repository.DeviceRepository repo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
+                rosterCount = (int) repo.getRecordCount("master_roster");
+                safeZoneCount = (int) repo.getRecordCount("safe_zones");
+                historyCount = (int) repo.getRecordCount("location_history");
             } catch (Exception e) {
                 SystemLogger.w(TAG, "Database metric query non-fatal: " + e.getMessage());
             }
@@ -1415,7 +1467,7 @@ public class SettingsActivity extends BaseActivityJava {
                 RegistryManager.setMotionWalkingIntervalMs(this, 20000L);
                 RegistryManager.setMinDisplacementMeters(this, 0.0f);
                 RegistryManager.setStrictAccuracyWait(this, false);
-                DatabaseHelper.getInstance(this).setStealthIntervalMins(60L);
+                com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).setStealthIntervalMins(60L);
                 com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(this, 60L);
 
                 // Road Alignment & Kalman
@@ -1480,7 +1532,7 @@ public class SettingsActivity extends BaseActivityJava {
         if (tvLowBatteryVal != null) tvLowBatteryVal.setText("Threshold: 20% (Triggers amber distress telemetry)");
         if (tvStaleVal != null) tvStaleVal.setText("Stale Window: 15 Min (Marks node amber inactive)");
         if (tvCriticalOfflineVal != null) tvCriticalOfflineVal.setText("Offline Window: 6 Hours (Marks node red offline)");
-        if (tvDistantVal != null) tvDistantVal.setText("Panel Threshold: 200m (Distance to float HUD panel)");
+        if (tvDistantVal != null) tvDistantVal.setText("Panel Threshold: " + RegistryManager.getDistantDeviceThresholdMeters(this) + "m (Distance to float HUD panel)");
         if (tvRadarRadiusVal != null) {
             tvRadarRadiusVal.setText("Radar Proximity Radius: " + RegistryManager.getRadarProximityRadiusMeters(this) + "m (Sky blue highlight threshold)");
         }
@@ -2536,6 +2588,46 @@ public class SettingsActivity extends BaseActivityJava {
         );
     }
 
+    // [Variables] currentName, clean | [Constants] DEFAULT_PRIME_TARGET_NAME | [Dependencies] RegistryManager, UiArchitect | [Integration Points] SettingsActivity, MapActivity, MapViewModel, LocationRepository
+    private void showPrimeTargetNameDialog() {
+        String currentName = RegistryManager.getPrimeTargetName(this);
+        UiArchitect.showInputPromptDialog(this,
+            "Primary Child / Ward Target Name",
+            "Enter the display name for the primary Child / Protected Ward to anchor at Priority 0 (Default: RIDDHI):",
+            currentName != null ? currentName : "RIDDHI",
+            newName -> {
+                if (newName != null) {
+                    String clean = newName.trim();
+                    if (!clean.isEmpty()) {
+                        RegistryManager.setPrimeTargetName(this, clean);
+                        if (tvPrimeTargetNameVal != null) {
+                            tvPrimeTargetNameVal.setText("Target Name: " + clean + " (Priority 0 Monitored Ward Name)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Target Ward Name Updated", "Primary monitored ward name set to: " + clean, false, 3000, null, null);
+                    } else {
+                        UiArchitect.showSlideNotificationBanner(this, "Invalid Target Name", "Name cannot be empty.", true, 3000, null, null);
+                    }
+                }
+            }
+        );
+    }
+
+    // [Variables] current, updated | [Constants] None | [Dependencies] RegistryManager, UiArchitect | [Integration Points] FirebaseComm, SettingsActivity
+    private void toggleUnifiedDeviceIdSync() {
+        boolean current = RegistryManager.isUnifiedDeviceIdSyncEnabled(this);
+        boolean updated = !current;
+        RegistryManager.setUnifiedDeviceIdSyncEnabled(this, updated);
+        if (tvUnifiedDeviceIdSyncVal != null) {
+            tvUnifiedDeviceIdSyncVal.setText(updated
+                ? "Status: ACTIVE (Canonical single-path egress, zero HW_ duplication)"
+                : "Status: DUAL-PATH (Legacy mirror enabled: writes to both canonical & HW_)");
+        }
+        UiArchitect.showSlideNotificationBanner(this,
+            "RTDB Sync Mode Updated",
+            updated ? "Unified DeviceID SSOT mode active (zero duplicate writes)." : "Legacy dual-path sync active.",
+            false, 3000, null, null);
+    }
+
     private void showGuardianMasterPinDialog() {
         String currentPin = RegistryManager.getGuardianPin(this);
         boolean hasPin = currentPin != null && !currentPin.trim().isEmpty();
@@ -3261,7 +3353,7 @@ public class SettingsActivity extends BaseActivityJava {
     private void showDeviceGroupDialog() {
         String currentGroup = RegistryManager.getDeviceCorrespondingGroup(this);
         String[] presetGroups = {
-            "UNIVERSAL_FLEET",
+            "PRIMARY_CIRCLE",
             "FAMILY_CORE",
             "ALPHA_TEAM",
             "SECURITY_PATROL",
@@ -3361,7 +3453,7 @@ public class SettingsActivity extends BaseActivityJava {
                     UiArchitect.showSlideNotificationBanner(this, "Compacting Database", "Executing SQLite WAL Truncate & VACUUM sweep...", false, 2500, null, null);
                     java.util.concurrent.Executors.newSingleThreadExecutor().execute(() -> {
                         try {
-                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getApplicationContext());
+                            com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(getApplicationContext());
                             long deleted = db.pruneExpiredData(RegistryManager.getStorageRetentionDays(getApplicationContext()));
                             long cacheReclaimed = db.pruneCacheAndTempFiles();
                             runOnUiThread(() -> {
@@ -3949,6 +4041,108 @@ public class SettingsActivity extends BaseActivityJava {
                         UiArchitect.showSlideNotificationBanner(this, "Retention Window Saved", "Meeting point max availability set to " + val + " days", false, 2500, null, null);
                     } else {
                         android.widget.Toast.makeText(this, "Enter value between 1 and 30 days", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ex) {
+                    android.widget.Toast.makeText(this, "Invalid number", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyNominalSpeedDialog() {
+        float current = RegistryManager.getButterflyNominalSpeedKmh(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText(String.valueOf((int) current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Nominal Travel Speed (10 - 140 km/h)")
+            .setMessage("Set the fallback average speed used to calculate real-time estimated travel time (ETA) when a device is stationary or walking.\n\nRelative to rendezvous distance, dynamically adjusts predicted arrival times.")
+            .setView(input)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    float val = Float.parseFloat(input.getText().toString().trim());
+                    if (val >= 10.0f && val <= 140.0f) {
+                        RegistryManager.setButterflyNominalSpeedKmh(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyNominalSpeedKmh(val);
+                        if (tvButterflyNominalSpeedVal != null) {
+                            tvButterflyNominalSpeedVal.setText("Nominal Speed: " + ((int) val) + " km/h (Fallback speed for travel ETA estimation)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Speed Saved", "Nominal travel speed set to " + ((int) val) + " km/h", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 10 and 140 km/h", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ex) {
+                    android.widget.Toast.makeText(this, "Invalid number", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyApproachWindowDialog() {
+        int current = RegistryManager.getButterflyApproachWindowMinutes(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setText(String.valueOf(current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Approach Monitoring Window (15 - 180 min)")
+            .setMessage("Set the Time-to-Rendezvous (TTR) window before the scheduled meeting when active approach monitoring begins.\n\nPrior to this window, devices remain in low-cost deep hibernation with zero redundant cloud updates.")
+            .setView(input)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    int val = Integer.parseInt(input.getText().toString().trim());
+                    if (val >= 15 && val <= 180) {
+                        RegistryManager.setButterflyApproachWindowMinutes(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyApproachWindowMinutes(val);
+                        if (tvButterflyApproachWindowVal != null) {
+                            tvButterflyApproachWindowVal.setText("TTR Horizon: " + val + " Minutes (Time window to trigger active approach tracking)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Approach Window Saved", "Active approach horizon set to " + val + " minutes", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 15 and 180 minutes", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ex) {
+                    android.widget.Toast.makeText(this, "Invalid number", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showButterflyTacticalRadiusDialog() {
+        float current = RegistryManager.getButterflyTacticalRadiusKm(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText(String.valueOf((int) current));
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Tactical Quorum Radius (1 - 25 km)")
+            .setMessage("Set the proximity radius around the Butterfly Point within which tactical high-velocity vector tracking and live spiderweb lines activate.\n\nOptimizes cellular bandwidth and battery life outside this boundary.")
+            .setView(input)
+            .setPositiveButton("SAVE", (d, w) -> {
+                try {
+                    float val = Float.parseFloat(input.getText().toString().trim());
+                    if (val >= 1.0f && val <= 25.0f) {
+                        RegistryManager.setButterflyTacticalRadiusKm(this, val);
+                        if (settingsModel != null) settingsModel.setButterflyTacticalRadiusKm(val);
+                        if (tvButterflyTacticalRadiusVal != null) {
+                            tvButterflyTacticalRadiusVal.setText("Proximity Radius: " + ((int) val) + " km (Threshold for high-velocity tactical vectors)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Tactical Radius Saved", "Proximity radius set to " + ((int) val) + " km", false, 2500, null, null);
+                    } else {
+                        android.widget.Toast.makeText(this, "Enter value between 1 and 25 km", android.widget.Toast.LENGTH_SHORT).show();
                     }
                 } catch (Exception ex) {
                     android.widget.Toast.makeText(this, "Invalid number", android.widget.Toast.LENGTH_SHORT).show();

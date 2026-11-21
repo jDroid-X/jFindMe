@@ -8,7 +8,7 @@ import android.view.ViewGroup;
 import android.graphics.drawable.GradientDrawable;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import com.jdroidx.jfindme.utils.AngelLoader;
 import java.util.*;
@@ -20,13 +20,14 @@ import java.util.*;
  */
 public class DatabaseManagementActivity extends BaseActivityJava {
 
-    private DatabaseHelper db;
+    // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] DB Management OOPS MVC
+    private DeviceRepository db;
     private FrameLayout rootLayer;
     private LinearLayout menuState;
 
     @Override
     protected View createLayout() {
-        db = DatabaseHelper.getInstance(this);
+        db = DeviceRepository.getInstance(this);
         rootLayer = new FrameLayout(this);
         rootLayer.setBackgroundColor(getPrimaryColor());
 

@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.DataSnapshot
@@ -31,7 +31,8 @@ data class GeofenceNotification(
  */
 class GeofenceNotificationViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = DatabaseHelper.getInstance(application)
+    // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] OOPS MVC Decoupled Repository
+    private val db = DeviceRepository.getInstance(application)
     private val _notifications = MutableLiveData<List<GeofenceNotification>>()
     val notifications: LiveData<List<GeofenceNotification>> = _notifications
     

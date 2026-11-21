@@ -1,15 +1,16 @@
 package com.jdroidx.jfindme.ui.group
 
+import android.app.Application
 import android.os.CountDownTimer
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.Query
 import com.google.firebase.database.ValueEventListener
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,11 @@ import java.util.Locale
  * Handles reactive LiveData bindings, local SQLite roster SSOT,
  * cloud synchronization, countdown timer state, and lifecycle-safe Firebase signals.
  */
-class GroupViewModel : ViewModel() {
+// [Variables] TAG, _syncStatus, _isLoading, _rosterData, _signalReceived, _timerDisplay, _isTimerExpired, _isTimerActive, activeCountDownTimer
+// [Constants] TAG = "GroupViewModel"
+// [Dependencies] AndroidViewModel, Application, DeviceRepository, DeviceRepository, FirebaseComm
+// [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity
+class GroupViewModel(application: Application) : AndroidViewModel(application) {
 
     private val TAG = "GroupViewModel"
 
@@ -124,8 +129,22 @@ class GroupViewModel : ViewModel() {
     /**
      * 🚀 Asynchronous Local Database Roster Query (SSOT)
      */
-    fun refreshLocalRoster(db: DatabaseHelper?) {
-        if (db == null) return
+    fun refreshLocalRoster() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val roster = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(getApplication()).getOfflineRoster()
+                _rosterData.postValue(roster ?: emptyList())
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Failed to query local offline roster via DeviceRepository", e)
+            }
+        }
+    }
+
+    fun refreshLocalRoster(db: DeviceRepository?) {
+        if (db == null) {
+            refreshLocalRoster()
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val roster = db.getOfflineRoster()
@@ -139,13 +158,15 @@ class GroupViewModel : ViewModel() {
     /**
      * 🔘 State 1: Park Member for Deletion (Grey Shade & FCM Notification)
      */
-    fun parkMemberForDeletion(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
+    @JvmOverloads
+    fun parkMemberForDeletion(uid: String?, activeGroup: String?, db: DeviceRepository? = null, onComplete: Runnable? = null) {
         if (uid.isNullOrEmpty()) return
         _isLoading.postValue(true)
         _syncStatus.postValue("PARKING NODE FOR UNLINK...")
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val effectiveDb = db ?: DeviceRepository.getInstance(getApplication())
                 if (!activeGroup.isNullOrEmpty()) {
                     // 1. Mark status as PENDING_UNLINK in cloud group hub
                     FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).child("status").setValue("PENDING_UNLINK")
@@ -153,7 +174,7 @@ class GroupViewModel : ViewModel() {
 
                     // 2. Dispatch FCM Push Notification payload to target device
                     val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
-                    val myName = if (myUid.isNotEmpty()) db?.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
+                    val myName = if (myUid.isNotEmpty()) effectiveDb.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
                     val cmd = mapOf(
                         "action" to "UNLINK_REQUEST",
                         "initiator_uid" to myUid,
@@ -165,9 +186,9 @@ class GroupViewModel : ViewModel() {
                 }
 
                 // 3. Mark local SQLite status as PENDING_UNLINK
-                db?.parkRosterNode(uid)
+                effectiveDb.parkRosterNode(uid)
 
-                val updated = db?.getOfflineRoster()
+                val updated = effectiveDb.getOfflineRoster()
                 _rosterData.postValue(updated ?: emptyList())
                 _syncStatus.postValue("NODE PARKED (GREY)")
                 _isLoading.postValue(false)
@@ -185,13 +206,15 @@ class GroupViewModel : ViewModel() {
     /**
      * ↩️ State 2A: Cancel Parked Deletion (Restore to Active)
      */
-    fun cancelParkedDeletion(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
+    @JvmOverloads
+    fun cancelParkedDeletion(uid: String?, activeGroup: String?, db: DeviceRepository? = null, onComplete: Runnable? = null) {
         if (uid.isNullOrEmpty()) return
         _isLoading.postValue(true)
         _syncStatus.postValue("RESTORING NODE...")
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val effectiveDb = db ?: DeviceRepository.getInstance(getApplication())
                 if (!activeGroup.isNullOrEmpty()) {
                     // 1. Restore status to Active in cloud group hub
                     FirebaseComm.relationshipsRef.child(activeGroup).child("members").child(uid).child("status").setValue("Active")
@@ -199,7 +222,7 @@ class GroupViewModel : ViewModel() {
 
                     // 2. Dispatch cancellation notice
                     val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid ?: ""
-                    val myName = if (myUid.isNotEmpty()) db?.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
+                    val myName = if (myUid.isNotEmpty()) effectiveDb.getDeviceCentricName(myUid) ?: "Connected Guardian" else "Connected Guardian"
                     val cmd = mapOf(
                         "action" to "UNLINK_CANCELLED",
                         "initiator_uid" to myUid,
@@ -211,9 +234,9 @@ class GroupViewModel : ViewModel() {
                 }
 
                 // 3. Restore local SQLite status to Active
-                db?.restoreRosterNode(uid)
+                effectiveDb.restoreRosterNode(uid)
 
-                val updated = db?.getOfflineRoster()
+                val updated = effectiveDb.getOfflineRoster()
                 _rosterData.postValue(updated ?: emptyList())
                 _syncStatus.postValue("NODE RESTORED")
                 _isLoading.postValue(false)
@@ -232,15 +255,17 @@ class GroupViewModel : ViewModel() {
      * 🛡️ Safe Node Deletion (Closed Loop SQLite + Firebase Member Purge)
      * 🚀 Complete 2-Way Closed-Loop Node Unlinking and Deletion
      */
-    fun deleteMember(uid: String?, activeGroup: String?, db: DatabaseHelper?, onComplete: Runnable?) {
+    @JvmOverloads
+    fun deleteMember(uid: String?, activeGroup: String?, db: DeviceRepository? = null, onComplete: Runnable? = null) {
         if (uid.isNullOrEmpty()) return
         _isLoading.postValue(true)
         _syncStatus.postValue("PURGING NODE...")
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val effectiveDb = db ?: DeviceRepository.getInstance(getApplication())
                 val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
-                val myAgentId = if (myAuthUid != null) db?.resolveAgentIdLocally(myAuthUid) ?: "" else ""
+                val myAgentId = if (myAuthUid != null) effectiveDb.resolveAgentIdLocally(myAuthUid) ?: "" else ""
 
                 if (!activeGroup.isNullOrEmpty()) {
                     // 1. Remove from group hub (Unified + Legacy)
@@ -267,9 +292,9 @@ class GroupViewModel : ViewModel() {
 
                 // [Variables] | [Constants] | [Dependencies] | [Integration Points]
                 // Group-Scoped Unlink: Purges group_members entry for active group while keeping user_identities intact
-                db?.deleteRosterNode(uid, activeGroup)
+                effectiveDb.deleteRosterNode(uid, activeGroup)
 
-                val updated = db?.getOfflineRoster()
+                val updated = effectiveDb.getOfflineRoster()
                 _rosterData.postValue(updated ?: emptyList())
                 _syncStatus.postValue("NODE PURGED")
                 _isLoading.postValue(false)
@@ -291,7 +316,7 @@ class GroupViewModel : ViewModel() {
         _isLoading.value = true
         _syncStatus.value = "FINALIZING IDENTITY MATRIX..."
 
-        val db = DatabaseHelper.getInstance(context)
+        val db = DeviceRepository.getInstance(context)
         db.updateRosterGrouping(uid, newRole, isFriend, myGrp)
 
         FirebaseComm.relationshipsRef.child(myGrp).child("members").child(uid).child("role")
@@ -332,16 +357,16 @@ class GroupViewModel : ViewModel() {
     /**
      * 🌐 Closed-Loop Cloud to Local SSOT Synchronization
      * Pulls active group members from Firebase Realtime Database and mirrors them
-     * into local SQLite via DatabaseHelper, ensuring 100% SSOT parity across screens.
+     * into local SQLite via DeviceRepository, ensuring 100% SSOT parity across screens.
      */
-    // [Variables] context: Context, groupId: String?, db: DatabaseHelper, membersSnap: DataSnapshot, devicesSnap: DataSnapshot, allNodeSnaps: MutableList<DataSnapshot>, uid: String, profSnap: DataSnapshot, role: String, name: String, avatar: String, upper: String, isAdmin: Boolean, isFriend: Boolean | [Constants] NODE_RELATIONSHIPS | [Dependencies] DatabaseHelper, FirebaseComm, SystemLogger, Dispatchers.IO, viewModelScope | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel, MapViewModel
+    // [Variables] context: Context, groupId: String?, db: DeviceRepository, membersSnap: DataSnapshot, devicesSnap: DataSnapshot, allNodeSnaps: MutableList<DataSnapshot>, uid: String, profSnap: DataSnapshot, role: String, name: String, avatar: String, upper: String, isAdmin: Boolean, isFriend: Boolean | [Constants] NODE_RELATIONSHIPS | [Dependencies] DeviceRepository, FirebaseComm, SystemLogger, Dispatchers.IO, viewModelScope | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel, MapViewModel
     fun syncCloudGroupToLocalDb(context: android.content.Context, groupId: String?) {
         if (groupId.isNullOrEmpty()) {
-            refreshLocalRoster(DatabaseHelper.getInstance(context))
+            refreshLocalRoster(DeviceRepository.getInstance(context))
             return
         }
 
-        val db = DatabaseHelper.getInstance(context)
+        val db = DeviceRepository.getInstance(context)
         _isLoading.postValue(true)
         _syncStatus.postValue("SYNCING CLOUD ROSTER...")
 
@@ -390,7 +415,7 @@ class GroupViewModel : ViewModel() {
                             val isFriend = upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR")
 
                             db.saveRosterNode(
-                                uid1 = uid,
+                                deviceId = uid,
                                 name = name,
                                 role = role,
                                 status = "Active",

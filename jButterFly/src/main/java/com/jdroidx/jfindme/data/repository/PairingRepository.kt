@@ -481,6 +481,14 @@ class PairingRepository {
                         )
                     )
 
+                    // 🛡️ Self-Authenticated Circle Invariant: Only update users/ node for self to avoid Firebase Permission Denied on foreign peer nodes
+                    if (cleanCoParent == selfDevId) {
+                        updates["users/$cleanCoParent/joined_circles/$effectiveGroup"] = true
+                    }
+                    if (cleanChild == selfDevId) {
+                        updates["users/$cleanChild/joined_circles/$effectiveGroup"] = true
+                    }
+
                     db.updateChildren(updates).addOnCompleteListener { updTask ->
                         if (updTask.isSuccessful) {
                             SystemLogger.i("PairingRepo", "👨‍👩‍👧 Co-Parent Link Established: Parent $cleanCoParent <-> Child $cleanChild in $effectiveGroup")
@@ -765,8 +773,6 @@ class PairingRepository {
                         // Direct pairs bidirectional entry
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevA/$cleanDevB" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevB/$cleanDevA" to true,
-                        "users/$cleanDevA/joined_circles/$effectiveGroup" to true,
-                        "users/$cleanDevB/joined_circles/$effectiveGroup" to true,
                         "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to System.currentTimeMillis(),
 
                         // Device command dispatch for closed-loop real-time sync with 24-Hour TTL (Dual-mirrored for zero-latency ingress)
@@ -774,6 +780,7 @@ class PairingRepository {
                             "action" to "DEVICE_SYNC",
                             "command" to "DEVICE_SYNC",
                             "sync_session_id" to effectiveSyncSessionId,
+                            "pairing_code" to (pairingCode ?: ""),
                             "peer_id" to cleanDevB,
                             "peer_name" to nameB,
                             "role" to computedRoleB,
@@ -788,6 +795,7 @@ class PairingRepository {
                             "action" to "DEVICE_SYNC",
                             "command" to "DEVICE_SYNC",
                             "sync_session_id" to effectiveSyncSessionId,
+                            "pairing_code" to (pairingCode ?: ""),
                             "peer_id" to cleanDevB,
                             "peer_name" to nameB,
                             "role" to computedRoleB,
@@ -802,6 +810,7 @@ class PairingRepository {
                             "action" to "DEVICE_SYNC",
                             "command" to "DEVICE_SYNC",
                             "sync_session_id" to effectiveSyncSessionId,
+                            "pairing_code" to (pairingCode ?: ""),
                             "peer_id" to cleanDevA,
                             "peer_name" to nameA,
                             "role" to roleA,
@@ -816,6 +825,7 @@ class PairingRepository {
                             "action" to "DEVICE_SYNC",
                             "command" to "DEVICE_SYNC",
                             "sync_session_id" to effectiveSyncSessionId,
+                            "pairing_code" to (pairingCode ?: ""),
                             "peer_id" to cleanDevA,
                             "peer_name" to nameA,
                             "role" to roleA,
@@ -827,6 +837,14 @@ class PairingRepository {
                             "ttl_hours" to 24
                         )
                     )
+
+                    // 🛡️ Self-Authenticated Circle Invariant: Only update users/ node for self to avoid Firebase Permission Denied on foreign peer nodes
+                    if (cleanDevA == selfDevId) {
+                        updates["users/$cleanDevA/joined_circles/$effectiveGroup"] = true
+                    }
+                    if (cleanDevB == selfDevId) {
+                        updates["users/$cleanDevB/joined_circles/$effectiveGroup"] = true
+                    }
 
                     db.updateChildren(updates).addOnCompleteListener { updTask ->
                         if (updTask.isSuccessful) {
@@ -939,9 +957,25 @@ class PairingRepository {
             val cleanDevB = FirebaseComm.sanitizeAgentId(devBId)
             val selfDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
             val timeoutMs = RegistryManager.getDeviceSharingTimeoutMs(context)
-            val syncSessionId = "SYNC_${System.currentTimeMillis()}_${(1000..9999).random()}"
+            com.jdroidx.jfindme.utils.RegistryManager.undecommissionDevice(context, cleanDevA)
+            com.jdroidx.jfindme.utils.RegistryManager.undecommissionDevice(context, cleanDevB)
+            val pairCode = (100000..999999).random().toString()
+            val syncSessionId = "SYNC_${pairCode}_${System.currentTimeMillis()}"
             val startTime = System.currentTimeMillis()
             val shareId = "DSH_${cleanDevA}_${cleanDevB}"
+
+            // 🛡️ OOPS MVC SSOT: Register pairing session at /pairing_sessions/{pairCode} (24h TTL)
+            try {
+                val pSession = PairingSession(
+                    sessionId = syncSessionId,
+                    userId = selfDevId,
+                    pairCode = pairCode,
+                    expiresAt = System.currentTimeMillis() + 86400000L,
+                    primaryDevice = cleanDevA,
+                    status = "ACTIVE"
+                )
+                FirebaseComm.database.getReference("pairing_sessions").child(pairCode).setValue(pSession)
+            } catch (_: Exception) {}
 
             // 🛡️ V83 Sub-Master State Initialization
             val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
@@ -1069,12 +1103,26 @@ class PairingRepository {
                 cleanDevB,
                 roleA,
                 roleB,
-                pairingCode = syncSessionId,
+                pairingCode = pairCode,
                 callback = object : ResultCallback {
                     override fun onResult(success: Boolean, errorMessage: String?) {
                         if (success) {
                             mainHandler.post { callback.onSyncDispatched(syncSessionId) }
-                            checkCompletion()
+                            // 🚀 OOPS MVC Direct Completion: Master has written the bidirectional cloud pairing
+                            // and dispatched commands. If either device is an offline node (e.g. Device C / Pushpa),
+                            // we do not stall for 45s on socket ACK. We complete immediately and keep background sentinel armed.
+                            if (isResolved.compareAndSet(false, true)) {
+                                mainHandler.removeCallbacks(timeoutRunnable)
+                                val latencyMs = System.currentTimeMillis() - startTime
+                                localDb.updateDeviceSharingStage(
+                                    shareId,
+                                    com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_ACTIVE,
+                                    cleanDevA,
+                                    "Cloud device sharing established and committed (Latency: ${latencyMs}ms)"
+                                )
+                                mainHandler.post { callback.onSyncComplete(cleanDevA, cleanDevB, latencyMs) }
+                            }
+                            armPersistent24hAckSentinel(context, cleanDevA, cleanDevB, syncSessionId, roleA, roleB)
                         } else {
                             if (isResolved.compareAndSet(false, true)) {
                                 mainHandler.removeCallbacks(timeoutRunnable)
@@ -1087,6 +1135,116 @@ class PairingRepository {
                     }
                 }
             )
+        }
+
+        // [Variables] context, hostGroupId, devAId, devBId, callback, cleanDevA, cleanDevB, effectiveGroup, localDb, nowMs, shareId, altShareId, updates | [Constants] NODE_DEVICES, NODE_RELATIONSHIPS | [Dependencies] FirebaseComm, DatabaseHelper, RegistryManager, SystemLogger | [Integration Points] FamilyFriendsActivity, MapActivity, PairingRepository
+        @JvmStatic
+        fun unlinkPeerDevices(
+            context: android.content.Context,
+            hostGroupId: String,
+            devAId: String,
+            devBId: String,
+            callback: ((Boolean, String?) -> Unit)? = null
+        ) {
+            val cleanDevA = FirebaseComm.sanitizeAgentId(devAId)
+            val cleanDevB = FirebaseComm.sanitizeAgentId(devBId)
+            val effectiveGroup = if (hostGroupId.isNotBlank() && hostGroupId != "DEFAULT_GROUP") {
+                hostGroupId
+            } else {
+                RegistryManager.getEffectiveActiveGroup(context)
+            }
+            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val nowMs = System.currentTimeMillis()
+
+            // 1. Local Database cleanup
+            val shareId = "DSH_${cleanDevA}_${cleanDevB}"
+            val altShareId = "DSH_${cleanDevB}_${cleanDevA}"
+            localDb.updateDeviceSharingStage(
+                shareId,
+                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REVOKED,
+                cleanDevA,
+                "Device sharing unlinked by Master"
+            )
+            localDb.updateDeviceSharingStage(
+                altShareId,
+                com.jdroidx.jfindme.data.local.tables.DeviceSharingTransactionTable.STAGE_REVOKED,
+                cleanDevA,
+                "Device sharing unlinked by Master"
+            )
+            val pairId1 = "PAIR_${cleanDevA}_${cleanDevB}"
+            val pairId2 = "PAIR_${cleanDevB}_${cleanDevA}"
+            val cvPair = android.content.ContentValues().apply {
+                put(com.jdroidx.jfindme.data.local.tables.DevicePairingTable.COL_PAIR_STATUS, "UNLINKED")
+                put(com.jdroidx.jfindme.data.local.tables.DevicePairingTable.COL_UPDATED_AT, FirebaseComm.getForensicTimestamp())
+            }
+            try {
+                localDb.writableDatabase.update(
+                    com.jdroidx.jfindme.data.local.tables.DevicePairingTable.TABLE_NAME,
+                    cvPair,
+                    "${com.jdroidx.jfindme.data.local.tables.DevicePairingTable.COL_PAIR_ID} = ? OR ${com.jdroidx.jfindme.data.local.tables.DevicePairingTable.COL_PAIR_ID} = ?",
+                    arrayOf(pairId1, pairId2)
+                )
+            } catch (_: Exception) {}
+
+            // 2. Cloud Firebase RTDB updates
+            val updates = hashMapOf<String, Any?>(
+                "${FirebaseComm.NODE_DEVICES}/$cleanDevA/relationships/$cleanDevB" to null,
+                "${FirebaseComm.NODE_DEVICES}/$cleanDevB/relationships/$cleanDevA" to null,
+                "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevA/$cleanDevB" to null,
+                "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/direct_pairs/$cleanDevB/$cleanDevA" to null,
+                "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevA/paired_with/$cleanDevB" to null,
+                "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/devices/$cleanDevB/paired_with/$cleanDevA" to null,
+                "${FirebaseComm.NODE_RELATIONSHIPS}/$effectiveGroup/signals/refresh_roster" to nowMs,
+
+                // Dispatch UNLINK commands to both devices
+                "${FirebaseComm.NODE_DEVICES}/$cleanDevA/device/remote_command" to mapOf(
+                    "action" to "UNLINK",
+                    "command" to "UNLINK",
+                    "from_agent" to cleanDevB,
+                    "target_agent" to cleanDevB,
+                    "epoch_ms" to nowMs
+                ),
+                "${FirebaseComm.NODE_DEVICES}/$cleanDevB/device/remote_command" to mapOf(
+                    "action" to "UNLINK",
+                    "command" to "UNLINK",
+                    "from_agent" to cleanDevA,
+                    "target_agent" to cleanDevA,
+                    "epoch_ms" to nowMs
+                )
+            )
+
+            // 3. Remove from valid_linked_agents reciprocally
+            db.child(FirebaseComm.NODE_DEVICES).child(cleanDevA).child("Identity").child("valid_linked_agents").get()
+                .addOnCompleteListener { tA ->
+                    val curA = if (tA.isSuccessful) tA.result?.getValue(String::class.java) ?: "" else ""
+                    val newCsvA = curA.split(",", ";", "|")
+                        .map { it.trim().uppercase() }
+                        .filter { it.isNotEmpty() && it != cleanDevB }
+                        .joinToString(",")
+                    updates["${FirebaseComm.NODE_DEVICES}/$cleanDevA/Identity/valid_linked_agents"] = newCsvA
+                    updates["${FirebaseComm.NODE_DEVICES}/$cleanDevA/identity/valid_linked_agents"] = newCsvA
+
+                    db.child(FirebaseComm.NODE_DEVICES).child(cleanDevB).child("Identity").child("valid_linked_agents").get()
+                        .addOnCompleteListener { tB ->
+                            val curB = if (tB.isSuccessful) tB.result?.getValue(String::class.java) ?: "" else ""
+                            val newCsvB = curB.split(",", ";", "|")
+                                .map { it.trim().uppercase() }
+                                .filter { it.isNotEmpty() && it != cleanDevA }
+                                .joinToString(",")
+                            updates["${FirebaseComm.NODE_DEVICES}/$cleanDevB/Identity/valid_linked_agents"] = newCsvB
+                            updates["${FirebaseComm.NODE_DEVICES}/$cleanDevB/identity/valid_linked_agents"] = newCsvB
+
+                            FirebaseComm.database.reference.updateChildren(updates).addOnCompleteListener { updTask ->
+                                if (updTask.isSuccessful) {
+                                    SystemLogger.i("PairingRepo", "🗑️ Unlinked shared peers $cleanDevA <-> $cleanDevB")
+                                    callback?.invoke(true, null)
+                                } else {
+                                    val err = updTask.exception?.message ?: "Unlink failed"
+                                    callback?.invoke(false, err)
+                                }
+                            }
+                        }
+                }
         }
 
         // [Variables] context: Context, hostGroupId: String, sourceDevId: String, targetDevIds: List<String>, roles: List<String>, callback: BatchDeviceSharingSyncCallback, cleanSource: String, selfDevId: String, timeoutMs: Long, syncSessionId: String, startTime: Long, total: Int, mainHandler: Handler, isResolved: AtomicBoolean, ackedCount: AtomicInteger, listeners: List<Pair<DatabaseReference, ValueEventListener>>, timeoutRunnable: Runnable, checkCompletion: Function0, primaryRole: String, dispatchedCount: AtomicInteger

@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import com.jdroidx.jfindme.data.local.tables.SirenExecutionAuditTable;
 import com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine;
 import com.jdroidx.jfindme.ui.base.ThemeManager;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
@@ -30,6 +31,7 @@ public class AcousticSirenActivity extends AppCompatActivity {
     private static final String TAG = "AcousticSirenActivity";
     private CountDownTimer countDownTimer;
     private TextView tvCountdown;
+    private long sirenAuditId = -1L;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -57,6 +59,16 @@ public class AcousticSirenActivity extends AppCompatActivity {
         String initiator = getIntent().getStringExtra("INITIATOR_NAME");
         if (initiator == null || initiator.isEmpty()) initiator = "Family Guardian";
         int durationSec = getIntent().getIntExtra("DURATION_SEC", 30);
+
+        try {
+            sirenAuditId = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).recordSirenStart(
+                initiator,
+                SirenExecutionAuditTable.SOURCE_REMOTE_FCM,
+                durationSec
+            );
+        } catch (Exception e) {
+            SystemLogger.w(TAG, "Failed to audit siren start: " + e.getMessage());
+        }
 
         setContentView(buildLayout(initiator, durationSec));
     }
@@ -185,6 +197,19 @@ public class AcousticSirenActivity extends AppCompatActivity {
         if (countDownTimer != null) {
             countDownTimer.cancel();
             countDownTimer = null;
+        }
+        if (sirenAuditId != -1L) {
+            try {
+                com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).resolveSiren(
+                    sirenAuditId,
+                    false,
+                    0.0,
+                    0
+                );
+            } catch (Exception e) {
+                SystemLogger.w(TAG, "Failed to audit siren resolution: " + e.getMessage());
+            }
+            sirenAuditId = -1L;
         }
         AcousticBeaconEngine.stopSiren(this);
         AcousticBeaconEngine.stopVibration(this);

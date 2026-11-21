@@ -163,4 +163,20 @@ public class SystemUpdateScheduler {
             );
         }
     }
+
+    /**
+     * 🌅 Early Morning Missed Window Catch-Up:
+     * If the device was switched OFF overnight during the nominal 02:39 AM window,
+     * this detects that the 26-hour balance delta sync was missed and triggers immediate reconciliation.
+     */
+    public static void checkDeferredMaintenanceOnUserPresent(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE);
+        long lastSyncEpoch = prefs.getLong("last_maintenance_sync_epoch", 0L);
+        long now = System.currentTimeMillis();
+        if (now - lastSyncEpoch > 20 * 3600 * 1000L) {
+            SystemLogger.i("SystemUpdateScheduler", "Morning catch-up: Triggering missed 26h balance delta sync & maintenance.");
+            prefs.edit().putLong("last_maintenance_sync_epoch", now).apply();
+            triggerImmediateMaintenance(context);
+        }
+    }
 }

@@ -178,7 +178,7 @@ public class SplashActivity extends Activity {
             com.jdroidx.jfindme.utils.SystemLogger.i(TAG, "Splash screen transition triggered.");
             
             // 🚀 V57 TIERED VALIDATION: Verify Hardware Fingerprint Integrity
-            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+            com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
             com.google.firebase.auth.FirebaseUser currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser();
             
             // 🧬 V75: Self-healing hardware telemetry upgrade for installed devices
@@ -208,6 +208,9 @@ public class SplashActivity extends Activity {
                 nextIntent = new Intent(SplashActivity.this, AuthActivity.class);
             }
             
+            if (getIntent() != null && getIntent().getExtras() != null) {
+                nextIntent.putExtras(getIntent().getExtras());
+            }
             nextIntent.putExtra("EXTRA_FROM_SPLASH", true);
             startActivity(nextIntent);
             
@@ -296,7 +299,14 @@ public class SplashActivity extends Activity {
                     }
                     
                     String avatarId = profileSnap.child("avatar_id").getValue(String.class);
-                    if (avatarId == null) avatarId = "1";
+                    java.io.File customPhoto = new java.io.File(getFilesDir() + "/avatars", "custom_photo.png");
+                    java.io.File agentCustomPhoto = new java.io.File(getFilesDir() + "/avatars", (agentId != null ? agentId : "") + "_custom.png");
+                    Integer equippedId = profileSnap.child("equipped_avatar_id").getValue(Integer.class);
+                    if ((equippedId != null && equippedId == -1) || customPhoto.exists() || (agentCustomPhoto.exists() && agentCustomPhoto.length() > 0)) {
+                        avatarId = "AV_" + (agentId != null ? agentId : "0") + "_01";
+                    } else if (avatarId == null) {
+                        avatarId = "1";
+                    }
                     
                     // Map profile
                     java.util.Map<String, String> profileData = new java.util.HashMap<>();
@@ -331,7 +341,7 @@ public class SplashActivity extends Activity {
                     // Save to SQLite asynchronously off the UI thread to keep app launch lightweight & responsive
                     new Thread(() -> {
                         try {
-                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(SplashActivity.this);
+                            com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(SplashActivity.this);
                             db.executeTieredHandshake(
                                 authUid, canonicalAgentId, hardwareUid, androidId,
                                 profileData, orgData, null, groupData, null, null, null,

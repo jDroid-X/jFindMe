@@ -19,7 +19,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine;
 import com.jdroidx.jfindme.ui.base.ThemeManager;
@@ -41,7 +41,7 @@ public class EmergencyAlertHelper {
     public static void showPanicDispatchDialog(Activity activity) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
 
-        DatabaseHelper db = DatabaseHelper.getInstance(activity);
+        DeviceRepository db = DeviceRepository.getInstance(activity);
         List<Map<String, Object>> roster = db.getOfflineRoster();
 
         SharedPreferences prefs = activity.getSharedPreferences("system_registry", Context.MODE_PRIVATE);

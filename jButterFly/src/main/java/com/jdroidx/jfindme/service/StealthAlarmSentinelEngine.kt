@@ -8,7 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.tasks.Tasks
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.engine.location.CellTowerSentinel
@@ -59,12 +59,12 @@ object StealthAlarmSentinelEngine {
     private const val TAG = "StealthAlarmSentinel"
     private const val STEALTH_ALARM_REQ_CODE = 8801
     private const val WAKELOCK_TAG = "jFindMe:StealthAlarmSentinelWakeLock"
-    private const val WAKELOCK_TIMEOUT_MS = 120_000L // 120s safety cutoff
+    private const val WAKELOCK_TIMEOUT_MS = 15_000L // 15s safety cutoff to prevent phantom battery drain
 
     @JvmStatic
     fun scheduleNextStealthPulse(context: Context, customIntervalMins: Long = 0L) {
         val appContext = context.applicationContext ?: context
-        val dbHelper = DatabaseHelper.getInstance(appContext)
+        val repo = DeviceRepository.getInstance(appContext)
         val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val isPowerSave = pm?.isPowerSaveMode ?: false
         val isChildMode = RegistryManager.isChildWardMode(appContext)
@@ -75,7 +75,7 @@ object StealthAlarmSentinelEngine {
         } else if (isChildMode || isPowerSave) {
             15L
         } else {
-            dbHelper.getStealthIntervalMins().takeIf { it > 0 } ?: 60L
+            repo.getStealthIntervalMins().takeIf { it > 0 } ?: 60L
         }
 
         val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
@@ -165,7 +165,7 @@ object StealthAlarmSentinelEngine {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val dbHelper = DatabaseHelper.getInstance(appContext)
+                val repo = DeviceRepository.getInstance(appContext)
                 val hwId = DeviceIdentityHelper.getHardwareUid(appContext)
                 val agentId = DeviceIdentityHelper.getOrGenerateAgentId(appContext)
                 val prefs = appContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
@@ -176,7 +176,7 @@ object StealthAlarmSentinelEngine {
                 val cellData = CellTowerSentinel.extractServingCellInfo(appContext)
                 SystemLogger.d(TAG, "Stealth SIM Harvest: op=${cellData.operator}, mcc=${cellData.mcc}, mnc=${cellData.mnc}, lac=${cellData.lac}, cid=${cellData.cid}")
 
-                dbHelper.logSimTransaction(
+                repo.logSimTransaction(
                     cellData.slot,
                     cellData.mcc,
                     cellData.mnc,
@@ -222,7 +222,7 @@ object StealthAlarmSentinelEngine {
                 val isSos = prefs.getBoolean("is_sos_active", false)
 
                 if (resolvedLat != 0.0 && resolvedLng != 0.0) {
-                    val ssotAvatar = dbHelper.getDeviceCentricAvatar(agentId)
+                    val ssotAvatar = repo.getDeviceCentricAvatar(agentId)
                     val resolvedAvatar = if (ssotAvatar.isNotEmpty() && ssotAvatar != "butterfly") ssotAvatar else "butterfly"
                     val resolvedName = prefs.getString("user_nickname", "Family Member") ?: "Family Member"
 
@@ -271,8 +271,13 @@ object StealthAlarmSentinelEngine {
                     try {
                         FirebaseComm.getTelemetryRef(agentId).updateChildren(fallbackPayload)
                         val liveRef = FirebaseComm.getLiveRef(agentId)
+                        liveRef.child("last_heartbeat").setValue(forensicTs)
+                        liveRef.child("timestamp").setValue(forensicTs)
                         liveRef.child("last_seen").setValue(forensicTs)
                         liveRef.child("updated_at").setValue(forensicTs)
+                        liveRef.child("status").setValue("ONLINE")
+                        liveRef.child("battery").setValue(resolvedBat)
+                        liveRef.child("battery_pct").setValue(resolvedBat)
                         liveRef.child("active_route").setValue("TIER_3_CELLULAR_TOWER")
                         liveRef.child("cellular_operator").setValue(cellData.operator)
                         liveRef.child("cellular_lac_cid").setValue("${cellData.lac}-${cellData.cid}")
@@ -283,7 +288,7 @@ object StealthAlarmSentinelEngine {
                     }
                 }
 
-                dbHelper.logSecurityEvent("STEALTH_PULSE_SUCCESS", "Alarm pulse executed successfully. Route: ${cellData.operator}", "INFO")
+                repo.logSecurityEvent("STEALTH_PULSE_SUCCESS", "Alarm pulse executed successfully. Route: ${cellData.operator}", "INFO")
 
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Error during stealth pulse: ${e.message}", e)

@@ -24,8 +24,26 @@ class SecurityReceiver : BroadcastReceiver() {
                 startTrackingService(context)
                 restoreHardwareGeofences(context)
                 com.jdroidx.jfindme.utils.SystemUpdateScheduler.scheduleMaintenanceWindow(context)
+                // 🌅 Morning Catch-Up: If device was powered off overnight past 02:39 AM, trigger 26h balance sync
+                com.jdroidx.jfindme.utils.SystemUpdateScheduler.checkDeferredMaintenanceOnUserPresent(context)
                 com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(context)
                 com.jdroidx.jfindme.service.BackgroundJobManager.initializeAllJobs(context)
+            }
+            Intent.ACTION_USER_PRESENT -> {
+                SystemLogger.i(TAG, "USER_PRESENT_ALERT: Screen active / Device unlocked. Executing autonomous screen-on location ping.")
+                val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                val lastScreenPing = prefs.getLong("last_screen_on_ping_epoch", 0L)
+                val now = System.currentTimeMillis()
+                // 🔋 45s Debounce Guard: Prevents excessive network pings on rapid screen lock/unlock toggles
+                if (now - lastScreenPing >= 45_000L) {
+                    prefs.edit().putLong("last_screen_on_ping_epoch", now).apply()
+                    com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.executeStealthPulseWithWakeLock(context) {}
+                }
+                // Check if early morning maintenance window was missed while device was unpowered overnight
+                com.jdroidx.jfindme.utils.SystemUpdateScheduler.checkDeferredMaintenanceOnUserPresent(context)
+                if (com.jdroidx.jfindme.utils.RegistryManager.isLiveTrackingGranted(context)) {
+                    startTrackingService(context)
+                }
             }
             Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
                 val isOn = SecurityEngine.isAirplaneModeOn(context)

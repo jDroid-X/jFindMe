@@ -6,7 +6,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.DataSnapshot
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +39,7 @@ class PersonDetailsViewModel : ViewModel() {
     fun fetchDossier(context: Context, groupId: String?, targetUid: String) {
         viewModelScope.launch(Dispatchers.IO) {
             // 🧬 Forensic Anchor: Resolve Auth UID to Agent ID early to prevent lookup failures
-            val localDb = DatabaseHelper.getInstance(context)
+            val localDb = DeviceRepository.getInstance(context)
             val resolvedAgentId = localDb.resolveAgentIdLocally(targetUid) ?: targetUid
             
             // [Variables] | [Constants] | [Dependencies] | [Integration Points]
@@ -154,7 +154,7 @@ class PersonDetailsViewModel : ViewModel() {
                     
                     viewModelScope.launch(Dispatchers.IO) {
                         // 🚀 LIVE QA FIX: Instantly sync Cloud override down to SQLite using the correct Agent ID
-                        val localDb = DatabaseHelper.getInstance(context)
+                        val localDb = DeviceRepository.getInstance(context)
                         val fRole = (if ((cloudMap["role_friend"] ?: "None") != "None") cloudMap["role_friend"] else cloudMap["role_family"]) ?: "MEMBER"
                         localDb.commitHandshakeDossier(cloudAgentId, cloudMap, fRole, cloudMap["fullName"] ?: "Asset Node", cloudAgentId, cloudAgentId, "CLOUD_SYNC", "CLOUD")
                         val rFri = cloudMap["role_friend"] ?: "None"
@@ -204,7 +204,7 @@ class PersonDetailsViewModel : ViewModel() {
      */
     fun fetchLocalRoster(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val localDb = DatabaseHelper.getInstance(context)
+            val localDb = DeviceRepository.getInstance(context)
             _rosterLiveData.postValue(localDb.getOfflineRoster())
         }
     }
@@ -220,7 +220,7 @@ class PersonDetailsViewModel : ViewModel() {
                 com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
             }
             // 1. Local Commit — 🔧 Dynamic Group-By Hierarchy Binding
-            val localDb = DatabaseHelper.getInstance(context)
+            val localDb = DeviceRepository.getInstance(context)
             localDb.updateCitizenRole(targetUid, famRole, frRole, isFriend, resolvedGroup)
             
             // 2. Cloud Commit
@@ -321,7 +321,7 @@ class PersonDetailsViewModel : ViewModel() {
         }
 
         // 1. Upsert securely down into the Local SQLite Table
-        val localDb = DatabaseHelper.getInstance(context)
+        val localDb = DeviceRepository.getInstance(context)
         val sRole = if ((crossValidatedPayload["role_friend"] ?: "None") != "None") crossValidatedPayload["role_friend"] else crossValidatedPayload["role_family"]
         localDb.commitHandshakeDossier(targetUid, crossValidatedPayload, sRole ?: "MEMBER", crossValidatedPayload["fullName"] ?: "Asset Node", targetUid, targetUid, "USER_EDIT", "LOCAL")
 

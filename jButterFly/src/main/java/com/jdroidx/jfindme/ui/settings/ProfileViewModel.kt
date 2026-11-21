@@ -8,7 +8,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.ui.base.BaseViewModel
 import com.jdroidx.jfindme.utils.SystemLogger
@@ -47,12 +47,15 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     fun fetchProfile(context: Context = getApplication()) {
         // 🧬 Hardware Root Anchor: Master Identity Resolution anchored to silicon identity
         val safeUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        try {
+            com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.ensureLocalAvatarSynchronized(context)
+        } catch (_: Exception) {}
         processProfileWithAgentId(context, safeUid)
     }
 
     private fun processProfileWithAgentId(context: Context, safeUid: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val db = DatabaseHelper.getInstance(context)
+            val db = DeviceRepository.getInstance(context)
             val localDossier = db.getLocalDossier(safeUid)
             
             if (localDossier.isNotEmpty() && !localDossier["fullName"].isNullOrEmpty()) {
@@ -103,7 +106,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                         val cloudMap = snapshot.value as? Map<String, Any> ?: return@addOnSuccessListener
                         val mergedMap = _profileData.value?.toMutableMap() ?: mutableMapOf()
                         cloudMap.forEach { (k, v) -> 
-                            if (v != null && v.toString().isNotBlank()) {
+                            if (v.toString().isNotBlank()) {
                                 mergedMap[k] = v.toString()
                             }
                         }
@@ -115,7 +118,14 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                             db.commitAnalyticalDossier(safeUid, dossier, name = finalName) 
                             // Update SharedPreferences registry
                             prefs.edit().apply {
-                                val av = mergedMap["avatar_id"]?.toString()
+                                val customPhoto = java.io.File(context.filesDir, "avatars/custom_photo.png")
+                                val agentCustomPhoto = java.io.File(context.filesDir, "avatars/${safeUid}_custom.png")
+                                val equipped = mergedMap["equipped_avatar_id"]?.toString()?.toIntOrNull() ?: prefs.getInt("equipped_avatar_id", -1)
+                                val av = if (equipped == -1 || customPhoto.exists() || (agentCustomPhoto.exists() && agentCustomPhoto.length() > 0)) {
+                                    "AV_${safeUid}_01"
+                                } else {
+                                    mergedMap["avatar_id"]?.toString()
+                                }
                                 if (!av.isNullOrEmpty()) putString("avatar_id", av)
                                 val ph = mergedMap["phone"]?.toString()
                                 if (!ph.isNullOrEmpty()) putString("user_phone", ph)
@@ -158,7 +168,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         val authUid = FirebaseAuth.getInstance().uid ?: finalAgentId
         
         viewModelScope.launch(Dispatchers.IO) {
-                val db = DatabaseHelper.getInstance(context)
+                val db = DeviceRepository.getInstance(context)
                 
                 // 🧬 V69.8: Hydrated Heartbeat (The Waterfall Fix)
                 // Fetch the COMPLETE local truth before syncing to prevent cloud-wiping of identity/location metadata.
@@ -240,7 +250,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         }
         
         viewModelScope.launch(Dispatchers.Main) {
-                val db = DatabaseHelper.getInstance(context)
+                val db = DeviceRepository.getInstance(context)
                 val existingTruth = withContext(Dispatchers.IO) { db.getForensicDossierComplete(safeUid) }
                 val rawBaseId = prefs.getInt("equipped_avatar_id", 1)
                 val dynIdx = com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(rawBaseId)
@@ -425,7 +435,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
             FirebaseComm.devicesRef.child(finalId).child("device").child("live").child("avatar_id").setValue(resolvedAvatarId)
             
             try {
-                val db = DatabaseHelper.getInstance(getApplication())
+                val db = DeviceRepository.getInstance(getApplication())
                 val nick = prefs.getString("user_nickname", "Active Tracker") ?: "Active Tracker"
                 db.updateDeviceIdentityAndAvatar(finalId, nick, resolvedAvatarId)
             } catch (e: Exception) {}

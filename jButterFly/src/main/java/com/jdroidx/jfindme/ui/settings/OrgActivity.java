@@ -14,7 +14,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.FirebaseDatabase;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.SystemLogger;
@@ -27,12 +27,13 @@ import java.util.Map;
  */
 public class OrgActivity extends BaseActivityJava {
 
-    private DatabaseHelper db;
+    // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] Org Activity SSOT
+    private DeviceRepository db;
     private Map<String, EditText> fieldMap = new HashMap<>();
 
     @Override
     protected View createLayout() {
-        db = DatabaseHelper.getInstance(this);
+        db = DeviceRepository.getInstance(this);
         int q = getResponsivePaddingQuota();
 
         LinearLayout mainRoot = new LinearLayout(this);

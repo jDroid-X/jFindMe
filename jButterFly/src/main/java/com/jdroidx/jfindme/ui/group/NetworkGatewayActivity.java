@@ -132,6 +132,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     // Architectural MVVM
     private GroupViewModel viewModel;
+    private com.jdroidx.jfindme.data.repository.DeviceRepository db;
     private String forensicAgentId = "";
     private String safeUid = "LOCAL_DEVICE";
 
@@ -210,13 +211,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     protected void setupLogic() {
         SystemLogger.INSTANCE.i(TAG, "Initializing NetworkGatewayActivity MVVM logic pipeline.");
         viewModel = new ViewModelProvider(this).get(GroupViewModel.class);
+        db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
 
         // Initialize safe owner ID
-        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
         String authUid = FirebaseAuth.getInstance().getUid();
         String resolvedAgentId = (authUid != null) ? db.resolveAgentIdLocally(authUid) : null;
-        forensicAgentId = (resolvedAgentId != null) ? resolvedAgentId : jPrefs.getString("agent_id", RegistryManager.getOwnerAgentId(this));
+        forensicAgentId = (resolvedAgentId != null) ? resolvedAgentId : RegistryManager.getOwnerAgentId(this);
         safeUid = (authUid != null) ? authUid : forensicAgentId;
 
         // Reactive Observers
@@ -272,11 +272,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         // Trigger initial background roster fetch (Zero-Latency Local Boot) & Prune Zombie Duplicates
         db.pruneZombieNodes(forensicAgentId, null);
-        viewModel.refreshLocalRoster(db);
+        viewModel.refreshLocalRoster();
         com.jdroidx.jfindme.utils.MiuiOptimizationHelper.checkAndPromptMiuiOptimization(this);
 
         // Async Cloud Group Sync & Real-time Signal Listener
-        String activeGrp = jPrefs.getString("active_group", null);
+        // [Variables] activeGrp | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Cloud group sync
+        String activeGrp = RegistryManager.getString(this, "active_group", null);
         viewModel.syncCloudGroupToLocalDb(this, activeGrp);
         viewModel.setupSignalListener(safeUid, activeGrp, () -> {
             runOnUiThread(() -> viewModel.syncCloudGroupToLocalDb(this, activeGrp));
@@ -345,19 +346,19 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         // Closed-Loop: Refresh identity strip and roster on return (e.g. from ProfileActivity)
         refreshOwnerIdentity();
         if (viewModel != null) {
-            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+            viewModel.refreshLocalRoster();
         }
     }
 
     // [Variables] category, changeType, entityId, senderId
     // [Constants] ACTION_MASTER_DATA_UPDATED
-    // [Dependencies] BaseActivityJava, GroupViewModel, DatabaseHelper
+    // [Dependencies] BaseActivityJava, GroupViewModel, DeviceRepository
     // [Integration Points] NetworkGatewayActivity, MapActivity, FamilyFriendsActivity, PairingRepository
     @Override
     protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
         super.onMasterDataUpdated(category, changeType, entityId, senderId);
         if (viewModel != null) {
-            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+            viewModel.refreshLocalRoster();
         }
     }
 
@@ -376,7 +377,6 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             ownerNameView.setText("👤 " + nameStr.toUpperCase());
         }
         if (ownerMetaView != null) {
-            SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
             String deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
             String activeGroup = getResolvedActiveGroup();
             ownerMetaView.setText("📱 AGENT: " + deviceId + "  ●  🌐 Hub: " + activeGroup);
@@ -414,11 +414,26 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         header.addView(textBlock);
 
+        // Sharing History Audit Action Button
+        ImageView btnHistory = new ImageView(this);
+        btnHistory.setImageResource(android.R.drawable.ic_menu_recent_history);
+        btnHistory.setColorFilter(getGradientOverlayText());
+        int iSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
+        LinearLayout.LayoutParams histLp = new LinearLayout.LayoutParams(iSize, iSize);
+        histLp.setMargins(0, 0, scale(12), 0);
+        btnHistory.setLayoutParams(histLp);
+        btnHistory.setFocusable(true);
+        btnHistory.setClickable(true);
+        btnHistory.setOnClickListener(v -> {
+            triggerHapticFeedback();
+            showDeviceSharingHistoryDialog();
+        });
+        header.addView(btnHistory);
+
         // Compact Refresh Action Button
         ImageView btnSync = new ImageView(this);
         btnSync.setImageResource(android.R.drawable.ic_popup_sync);
         btnSync.setColorFilter(getGradientOverlayText());
-        int iSize = UiArchitect.getResponsiveIconSize(this, "ICON_SMALL");
         LinearLayout.LayoutParams syncLp = new LinearLayout.LayoutParams(iSize, iSize);
         btnSync.setLayoutParams(syncLp);
         btnSync.setFocusable(true);
@@ -430,6 +445,75 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         header.addView(btnSync);
 
         return header;
+    }
+
+    /**
+     * 📜 Displays comprehensive Device Sharing History & Audit Trail.
+     */
+    private void showDeviceSharingHistoryDialog() {
+        java.util.List<java.util.Map<String, Object>> history = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getDeviceSharingHistory();
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("📜 Device Sharing Audit History (" + history.size() + ")");
+
+        if (history.isEmpty()) {
+            builder.setMessage("No device sharing transactions recorded yet.\n\nTransactions and silent handshakes will appear here automatically.");
+            builder.setPositiveButton("CLOSE", null);
+            builder.show();
+            return;
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout listRoot = new LinearLayout(this);
+        listRoot.setOrientation(LinearLayout.VERTICAL);
+        int pad = scale(16);
+        listRoot.setPadding(pad, pad, pad, pad);
+
+        for (java.util.Map<String, Object> item : history) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            UiArchitect.applyCard(this, card, "CARD_STANDARD");
+            card.setPadding(scale(12), scale(10), scale(12), scale(10));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 0, scale(10));
+            card.setLayoutParams(lp);
+
+            String stage = String.valueOf(item.get("new_stage"));
+            String actor = String.valueOf(item.get("actor_device_id"));
+            String recipient = String.valueOf(item.get("recipient_device_id"));
+            String role = String.valueOf(item.get("relationship_type"));
+            String reason = String.valueOf(item.get("notes_or_reason"));
+            String time = String.valueOf(item.get("forensic_timestamp"));
+
+            TextView tvTitle = new TextView(this);
+            String badge = "ACTIVE".equalsIgnoreCase(stage) ? "🟢 ACTIVE" : ("TIMED_OUT".equalsIgnoreCase(stage) ? "🔴 TIMED OUT" : ("REVOKED".equalsIgnoreCase(stage) ? "⚪ REVOKED" : "🟡 " + stage));
+            tvTitle.setText(badge + " • Role: " + role);
+            tvTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+            tvTitle.setTextColor(Color.WHITE);
+            card.addView(tvTitle);
+
+            TextView tvFlow = new TextView(this);
+            tvFlow.setText("Peer: " + actor + " ➔ " + recipient + " | " + time);
+            tvFlow.setTextColor(Color.parseColor("#B0BEC5"));
+            tvFlow.setTextSize(12f);
+            card.addView(tvFlow);
+
+            if (reason != null && !reason.isEmpty() && !reason.equals("null")) {
+                TextView tvNotes = new TextView(this);
+                tvNotes.setText("Details: " + reason);
+                tvNotes.setTextColor(Color.parseColor("#90A4AE"));
+                tvNotes.setTextSize(11f);
+                tvNotes.setPadding(0, scale(4), 0, 0);
+                card.addView(tvNotes);
+            }
+
+            listRoot.addView(card);
+        }
+
+        scroll.addView(listRoot);
+        builder.setView(scroll);
+        builder.setPositiveButton("DONE", null);
+        builder.show();
     }
 
     private View buildCompactIdentityStrip() {
@@ -458,7 +542,6 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         details.setPadding(scale(14), 0, 0, 0);
         details.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
         String nameStr = RegistryManager.getUserNickname(this);
         String deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         String activeGroup = getResolvedActiveGroup();
@@ -769,7 +852,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         hostCard.addView(grid);
 
         TextView tvTtlChip = new TextView(this);
-        int curTtl = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+        int curTtl = RegistryManager.getPairingPinTtlMinutes(this, 5);
         tvTtlChip.setText("⏱️ PIN Expiry TTL: " + curTtl + " mins (Tap to adjust)");
         tvTtlChip.setTextColor(getSecondaryTextColor());
         tvTtlChip.setTextSize(scaleText(10f));
@@ -779,7 +862,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         tvTtlChip.setClickable(true);
         tvTtlChip.setOnClickListener(v -> {
             showPinTtlSelectionDialog();
-            int updatedTtl = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+            int updatedTtl = RegistryManager.getPairingPinTtlMinutes(this, 5);
             tvTtlChip.setText("⏱️ PIN Expiry TTL: " + updatedTtl + " mins (Tap to adjust)");
         });
         hostCard.addView(tvTtlChip);
@@ -1013,7 +1096,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         hostCard.addView(grid);
 
         TextView tvLocalTtlChip = new TextView(this);
-        int curLocalTtl = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+        int curLocalTtl = RegistryManager.getPairingPinTtlMinutes(this, 5);
         tvLocalTtlChip.setText("⏱️ PIN Expiry TTL: " + curLocalTtl + " mins (Tap to adjust)");
         tvLocalTtlChip.setTextColor(getSecondaryTextColor());
         tvLocalTtlChip.setTextSize(scaleText(10f));
@@ -1023,7 +1106,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         tvLocalTtlChip.setClickable(true);
         tvLocalTtlChip.setOnClickListener(v -> {
             showPinTtlSelectionDialog();
-            int updatedTtl = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+            int updatedTtl = RegistryManager.getPairingPinTtlMinutes(this, 5);
             tvLocalTtlChip.setText("⏱️ PIN Expiry TTL: " + updatedTtl + " mins (Tap to adjust)");
         });
         hostCard.addView(tvLocalTtlChip);
@@ -1278,12 +1361,11 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         String authUid = FirebaseAuth.getInstance().getUid();
         if (authUid != null && uid.equals(authUid)) return true;
 
-        SharedPreferences jPrefs = getSharedPreferences("system_registry", MODE_PRIVATE);
-        String agentId = jPrefs.getString("agent_id", null);
-        if (agentId != null && uid.equals(agentId)) return true;
+        String agentId = RegistryManager.getOwnerAgentId(this);
+        if (agentId != null && !agentId.isEmpty() && uid.equals(agentId)) return true;
 
-        String deviceUid = jPrefs.getString("device_uid", null);
-        if (deviceUid != null && uid.equals(deviceUid)) return true;
+        String deviceUid = RegistryManager.getString(this, "device_uid", "");
+        if (!deviceUid.isEmpty() && uid.equals(deviceUid)) return true;
 
         String myHwId = FirebasePairingManager.INSTANCE.getDeviceId(this);
         if (myHwId != null && uid.equals(myHwId)) return true;
@@ -1329,9 +1411,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         List<Map<String, Object>> children = new ArrayList<>();
         List<Map<String, Object>> friends = new ArrayList<>();
 
-        DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
+        com.jdroidx.jfindme.data.repository.DeviceRepository repoLocal = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
         java.util.Set<String> scopedIds = (forensicAgentId != null && !forensicAgentId.isEmpty()) 
-                ? dbLocal.getConnectedDeviceIds(forensicAgentId) 
+                ? repoLocal.getConnectedDeviceIds(forensicAgentId) 
                 : java.util.Collections.emptySet();
 
         for (Map<String, Object> node : currentCachedRoster) {
@@ -1344,13 +1426,22 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 continue; // Skip self in member list (rendered via Root Guardian Anchor)
             }
 
-            // [Variables] isCanonical: boolean, isPrime: boolean, canon: String | [Constants] None | [Dependencies] DeviceIdentityHelper, DatabaseHelper | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel
-            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers, bypassing canonical fleet and prime target
-            boolean isCanonical = com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(uid);
-            boolean isPrime = "4379A761".equalsIgnoreCase(uid) || "4379A761".equalsIgnoreCase(dbLocal.resolveAgentIdLocally(uid));
-            if (!isPrime && !isCanonical && scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
-                String canon = dbLocal.resolveAgentIdLocally(uid);
-                if (canon == null || (!scopedIds.contains(canon) && !com.jdroidx.jfindme.utils.DeviceIdentityHelper.isCanonicalRosterId(canon))) {
+            // [Variables] primeTarget: String, isPrime: boolean, canon: String, cleanUid: String, actGrp: String | [Constants] None | [Dependencies] RegistryManager, DeviceIdentityHelper, DeviceRepository | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel
+            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers and prime target
+            String primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
+            String cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid);
+            String actGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
+            String canon = repoLocal.resolveAgentIdLocally(uid);
+
+            if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, cleanUid) ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, uid) ||
+                repoLocal.isDeviceDeleted(cleanUid, actGrp) || repoLocal.isDeviceDeleted(uid, actGrp)) {
+                continue;
+            }
+
+            boolean isPrime = primeTarget.equalsIgnoreCase(uid) || (canon != null && primeTarget.equalsIgnoreCase(canon));
+            if (!isPrime && scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
+                if (canon == null || !scopedIds.contains(canon)) {
                     continue;
                 }
             }
@@ -1551,17 +1642,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         card.setClickable(true);
 
         // Member Avatar
-        // [Variables] avatar, db, avatarRef, finalUid | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Network Card Rendering
+        // [Variables] avatar, avatarRef, finalUid | [Constants] "butterfly" | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Network Card Rendering
         // Member Avatar with SSOT Lookup & Smart Fallback
         ImageView avatar = new ImageView(this);
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-        String avatarRef = (String) node.get("avatar_id");
-        if (avatarRef == null || avatarRef.isEmpty() || avatarRef.equals("1")) {
-            avatarRef = db.getDeviceCentricAvatar(finalUid);
-        }
-        if (avatarRef == null || avatarRef.isEmpty()) {
-            avatarRef = "butterfly";
-        }
+        String avatarRef = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, finalUid, (String) node.get("avatar_id"));
         com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, finalUid, avatarRef);
 
         avatar.setPadding(3, 3, 3, 3);
@@ -1713,19 +1797,34 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     }
 
                     long ts = 0L;
-                    Object tsObj = live.child("updated_at").getValue();
+                    Object tsObj = live.child("last_heartbeat").getValue();
+                    if (tsObj == null) tsObj = live.child("timestamp").getValue();
+                    if (tsObj == null) tsObj = locSnap.child("telemetry").child("last_heartbeat").getValue();
+                    if (tsObj == null) tsObj = locSnap.child("last_heartbeat").getValue();
+                    if (tsObj == null) tsObj = live.child("updated_at").getValue();
                     if (tsObj == null) tsObj = locSnap.child("timestamp").getValue();
                     if (tsObj instanceof Number) {
                         ts = ((Number) tsObj).longValue();
                     } else if (tsObj instanceof String) {
                         try {
                             String s = (String) tsObj;
-                            if (s.length() == 16) {
+                            if (s.matches("^\\d{13}$")) {
+                                ts = Long.parseLong(s);
+                            } else if (s.matches("^\\d{10}$")) {
+                                ts = Long.parseLong(s) * 1000L;
+                            } else if (s.length() == 16) {
                                 SimpleDateFormat sdfIn = new SimpleDateFormat("yyyyMMddHHmmssSS", Locale.US);
                                 Date d = sdfIn.parse(s);
                                 if (d != null) ts = d.getTime();
                             } else {
-                                ts = Long.parseLong(s);
+                                String[] patterns = new String[]{"yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyyMMddHHmmss"};
+                                for (String p : patterns) {
+                                    try {
+                                        SimpleDateFormat sdf = new SimpleDateFormat(p, Locale.US);
+                                        Date d = sdf.parse(s);
+                                        if (d != null) { ts = d.getTime(); break; }
+                                    } catch (Exception ignored) {}
+                                }
                             }
                         } catch (Exception ignored) {
                             ts = 0L;
@@ -1737,12 +1836,31 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     if (liveLoc != null && liveLoc.getLongTimestamp() > ts) {
                         ts = liveLoc.getLongTimestamp();
                     }
+                    if (ts <= 0L) {
+                        Map<String, Object> hLoc = db.getLatestHistoricalLocation(finalUid);
+                        if (hLoc != null && hLoc.get("timestamp") instanceof Number) {
+                            ts = ((Number) hLoc.get("timestamp")).longValue();
+                        }
+                    }
 
+                    // [Variables] batt, batObj, batPctObj, telemBat, liveLoc, prevBatt, isSos, curDeleted, curPendingUnlink, rag, resolvedBatt | [Constants] None | [Dependencies] DeviceRagEngine, AvatarLoader, DatabaseHelper | [Integration Points] NetworkGatewayActivity, DeviceVitalsTable
                     int batt = -1;
                     Object batObj = live.child("battery").getValue();
                     if (batObj instanceof Number) batt = ((Number) batObj).intValue();
-                    if (batt < 0 && liveLoc != null && liveLoc.getBatteryLevel() > 0) {
+                    if (batt < 0) {
+                        Object batPctObj = live.child("battery_pct").getValue();
+                        if (batPctObj instanceof Number) batt = ((Number) batPctObj).intValue();
+                    }
+                    if (batt < 0) {
+                        Object telemBat = live.child("telemetry").child("battery_pct").getValue();
+                        if (telemBat instanceof Number) batt = ((Number) telemBat).intValue();
+                    }
+                    if (batt < 0 && liveLoc != null && liveLoc.getBatteryLevel() >= 0) {
                         batt = liveLoc.getBatteryLevel();
+                    }
+                    if (batt < 0) {
+                        int prevBatt = db.getLatestBatteryLevel(finalUid);
+                        if (prevBatt >= 0) batt = prevBatt;
                     }
 
                     boolean isSos = Boolean.TRUE.equals(live.child("sos").getValue(Boolean.class)) || (liveLoc != null && liveLoc.isSosActive());
@@ -1760,9 +1878,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     // [Variables] finalUid, avId, rag | [Constants] None | [Dependencies] AvatarLoader | [Integration Points] SSOT Desaturated Live Gateway Avatar
                     AvatarLoader.bindAvatar(NetworkGatewayActivity.this, avatar, finalUid, avId, rag.isDesaturated());
 
-                    // SSOT Backfill to local SQLite DeviceVitals
+                    // SSOT Backfill to local SQLite DeviceVitals (GAP-01: Avoid forcing 100% on non-positive battery)
                     if (ts > 0L) {
-                        db.updateDeviceVitalsTelemetry(finalUid, batt > 0 ? batt : 100, ts, false, null);
+                        int resolvedBatt = (batt >= 0 && batt <= 100) ? batt : (db.getLatestBatteryLevel(finalUid) >= 0 ? db.getLatestBatteryLevel(finalUid) : batt);
+                        db.updateDeviceVitals(finalUid, resolvedBatt, ts, false, null);
                     }
                 }
             }
@@ -1834,7 +1953,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
         if (pbCodeLoading != null) pbCodeLoading.setVisibility(View.VISIBLE);
 
-        int ttlMinutes = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+        int ttlMinutes = RegistryManager.getPairingPinTtlMinutes(this, 5);
 
         FirebasePairingManager.INSTANCE.startHostPairingSession(this, (qrBitmap, code) -> {
             runOnUiThread(() -> {
@@ -1877,12 +1996,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (tvLocalCode != null) tvLocalCode.setText("SPINNING UP...");
         if (pbLocalLoading != null) pbLocalLoading.setVisibility(View.VISIBLE);
 
-        int ttlMinutes = getSharedPreferences("system_registry", MODE_PRIVATE).getInt("pairing_pin_ttl_minutes", 5);
+        int ttlMinutes = RegistryManager.getPairingPinTtlMinutes(this, 5);
 
         LocalPairingManager.INSTANCE.setOnLocalMergeCompletedCallback(() -> {
             runOnUiThread(() -> {
                 Toast.makeText(this, "Local Node Linked Successfully! ✅", Toast.LENGTH_LONG).show();
-                viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+                viewModel.refreshLocalRoster();
                 initiateCloudSync(forensicAgentId);
             });
             return kotlin.Unit.INSTANCE;
@@ -2108,10 +2227,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 runOnUiThread(() -> {
                     if (success) {
                         if (message != null && !message.isEmpty()) {
-                            getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", message).apply();
+                            RegistryManager.setActiveGroup(NetworkGatewayActivity.this, message);
                         }
                         if (viewModel != null) {
-                            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(NetworkGatewayActivity.this));
+                            viewModel.refreshLocalRoster();
                         }
                         Toast.makeText(NetworkGatewayActivity.this, "🎉 Joined Circle! Opening Map...", Toast.LENGTH_LONG).show();
                         startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
@@ -2122,7 +2241,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                             runOnUiThread(() -> {
                                 if (Boolean.TRUE.equals(multiSuccess)) {
                                     if (viewModel != null) {
-                                        viewModel.refreshLocalRoster(DatabaseHelper.getInstance(NetworkGatewayActivity.this));
+                                        viewModel.refreshLocalRoster();
                                     }
                                     Toast.makeText(NetworkGatewayActivity.this, "🎉 Multi-Device Close Attachment Complete! Opening Map...", Toast.LENGTH_LONG).show();
                                     startActivity(new Intent(NetworkGatewayActivity.this, MapActivity.class));
@@ -2176,7 +2295,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         LocalPairingManager.INSTANCE.startLocalDiscoveryBinding(inputMatrix, this, selectedRole, hostId -> {
             runOnUiThread(() -> {
                 Toast.makeText(this, "Local Offline Pairing Completed! ✅", Toast.LENGTH_LONG).show();
-                viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+                viewModel.refreshLocalRoster();
                 initiateCloudSync(forensicAgentId);
                 new Handler(Looper.getMainLooper()).postDelayed(this::finish, 1500);
             });
@@ -2199,8 +2318,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     }
 
     private void renderHostApprovalDialog(String childId, String childName, String childPrelimRole, String activeCode) {
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
-        Map<String, String> pairingHistory = db.getPairingHistoryAndLocation(childId);
+        Map<String, String> pairingHistory = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getPairingHistoryAndLocation(childId);
 
         if (pairingHistory != null) {
             new AlertDialog.Builder(this)
@@ -2296,7 +2414,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     runOnUiThread(() -> {
                         if (success) {
                             String activeGroupId = getResolvedActiveGroup();
-                            DatabaseHelper.getInstance(this).updateCitizenRole(
+                            com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).updateCitizenRole(
                                     childId,
                                     finalIsFriend ? "None" : finalChild,
                                     finalIsFriend ? "Friends" : "None",
@@ -2304,7 +2422,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                                     activeGroupId
                             );
                             Toast.makeText(this, "🛡️ Handshake Approved! Node Added.", Toast.LENGTH_SHORT).show();
-                            viewModel.refreshLocalRoster(DatabaseHelper.getInstance(this));
+                            viewModel.refreshLocalRoster();
                             startActivity(new Intent(this, MapActivity.class));
                             new Handler(Looper.getMainLooper()).postDelayed(this::finish, 1500);
                         } else {
@@ -2338,8 +2456,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
     private void promptPurgeMemberDialog(String uid, String name) {
         triggerHapticFeedback();
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
-        boolean isParked = db.isDevicePendingUnlink(uid);
+        boolean isParked = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).isDevicePendingUnlink(uid);
         String grp = getResolvedActiveGroup();
 
         if (isParked) {
@@ -2347,12 +2464,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     .setTitle("⏳ Manage Parked Unlink")
                     .setMessage("Device (" + name + ") is currently PARKED for unlinking in Grey state. What would you like to do?")
                     .setPositiveButton("✅ FINALIZE UNLINK", (d, w) -> {
-                        viewModel.deleteMember(uid, grp, db, () -> {
+                        viewModel.deleteMember(uid, grp, null, () -> {
                             Toast.makeText(this, "Device unlinked and permanently purged.", Toast.LENGTH_SHORT).show();
                         });
                     })
                     .setNeutralButton("↩️ RESTORE ACTIVE", (d, w) -> {
-                        viewModel.cancelParkedDeletion(uid, grp, db, () -> {
+                        viewModel.cancelParkedDeletion(uid, grp, null, () -> {
                             Toast.makeText(this, "Connection restored to Active.", Toast.LENGTH_SHORT).show();
                         });
                     })
@@ -2363,12 +2480,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     .setTitle("Manage Connection: " + name)
                     .setMessage("Choose unlinking method for (" + name + "):")
                     .setPositiveButton("🔘 PARK & NOTIFY", (d, w) -> {
-                        viewModel.parkMemberForDeletion(uid, grp, db, () -> {
+                        viewModel.parkMemberForDeletion(uid, grp, null, () -> {
                             Toast.makeText(this, "Device parked in Grey state & push notification sent.", Toast.LENGTH_LONG).show();
                         });
                     })
                     .setNeutralButton("🗑️ IMMEDIATE PURGE", (d, w) -> {
-                        viewModel.deleteMember(uid, grp, db, () -> {
+                        viewModel.deleteMember(uid, grp, null, () -> {
                             Toast.makeText(this, "Device purged immediately.", Toast.LENGTH_SHORT).show();
                         });
                     })
@@ -2515,7 +2632,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 .setMultiChoiceItems(items, checkedItems, (d, which, isChecked) -> checkedItems[which] = isChecked)
                 .setPositiveButton("RESTORE SELECTED", (d, which) -> {
                     String targetGroup = finalGrp.isEmpty() ? ("GRP_" + safeAgentId) : finalGrp;
-                    DatabaseHelper dbLocal = DatabaseHelper.getInstance(this);
+                    com.jdroidx.jfindme.data.repository.DeviceRepository repoLocal = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
 
                     // 1. Ensure Self is registered as ADMIN in Cloud Group with uniform structure
                     Map<String, Object> groupInfo = new HashMap<>();
@@ -2527,12 +2644,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     Map<String, Object> selfIdentity = new HashMap<>();
                     selfIdentity.put("name", RegistryManager.getUserNickname(this));
                     selfIdentity.put("full_name", RegistryManager.getUserNickname(this));
-                    selfIdentity.put("avatar_id", String.valueOf(getSharedPreferences("system_registry", MODE_PRIVATE).getInt("equipped_avatar_id", 0)));
+                    selfIdentity.put("avatar_id", String.valueOf(RegistryManager.getEquippedAvatarId(this)));
                     
                     Map<String, Object> selfMembership = new HashMap<>();
                     // [Variables] | [Constants] | [Dependencies] | [Integration Points]
                     // Anti-Privilege Escalation: Reclaim role dynamically based on local registry authority rather than auto-granting ADMIN
-                    String curRole = getSharedPreferences("system_registry", MODE_PRIVATE).getString("role_family", "Guardian");
+                    String curRole = RegistryManager.getRoleFamily(this, "Guardian");
                     boolean isAuthorizedAdmin = curRole.toUpperCase().contains("GUARDIAN") || curRole.toUpperCase().contains("ADMIN") || curRole.toUpperCase().contains("MOTHER") || curRole.toUpperCase().contains("FATHER") || curRole.toUpperCase().contains("PARENT");
                     selfMembership.put("role", isAuthorizedAdmin ? "ADMIN" : "MEMBER");
                     selfMembership.put("role_family", curRole);
@@ -2547,7 +2664,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
                     FirebaseComm.INSTANCE.getProfileRef(safeAgentId).child("active_group").setValue(targetGroup);
                     FirebaseComm.getDatabaseRef().child("users").child(safeAgentId).child("joined_circles").child(targetGroup).setValue(true);
-                    getSharedPreferences("system_registry", MODE_PRIVATE).edit().putString("active_group", targetGroup).apply();
+                    RegistryManager.setActiveGroup(this, targetGroup);
 
                     int count = 0;
                     for (int i = 0; i < checkedItems.length; i++) {
@@ -2585,7 +2702,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                             FirebaseComm.getDatabaseRef().child("users").child(nodeUid).child("joined_circles").child(targetGroup).setValue(true);
 
                             // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation
-                            dbLocal.saveRosterNode(nodeUid, cleanName, nodeRole, "Active", isAdmin, isFriend, "Cloud Group", null, null, null, avatarId, targetGroup);
+                            repoLocal.saveRosterNode(nodeUid, cleanName, nodeRole, "Active", isAdmin, isFriend, "Cloud Group", null, null, null, avatarId, targetGroup);
                             count++;
                         }
                     }

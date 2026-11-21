@@ -235,7 +235,7 @@ public class AvatarCropActivity extends BaseActivityJava {
                 prefs.edit().putInt("custom_avatar_seq", currentSeq).apply();
                 String customAvatarId = String.format(java.util.Locale.US, "AV_%s_%02d", agentId, currentSeq);
 
-                com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(getContext())
+                com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(getContext())
                     .updateDeviceIdentityAndAvatar(agentId, nickname, customAvatarId);
                 
                 // 🎨 Upload compact Base64 thumbnail to Cloud so peer devices can render the exact photo

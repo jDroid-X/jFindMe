@@ -8,7 +8,6 @@ import android.view.animation.LinearInterpolator
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.*
 import com.google.firebase.auth.FirebaseAuth
-import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.model.UserLocation
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.AvatarCalloutGenerator
@@ -100,11 +99,12 @@ object MultiMarkerEngine {
         var selfIncluded = false
 
         // 🚀 WATERFALL PRIORITY SORTING: SOS emergency first, then Newest Timestamp to Oldest
-        val db = DatabaseHelper.getInstance(context)
-        val cachedOfflineRoster = db.getOfflineRoster()
+        val deviceRepo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+        val db = deviceRepo
+        val cachedOfflineRoster = deviceRepo.getOfflineRoster()
         val sortedLocations = locations.filter { loc ->
             val dId = loc.getResolvedUserId()
-            !db.isDeviceDeleted(dId)
+            !deviceRepo.isDeviceDeleted(dId)
         }.sortedWith(
             compareByDescending<UserLocation> { it.isSosActive }
                 .thenByDescending { it.getLongTimestamp() }
@@ -124,15 +124,23 @@ object MultiMarkerEngine {
                         rawDeviceId.equals("You", ignoreCase = true) || 
                         (myUid.isNotEmpty() && rawDeviceId.equals(myUid, ignoreCase = true)) ||
                         (selfAgentId.isNotEmpty() && rawDeviceId.equals(selfAgentId, ignoreCase = true)))
-            val deviceId = if (isMe) canonicalSelfId else rawDeviceId
+            val deviceId = if (isMe) canonicalSelfId else com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(rawDeviceId)
 
             var candidateLat = ul.latitude
             var candidateLng = ul.longitude
+            var candidateTs = ul.getLongTimestamp()
             if (candidateLat == 0.0 && candidateLng == 0.0 && !isMe) {
-                val hist = db.getLatestHistoricalLocation(rawDeviceId)
+                val cleanRaw = rawDeviceId.replace("HW_", "").trim()
+                val hist = db.getLatestHistoricalLocation(rawDeviceId) 
+                    ?: db.getLatestHistoricalLocation(cleanRaw)
+                    ?: db.getLatestHistoricalLocation("HW_$cleanRaw")
+                    ?: db.getLatestHistoricalLocation(deviceId)
                 if (hist != null) {
                     candidateLat = (hist["lat"] as? Double) ?: 0.0
                     candidateLng = (hist["lng"] as? Double) ?: 0.0
+                    if (candidateTs <= 0L) {
+                        candidateTs = (hist["timestamp"] as? Long) ?: candidateTs
+                    }
                 }
             }
             if (candidateLat == 0.0 && candidateLng == 0.0) continue
@@ -205,7 +213,7 @@ object MultiMarkerEngine {
                 ul.userName.trim()
             } else {
                 val dossier = db.getLocalDossier(deviceId)
-                val dossierName = dossier["fullName"] ?: dossier["name"] ?: dossier["id_full_name"] ?: dossier["full_name"] ?: dossier["owner_name"]
+                val dossierName = (dossier["fullName"] ?: dossier["name"] ?: dossier["id_full_name"] ?: dossier["full_name"] ?: dossier["owner_name"])?.toString()
                 if (!dossierName.isNullOrBlank() && !dossierName.startsWith("Agent_", ignoreCase = true) && !dossierName.equals("Target Node", true)) {
                     dossierName.trim()
                 } else {
@@ -234,7 +242,13 @@ object MultiMarkerEngine {
                 }
             } catch (e: Exception) { 0xFF }
 
-            val isLiveTrackingAllowed = (permMask and 0x01) != 0
+            // [Variables] primeTarget, primeName, cleanDevId, isPrime | [Constants] None | [Dependencies] RegistryManager, DeviceIdentityHelper | [Integration Points] MultiMarkerEngine ACL Bypass
+            val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context))
+            val primeName = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetName(context)
+            val cleanDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(deviceId)
+            val isPrime = (cleanDevId.equals(primeTarget, true) ||
+                          (primeName.isNotBlank() && cleanName.contains(primeName, true)))
+            val isLiveTrackingAllowed = isPrime || permMaskStr.isBlank() || permMaskStr == "0xFF" || permMaskStr == "255" || (permMask and 0x01) != 0
             if (!isMe && !ul.isSosActive && !isLiveTrackingAllowed) {
                 // Tracking is explicitly paused via Person Details ACL for this node
                 continue
@@ -257,7 +271,7 @@ object MultiMarkerEngine {
                     bearing = smoothed.filteredHeading,
                     batteryLevel = ul.batteryLevel,
                     isSos = ul.isSosActive,
-                    timestamp = ul.getLongTimestamp()
+                    timestamp = candidateTs
                 )
             )
         }
@@ -307,7 +321,7 @@ object MultiMarkerEngine {
             if (projection != null) {
                 try {
                     val pt = projection.toScreenLocation(c.rawLatLng)
-                    if (pt != null && !(pt.x == 0 && pt.y == 0) && pt.x > -1000 && pt.x < screenW + 1000 && pt.y > -1000 && pt.y < screenH + 1000) {
+                    if (!(pt.x == 0 && pt.y == 0) && pt.x > -1000 && pt.x < screenW + 1000 && pt.y > -1000 && pt.y < screenH + 1000) {
                         validPt = pt
                     }
                 } catch (ignored: Exception) {}
@@ -531,18 +545,18 @@ object MultiMarkerEngine {
 
         var calculatedRole = userRoleCache[deviceId]
         if (calculatedRole == null) {
-            val localDb = DatabaseHelper.getInstance(context)
+            val deviceRepo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
             var matchedTitle: String? = null
 
             // 1. Direct role query from SSOT helper
-            val directRole = localDb.getRoleForDevice(deviceId)
+            val directRole = deviceRepo.getRoleForDevice(deviceId)
             if (!directRole.isNullOrBlank() && !directRole.equals("None", true) && !directRole.equals("Member", true)) {
                 matchedTitle = directRole
             }
 
             // 2. Offline roster check across all UID permutations
             if (matchedTitle == null) {
-                val offlineMatrix = localDb.getOfflineRoster()
+                val offlineMatrix = deviceRepo.getOfflineRoster()
                 for (node in offlineMatrix) {
                     if (node["uid_1"]?.toString() == deviceId || 
                         node["uid"]?.toString() == deviceId || 
@@ -559,8 +573,9 @@ object MultiMarkerEngine {
 
             // 3. Check local dossier if still unmatched
             if (matchedTitle == null) {
+                val localDb = deviceRepo
                 val dossier = localDb.getLocalDossier(deviceId)
-                val dosRole = dossier["role_type"] ?: dossier["designation"]
+                val dosRole = (dossier["role_type"] ?: dossier["designation"])?.toString()
                 if (!dosRole.isNullOrBlank() && !dosRole.equals("None", true) && !dosRole.equals("Member", true)) {
                     matchedTitle = dosRole
                 }

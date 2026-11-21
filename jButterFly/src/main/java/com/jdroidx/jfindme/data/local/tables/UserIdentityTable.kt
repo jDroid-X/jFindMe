@@ -190,22 +190,28 @@ object UserIdentityTable {
             com.jdroidx.jfindme.utils.SystemLogger.e("UserIdentityTable", "Session archive update note: ${e.message}")
         }
 
-        // 2. Check if a record already exists for THIS specific (uid_1 + auth_uid)
+        // [Variables] targetId, existingStatus, cursor, isDeletedOrUnlinked, v, now | [Constants] TABLE_NAME, COL_ID, COL_STATUS, COL_UID_1, COL_UID_2, COL_AUTH_UID, COL_FULL_NAME, COL_IS_ADMIN, COL_OWNER_NAME, COL_CONNECTED_ID, COL_QR_REF, COL_NODE_INDEX, COL_INSTALL_EPOCH, COL_IS_CURRENT_SESSION, COL_UPDATED_AT, COL_CREATED_ON, COL_CREATED_AT | [Dependencies] SQLiteDatabase, ContentValues, SystemLogger | [Integration Points] DatabaseHelper.kt, MasterDataSyncSentinel.kt, UserProfileTable.kt
+        // 2. Check if a record already exists for THIS specific uid_1 or uid_2
         var targetId = -1L
+        var existingStatus: String? = null
         try {
             val cursor = db.query(
                 TABLE_NAME,
-                arrayOf(COL_ID),
-                "$COL_UID_1 = ? AND $COL_AUTH_UID = ?",
-                arrayOf(uid1, authUid ?: ""),
+                arrayOf(COL_ID, COL_STATUS),
+                "$COL_UID_1 = ? OR $COL_UID_2 = ? OR ($COL_UID_1 = ? AND $COL_AUTH_UID = ?)",
+                arrayOf(uid1, uid1, uid1, authUid ?: ""),
                 null, null, null
             )
             cursor.use {
                 if (it.moveToFirst()) {
                     targetId = it.getLong(0)
+                    existingStatus = it.getString(1)
                 }
             }
         } catch (e: Exception) { }
+
+        val isDeletedOrUnlinked = "UNLINKED".equals(existingStatus, true) || "DELETED".equals(existingStatus, true)
+        val finalStatus = if (isDeletedOrUnlinked) existingStatus!! else "Active"
 
         val v = ContentValues().apply {
             put(COL_UID_1, uid1)
@@ -220,7 +226,7 @@ object UserIdentityTable {
             put(COL_NODE_INDEX, nodeIndex)
             put(COL_INSTALL_EPOCH, epochId)
             put(COL_IS_CURRENT_SESSION, 1)
-            put(COL_STATUS, "Active")
+            put(COL_STATUS, finalStatus)
             put(COL_UPDATED_AT, now)
         }
 
@@ -239,5 +245,22 @@ object UserIdentityTable {
             v.put(COL_CREATED_AT, now)
             db.insert(TABLE_NAME, null, v)
         }
+    }
+
+    /**
+     * [Variables] db: SQLiteDatabase, agentId: String, sessionState: String, cv: ContentValues | [Constants] TABLE_NAME, COL_SESSION_STATE, COL_UID_1, COL_UID_2, COL_AUTH_UID, COL_UPDATED_AT | [Dependencies] ContentValues, SQLiteDatabase, FirebaseComm | [Integration Points] DatabaseHelper.kt, FirebaseComm.kt
+     * GAP-02: Updates local session state ('ONLINE' / 'OFFLINE') in user_identity
+     */
+    fun updateSessionState(db: SQLiteDatabase, agentId: String, sessionState: String): Int {
+        val cv = ContentValues().apply {
+            put(COL_SESSION_STATE, sessionState)
+            put(COL_UPDATED_AT, FirebaseComm.getForensicTimestamp())
+        }
+        return db.update(
+            TABLE_NAME,
+            cv,
+            "$COL_UID_1 = ? OR $COL_UID_2 = ? OR $COL_AUTH_UID = ?",
+            arrayOf(agentId, agentId, agentId)
+        )
     }
 }

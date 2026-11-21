@@ -76,6 +76,17 @@ object FirebaseComm {
         db
     }
 
+    // [Variables] None | [Constants] "FirebaseComm" | [Dependencies] FirebaseDatabase, SystemLogger | [Integration Points] SplashActivity, AvatarSyncEngine, MasterDataSyncSentinel
+    @JvmStatic
+    fun purgeOutstandingWrites() {
+        try {
+            database.purgeOutstandingWrites()
+            com.jdroidx.jfindme.utils.SystemLogger.i("FirebaseComm", "Purged outstanding Firebase writes queue")
+        } catch (e: Exception) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("FirebaseComm", "purgeOutstandingWrites error: ${e.message}")
+        }
+    }
+
     // 🧬 UNIFIED HUB ENDPOINTS (TOP-LEVEL NODES)
     @JvmStatic val devicesRef: DatabaseReference get() = database.reference.child(NODE_DEVICES)
     @JvmStatic val lookupIndicesRef: DatabaseReference get() = database.reference.child(NODE_LOOKUP_INDICES)
@@ -134,8 +145,9 @@ object FirebaseComm {
     // [Constants] None | [Dependencies] Regex | [Integration Points] Master RTDB /devices node accessor SSOT
     @JvmStatic
     fun sanitizeAgentId(id: String?): String {
-        if (id.isNullOrBlank()) return "UNKNOWN_"
+        if (id.isNullOrBlank()) return ""
         var clean = id.trim().uppercase()
+        if (clean.startsWith("UNKNOWN")) return ""
         // Iterative prefix stripper to handle single or nested prefixes (e.g. GRP_, DEV_, HW_, HW_HW_)
         var stripped = true
         while (stripped) {
@@ -146,13 +158,15 @@ object FirebaseComm {
             stripped = (clean != prev)
         }
         clean = clean.filter { it.isLetterOrDigit() }
+        if (clean.startsWith("UNKNOWN")) return ""
         // Silicon derivation compression: If 12-character raw silicon serial (e.g. 2C819R121042), compress first 4 + last 4
         if (clean.length == 12) {
             clean = clean.take(4) + clean.takeLast(4)
         } else if (clean.length > 8) {
             clean = clean.take(4) + clean.takeLast(4)
         }
-        return if (clean.length == 8) clean else clean.padEnd(8, '0').take(8)
+        // SSOT Invariant: Only return valid 8-character hardware keys. Never pad with artificial zeroes into phantom nodes.
+        return if (clean.length == 8) clean else ""
     }
 
     // 🛡️ GRANULAR GEOFENCING TREE ACCESSORS: Creator -> SafeZone -> Target Device -> Notifications (Date-Grouped)
@@ -799,8 +813,10 @@ object FirebaseComm {
     @JvmStatic
     fun isAgentIdValid(id: String): Boolean {
         if (id.isEmpty()) return false
-        // Firebase UIDs are typically 28 characters. Agent IDs are 8.
-        return id.length == 8 && id.matches(Regex("^[A-Z0-9]+$"))
+        val clean = if (id.startsWith("HW_", ignoreCase = true)) id.substring(3).trim().uppercase() else id.trim().uppercase()
+        if (clean.length == 8 && clean.matches(Regex("^[A-Z0-9]+$"))) return true
+        if (id.length in 20..40 && id.matches(Regex("^[a-zA-Z0-9_-]+$"))) return true
+        return clean.length in 6..12 && clean.matches(Regex("^[A-Z0-9_-]+$"))
     }
 
     @JvmStatic
@@ -1196,47 +1212,78 @@ object FirebaseComm {
         return if (formatted.length > 16) formatted.take(16) else formatted.padEnd(16, '0')
     }
 
+    /**
+     * Extracts and constructs unified atomic path-value mutations for location and hardware telemetry.
+     * Reusable across real-time pushes and offline batch synchronizations.
+     */
+    // [Variables] now, nowEpoch, updates, livePath, telePath, cleanId, appCtx, isUnified, targetPaths | [Constants] NODE_DEVICES, STATUS_ONLINE | [Dependencies] UserLocation, RegistryManager, DeviceIdentityHelper | [Integration Points] OfflineSyncManager, FirebaseAtomicGateway
     @JvmStatic
-    fun syncAnalyticalEvent(agentId: String, eventData: UserLocation, onComplete: ((Boolean) -> Unit)? = null) {
-        // [Variables] now, nowEpoch, updates, livePath, telePath | [Constants] NODE_DEVICES, STATUS_ONLINE | [Dependencies] FirebaseDatabase, UserLocation, SystemLogger | [Integration Points] OfflineSyncManager, LocationRepository
-        if (!isAuthenticated() || !isAgentIdValid(agentId) || !eventData.isValidLocation()) { onComplete?.invoke(false); return }
+    fun buildLocationUpdates(agentId: String, eventData: UserLocation): Map<String, Any> {
+        val updates = mutableMapOf<String, Any>()
+        if (!isAgentIdValid(agentId) || !eventData.isValidLocation()) return updates
+
         val now = getForensicTimestamp()
         val nowEpoch = System.currentTimeMillis()
-        val updates = mutableMapOf<String, Any>()
-        
-        // 1. LIVE NODE: Comprehensive Real-Time Telemetry Cursor
-        val livePath = "$NODE_DEVICES/$agentId/device/live"
-        updates["$livePath/latitude"] = eventData.latitude
-        updates["$livePath/longitude"] = eventData.longitude
-        updates["$livePath/speed"] = eventData.speed
-        updates["$livePath/accuracy"] = eventData.accuracy
-        updates["$livePath/altitude"] = eventData.altitude
-        updates["$livePath/bearing"] = eventData.bearing
-        updates["$livePath/battery"] = eventData.batteryLevel
-        updates["$livePath/sos"] = eventData.isSosActive
-        updates["$livePath/isSosActive"] = eventData.isSosActive
-        updates["$livePath/motion_state"] = eventData.motion_state
-        updates["$livePath/updated_at"] = now
-        updates["$livePath/timestamp"] = if (eventData.getLongTimestamp() > 0) eventData.getLongTimestamp() else nowEpoch
-        updates["$livePath/last_heartbeat"] = nowEpoch
-        updates["$livePath/is_online"] = true
-        updates["$livePath/status"] = STATUS_ONLINE
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
+        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val isUnified = if (appCtx != null) com.jdroidx.jfindme.utils.RegistryManager.isUnifiedDeviceIdSyncEnabled(appCtx) else true
+        val targetPaths = if (!isUnified && cleanId.length == 8) {
+            listOf("$NODE_DEVICES/$cleanId/device/live", "$NODE_DEVICES/HW_$cleanId/device/live")
+        } else {
+            listOf("$NODE_DEVICES/$cleanId/device/live")
+        }
+
+        // 1. LIVE NODE: Unified Real-Time Telemetry Cursor
+        for (livePath in targetPaths) {
+            updates["$livePath/latitude"] = eventData.latitude
+            updates["$livePath/longitude"] = eventData.longitude
+            updates["$livePath/speed"] = eventData.speed
+            updates["$livePath/accuracy"] = eventData.accuracy
+            updates["$livePath/altitude"] = eventData.altitude
+            updates["$livePath/bearing"] = eventData.bearing
+            updates["$livePath/battery"] = eventData.batteryLevel
+            updates["$livePath/sos"] = eventData.isSosActive
+            updates["$livePath/isSosActive"] = eventData.isSosActive
+            updates["$livePath/motion_state"] = eventData.motion_state
+            updates["$livePath/updated_at"] = now
+            updates["$livePath/timestamp"] = if (eventData.getLongTimestamp() > 0) eventData.getLongTimestamp() else nowEpoch
+            updates["$livePath/last_heartbeat"] = nowEpoch
+            updates["$livePath/is_online"] = true
+            updates["$livePath/status"] = STATUS_ONLINE
+            updates["$livePath/allowDependents"] = true
+            updates["$livePath/allow_dependents"] = true
+            if (eventData.avatar_id.isNotBlank()) updates["$livePath/avatar_id"] = eventData.avatar_id
+            if (eventData.userName.isNotBlank()) {
+                updates["$livePath/userName"] = eventData.userName
+                updates["$livePath/name"] = eventData.userName
+            }
+        }
 
         // 2. Hardware Telemetry Mirror
-        val telePath = "$NODE_DEVICES/$agentId/telemetry"
-        updates["$telePath/last_heartbeat"] = nowEpoch
-        updates["$telePath/last_seen"] = nowEpoch
-        updates["$telePath/status"] = STATUS_ONLINE
-        updates["$telePath/battery_pct"] = eventData.batteryLevel
-        updates["$telePath/is_sos"] = eventData.isSosActive
-        
-        database.reference.updateChildren(updates) { error, _ ->
-            if (error != null) {
-                com.jdroidx.jfindme.utils.SystemLogger.e("FirebaseComm", "SYNC_FAILURE: ${error.message}")
-                onComplete?.invoke(false)
-            } else {
-                onComplete?.invoke(true)
-            }
+        val telePaths = if (!isUnified && cleanId.length == 8) {
+            listOf("$NODE_DEVICES/$cleanId/telemetry", "$NODE_DEVICES/HW_$cleanId/telemetry")
+        } else {
+            listOf("$NODE_DEVICES/$cleanId/telemetry")
+        }
+        for (telePath in telePaths) {
+            updates["$telePath/last_heartbeat"] = nowEpoch
+            updates["$telePath/last_seen"] = nowEpoch
+            updates["$telePath/status"] = STATUS_ONLINE
+            updates["$telePath/battery_pct"] = eventData.batteryLevel
+            updates["$telePath/is_sos"] = eventData.isSosActive
+        }
+        return updates
+    }
+
+    @JvmStatic
+    fun syncAnalyticalEvent(agentId: String, eventData: UserLocation, onComplete: ((Boolean) -> Unit)? = null) {
+        // [Variables] updates | [Constants] None | [Dependencies] FirebaseAtomicGateway, buildLocationUpdates | [Integration Points] OfflineSyncManager, LocationRepository
+        if (!isAuthenticated()) { onComplete?.invoke(false); return }
+        val updates = buildLocationUpdates(agentId, eventData)
+        if (updates.isEmpty()) { onComplete?.invoke(false); return }
+
+        FirebaseAtomicGateway.updateChildrenAtomic(database.reference, updates) { success, _ ->
+            onComplete?.invoke(success)
         }
     }
 
@@ -1258,37 +1305,58 @@ object FirebaseComm {
         val nowEpoch = System.currentTimeMillis()
         val updates = mutableMapOf<String, Any>()
 
-        // 1. Live Hub Cursor (Ultra-Lean O(1) Shallow Read — Preserving Live Device Identity)
-        val livePath = "$NODE_DEVICES/$agentId/device/live"
-        updates["$livePath/latitude"] = eventData.latitude
-        updates["$livePath/longitude"] = eventData.longitude
-        updates["$livePath/speed"] = eventData.speed
-        updates["$livePath/accuracy"] = eventData.accuracy
-        updates["$livePath/altitude"] = eventData.altitude
-        updates["$livePath/battery"] = eventData.batteryLevel
-        updates["$livePath/bearing"] = eventData.bearing
-        updates["$livePath/sos"] = eventData.isSosActive
-        updates["$livePath/isSosActive"] = eventData.isSosActive
-        updates["$livePath/motion_state"] = eventData.motion_state
-        updates["$livePath/auth_uid"] = authUid
-        updates["$livePath/epoch_id"] = epochId
-        updates["$livePath/updated_at"] = now
-        updates["$livePath/timestamp"] = nowEpoch
-        updates["$livePath/last_heartbeat"] = nowEpoch
-        updates["$livePath/is_online"] = true
-        updates["$livePath/status"] = STATUS_ONLINE
+        // 1. Live Hub Cursor (Ultra-Lean Unified Single-Path Read/Write)
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
+        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val isUnified = if (appCtx != null) com.jdroidx.jfindme.utils.RegistryManager.isUnifiedDeviceIdSyncEnabled(appCtx) else true
+        val targetPaths = if (!isUnified && cleanId.length == 8) {
+            listOf("$NODE_DEVICES/$cleanId/device/live", "$NODE_DEVICES/HW_$cleanId/device/live")
+        } else {
+            listOf("$NODE_DEVICES/$cleanId/device/live")
+        }
+        for (livePath in targetPaths) {
+            updates["$livePath/latitude"] = eventData.latitude
+            updates["$livePath/longitude"] = eventData.longitude
+            updates["$livePath/speed"] = eventData.speed
+            updates["$livePath/accuracy"] = eventData.accuracy
+            updates["$livePath/altitude"] = eventData.altitude
+            updates["$livePath/battery"] = eventData.batteryLevel
+            updates["$livePath/bearing"] = eventData.bearing
+            updates["$livePath/sos"] = eventData.isSosActive
+            updates["$livePath/isSosActive"] = eventData.isSosActive
+            updates["$livePath/motion_state"] = eventData.motion_state
+            updates["$livePath/auth_uid"] = authUid
+            updates["$livePath/epoch_id"] = epochId
+            updates["$livePath/updated_at"] = now
+            updates["$livePath/timestamp"] = nowEpoch
+            updates["$livePath/last_heartbeat"] = nowEpoch
+            updates["$livePath/is_online"] = true
+            updates["$livePath/status"] = STATUS_ONLINE
+            updates["$livePath/allowDependents"] = true
+            updates["$livePath/allow_dependents"] = true
+            if (eventData.avatar_id.isNotBlank()) updates["$livePath/avatar_id"] = eventData.avatar_id
+            if (eventData.userName.isNotBlank()) {
+                updates["$livePath/userName"] = eventData.userName
+                updates["$livePath/name"] = eventData.userName
+            }
+        }
 
         // 2. Hardware Telemetry Mirror
-        val telePath = "$NODE_DEVICES/$agentId/telemetry"
-        updates["$telePath/last_heartbeat"] = nowEpoch
-        updates["$telePath/last_seen"] = nowEpoch
-        updates["$telePath/status"] = STATUS_ONLINE
-        updates["$telePath/battery_pct"] = eventData.batteryLevel
-        updates["$telePath/is_sos"] = eventData.isSosActive
+        val telePaths = if (!isUnified && cleanId.length == 8) {
+            listOf("$NODE_DEVICES/$cleanId/telemetry", "$NODE_DEVICES/HW_$cleanId/telemetry")
+        } else {
+            listOf("$NODE_DEVICES/$cleanId/telemetry")
+        }
+        for (telePath in telePaths) {
+            updates["$telePath/last_heartbeat"] = nowEpoch
+            updates["$telePath/last_seen"] = nowEpoch
+            updates["$telePath/status"] = STATUS_ONLINE
+            updates["$telePath/battery_pct"] = eventData.batteryLevel
+            updates["$telePath/is_sos"] = eventData.isSosActive
+        }
 
         // 3. Multi-Path Fan-Out to Active Group Roster (Direct Sync Lockstep)
         val activeGrp = eventData.active_group.trim()
-        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
         val resolvedActiveGrp = if (activeGrp.isNotEmpty() && activeGrp != "DEFAULT_GROUP") {
             activeGrp
         } else if (appCtx != null) {
@@ -1306,26 +1374,22 @@ object FirebaseComm {
             updates["$memberPath/updated_at"] = now
         }
 
-        // 🛡️ IDENTITY & ADDRESS SHIELD (Differential Delta): Transmit avatar/name/address only when altered or on cold sync
+        // 🛡️ IDENTITY & AVATAR BROADCAST: Ensure live cursor always carries resolved avatar & name
         val av = eventData.avatar_id.trim()
         val un = eventData.userName.trim()
         val addr = eventData.address?.trim() ?: ""
-        val cachedMeta = lastTransmittedMeta[agentId]
-        val metaChanged = (cachedMeta == null || cachedMeta.first != av || cachedMeta.second != un || cachedMeta.third != addr)
-
-        if (metaChanged) {
-            if (av.isNotEmpty() && av != "butterfly") {
-                updates["$livePath/avatar_id"] = av
-            }
+        val resolvedAv = if (av.isNotEmpty() && av != "butterfly") av else "1"
+        for (lp in targetPaths) {
+            updates["$lp/avatar_id"] = resolvedAv
             if (un.isNotEmpty() && !un.equals("null", ignoreCase = true) && !un.equals("Active Tracker", ignoreCase = true)) {
-                updates["$livePath/userName"] = un
-                updates["$livePath/name"] = un
+                updates["$lp/userName"] = un
+                updates["$lp/name"] = un
             }
             if (addr.isNotEmpty()) {
-                updates["$livePath/address"] = addr
+                updates["$lp/address"] = addr
             }
-            lastTransmittedMeta[agentId] = Triple(av, un, addr)
         }
+        lastTransmittedMeta[agentId] = Triple(resolvedAv, un, addr)
 
         database.reference.updateChildren(updates) { error, _ ->
             if (error != null) {
@@ -1631,12 +1695,16 @@ object FirebaseComm {
      * 🟢 Live Presence & Session Duration Management
      */
     @JvmStatic
-    fun syncPresencePulse(authUid: String, agentId: String, batteryLevel: Int) {
-        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-        // Variables: nowEpoch, nowForensic, updates
-        // Constants: NODE_DEVICES, STATUS_ONLINE
-        // Dependencies: FirebaseDatabase, SystemLogger
-        // Integration Points: TrackingService, server.js
+    @JvmOverloads
+    fun syncPresencePulse(
+        authUid: String,
+        agentId: String,
+        batteryLevel: Int,
+        isCharging: Boolean = false,
+        durationSec: Long = 0L,
+        sessionStartEpoch: Long = 0L
+    ) {
+        // [Variables] nowEpoch, nowForensic, updates, isCharging, durationSec, sessionStartEpoch | [Constants] NODE_DEVICES, STATUS_ONLINE | [Dependencies] FirebaseDatabase, SystemLogger | [Integration Points] TrackingService, BaseActivityJava, server.js
         if (!isAgentIdValid(agentId)) return
         val nowEpoch = System.currentTimeMillis()
         val nowForensic = getForensicTimestamp(nowEpoch)
@@ -1649,8 +1717,16 @@ object FirebaseComm {
             "$NODE_DEVICES/$agentId/telemetry/last_heartbeat" to nowEpoch,
             "$NODE_DEVICES/$agentId/telemetry/last_seen" to nowEpoch,
             "$NODE_DEVICES/$agentId/telemetry/status" to STATUS_ONLINE,
-            "$NODE_DEVICES/$agentId/telemetry/battery_pct" to batteryLevel
+            "$NODE_DEVICES/$agentId/telemetry/battery_pct" to batteryLevel,
+            "$NODE_DEVICES/$agentId/telemetry/is_charging" to isCharging
         )
+        if (durationSec > 0L) {
+            updates["$NODE_DEVICES/$agentId/telemetry/duration_sec"] = durationSec
+            updates["$NODE_DEVICES/$agentId/telemetry/duration_formatted"] = formatDuration(durationSec)
+        }
+        if (sessionStartEpoch > 0L) {
+            updates["$NODE_DEVICES/$agentId/telemetry/session_start_epoch"] = sessionStartEpoch
+        }
         database.reference.updateChildren(updates)
     }
 
@@ -1953,7 +2029,26 @@ object FirebaseComm {
                     teleRef.child("status").setValue(STATUS_ONLINE)
                     teleRef.child("last_heartbeat").setValue(nowMs)
 
+                    // GAP-02: Write local session state ('ONLINE') to SQLite user_identity.st_session_state
+                    if (appCtx != null) {
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(appCtx).updateSessionState(agentId, "ONLINE")
+                        } catch (e: Exception) {
+                            com.jdroidx.jfindme.utils.SystemLogger.w("FirebaseComm", "Failed updating local session state to ONLINE: ${e.message}")
+                        }
+                    }
+
                     com.jdroidx.jfindme.utils.SystemLogger.i("FirebaseComm", "Presence Sentinel Armed for $agentId (Online)")
+                } else {
+                    // GAP-02: Write local session state ('OFFLINE') to SQLite user_identity.st_session_state
+                    val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+                    if (appCtx != null) {
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(appCtx).updateSessionState(agentId, "OFFLINE")
+                        } catch (e: Exception) {
+                            com.jdroidx.jfindme.utils.SystemLogger.w("FirebaseComm", "Failed updating local session state to OFFLINE: ${e.message}")
+                        }
+                    }
                 }
             }
             override fun onCancelled(error: com.google.firebase.database.DatabaseError) {

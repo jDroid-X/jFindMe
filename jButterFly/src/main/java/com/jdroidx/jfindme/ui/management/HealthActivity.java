@@ -165,7 +165,7 @@ public class HealthActivity extends BaseActivityJava {
         boolean isTrackingEnabled = prefs.getBoolean("tracking_service_enabled", true);
         opCard.addView(createMetricRow("Tracking Engine", isTrackingEnabled ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"), v -> v.setText(isTrackingEnabled ? "ENABLED (SENTINEL)" : "DISABLED")));
         
-        long totalFixes = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getRecordCount("location_event");
+        long totalFixes = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getRecordCount("location_event");
         opCard.addView(createMetricRow("Location Ledger", getGradientStart(), v -> v.setText(totalFixes + " POINTS INDEXED")));
         
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -212,7 +212,7 @@ public class HealthActivity extends BaseActivityJava {
         // --- LAYER 2.7: DEEP SENSOR TELEMETRY ACCORDION ---
         content.addView(createSectionHeader("DEEP HARDWARE VITALS"));
         String myHwId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
-        java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(myHwId);
+        java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getDeviceVitals(myHwId);
         int pendingQueueCount = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(this).getPendingQueueCount();
 
         StringBuilder vitalsText = new StringBuilder();
@@ -310,7 +310,7 @@ public class HealthActivity extends BaseActivityJava {
             // 1. Load from local SQLite cache asynchronously
             new Thread(() -> {
                 try {
-                    java.util.Map<String, Object> localDossier = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(HealthActivity.this).getForensicDossierComplete(safeTarget);
+                    java.util.Map<String, Object> localDossier = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(HealthActivity.this).getForensicDossierComplete(safeTarget);
                     runOnUiThread(() -> {
                         if (!isFinishing() && !isDestroyed()) {
                             renderHardwareMap(localDossier);
@@ -481,7 +481,7 @@ public class HealthActivity extends BaseActivityJava {
         // 5. Deep Hardware Vitals Refresh
         if (tvVitalsBody != null) {
             String myHwId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
-            java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceVitals(myHwId);
+            java.util.Map<String, Object> vitals = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getDeviceVitals(myHwId);
             int pendingQueueCount = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(this).getPendingQueueCount();
 
             StringBuilder vitalsText = new StringBuilder();
@@ -515,7 +515,7 @@ public class HealthActivity extends BaseActivityJava {
                 : com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(this);
         new Thread(() -> {
             try {
-                java.util.Map<String, Object> myVitals = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(HealthActivity.this).getDeviceVitals(lookupHwId);
+                java.util.Map<String, Object> myVitals = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(HealthActivity.this).getDeviceVitals(lookupHwId);
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     if (tvClosedLoopRoute != null) {

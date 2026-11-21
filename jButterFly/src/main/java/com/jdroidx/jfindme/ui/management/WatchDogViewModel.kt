@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.engine.EngineRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,7 +20,8 @@ import kotlinx.coroutines.withContext
  */
 class WatchDogViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = DatabaseHelper.getInstance(application)
+    // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] WatchDog L7 Forensic Repository
+    private val db = DeviceRepository.getInstance(application)
 
     private val _logs = MutableLiveData<List<Map<String, Any>>>()
     val logs: LiveData<List<Map<String, Any>>> get() = _logs

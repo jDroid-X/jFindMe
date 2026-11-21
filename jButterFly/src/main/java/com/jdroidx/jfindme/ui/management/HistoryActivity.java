@@ -39,6 +39,7 @@ import com.jdroidx.jfindme.data.model.UserLocation;
 import com.jdroidx.jfindme.data.repository.LocationRepository;
 import com.jdroidx.jfindme.engine.data.SpatialProcessor;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
+import com.jdroidx.jfindme.utils.RegistryManager;
 import com.jdroidx.jfindme.utils.SystemLogger;
 import androidx.lifecycle.ViewModelProvider;
 
@@ -735,26 +736,13 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     }
 
     private void updateReplayStatusAddress(double lat, double lng) {
-        try {
-            android.location.Geocoder geocoder = new android.location.Geocoder(this, java.util.Locale.getDefault());
-            geocoder.getFromLocation(lat, lng, 1, new android.location.Geocoder.GeocodeListener() {
-                @Override
-                public void onGeocode(List<android.location.Address> addresses) {
-                    if (!addresses.isEmpty()) {
-                        String addr = addresses.get(0).getAddressLine(0);
-                        runOnUiThread(() -> {
-                            if (tvStatus != null) tvStatus.setText("TRACING: " + addr);
-                            if (replayAvatar != null) {
-                                replayAvatar.setTitle("LIVE TRACE");
-                                replayAvatar.setSnippet(addr);
-                            }
-                        });
-                    }
-                }
-            });
-        } catch (Exception e) {
-            tvStatus.setText(String.format("TRACING: %.5f, %.5f", lat, lng));
-        }
+        com.jdroidx.jfindme.utils.ReverseGeocodeEngine.resolveAddress(this, lat, lng, addr -> {
+            if (tvStatus != null) tvStatus.setText("TRACING: " + addr);
+            if (replayAvatar != null) {
+                replayAvatar.setTitle("LIVE TRACE");
+                replayAvatar.setSnippet(addr);
+            }
+        });
     }
 
     private void animateReplay(final int index) {
@@ -865,7 +853,8 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         if (currentTargetUid == null || currentTargetUid.isEmpty()) {
             // 🛡️ Human-In-The-Loop Fallback: Default to Self device when launched directly from main drawer
             currentTargetUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
-            currentTargetName = getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("user_nickname", "My Device");
+            // [Variables] currentTargetName: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Nickname fallback
+            currentTargetName = RegistryManager.getString(this, "user_nickname", "My Device");
         }
 
         loadHistoryData(DURATIONS[0]); 
@@ -888,16 +877,22 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
     }
 
     private void updateTrackLabel() {
+        // [Variables] resolvedName, selfAgentId, myUid, isSelf, name
+        // [Dependencies] DevicePresentationResolver, DeviceIdentityHelper, FirebaseAuth
+        // [Integration Points] HistoryActivity ⟷ DevicePresentationResolver SSOT
+        String resolvedName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, currentTargetUid, currentTargetName);
+        if (resolvedName != null && !resolvedName.isEmpty() && !resolvedName.equals("Device")) {
+            currentTargetName = resolvedName;
+        }
+
         String myUid = FirebaseAuth.getInstance().getUid();
         String selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         boolean isSelf = (currentTargetUid == null || currentTargetUid.equals(selfAgentId) || (myUid != null && currentTargetUid.equals(myUid)));
-        
-        if ((currentTargetName == null || currentTargetName.isEmpty() || currentTargetName.equalsIgnoreCase("UNKNOWN NODE")) && currentTargetUid != null && !isSelf) {
+
+        if (!isSelf && currentTargetUid != null) {
             try {
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
                 Map<String, String> dos = db.getLocalDossier(currentTargetUid);
-                String resolved = dos.get("fullName");
-                if (resolved != null && !resolved.isEmpty()) currentTargetName = resolved;
                 String av = dos.get("avatar_id");
                 if (av != null && !av.isEmpty()) currentTargetAvatarId = av;
             } catch (Exception ignored) {}
@@ -1190,11 +1185,11 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         if (!historyPoints.isEmpty()) {
             drawStaticPath(historyPoints);
             LatLng first = new LatLng(historyPoints.get(0).getLatitude(), historyPoints.get(0).getLongitude());
-            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(first, 15f));
+            com.jdroidx.jfindme.engine.map.TacticalCameraController.moveTo(googleMap, first, 15f);
         } else {
             // ≡ƒÜÇ QA Rule: Contextual Anchor (Owner Location)
             new Thread(() -> {
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
                 String myAgentId = com.jdroidx.jfindme.utils.RegistryManager.getAgentId(this);
                 String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
                 String queryId = (myAgentId != null && !myAgentId.isEmpty()) ? myAgentId : myUid;

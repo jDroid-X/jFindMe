@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.local.tables.SystemUpdateHistoryTable;
 import com.jdroidx.jfindme.data.remote.FirebaseComm;
 import com.jdroidx.jfindme.data.remote.OfflineSyncManager;
 import java.io.File;
@@ -61,9 +62,13 @@ public class SilentUpdateWorker extends Worker {
             FirebaseComm.syncVersionUpdateMetadata(context, agentId, "MAINTENANCE_SCAN");
         }
 
-        // 3. Reconcile Yesterday ↔ Today Balance Data Delta First
+        // 3. Reconcile Yesterday ↔ Today Balance Data Delta First (26-Hour Dynamic Window)
         try {
             int balanced = OfflineSyncManager.getInstance(context).reconcileYesterdayTodayBalance();
+            context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+                .edit()
+                .putLong("last_maintenance_sync_epoch", System.currentTimeMillis())
+                .apply();
             SystemLogger.i(TAG, "Balance delta reconciliation completed: " + balanced + " offline records processed.");
         } catch (Exception e) {
             SystemLogger.w(TAG, "Balance delta reconciliation warning: " + e.getMessage());
@@ -107,6 +112,15 @@ public class SilentUpdateWorker extends Worker {
                         int remoteCode = candidate.getLatestVersionCode();
                         String remoteVersion = candidate.getLatestVersionName();
                         String targetUrl = candidate.getDownloadUrl();
+
+                        // Bootloop Defense Gate
+                        if (SystemUpdateHistoryTable.hasConsecutiveFailures(DatabaseHelper.getInstance(context).getReadableDatabase(), remoteCode, 3)) {
+                            SystemLogger.w(TAG, "⚠️ Build " + remoteCode + " has >= 3 consecutive installation failures. Aborting update to prevent bootloop.");
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "BOOTLOOP_DEFENSE_ABORT");
+                            RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Exceeded maximum retry limit (3 failures).");
+                            latch.countDown();
+                            return kotlin.Unit.INSTANCE;
+                        }
 
                         SystemLogger.i(TAG, "🚀 New Remote Version Detected on GitHub: V" + remoteVersion + " (Build " + remoteCode + ") -> " + candidate.getFileName());
                         RegistryManager.putString(context, RegistryManager.KEY_UPDATE_AVAILABLE_TS, "V" + remoteVersion + " (Build " + remoteCode + ")");
@@ -162,11 +176,25 @@ public class SilentUpdateWorker extends Worker {
                                 if (success && apkFile != null) {
                                     ApkInstallerHelper.SignatureStatus sigStatus = ApkInstallerHelper.INSTANCE.checkSignatureMatch(context, apkFile);
                                     if (sigStatus == ApkInstallerHelper.SignatureStatus.MISMATCH) {
+                                        try {
+                                            SystemUpdateHistoryTable.recordUpdateAttempt(
+                                                DatabaseHelper.getInstance(context).getWritableDatabase(),
+                                                remoteVersion, remoteCode, targetUrl, "", apkFile.length(),
+                                                SystemUpdateHistoryTable.STATUS_FAILED, "Certificate signature mismatch"
+                                            );
+                                        } catch (Exception ignored) {}
                                         RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "SIGNATURE_MISMATCH");
                                         RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Downloaded Release package signature does not match installed Debug certificate.");
                                         RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
                                         SystemLogger.w(TAG, "⚠️ Downloaded APK signature differs from running build.");
                                     } else {
+                                        try {
+                                            SystemUpdateHistoryTable.recordUpdateAttempt(
+                                                DatabaseHelper.getInstance(context).getWritableDatabase(),
+                                                remoteVersion, remoteCode, targetUrl, "", apkFile.length(),
+                                                SystemUpdateHistoryTable.STATUS_APPLIED, ""
+                                            );
+                                        } catch (Exception ignored) {}
                                         RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "UPDATE_READY");
                                         RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);
                                         SystemLogger.i(TAG, "✅ Background APK verified. Checkpointing SQLite and committing install.");
@@ -174,6 +202,13 @@ public class SilentUpdateWorker extends Worker {
                                         ApkInstallerHelper.installSilentlyOrPrompt(context, apkFile, remoteVersion, "");
                                     }
                                 } else {
+                                    try {
+                                        SystemUpdateHistoryTable.recordUpdateAttempt(
+                                            DatabaseHelper.getInstance(context).getWritableDatabase(),
+                                            remoteVersion, remoteCode, targetUrl, "", 0L,
+                                            SystemUpdateHistoryTable.STATUS_FAILED, "Background download connection failed"
+                                        );
+                                    } catch (Exception ignored) {}
                                     RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_STATUS, "DOWNLOAD_FAILED");
                                     RegistryManager.putString(context, RegistryManager.KEY_SILENT_UPDATE_LAST_ERROR, "Background download connection failed.");
                                     RegistryManager.putBoolean(context, RegistryManager.KEY_SILENT_UPDATE_UNACKNOWLEDGED, true);

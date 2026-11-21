@@ -685,7 +685,7 @@ public class AvatarEditorActivity extends BaseActivityJava {
                             String currentNick = prefs.getString("user_nickname", "Active Tracker");
                             String agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
                             
-                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                            com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this)
                                 .updateDeviceIdentityAndAvatar(agentId, currentNick, "avatar_custom_" + baseId);
                             
                             com.jdroidx.jfindme.engine.sync.AvatarSyncEngine.INSTANCE

@@ -52,7 +52,8 @@ data class SettingsModel(
     var storageRetentionDays: Int = 3,
     var deadReckoningRadiusMeters: Float = 15.0f,
     var presencePulseIntervalMs: Long = 180_000L,
-    var deviceCorrespondingGroup: String = "UNIVERSAL_FLEET",
+    // [Variables] deviceCorrespondingGroup | [Constants] RegistryManager | [Dependencies] SharedPreferences | [Integration Points] SettingsActivity, DatabaseHelper
+    var deviceCorrespondingGroup: String = "",
 
     // Section 9: Cloud Spark & Failover Closed-Loop Sentinel
     var firebasePlanTier: String = "SPARK",
@@ -73,7 +74,10 @@ data class SettingsModel(
     var butterflyInvitationTimeoutHours: Int = 24,
     var butterflyOverdueGraceMinutes: Int = 120,
     var butterflyForegroundSyncIntervalSec: Int = 4,
-    var butterflyMaxAvailabilityDays: Int = 7
+    var butterflyMaxAvailabilityDays: Int = 7,
+    var butterflyNominalSpeedKmh: Float = 25.0f,
+    var butterflyApproachWindowMinutes: Int = 45,
+    var butterflyTacticalRadiusKm: Float = 3.0f
 )
 
 /**
@@ -112,7 +116,7 @@ class SettingsController(private val context: Context) {
             storageRetentionDays = prefs.getInt("pref_storage_retention_days", 3),
             deadReckoningRadiusMeters = prefs.getFloat("pref_dead_reckoning_radius_meters", 15.0f),
             presencePulseIntervalMs = prefs.getLong("presence_pulse_interval_ms", 180_000L),
-            deviceCorrespondingGroup = prefs.getString("device_corresponding_group", "UNIVERSAL_FLEET") ?: "UNIVERSAL_FLEET",
+            deviceCorrespondingGroup = prefs.getString("device_corresponding_group", "")?.takeIf { !it.equals("UNIVERSAL_FLEET", true) && !it.equals("DEFAULT_GROUP", true) } ?: com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context),
 
             // Section 9: Cloud Spark & Failover Closed-Loop Sentinel
             firebasePlanTier = prefs.getString("pref_firebase_plan_tier", "SPARK") ?: "SPARK",
@@ -133,7 +137,10 @@ class SettingsController(private val context: Context) {
             butterflyInvitationTimeoutHours = prefs.getInt("butterfly_invitation_timeout_hours", 24),
             butterflyOverdueGraceMinutes = prefs.getInt("butterfly_overdue_grace_minutes", 120),
             butterflyForegroundSyncIntervalSec = prefs.getInt("butterfly_foreground_sync_interval_sec", 4),
-            butterflyMaxAvailabilityDays = prefs.getInt("butterfly_max_availability_days", 7)
+            butterflyMaxAvailabilityDays = prefs.getInt("butterfly_max_availability_days", 7),
+            butterflyNominalSpeedKmh = prefs.getFloat("butterfly_nominal_speed_kmh", 25.0f),
+            butterflyApproachWindowMinutes = prefs.getInt("butterfly_approach_window_mins", 45),
+            butterflyTacticalRadiusKm = prefs.getFloat("butterfly_tactical_radius_km", 3.0f)
         )
     }
 
@@ -198,6 +205,9 @@ class SettingsController(private val context: Context) {
             putInt("butterfly_overdue_grace_minutes", model.butterflyOverdueGraceMinutes)
             putInt("butterfly_foreground_sync_interval_sec", model.butterflyForegroundSyncIntervalSec)
             putInt("butterfly_max_availability_days", model.butterflyMaxAvailabilityDays)
+            putFloat("butterfly_nominal_speed_kmh", model.butterflyNominalSpeedKmh)
+            putInt("butterfly_approach_window_mins", model.butterflyApproachWindowMinutes)
+            putFloat("butterfly_tactical_radius_km", model.butterflyTacticalRadiusKm)
             apply()
         }
     }

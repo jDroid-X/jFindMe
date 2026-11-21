@@ -21,7 +21,7 @@ import com.jdroidx.jfindme.ui.base.FormInputTable;
 import com.jdroidx.jfindme.ui.base.BottomNavTable;
 import com.jdroidx.jfindme.ui.base.MarqueeTable;
 import com.jdroidx.jfindme.ui.base.SystemGeometryTable;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.data.model.SafeZoneModel;
 import com.jdroidx.jfindme.utils.SystemLogger;
 
@@ -364,7 +364,8 @@ public class UiGalleryActivity extends BaseActivityJava {
         LinearLayout suitePanel = new LinearLayout(this);
         suitePanel.setOrientation(LinearLayout.VERTICAL);
 
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
+        // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] UI Gallery Host Resolver
+        DeviceRepository db = DeviceRepository.getInstance(this);
         String dynamicSelfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         String hostDeviceName = db.getDeviceCentricName(dynamicSelfId);
 

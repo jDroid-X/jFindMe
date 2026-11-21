@@ -69,6 +69,7 @@ Every prompt, task, patch, or command issued by **JEET** is routed through this 
 4. **Gate 4 (CSAM)**: System locked.
 5. **Red-Line Gate**: If monitoring priority (Ward Top Position 0) or circle scoping is affected, immediately halt:
    > **`Confirming - "Violating Prime Directive Rules"`**
+6. **Sovereign Web Workspace Invariant**: All website, HTML, CSS, client-side JS, web dashboard, and web server development MUST strictly reference and operate within `C:\Users\jiten\jAnitGravity\jFindMeWeb\`. Never create web/HTML presentation files inside the Android project root (`jFindMe/`).
 
 ---
 
@@ -81,3 +82,4 @@ Every prompt, task, patch, or command issued by **JEET** is routed through this 
 - **Lifecycle Rulebook**: `.agent/rules/lifecycle_rules.md`
 - **Briefing Master**: `.agent/rules/J_DROID_X_BRIEFING.md`
 - **Program Mapping**: `.agent/enterprise-22-agents/PROGRAM-MAPPING.md`
+- **Sovereign Web Workspace**: `C:\Users\jiten\jAnitGravity\jFindMeWeb\`

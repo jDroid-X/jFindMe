@@ -13,7 +13,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.auth.FirebaseAuth
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +61,8 @@ data class RenderedGeofence @JvmOverloads constructor(
  */
 class GeofenceViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val dbDelegate = DatabaseHelper.getInstance(application)
+    // [Variables] dbDelegate: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] OOPS MVC Repository
+    private val dbDelegate = DeviceRepository.getInstance(application)
     
     private val _activeZones = MutableLiveData<List<RenderedGeofence>>()
     val activeZones: LiveData<List<RenderedGeofence>> = _activeZones
@@ -668,29 +669,16 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             val name = rawName // 🚀 L7 PURE-SOURCE: Remove cluster redundancy from the name title
             _uiToastEvent.postValue(SingleEvent("Acquiring Hardware Sync..."))
             
-            val geocoder = Geocoder(getApplication())
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
-                    override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                        val addr = if (addresses.isNotEmpty()) addresses[0].getAddressLine(0) else "Unknown Target"
+            // OOPS MVC: 2-Tier Caching via ReverseGeocodeEngine SSOT
+            // [Variables] addr, result | [Dependencies] ReverseGeocodeEngine | [Integration Points] GeofenceViewModel ⟷ ReverseGeocodeEngine
+            com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.resolveAddress(
+                getApplication(), lat, lng, object : com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.AddressCallback {
+                    override fun onAddressResolved(result: com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.AddressResult) {
+                        val addr = if (result.isSuccess && result.formattedAddress.isNotBlank()) result.formattedAddress else "Unknown Target"
                         finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addr, startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
                     }
-                    override fun onError(errorMessage: String?) {
-                        finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, "Address Offline", startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
-                    }
-                })
-            } else {
-                viewModelScope.launch {
-                    val addressString = withContext(Dispatchers.IO) {
-                        try {
-                            @Suppress("DEPRECATION")
-                            val res = geocoder.getFromLocation(lat, lng, 1)
-                            if (!res.isNullOrEmpty()) res[0].getAddressLine(0) else "Unknown Target"
-                        } catch (e: Exception) { "Address Offline" }
-                    }
-                    finalizeCloudGeofencePush(name, assignedName, lat, lng, radius, addressString, startTime, endTime, activeDays, existingId, polygonPointsJson, dwellMinutes)
                 }
-            }
+            )
         } catch (e: Exception) {
             SystemLogger.e("GeofenceViewModel", "SUBMIT_SYNC_FATAL", e)
             _uiToastEvent.postValue(SingleEvent("Hardware Sync Fatal: " + e.message))
@@ -1095,7 +1083,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
         // 💾 CLOSED-LOOP MASTER ARCHIVAL (L7 Standard): Update the local Master Tables
         val jPrefs = getApplication<android.app.Application>().getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE);
         val finalAgentId = jPrefs.getString("agent_id", FirebaseAuth.getInstance().getUid());
-        val db = DatabaseHelper.getInstance(getApplication())
+        val db = dbDelegate
         
         // 1. Update SafeZoneGroup_Table (Master Mission Assignment)
         db.syncSafeZoneGroup("ACTIVE_MISSION", targetUid, 0, 100, "ALL", 1, 1, "MISSION_DEPLOYED")
@@ -1173,39 +1161,16 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        val geocoder = Geocoder(getApplication())
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            geocoder.getFromLocationName(query, 1, object : Geocoder.GeocodeListener {
-                override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                    if (addresses.isNotEmpty()) {
-                        val target = LatLng(addresses[0].latitude, addresses[0].longitude)
-                        _cameraMoveEvent.postValue(SingleEvent(target))
-                        _draftCoordinateLocation.postValue(target)
-                        _uiToastEvent.postValue(SingleEvent("📍 Target pinned: ${addresses[0].locality ?: query}"))
-                    } else {
-                        _uiToastEvent.postValue(SingleEvent("Address '$query' not found. Tap directly on the map or tap the GPS button."))
-                    }
-                }
-                override fun onError(errorMessage: String?) {
-                    _uiToastEvent.postValue(SingleEvent("Geocoding lookup unavailable. Tap directly on the map."))
-                }
-            })
-        } else {
-            viewModelScope.launch {
-                val target = withContext(Dispatchers.IO) {
-                    try {
-                        @Suppress("DEPRECATION")
-                        val res = geocoder.getFromLocationName(query, 1)
-                        if (!res.isNullOrEmpty()) LatLng(res[0].latitude, res[0].longitude) else null
-                    } catch (e: Exception) { null }
-                }
-                if (target != null) {
-                    _cameraMoveEvent.postValue(SingleEvent(target))
-                    _draftCoordinateLocation.postValue(target)
-                    _uiToastEvent.postValue(SingleEvent("📍 Target location pinned!"))
-                } else { 
-                    _uiToastEvent.postValue(SingleEvent("Address '$query' not found. Tap directly on the map or tap the GPS button.")) 
-                }
+        // OOPS MVC: Dynamic coordinate resolution via ReverseGeocodeEngine SSOT
+        // [Variables] address, target | [Dependencies] ReverseGeocodeEngine, LatLng | [Integration Points] GeofenceViewModel ⟷ ReverseGeocodeEngine
+        com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.resolveCoordinates(getApplication(), query) { address ->
+            if (address != null) {
+                val target = LatLng(address.latitude, address.longitude)
+                _cameraMoveEvent.postValue(SingleEvent(target))
+                _draftCoordinateLocation.postValue(target)
+                _uiToastEvent.postValue(SingleEvent("📍 Target pinned: ${address.locality ?: query}"))
+            } else {
+                _uiToastEvent.postValue(SingleEvent("Address '$query' not found. Tap directly on the map or tap the GPS button."))
             }
         }
     }

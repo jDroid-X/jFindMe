@@ -10,7 +10,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.model.LiveDeviceModel
 import com.jdroidx.jfindme.data.model.SafeZoneModel
 import com.jdroidx.jfindme.data.remote.FirebaseComm
@@ -49,7 +49,7 @@ class MapV2ViewModel(application: Application) : AndroidViewModel(application) {
                 // Scenario A and B Offline validations:
                 // If offline, populate the map with the last known hardware positions
                 // and local aliases using the robust DatabaseHelper.
-                val db = DatabaseHelper.getInstance(getApplication())
+                val db = DeviceRepository.getInstance(getApplication())
                 val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                 val validUids = prefs.getString("linked_devices_csv", "") ?: ""
                 
@@ -108,7 +108,7 @@ class MapV2ViewModel(application: Application) : AndroidViewModel(application) {
     private fun startLiveDeviceListeners() {
         // [Variables] | [Constants] | [Dependencies] | [Integration Points]
         val myUid = FirebaseAuth.getInstance().uid ?: com.jdroidx.jfindme.utils.RegistryManager.getAgentId(getApplication()) ?: return
-        val db = DatabaseHelper.getInstance(getApplication())
+        val db = DeviceRepository.getInstance(getApplication())
         val offlineRoster = db.getOfflineRoster()
         
         val targetUids = mutableSetOf<String>()

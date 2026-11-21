@@ -31,6 +31,9 @@ class FCMService : FirebaseMessagingService() {
 
                 SystemLogger.w(TAG, "FCM_DATA_PAYLOAD: Type=$type | Title=$title | Body=$body")
 
+                // [Integration Points] Persist background FCM push notification to SQLite alert_history (GAP-06 Remediation)
+                persistAlertNotification(type, avatarName, body, zoneName)
+
                 when (type) {
                     "GEOFENCE_EXIT", "GEOFENCE_ENTER", "GEOFENCE_ALERT" -> {
                         // 🛑 FCM DORMANCY CHECK: Mute repeated pushes for the same state
@@ -234,10 +237,12 @@ class FCMService : FirebaseMessagingService() {
                 }
             }
 
-            // 2. Process Standard Notification Payload
+            // [Variables] title, body | [Constants] None | [Dependencies] AlertManager, persistAlertNotification | [Integration Points] AlertHistoryTable, SQLite
+            // 2. Process Standard Notification Payload (GAP-11: Persist background FCM push notification to SQLite alert_history)
             remoteMessage.notification?.let {
                 val title = it.title ?: "Mission Sentinel"
                 val body = it.body ?: "Perimeter alert received."
+                persistAlertNotification("PUSH_NOTIFICATION", "", "$title: $body")
                 AlertManager.showGeofenceNotification(applicationContext, "$title: $body")
             }
         } catch (fatal: Exception) {
@@ -307,6 +312,35 @@ class FCMService : FirebaseMessagingService() {
                 }
         } catch (e: Exception) {
             SystemLogger.e(TAG, "Immediate location fetch failed", e)
+        }
+    }
+
+    /**
+     * [Variables] db: SQLiteDatabase, severity: String
+     * [Constants] None
+     * [Dependencies] AlertHistoryTable, DatabaseHelper, SystemLogger
+     * [Integration Points] FCMService -> AlertHistoryTable (GAP-06 Remediation)
+     */
+    private fun persistAlertNotification(type: String, agentId: String, details: String, zoneId: String = "") {
+        try {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(applicationContext).writableDatabase
+            val severity = when (type) {
+                "SOS_ALERT" -> "CRITICAL"
+                "GEOFENCE_EXIT", "BATTERY_LOW" -> "HIGH"
+                "GEOFENCE_ENTER", "BUTTERFLY_INVITATION" -> "MEDIUM"
+                else -> "INFO"
+            }
+            com.jdroidx.jfindme.data.local.tables.AlertHistoryTable.logAlert(
+                db = db,
+                agentId = agentId.ifBlank { "Cloud Sentinel" },
+                alertType = type,
+                details = details,
+                timestamp = System.currentTimeMillis(),
+                zoneId = zoneId,
+                severity = severity
+            )
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "Failed to persist alert to SQLite: ${e.message}")
         }
     }
 }

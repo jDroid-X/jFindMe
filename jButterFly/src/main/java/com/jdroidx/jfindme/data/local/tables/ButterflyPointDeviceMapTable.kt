@@ -73,14 +73,18 @@ object ButterflyPointDeviceMapTable {
 
     val CREATE_INDEX_STATUS = "CREATE INDEX IF NOT EXISTS idx_butterfly_dev_status ON $TABLE_NAME ($COL_POINT_ID, $COL_STATUS)"
 
+    // [Variables] db, pointId, deviceId, cleanId, prefixedId, query | [Constants] COL_STATUS, TABLE_NAME, COL_POINT_ID, COL_DEVICE_ID | [Dependencies] SQLiteDatabase, FirebaseComm | [Integration Points] ButterflyPointDialog, TrackingService, ButterflyPointEngine
     @JvmStatic
     fun getDeviceStatus(db: SQLiteDatabase, pointId: String, deviceId: String): String? {
-        val query = "SELECT $COL_STATUS FROM $TABLE_NAME WHERE $COL_POINT_ID = ? AND $COL_DEVICE_ID = ? LIMIT 1"
-        return db.rawQuery(query, arrayOf(pointId, deviceId)).use { cursor ->
+        val cleanId = deviceId.removePrefix("HW_").uppercase()
+        val prefixedId = "HW_$cleanId"
+        val query = "SELECT $COL_STATUS FROM $TABLE_NAME WHERE $COL_POINT_ID = ? AND ($COL_DEVICE_ID = ? OR $COL_DEVICE_ID = ? OR UPPER($COL_DEVICE_ID) = ?) LIMIT 1"
+        return db.rawQuery(query, arrayOf(pointId, deviceId, cleanId, prefixedId)).use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
     }
 
+    // [Variables] db, pointId, deviceId, identityId, initialStatus, invitedBy, now, existingStatus, statusToSet, cleanId, values, rows | [Constants] STATUS_PENDING, COL_POINT_ID, COL_DEVICE_ID, COL_IDENTITY_ID, COL_STATUS, COL_INVITED_BY, COL_UPDATED_AT, COL_CREATED_AT | [Dependencies] SQLiteDatabase, ContentValues, FirebaseComm | [Integration Points] ButterflyPointEngine, TrackingService
     @JvmOverloads
     fun assignDevice(
         db: SQLiteDatabase,
@@ -91,7 +95,8 @@ object ButterflyPointDeviceMapTable {
         invitedBy: String? = null
     ): Long {
         val now = FirebaseComm.getForensicTimestamp()
-        val existingStatus = getDeviceStatus(db, pointId, deviceId)
+        val cleanId = deviceId.removePrefix("HW_").uppercase()
+        val existingStatus = getDeviceStatus(db, pointId, cleanId)
 
         // 🛡️ State Invariant: Preserve existing resolved status (e.g. ACCEPTED, REACHED, REJECTED)
         // when caller passes default STATUS_PENDING during reconnects or sync cycles
@@ -99,14 +104,14 @@ object ButterflyPointDeviceMapTable {
 
         val values = ContentValues().apply {
             put(COL_POINT_ID, pointId)
-            put(COL_DEVICE_ID, deviceId)
+            put(COL_DEVICE_ID, cleanId)
             if (identityId != null) put(COL_IDENTITY_ID, identityId)
             put(COL_STATUS, statusToSet)
             if (invitedBy != null) put(COL_INVITED_BY, invitedBy)
             put(COL_UPDATED_AT, now)
         }
 
-        val rows = db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND $COL_DEVICE_ID = ?", arrayOf(pointId, deviceId))
+        val rows = db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND ($COL_DEVICE_ID = ? OR $COL_DEVICE_ID = ?)", arrayOf(pointId, cleanId, "HW_$cleanId"))
         return if (rows == 0) {
             values.put(COL_CREATED_AT, now)
             db.insertWithOnConflict(TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -123,12 +128,13 @@ object ButterflyPointDeviceMapTable {
         rejectionReason: String? = null
     ) {
         val now = FirebaseComm.getForensicTimestamp()
+        val cleanId = deviceId.removePrefix("HW_").uppercase()
         val values = ContentValues().apply {
             put(COL_STATUS, status)
             if (rejectionReason != null) put(COL_REJECTION_REASON, rejectionReason)
             put(COL_UPDATED_AT, now)
         }
-        db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND $COL_DEVICE_ID = ?", arrayOf(pointId, deviceId))
+        db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND ($COL_DEVICE_ID = ? OR $COL_DEVICE_ID = ?)", arrayOf(pointId, cleanId, "HW_$cleanId"))
     }
 
     @JvmOverloads
@@ -148,6 +154,7 @@ object ButterflyPointDeviceMapTable {
         lastLng: Double = 0.0
     ) {
         val now = FirebaseComm.getForensicTimestamp()
+        val cleanId = deviceId.removePrefix("HW_").uppercase()
         val values = ContentValues().apply {
             put(COL_DISTANCE_METERS, distanceMeters)
             put(COL_ETA_SECONDS, etaSeconds)
@@ -166,6 +173,6 @@ object ButterflyPointDeviceMapTable {
             if (ragReason.isNotEmpty()) put(COL_RAG_REASON, ragReason)
             put(COL_UPDATED_AT, now)
         }
-        db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND $COL_DEVICE_ID = ?", arrayOf(pointId, deviceId))
+        db.update(TABLE_NAME, values, "$COL_POINT_ID = ? AND ($COL_DEVICE_ID = ? OR $COL_DEVICE_ID = ?)", arrayOf(pointId, cleanId, "HW_$cleanId"))
     }
 }

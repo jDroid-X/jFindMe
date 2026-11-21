@@ -26,13 +26,40 @@ object DeviceIdentityHelper {
     val CANONICAL_ROSTER_IDS = listOf("2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789")
 
     /**
-     * [Variables] agentId | [Constants] CANONICAL_ROSTER_IDS | [Dependencies] List | [Integration Points] AuthViewModel, SplashActivity
-     * 🛡️ Validates whether an agent ID matches a permanent canonical silicon anchor defined in PROGRAM-MAPPING.md
+     * [Variables] clean, prev, changed | [Constants] HW_PREFIX | [Dependencies] String | [Integration Points] SSOT Canonical Identity Resolution
+     * 🛡️ SSOT Canonical Ingestion Normalizer: Unconditionally strips tenant prefixes (HW_, DEV_, GRP_)
+     * and normalizes to an uppercase 8-character canonical device key.
+     */
+    @JvmStatic
+    fun toCanonicalAgentId(rawId: String?): String {
+        if (rawId.isNullOrBlank()) return ""
+        var clean = rawId.trim().uppercase()
+        var changed = true
+        while (changed) {
+            val prev = clean
+            if (clean.startsWith(HW_PREFIX, ignoreCase = true)) clean = clean.substring(HW_PREFIX.length).trim()
+            if (clean.startsWith("DEV_", ignoreCase = true)) clean = clean.substring(4).trim()
+            if (clean.startsWith("GRP_", ignoreCase = true)) clean = clean.substring(4).trim()
+            changed = (clean != prev)
+        }
+        return clean
+    }
+
+    /**
+     * [Variables] clean, appCtx, fleetIds | [Constants] CANONICAL_ROSTER_IDS | [Dependencies] RegistryManager, List | [Integration Points] AuthViewModel, SplashActivity, NetworkGatewayActivity
+     * 🛡️ Validates whether an agent ID matches a permanent canonical silicon anchor defined dynamically or in PROGRAM-MAPPING.md
      */
     @JvmStatic
     fun isCanonicalRosterId(agentId: String?): Boolean {
         if (agentId.isNullOrBlank()) return false
-        return CANONICAL_ROSTER_IDS.contains(agentId)
+        val clean = toCanonicalAgentId(agentId)
+        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val fleetIds = if (appCtx != null) {
+            RegistryManager.getFleetHardwareMapping(appCtx).values.map { it.uppercase() }.toSet()
+        } else {
+            CANONICAL_ROSTER_IDS.map { it.uppercase() }.toSet()
+        }
+        return fleetIds.contains(clean) || CANONICAL_ROSTER_IDS.contains(clean)
     }
 
     @Volatile
@@ -181,16 +208,32 @@ object DeviceIdentityHelper {
         val product = (Build.PRODUCT ?: "").uppercase()
         val hardware = (Build.HARDWARE ?: "").uppercase()
 
-        // [Variables] canonicalRosterId | [Constants] "2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789" | [Dependencies] Build, PROGRAM-MAPPING | [Integration Points] SSOT Fleet Hardware Re-anchoring
-        // 🛡️ Canonical SSOT Hardware Roster Resolution (.agent/enterprise-22-agents/PROGRAM-MAPPING.md)
+        // [Variables] fleetMap, canonicalRosterId, hardwareKey, mappedAgentId | [Constants] None | [Dependencies] RegistryManager, Build, PROGRAM-MAPPING | [Integration Points] SSOT Fleet Hardware Re-anchoring
+        // 🛡️ Dynamic SSOT Hardware Roster Resolution via RegistryManager & Dynamic Settings
         // Matches permanent hardware silicon profile to prevent orphan ID proliferation across reinstalls:
-        val canonicalRosterId = when {
-            rawHw.contains("2T92") || device.contains("VIOLET") || product.contains("VIOLET") || model.contains("NOTE 7 PRO") || model.contains("REDMI NOTE 7 PRO") -> "2T929153"
-            rawHw.contains("2C81") || device.contains("WHYRED") || product.contains("WHYRED") || model.contains("REDMI NOTE 5 PRO") || model.contains("REDMI 5PRO") -> "2C811042"
-            rawHw.contains("F8CA") || device.contains("SWEET") || product.contains("SWEET") || model.contains("NOTE 10 PRO") || model.contains("REDMI NOTE 10 PRO") -> "F8CAFC67"
-            rawHw.contains("4379") || model.contains("RIDDHI") -> "4379A761"
-            rawHw.contains("2D11") || model.contains("INNOVANT") -> "2D113789"
-            else -> null
+        val fleetMap = RegistryManager.getFleetHardwareMapping(context)
+        var canonicalRosterId: String? = null
+        for ((hardwareKey, mappedAgentId) in fleetMap) {
+            if (rawHw.contains(hardwareKey) ||
+                device.contains(hardwareKey) ||
+                product.contains(hardwareKey) ||
+                model.contains(hardwareKey) ||
+                brand.contains(hardwareKey)) {
+                canonicalRosterId = mappedAgentId
+                break
+            }
+        }
+
+        // Secondary fallback to canonical roster if fleetMap did not match
+        if (canonicalRosterId == null) {
+            canonicalRosterId = when {
+                rawHw.contains("2T92") || device.contains("VIOLET") || product.contains("VIOLET") || model.contains("NOTE 7 PRO") -> "2T929153"
+                rawHw.contains("2C81") || device.contains("WHYRED") || product.contains("WHYRED") || model.contains("NOTE 5 PRO") -> "2C811042"
+                rawHw.contains("F8CA") || device.contains("SWEET") || product.contains("SWEET") || model.contains("NOTE 10 PRO") -> "F8CAFC67"
+                rawHw.contains("4379") || model.contains(RegistryManager.getPrimeTargetName(context), ignoreCase = true) -> RegistryManager.getPrimeTargetDeviceId(context)
+                rawHw.contains("2D11") || model.contains("INNOVANT") || model.contains("M2006C3MII") || device.contains("CATTAIL") -> "2D113789"
+                else -> null
+            }
         }
 
         if (canonicalRosterId != null && isValidAgentId(canonicalRosterId)) {

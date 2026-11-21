@@ -13,5 +13,7 @@
         <item name="android:statusBarColor">#080C14</item>
         <item name="android:windowBackground">#080C14</item>
         <item name="android:windowDisablePreview">true</item>
+        <!-- 🚀 Universal OEM Shield: Block arbitrary vendor Force Dark distortion across Android 10+ (API 29+) -->
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 </resources>

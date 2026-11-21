@@ -16,7 +16,7 @@ import com.jdroidx.jfindme.utils.DeviceIdentityHelper
 import com.jdroidx.jfindme.utils.FirebaseErrorMapper
 import com.jdroidx.jfindme.utils.RegistryManager
 import com.jdroidx.jfindme.utils.ValidationEngine
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import android.content.Context
 import android.app.Application
@@ -64,7 +64,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
 
         val domain = RegistryManager.getEnterpriseDomain(getApplication())
         val isSystemNode = cleanEmail.endsWith("@$domain")
-        val dbHelper = DatabaseHelper.getInstance(getApplication())
+        val dbHelper = DeviceRepository.getInstance(getApplication())
         _isLoading.value = true
 
         SystemLogger.i("Handshake", "Initiating Analytical Identity Sync for Node: $cleanEmail")
@@ -146,8 +146,14 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
 
                             val prefs = getApplication<Application>().getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                             prefs.edit().apply {
-                                if (!cloudAvatar.isNullOrEmpty()) putString("avatar_id", cloudAvatar)
-                                putInt("equipped_avatar_id", cloudEquippedId)
+                                if (cloudEquippedId == -1) {
+                                    val aid = DeviceIdentityHelper.getOrGenerateAgentId(getApplication())
+                                    putString("avatar_id", "AV_${aid}_01")
+                                    putInt("equipped_avatar_id", -1)
+                                } else {
+                                    if (!cloudAvatar.isNullOrEmpty()) putString("avatar_id", cloudAvatar)
+                                    putInt("equipped_avatar_id", cloudEquippedId)
+                                }
                                 if (cloudPhone.isNotEmpty()) putString("user_phone", cloudPhone)
                                 if (cloudDob.isNotEmpty()) putString("user_dob", cloudDob)
                                 if (cloudGender.isNotEmpty()) putString("user_gender", cloudGender)
@@ -338,7 +344,7 @@ class AuthViewModel(application: Application) : BaseViewModel(application) {
     private fun initializeNodeProfile(context: Context, uid: String, email: String, nick: String,
                                       manualLat: Double = 0.0, manualLng: Double = 0.0, manualAddr: String = "") {
         if (uid.isEmpty()) return
-        val dbHelper = DatabaseHelper.getInstance(context)
+        val dbHelper = DeviceRepository.getInstance(context)
         val rawHw = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(context)
         val hardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
         val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)

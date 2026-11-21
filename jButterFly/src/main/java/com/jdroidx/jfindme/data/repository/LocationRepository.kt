@@ -17,6 +17,11 @@ import com.jdroidx.jfindme.data.remote.OfflineSyncManager
 import android.content.SharedPreferences
 import java.lang.StringBuilder
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import com.google.android.gms.tasks.Tasks
 
 /**
  * LocationRepository manages real-time location data flow, offline synchronization,
@@ -33,6 +38,207 @@ class LocationRepository(internal val context: Context) {
     private val profileListeners = HashMap<String, ValueEventListener>()
     private val latestLocations = HashMap<String, UserLocation>()
 
+    init {
+        // 🚀 Asynchronous Zero-Latency Seeding: Offload disk I/O to Dispatchers.IO to protect UI thread
+        CoroutineScope(Dispatchers.IO).launch {
+            seedInitialLocationsFromLocalDb()
+        }
+    }
+
+    // [Variables] db, myAgentId, myAuthUid, canonicalSelfId, lastLat, lastLng, selfLoc, offlineNodes, pId, cleanP, hist, lat, lng, peerName, peerAvatar, peerLoc | [Constants] None | [Dependencies] DatabaseHelper, DeviceIdentityHelper, RegistryManager, SystemLogger | [Integration Points] LocationRepository.init, MultiMarkerEngine
+    fun seedInitialLocationsFromLocalDb() {
+        try {
+            val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+            val canonicalSelfId = if (!myAuthUid.isNullOrEmpty()) myAuthUid else myAgentId
+
+            val lastLat = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLatitude(context)
+            val lastLng = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLongitude(context)
+            if (lastLat != 0.0 && lastLng != 0.0) {
+                val selfLoc = UserLocation(
+                    userId = canonicalSelfId,
+                    userName = "You",
+                    latitude = lastLat,
+                    longitude = lastLng,
+                    timestamp = System.currentTimeMillis()
+                )
+                processIncomingLocation(canonicalSelfId, selfLoc)
+                SystemLogger.i("LocationRepository", "Seeded Host location from local registry: $lastLat, $lastLng")
+            }
+
+            val offlineNodes = db.getOfflineRoster()
+            val pairedIds = db.getAllPairedDeviceIds()
+            val allPeerIds = mutableSetOf<String>()
+            for (node in offlineNodes) {
+                val pId = (node["uid_1"] ?: node["connected_id"] ?: node["uid_2"]) as? String ?: continue
+                if (pId != canonicalSelfId && pId != myAgentId) {
+                    allPeerIds.add(pId)
+                }
+            }
+            for (p in pairedIds) {
+                if (p != canonicalSelfId && p != myAgentId) {
+                    allPeerIds.add(p)
+                }
+            }
+            val scopedIds = db.getConnectedDeviceIds(myAgentId)
+            for (s in scopedIds) {
+                if (s != canonicalSelfId && s != myAgentId) {
+                    allPeerIds.add(s)
+                }
+            }
+            val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+            if (primeTarget.isNotBlank() && primeTarget != canonicalSelfId && primeTarget != myAgentId) {
+                allPeerIds.add(primeTarget)
+            }
+            val linkedCsv = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
+            for (lId in linkedCsv.split(",")) {
+                val cleanL = lId.trim()
+                if (cleanL.isNotBlank() && cleanL != canonicalSelfId && cleanL != myAgentId) {
+                    allPeerIds.add(cleanL)
+                }
+            }
+
+            for (pId in allPeerIds) {
+                val cleanP = pId.removePrefix("HW_")
+                // ⚡ Single Indexed Seek: getLatestHistoricalLocation internally resolves canonical and HW_ prefixes
+                val hist = db.getLatestHistoricalLocation(pId)
+                val lat = (hist?.get("lat") as? Double) ?: 0.0
+                val lng = (hist?.get("lng") as? Double) ?: 0.0
+                val ts = (hist?.get("timestamp") as? Long) ?: 0L
+                val peerName = db.getDeviceCentricName(pId).takeIf { it.isNotBlank() && !it.startsWith("Agent_") } ?: "Node $pId"
+                val peerAvatar = db.getDeviceCentricAvatar(pId).takeIf { it.isNotBlank() } ?: "1"
+
+                val peerLoc = UserLocation(
+                    userId = cleanP,
+                    userName = peerName,
+                    avatar_id = peerAvatar,
+                    latitude = lat,
+                    longitude = lng,
+                    timestamp = ts
+                )
+                processIncomingLocation(cleanP, peerLoc)
+            }
+        } catch (e: Exception) {
+            SystemLogger.w("LocationRepository", "Seeding initial local locations note: " + e.message)
+        }
+    }
+
+    /**
+     * 🛰️ Enterprise Matrix Sync: High-speed, low-cost batch pull across all paired & roster nodes.
+     * Re-seeds local SQLite cache and fetches latest live cursors with single-shot parallel requests.
+     */
+    fun forceBatchSyncAllNodes(onComplete: (() -> Unit)? = null) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                seedInitialLocationsFromLocalDb()
+                val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+                val pairedIds = db.getAllPairedDeviceIds()
+                val offlineNodes = db.getOfflineRoster()
+                val allTargetIds = mutableSetOf<String>()
+                for (node in offlineNodes) {
+                    val pId = (node["uid_1"] ?: node["connected_id"] ?: node["uid_2"]) as? String
+                    if (!pId.isNullOrBlank()) allTargetIds.add(FirebaseComm.sanitizeAgentId(pId))
+                }
+                for (p in pairedIds) {
+                    if (p.isNotBlank()) allTargetIds.add(FirebaseComm.sanitizeAgentId(p))
+                }
+                val linkedCsv = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
+                for (lId in linkedCsv.split(",")) {
+                    val cleanL = lId.trim()
+                    if (cleanL.isNotBlank()) allTargetIds.add(FirebaseComm.sanitizeAgentId(cleanL))
+                }
+                val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+                if (primeTarget.isNotBlank()) allTargetIds.add(FirebaseComm.sanitizeAgentId(primeTarget))
+
+                val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().uid
+                allTargetIds.remove(myAgentId)
+                allTargetIds.remove(myAgentId.removePrefix("HW_"))
+                allTargetIds.remove("HW_${myAgentId.removePrefix("HW_")}")
+                if (!myUid.isNullOrEmpty()) allTargetIds.remove(myUid)
+
+                // [Variables] db, pairedIds, offlineNodes, allTargetIds, myAgentId, myUid, deferredList | [Constants] None | [Dependencies] CoroutineScope, Dispatchers, async, awaitAll, Tasks, FirebaseComm | [Integration Points] MapViewModel, Matrix Refresh
+                val deferredList = allTargetIds.map { targetId ->
+                    async {
+                        try {
+                            val cleanId = targetId.removePrefix("HW_")
+                            var snap = try {
+                                Tasks.await(FirebaseComm.devicesRef.child(cleanId).child("device").child("live").get(), 3, java.util.concurrent.TimeUnit.SECONDS)
+                            } catch (_: Exception) { null }
+
+                            if (snap == null || !snap.exists()) {
+                                snap = try {
+                                    Tasks.await(FirebaseComm.devicesRef.child("HW_$cleanId").child("device").child("live").get(), 2, java.util.concurrent.TimeUnit.SECONDS)
+                                } catch (_: Exception) { null }
+                            }
+
+                            if (snap != null && snap.exists()) {
+                                val loc = snap.getValue(UserLocation::class.java)
+                                if (loc != null) {
+                                    var explicitAvatar = snap.child("avatar_id").getValue(String::class.java)
+                                    var explicitName = snap.child("userName").getValue(String::class.java) 
+                                        ?: snap.child("name").getValue(String::class.java)
+                                    val explicitRole = snap.child("role").getValue(String::class.java)
+                                        ?: snap.child("role_family").getValue(String::class.java)
+                                    val explicitBattery = FirebaseComm.safeInt(snap.child("battery"))
+                                        ?: FirebaseComm.safeInt(snap.child("battery_pct"))
+                                        ?: loc.batteryLevel
+                                    val explicitTs = FirebaseComm.safeLong(snap.child("last_heartbeat"))
+                                        ?: FirebaseComm.safeLong(snap.child("timestamp"))
+                                        ?: loc.getLongTimestamp()
+
+                                    // If name/avatar missing from live cursor, fetch from profile
+                                    if (explicitName.isNullOrBlank() || explicitAvatar.isNullOrBlank() || explicitAvatar == "butterfly") {
+                                        try {
+                                            val pSnap = Tasks.await(FirebaseComm.devicesRef.child(cleanId).child("profile").get(), 2, java.util.concurrent.TimeUnit.SECONDS)
+                                            if (pSnap != null && pSnap.exists()) {
+                                                if (explicitName.isNullOrBlank()) {
+                                                    explicitName = pSnap.child("full_name").getValue(String::class.java)
+                                                        ?: pSnap.child("name").getValue(String::class.java)
+                                                }
+                                                if (explicitAvatar.isNullOrBlank() || explicitAvatar == "butterfly") {
+                                                    explicitAvatar = pSnap.child("avatar_id").getValue(String::class.java)
+                                                        ?: pSnap.child("equipped_avatar_id").getValue(String::class.java)
+                                                }
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+
+                                    if (!explicitAvatar.isNullOrBlank()) loc.avatar_id = explicitAvatar
+                                    if (!explicitName.isNullOrBlank()) loc.userName = explicitName
+
+                                    // Auto-update SQLite local metadata
+                                    if (!explicitName.isNullOrBlank() || !explicitAvatar.isNullOrBlank()) {
+                                        db.updateDeviceIdentityAndAvatar(
+                                            cleanId,
+                                            explicitName ?: "Device $cleanId",
+                                            explicitAvatar ?: "butterfly"
+                                        )
+                                    }
+                                    if (explicitBattery in 0..100 && explicitTs > 0L) {
+                                        db.updateDeviceVitalsTelemetry(cleanId, explicitBattery, explicitTs, loc.isCharging)
+                                    }
+
+                                    processIncomingLocation(targetId, loc)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            SystemLogger.w("LocationRepository", "Batch sync fetch for $targetId note: ${e.message}")
+                        }
+                    }
+                }
+                deferredList.awaitAll()
+            } catch (e: Exception) {
+                SystemLogger.e("LocationRepository", "Batch sync failed: ${e.message}", e)
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete?.invoke()
+                }
+            }
+        }
+    }
+
     fun getLatestLocationFor(userId: String): UserLocation? {
         if (userId.isBlank()) return null
         val cleanId = userId.removePrefix("HW_")
@@ -47,7 +253,7 @@ class LocationRepository(internal val context: Context) {
     private var cachedHumanAddress: String? = null
 
     private fun processIncomingLocation(resolvedId: String, loc: UserLocation) {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
         val myHardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
         val myRawAndroidId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(context)
@@ -63,17 +269,24 @@ class LocationRepository(internal val context: Context) {
                      resolvedId == "SELF_USER"
         
         // 🛡️ MLM ASYMMETRIC HIERARCHY ACCESS CONTROL GATE:
-        // Top-to-Bottom: Permitted by default (parents/guardians view dependents)
-        // Bottom-to-Top: Blocked unless explicitly permitted by allowDependents == true or emergency SOS active
-        val myRole = db.getRoleForDevice(myAgentId) ?: prefs.getString("user_role", "") ?: ""
-        val isLocalDependent = myRole.contains("CHILD", ignoreCase = true) || 
-                               myRole.contains("DEPENDENT", ignoreCase = true) || 
-                               myRole.contains("WARD", ignoreCase = true) ||
-                               prefs.getBoolean("is_dependent", false)
-        if (!isSelf && isLocalDependent && !loc.allowDependents && !loc.isSosActive) {
-            SystemLogger.w("LocationRepository", "MLM Gate Enforced: Upstream location for $resolvedId suppressed (allowDependents=false, sos=false).")
-            val canonicalStoreId = resolvedId
-            latestLocations.remove(canonicalStoreId)
+        // All verified circle and roster members are permitted bidirectionally so connected devices are always visible.
+        // No node suppression on dependent devices.
+
+        // [Variables] cleanId: String, primeTarget: String, isProtectedChild: Boolean, latLog: String, lngLog: String | [Constants] "[MASKED - CHILD PROTECTION]" | [Dependencies] RegistryManager, SystemLogger, DeviceIdentityHelper, DatabaseHelper | [Integration Points] Gate 1 Child Protection & Decommissioned/Unlinked Node Ingestion Gate
+        // Dynamic Decommissioned & Unlinked Node Filter: Purges any decommissioned or unlinked ghost nodes
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(resolvedId)
+        if (cleanId.startsWith("HW_")) {
+            SystemLogger.d("LocationRepository", "Ignoring HW_ synthetic telemetry packet: $cleanId")
+            return
+        }
+        if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, resolvedId) ||
+            com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanId)) {
+            return
+        }
+        if (!isSelf && (db.isDeviceDeleted(resolvedId) || db.isDeviceDeleted(cleanId))) {
+            SystemLogger.w("LocationRepository", "Dropping telemetry packet for unlinked peer: $cleanId")
+            latestLocations.remove(cleanId)
+            latestLocations.remove(resolvedId)
             _userLocations.postValue(latestLocations.values.sortedWith(
                 compareByDescending<UserLocation> { it.isSosActive }
                     .thenByDescending { it.getLongTimestamp() }
@@ -81,8 +294,14 @@ class LocationRepository(internal val context: Context) {
             return
         }
 
+        // 🛡️ GATE 1 MINOR PROTECTION: Mask raw GPS coordinates in logging for dynamic prime child target
+        val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context))
+        val isProtectedChild = cleanId == primeTarget || cleanId.equals(primeTarget, ignoreCase = true)
+        val latLog = if (isProtectedChild) "[MASKED - CHILD PROTECTION]" else loc.latitude.toString()
+        val lngLog = if (isProtectedChild) "[MASKED - CHILD PROTECTION]" else loc.longitude.toString()
+
         // 🚀 REMOTE PEER INGESTION: Process all authorized incoming telemetry for local and remote devices
-        SystemLogger.i("LocationRepository", "Ingesting location for Node: $resolvedId (Lat: ${loc.latitude}, Lng: ${loc.longitude})")
+        SystemLogger.i("LocationRepository", "Ingesting location for Node: $resolvedId (Lat: $latLog, Lng: $lngLog)")
 
         var profile: Map<String, String>? = null
         try {
@@ -137,10 +356,14 @@ class LocationRepository(internal val context: Context) {
             }
         }
         
-        if (cloudName.isNotEmpty() && cloudName != profile?.get("id_full_name") && !isSelf) {
+        val existingName = profile?.get("id_full_name")?.takeIf { it.isNotBlank() }
+            ?: profile?.get("full_name")?.takeIf { it.isNotBlank() }
+            ?: profile?.get("name")?.takeIf { it.isNotBlank() }
+            ?: ssotName
+        if (cloudName.isNotEmpty() && cloudName != existingName && !isSelf && !db.isDeviceDeleted(resolvedId) && !db.isDeviceDeleted(cleanId)) {
             try {
                 val uid2 = profile?.get("uid_2") 
-                db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id)
+                db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id, avatarId = loc.avatar_id, notifyPeers = false)
                 db.updateDeviceIdentityAndAvatar(resolvedId, cloudName, loc.avatar_id)
             } catch (e: Exception) {
                 com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Backfill Blocked", e)
@@ -151,7 +374,10 @@ class LocationRepository(internal val context: Context) {
             loc.userName = if (isSelf) "You" else ("Agent_" + resolvedId)
         }
 
-        val canonicalStoreId = if (isSelf) (if (!myUid.isNullOrEmpty()) myUid else myAgentId) else resolvedId
+        // [Variables] canonicalStoreId: String, effTs: Long, rawBatt: Int, prevBatt: Int, resolvedBatt: Int | [Constants] None | [Dependencies] DatabaseHelper, UserLocation | [Integration Points] DeviceVitalsTable, LocationRepository
+        // GAP-08: Anchor storage strictly to canonical Agent ID (eliminate orphan Auth UID write)
+        val canonicalStoreId = if (isSelf) myAgentId else cleanId
+        val normalizedLoc = if (loc.userId != canonicalStoreId) loc.copy(userId = canonicalStoreId) else loc
         if (isSelf) {
             // 🚀 Strict Self Deduplication: Purge any redundant representation of self
             if (!myUid.isNullOrEmpty()) latestLocations.remove(myUid)
@@ -163,39 +389,125 @@ class LocationRepository(internal val context: Context) {
         }
 
         // 🛡️ LWW (Last-Write-Wins) Monotonic Timestamp Guard:
-        // Priority Rule: Always prefer latest chronological timestamp; discard out-of-order stale telemetry
+        // Priority Rule: Always prefer valid coordinates; never let a zero-coordinate seed block real GPS telemetry
         val existing = latestLocations[canonicalStoreId]
-        if (existing != null && loc.getLongTimestamp() < existing.getLongTimestamp()) {
-            // If stale telemetry carries active SOS, propagate SOS state to newer position without rewinding coordinates
-            if (loc.isSosActive && !existing.isSosActive) {
-                existing.isSosActive = true
-                _userLocations.postValue(latestLocations.values.sortedWith(
-                    compareByDescending<UserLocation> { it.isSosActive }
-                        .thenByDescending { it.getLongTimestamp() }
-                ))
-            }
-            return
+        val hasRealCoords = (normalizedLoc.latitude != 0.0 || normalizedLoc.longitude != 0.0)
+        val existingHasCoords = existing != null && (existing.latitude != 0.0 || existing.longitude != 0.0)
+
+        val effectiveLoc = if (existing != null && existingHasCoords && !hasRealCoords) {
+            // Keep existing valid coordinates, only update telemetry fields
+            normalizedLoc.copy(
+                latitude = existing.latitude,
+                longitude = existing.longitude,
+                accuracy = existing.accuracy,
+                bearing = existing.bearing,
+                speed = existing.speed
+            )
+        } else {
+            normalizedLoc
         }
 
-        latestLocations[canonicalStoreId] = loc
+        if (existing != null && existingHasCoords && hasRealCoords) {
+            val isSameTimestamp = effectiveLoc.getLongTimestamp() == existing.getLongTimestamp()
+            val isSameCoords = kotlin.math.abs(effectiveLoc.latitude - existing.latitude) < 0.000001 &&
+                               kotlin.math.abs(effectiveLoc.longitude - existing.longitude) < 0.000001
+            if (isSameTimestamp && isSameCoords && effectiveLoc.isSosActive == existing.isSosActive) {
+                // 🔋 ECHO SUPPRESSION: Identical echo from Firebase socket or duplicate broadcast -> Drop immediately
+                return
+            }
+
+            if (effectiveLoc.getLongTimestamp() < existing.getLongTimestamp()) {
+                // If stale telemetry carries active SOS, propagate SOS state to newer position without rewinding coordinates
+                if (effectiveLoc.isSosActive && !existing.isSosActive) {
+                    existing.isSosActive = true
+                    _userLocations.postValue(latestLocations.values.sortedWith(
+                        compareByDescending<UserLocation> { it.isSosActive }
+                            .thenByDescending { it.getLongTimestamp() }
+                    ))
+                }
+                return
+            }
+        }
+
+        latestLocations[canonicalStoreId] = effectiveLoc
         _userLocations.postValue(latestLocations.values.sortedWith(
             compareByDescending<UserLocation> { it.isSosActive }
                 .thenByDescending { it.getLongTimestamp() }
         ))
 
+        // 🛰️ Historical SSOT Persistence: Instantly persist valid peer coordinates into LocationEventTable
+        if (hasRealCoords && !isSelf) {
+            try {
+                val forensicTs = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp(effectiveLoc.getLongTimestamp())
+                db.saveHistoryPoint(
+                    uid1 = canonicalStoreId,
+                    deviceId = canonicalStoreId,
+                    lat = effectiveLoc.latitude,
+                    lng = effectiveLoc.longitude,
+                    speed = effectiveLoc.speed,
+                    battery = effectiveLoc.batteryLevel,
+                    sos = effectiveLoc.isSosActive,
+                    source = "PEER_TELEMETRY",
+                    ts = forensicTs,
+                    accuracy = effectiveLoc.accuracy,
+                    bearing = effectiveLoc.bearing,
+                    altitude = effectiveLoc.altitude,
+                    motionState = effectiveLoc.motion_state
+                )
+            } catch (e: Exception) {
+                com.jdroidx.jfindme.utils.SystemLogger.w("LocationRepository", "Peer historical location persistence note: ${e.message}")
+            }
+        }
+
         // 🚀 Telemetry SSOT Backfill: Instantly synchronize DeviceVitalsTable in SQLite
         try {
-            val effTs = loc.getLongTimestamp()
-            val batt = loc.batteryLevel
-            if (effTs > 0L) {
-                db.updateDeviceVitalsTelemetry(canonicalStoreId, if (batt > 0) batt else 100, effTs)
-                if (resolvedId != canonicalStoreId) {
-                    db.updateDeviceVitalsTelemetry(resolvedId, if (batt > 0) batt else 100, effTs)
+            val effTs = effectiveLoc.getLongTimestamp()
+            val rawBatt = effectiveLoc.batteryLevel
+            // GAP-01 & Directive 3: Avoid forcing 100% when battery is non-positive; query latest known vitals first
+            val resolvedBatt = when {
+                rawBatt in 0..100 -> rawBatt
+                else -> {
+                    val prevBatt = db.getLatestBatteryLevel(canonicalStoreId)
+                    if (prevBatt in 0..100) prevBatt else rawBatt
                 }
+            }
+            if (effTs > 0L) {
+                // GAP-08: Key vitals strictly by canonical Agent ID (no orphan Auth UID write)
+                db.updateDeviceVitalsTelemetry(canonicalStoreId, resolvedBatt, effTs, effectiveLoc.isCharging)
             }
         } catch (e: Exception) {
             com.jdroidx.jfindme.utils.SystemLogger.w("LocationRepository", "DeviceVitals telemetry backfill note: ${e.message}")
         }
+    }
+
+    // [Variables] clean, rawClean, targets, listener, profListener, ref, profRef | [Constants] None | [Dependencies] DeviceIdentityHelper, FirebaseComm | [Integration Points] DatabaseHelper, SecurityDialogManager, FamilyFriendsViewModel, TrackingService
+    fun removeTarget(deviceId: String) {
+        if (deviceId.isBlank()) return
+        val clean = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(deviceId)
+        val rawClean = clean.removePrefix("HW_")
+        val targets = listOf(deviceId, clean, rawClean, "HW_$rawClean").distinct()
+
+        for (t in targets) {
+            latestLocations.remove(t)
+            val listener = userLocationListeners.remove(t)
+            if (listener != null) {
+                val ref = FirebaseComm.devicesRef.child(t).child("device").child("live")
+                ref.removeEventListener(listener)
+                try { ref.keepSynced(false) } catch (_: Exception) {}
+                activeListeners.remove(ref)
+            }
+            val profListener = profileListeners.remove(t)
+            if (profListener != null) {
+                val profRef = FirebaseComm.devicesRef.child(t).child("profile")
+                profRef.removeEventListener(profListener)
+                try { profRef.keepSynced(false) } catch (_: Exception) {}
+                activeListeners.remove(profRef)
+            }
+        }
+        _userLocations.postValue(latestLocations.values.sortedWith(
+            compareByDescending<UserLocation> { it.isSosActive }
+                .thenByDescending { it.getLongTimestamp() }
+        ))
     }
 
     private fun updateTargetListeners() {
@@ -213,24 +525,29 @@ class LocationRepository(internal val context: Context) {
         if (validUids.isNotEmpty()) {
             validUids.split(",").forEach {
                 val trimmed = it.trim()
-                if (trimmed.isNotEmpty()) targetUids.add(trimmed)
+                if (trimmed.isNotEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, trimmed)) {
+                    targetUids.add(trimmed)
+                }
             }
         }
         if (friendUids.isNotEmpty()) {
             friendUids.split(",").forEach {
                 val trimmed = it.trim()
-                if (trimmed.isNotEmpty()) targetUids.add(trimmed)
+                if (trimmed.isNotEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, trimmed)) {
+                    targetUids.add(trimmed)
+                }
             }
         }
 
         // 🚀 CRITICAL FIX: Pull ONLY verified handshaked devices from SQLite Roster
         try {
-            val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-            // [Variables] addTarget: (String?) -> Unit, clean: String, focalAgentId: String, scopedIds: Set<String>, pairedIds: Set<String> | [Constants] "4379A761" | [Dependencies] FirebaseComm.sanitizeAgentId, DatabaseHelper | [Integration Points] Realtime location listener subscription
+            val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+            // [Variables] addTarget: (String?) -> Unit, clean: String, cleanNorm: String, focalAgentId: String, scopedIds: Set<String>, pairedIds: Set<String>, decommissionedGhostNodes: Set<String> | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId, DatabaseHelper, RegistryManager | [Integration Points] Realtime location listener subscription
             val addTarget = { raw: String? ->
                 if (!raw.isNullOrBlank()) {
                     val clean = FirebaseComm.sanitizeAgentId(raw)
-                    if (FirebaseComm.isAgentIdValid(clean) || (clean.length in 6..40 && clean.matches(Regex("^[a-zA-Z0-9_-]+$")))) {
+                    if (!com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, clean) &&
+                        (FirebaseComm.isAgentIdValid(clean) || (clean.length in 6..40 && clean.matches(Regex("^[a-zA-Z0-9_-]+$"))))) {
                         targetUids.add(clean)
                     }
                 }
@@ -258,13 +575,22 @@ class LocationRepository(internal val context: Context) {
             val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
             addTarget(primeTarget)
 
-            // 🛡️ SOFT-DELETE PURGE: Immediately evict any target marked as DELETED
+            // 🛡️ SOFT-DELETE & DECOMMISSIONED GHOST PURGE (GAP-09): Dynamically evict any target marked as DELETED or decommissioned
+            // [Variables] decommissionedGhostNodes: Set<String>, cleanUid: String | [Constants] None | [Dependencies] RegistryManager, localDb, DeviceIdentityHelper | [Integration Points] Realtime target listener subscription & ghost eviction
+            val decommissionedGhostNodes = com.jdroidx.jfindme.utils.RegistryManager.getDecommissionedAgentIds(context)
             targetUids.removeAll { uid ->
-                uid != myUid && uid != myAgentId && uid != primeTarget && localDb.isDeviceDeleted(uid)
+                val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+                decommissionedGhostNodes.contains(cleanUid) ||
+                decommissionedGhostNodes.contains(uid) ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, uid) ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanUid) ||
+                (uid != myUid && uid != myAgentId && cleanUid != myAgentId && uid != primeTarget && cleanUid != primeTarget && (localDb.isDeviceDeleted(uid) || localDb.isDeviceDeleted(cleanUid)))
             }
         } catch (e: Exception) {
             SystemLogger.e("LocationRepository", "Failed reading offline roster for targets", e)
         }
+        
+        SystemLogger.i("LocationRepository", "updateTargetListeners: Active targetUids count=${targetUids.size}, targets=${targetUids.joinToString(",")}")
         
         val iter = userLocationListeners.iterator()
         while (iter.hasNext()) {
@@ -272,12 +598,14 @@ class LocationRepository(internal val context: Context) {
             if (!targetUids.contains(entry.key)) {
                 val ref = FirebaseComm.devicesRef.child(entry.key).child("device").child("live")
                 ref.removeEventListener(entry.value)
+                try { ref.keepSynced(false) } catch (_: Exception) {}
                 activeListeners.remove(ref)
                 iter.remove()
                 
                 val profRef = FirebaseComm.devicesRef.child(entry.key).child("profile")
                 profileListeners[entry.key]?.let {
                     profRef.removeEventListener(it)
+                    try { profRef.keepSynced(false) } catch (_: Exception) {}
                     activeListeners.remove(profRef)
                 }
                 profileListeners.remove(entry.key)
@@ -288,6 +616,7 @@ class LocationRepository(internal val context: Context) {
         for (uid in targetUids) {
             if (!userLocationListeners.containsKey(uid)) {
                 val ref = FirebaseComm.devicesRef.child(uid).child("device").child("live")
+                try { ref.keepSynced(true) } catch (_: Exception) {}
                 val listener = object : ValueEventListener {
                     override fun onDataChange(snapshot: DataSnapshot) {
                         var rawLoc = snapshot.getValue(UserLocation::class.java)
@@ -297,6 +626,26 @@ class LocationRepository(internal val context: Context) {
                         val zoneName = snapshot.child("current_safe_zone_name").getValue(String::class.java)
                         val zoneState = snapshot.child("current_safe_zone_state").getValue(String::class.java)
                         val zoneId = snapshot.child("current_safe_zone_id").getValue(String::class.java)
+
+                        // 🎨 Live Telemetry Custom Avatar Decode & Multi-Alias File Persistence
+                        val liveAvatarData = snapshot.child("avatar_data").value?.toString()
+                        val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+                        val rawClean = cleanUid.removePrefix("HW_")
+                        val hwClean = if (cleanUid.startsWith("HW_")) cleanUid else "HW_$cleanUid"
+
+                        if (!liveAvatarData.isNullOrEmpty()) {
+                            try {
+                                val cleanB64 = if (liveAvatarData.contains(",")) liveAvatarData.substringAfter(",") else liveAvatarData
+                                val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
+                                val dir = java.io.File(context.filesDir, "avatars")
+                                if (!dir.exists()) dir.mkdirs()
+                                for (fname in listOf(uid, cleanUid, rawClean, hwClean).distinct()) {
+                                    try { java.io.File(dir, "${fname}_custom.png").writeBytes(bytes) } catch (_: Exception) {}
+                                }
+                            } catch (_: Exception) {}
+                        }
+
+                        val resolvedExplicitAvatar = explicitAvatar ?: (if (!liveAvatarData.isNullOrEmpty()) "AV_${cleanUid}_01" else null)
 
                         if (rawLoc == null) {
                             val lat = snapshot.child("latitude").getValue(Double::class.java) ?: 0.0
@@ -327,7 +676,7 @@ class LocationRepository(internal val context: Context) {
                         // If coordinates missing but currently inside safe zone, fallback to safe zone coordinates
                         if ((rawLoc.latitude == 0.0 && rawLoc.longitude == 0.0) && zoneState == "IN" && !zoneId.isNullOrEmpty()) {
                             try {
-                                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                                val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
                                 val zoneModel = db.getSafeZoneById(zoneId)
                                 if (zoneModel != null && zoneModel.lat != 0.0 && zoneModel.lng != 0.0) {
                                     rawLoc = rawLoc.copy(latitude = zoneModel.lat, longitude = zoneModel.lng)
@@ -351,7 +700,7 @@ class LocationRepository(internal val context: Context) {
 
                         val loc = rawLoc.copy(
                             userId = uid,
-                            avatar_id = explicitAvatar ?: rawLoc.avatar_id,
+                            avatar_id = resolvedExplicitAvatar ?: rawLoc.avatar_id,
                             userName = explicitName ?: rawLoc.userName,
                             timestamp = effectiveTs,
                             batteryLevel = snapBattery,
@@ -373,42 +722,85 @@ class LocationRepository(internal val context: Context) {
             // 🚀 LIVE PROFILE SYNCHRONIZATION: Listen directly to Profile changes for real-time avatar updates
             if (!profileListeners.containsKey(uid)) {
                 val profRef = FirebaseComm.devicesRef.child(uid).child("profile")
+                try { profRef.keepSynced(true) } catch (_: Exception) {}
                 val profListener = object : ValueEventListener {
-                    // [Variables] profAvatar, profName, db, cur | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader, SystemLogger | [Integration Points] MapActivity, LocationRepository
+                    // [Variables] profAvatar, profName, avatarData, cleanUid, rawClean, hwClean, effectiveAvatar, db, targetLocKey, cur, equippedId, nestedAvatar, rawProfAvatar | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader, SystemLogger, DeviceIdentityHelper | [Integration Points] MapActivity, LocationRepository
                     override fun onDataChange(snapshot: DataSnapshot) {
-                        val profAvatar = snapshot.child("avatar_id").value?.toString()
-                            ?: snapshot.child("equipped_avatar_id").value?.toString()
-                            ?: snapshot.child("appearance").child("avatar_id").value?.toString()
+                        val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+                        val rawClean = cleanUid.removePrefix("HW_")
+                        val hwClean = if (cleanUid.startsWith("HW_")) cleanUid else "HW_$cleanUid"
+
+                        val equippedId = snapshot.child("equipped_avatar_id").getValue(Int::class.java)
+                            ?: FirebaseComm.safeInt(snapshot.child("equipped_avatar_id"))
+                        val nestedAvatar = snapshot.child(cleanUid).child("avatar_id").value?.toString()
+                        val rawProfAvatar = snapshot.child("avatar_id").value?.toString()
+
+                        val profAvatar = when {
+                            !nestedAvatar.isNullOrEmpty() && nestedAvatar.startsWith("AV_") -> nestedAvatar
+                            equippedId == -1 -> "AV_${cleanUid}_01"
+                            !rawProfAvatar.isNullOrEmpty() && rawProfAvatar.startsWith("AV_") -> rawProfAvatar
+                            !rawProfAvatar.isNullOrEmpty() && rawProfAvatar != "1" && rawProfAvatar != "avatar_custom_1" -> rawProfAvatar
+                            equippedId != null && equippedId > 0 -> "avatar_custom_$equippedId"
+                            !rawProfAvatar.isNullOrEmpty() -> rawProfAvatar
+                            else -> snapshot.child("appearance").child("avatar_id").value?.toString()
+                        }
+
                         val profName = snapshot.child("name").value?.toString()
                             ?: snapshot.child("fullName").value?.toString()
                             ?: snapshot.child("userName").value?.toString()
 
                         val avatarData = snapshot.child("avatar_data").value?.toString()
+                            ?: snapshot.child(cleanUid).child("avatar_data").value?.toString()
+
                         if (!avatarData.isNullOrEmpty()) {
                             try {
                                 val cleanB64 = if (avatarData.contains(",")) avatarData.substringAfter(",") else avatarData
                                 val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
                                 val dir = java.io.File(context.filesDir, "avatars")
                                 if (!dir.exists()) dir.mkdirs()
-                                java.io.File(dir, "${uid}_custom.png").writeBytes(bytes)
+                                for (fname in listOf(uid, cleanUid, rawClean, hwClean).distinct()) {
+                                    try { java.io.File(dir, "${fname}_custom.png").writeBytes(bytes) } catch (_: Exception) {}
+                                }
                             } catch (_: Exception) {}
                         }
 
-                        if (!profAvatar.isNullOrEmpty() && profAvatar != "butterfly") {
+                        val effectiveAvatar = profAvatar ?: (if (!avatarData.isNullOrEmpty()) "AV_${cleanUid}_01" else null)
+
+                        if (!effectiveAvatar.isNullOrEmpty() && effectiveAvatar != "butterfly") {
                             try {
-                                val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-                                db.updateDeviceIdentityAndAvatar(uid, profName, profAvatar)
-                                db.commitAnalyticalDossier(uid, mapOf("avatar_id" to profAvatar, "equipped_avatar_id" to profAvatar))
-                                com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+                                val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+                                val currentAv = db.getDeviceCentricAvatar(cleanUid)
+                                val currentName = db.getDeviceCentricName(cleanUid)
+                                val avatarChanged = currentAv != effectiveAvatar
+                                val nameChanged = !profName.isNullOrEmpty() && currentName != profName
+                                if (avatarChanged || nameChanged) {
+                                    for (idToUpdate in listOf(cleanUid, uid, rawClean, hwClean).distinct()) {
+                                        db.updateDeviceIdentityAndAvatar(idToUpdate, profName, effectiveAvatar)
+                                        db.commitAnalyticalDossier(idToUpdate, mapOf("avatar_id" to effectiveAvatar, "equipped_avatar_id" to effectiveAvatar))
+                                        com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(idToUpdate)
+                                    }
+                                    com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+                                }
                                 
-                                if (latestLocations.containsKey(uid)) {
-                                    val cur = latestLocations[uid]!!
-                                    cur.avatar_id = profAvatar
-                                    if (!profName.isNullOrEmpty()) cur.userName = profName
-                                    _userLocations.postValue(latestLocations.values.sortedWith(
-                                        compareByDescending<UserLocation> { it.isSosActive }
-                                            .thenByDescending { it.getLongTimestamp() }
-                                    ))
+                                val targetLocKey = listOf(cleanUid, uid, rawClean, hwClean)
+                                    .firstOrNull { latestLocations.containsKey(it) }
+                                if (targetLocKey != null) {
+                                    val cur = latestLocations[targetLocKey]!!
+                                    var locChanged = false
+                                    if (cur.avatar_id != effectiveAvatar) {
+                                        cur.avatar_id = effectiveAvatar
+                                        locChanged = true
+                                    }
+                                    if (!profName.isNullOrEmpty() && cur.userName != profName) {
+                                        cur.userName = profName
+                                        locChanged = true
+                                    }
+                                    if (locChanged) {
+                                        _userLocations.postValue(latestLocations.values.sortedWith(
+                                            compareByDescending<UserLocation> { it.isSosActive }
+                                                .thenByDescending { it.getLongTimestamp() }
+                                        ))
+                                    }
                                 }
                             } catch (e: Exception) {
                                 SystemLogger.e("LocationRepository", "Profile Avatar Sync Failed for $uid", e)
@@ -448,7 +840,7 @@ class LocationRepository(internal val context: Context) {
                 latestLocations[selfId] = selfLoc
             }
 
-            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
             val roster = db.getOfflineRoster()
             for (node in roster) {
                 val peerId = (node["uid_1"] ?: node["uid_2"] ?: node["connected_id"])?.toString() ?: continue
@@ -525,12 +917,16 @@ class LocationRepository(internal val context: Context) {
                     val relRef = FirebaseComm.relationshipsRef.child(myGroup)
                     val relListener = object : ValueEventListener {
                         override fun onDataChange(relSnap: DataSnapshot) {
+                            val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+                            // [Variables] csv: StringBuilder, unifiedPairs: DataSnapshot, directPairs: DataSnapshot, approvals: DataSnapshot, membersSnap: DataSnapshot, devicesSnap: DataSnapshot, cleanPairKey: String, cleanTargetId: String, cleanMId: String, cleanDId: String | [Constants] None | [Dependencies] FirebaseComm, RegistryManager, SharedPreferences, DeviceIdentityHelper | [Integration Points] linked_devices_csv, updateTargetListeners
                             val csv = StringBuilder(finalId).append(",")
                             
                             // 1. Unified `devices/$finalId/paired_with`
                             val unifiedPairs = relSnap.child("devices").child(finalId).child("paired_with")
                             unifiedPairs.children.forEach { pair ->
-                                if (pair.getValue(Boolean::class.java) == true && pair.key != null) {
+                                val pairKey = pair.key
+                                val cleanPairKey = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(pairKey)
+                                if (cleanPairKey.isNotEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPairKey) && !localDb.isDeviceDeleted(cleanPairKey) && !localDb.isDeviceDeleted(pairKey ?: "") && pair.getValue(Boolean::class.java) == true && pair.key != null) {
                                     if (!csv.contains("${pair.key},")) {
                                         csv.append(pair.key).append(",")
                                     }
@@ -540,7 +936,9 @@ class LocationRepository(internal val context: Context) {
                             // 2. Legacy `direct_pairs/$finalId` for backwards compatibility
                             val directPairs = relSnap.child("direct_pairs").child(finalId)
                             directPairs.children.forEach { pair ->
-                                if (pair.getValue(Boolean::class.java) == true && pair.key != null) {
+                                val pairKey = pair.key
+                                val cleanPairKey = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(pairKey)
+                                if (cleanPairKey.isNotEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPairKey) && !localDb.isDeviceDeleted(cleanPairKey) && !localDb.isDeviceDeleted(pairKey ?: "") && pair.getValue(Boolean::class.java) == true && pair.key != null) {
                                     if (!csv.contains("${pair.key},")) {
                                         csv.append(pair.key).append(",")
                                     }
@@ -550,25 +948,28 @@ class LocationRepository(internal val context: Context) {
                             val approvals = relSnap.child("sharing_approvals")
                             approvals.children.forEach { targetSnap ->
                                 val targetId = targetSnap.key
-                                if (!targetId.isNullOrEmpty() && targetSnap.child(finalId).getValue(Boolean::class.java) == true) {
+                                val cleanTargetId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(targetId)
+                                if (!targetId.isNullOrEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanTargetId) && !localDb.isDeviceDeleted(cleanTargetId) && !localDb.isDeviceDeleted(targetId) && targetSnap.child(finalId).getValue(Boolean::class.java) == true) {
                                     if (!csv.contains("$targetId,")) {
                                         csv.append(targetId).append(",")
                                     }
                                 }
                             }
 
-                            // 3. 🚀 CIRCLE MEMBERS & DEVICES SSOT: Include all active circle members and devices
+                            // 3. 🚀 CIRCLE MEMBERS & DEVICES SSOT: Include all active circle members and devices (filtering decommissioned and unlinked nodes)
                             val membersSnap = relSnap.child("members")
                             membersSnap.children.forEach { mSnap ->
                                 val mId = mSnap.key
-                                if (!mId.isNullOrEmpty() && !csv.contains("$mId,")) {
+                                val cleanMId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(mId)
+                                if (!mId.isNullOrEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanMId) && !localDb.isDeviceDeleted(cleanMId) && !localDb.isDeviceDeleted(mId) && !csv.contains("$mId,")) {
                                     csv.append(mId).append(",")
                                 }
                             }
                             val devicesSnap = relSnap.child("devices")
                             devicesSnap.children.forEach { dSnap ->
                                 val dId = dSnap.key
-                                if (!dId.isNullOrEmpty() && !csv.contains("$dId,")) {
+                                val cleanDId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(dId)
+                                if (!dId.isNullOrEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanDId) && !localDb.isDeviceDeleted(cleanDId) && !localDb.isDeviceDeleted(dId) && !csv.contains("$dId,")) {
                                     csv.append(dId).append(",")
                                 }
                             }
@@ -593,8 +994,15 @@ class LocationRepository(internal val context: Context) {
             val friendRef = FirebaseComm.devicesRef.child(finalId).child("profile").child("friend_matrix")
             val friendListener = object : ValueEventListener {
                 override fun onDataChange(snap: DataSnapshot) {
+                    val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
                     val csv = StringBuilder()
-                    snap.children.forEach { childSnap -> csv.append(childSnap.key).append(",") }
+                    snap.children.forEach { childSnap -> 
+                        val fId = childSnap.key
+                        val cleanFId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(fId)
+                        if (!fId.isNullOrEmpty() && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanFId) && !localDb.isDeviceDeleted(cleanFId) && !localDb.isDeviceDeleted(fId)) {
+                            csv.append(fId).append(",") 
+                        }
+                    }
                     prefs.edit().putString("friend_matrix_csv", csv.toString()).apply()
                     updateTargetListeners()
                 }
@@ -609,14 +1017,16 @@ class LocationRepository(internal val context: Context) {
             // When another device pairs Device B to this device or updates roles, sync directly to local SQLite
             val selfRelRef = FirebaseComm.devicesRef.child(finalId).child("relationships")
             val selfRelListener = object : ValueEventListener {
-                // [Variables] selfRelSnap, peerId, role, group, localDb, changed | [Constants] None | [Dependencies] DatabaseHelper, SystemLogger | [Integration Points] LocationRepository, MapActivity, FamilyFriendsActivity
+                // [Variables] selfRelSnap, peerId, cleanPeerId, role, group, localDb, changed | [Constants] None | [Dependencies] DatabaseHelper, RegistryManager, SystemLogger, DeviceIdentityHelper | [Integration Points] LocationRepository, MapActivity, FamilyFriendsActivity
                 override fun onDataChange(selfRelSnap: DataSnapshot) {
                     try {
-                        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+                        val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
                         var changed = false
                         for (relChild in selfRelSnap.children) {
                             val peerId = relChild.key ?: continue
                             if (peerId.isBlank()) continue
+                            val cleanPeerId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(peerId)
+                            if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanPeerId) || localDb.isDeviceDeleted(cleanPeerId) || localDb.isDeviceDeleted(peerId)) continue
                             val role = relChild.child("role").value?.toString() ?: "Member"
                             val group = relChild.child("group").value?.toString() ?: ("GRP_" + finalId)
                             val isFriend = role.contains("Friend", ignoreCase = true) || role.contains("Peer", ignoreCase = true) || role.contains("Colleague", ignoreCase = true)
@@ -698,10 +1108,16 @@ class LocationRepository(internal val context: Context) {
         }
     }
 
+    // [Variables] enrichedLocation, rId | [Constants] None | [Dependencies] offlineSyncManager, processIncomingLocation | [Integration Points] Immediate Host Marker Loopback
     private fun finalizeLocationPush(userLocation: UserLocation, finalAddress: String?) {
         val enrichedLocation = userLocation.copy(address = finalAddress)
-        offlineSyncManager.syncLocation(enrichedLocation)
-        updateUserLocation(enrichedLocation)
+        // 🔋 Spark Quota & Cellular Radio Sentinel: Single authoritative cloud upload with spatial dead-reckoning & heartbeat throttle
+        offlineSyncManager.syncLocation(enrichedLocation, true)
+        // 🚀 CRITICAL FIX: Loopback Self GNSS fix immediately into local in-memory repository (Zero radio cost)
+        val rId = enrichedLocation.getResolvedUserId()
+        if (rId.isNotEmpty()) {
+            processIncomingLocation(rId, enrichedLocation)
+        }
     }
 
     fun updateUserLocation(userLocation: UserLocation) {
@@ -719,8 +1135,8 @@ class LocationRepository(internal val context: Context) {
     }
 
     fun fetchHistory(userId: String, startTs: Long, endTs: Long, callback: (List<UserLocation>) -> Unit) {
-        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val localPoints = db.getRawHistoryPoints(userId, startTs, endTs)
+        val repo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+        val localPoints = repo.getRawHistoryPoints(userId, startTs, endTs)
 
         if (!FirebaseComm.isAuthenticated()) {
             // 🛡️ Offline / Zero-Trust Sentinel: Provide instant local SQLite ledger history (Latest first)
@@ -761,7 +1177,7 @@ class LocationRepository(internal val context: Context) {
                                 point.batteryLevel = childBattery
                                 points.add(point)
                                 
-                                db.saveHistoryPoint(
+                                repo.saveHistoryPoint(
                                     userId,
                                     point.getResolvedDeviceId(),
                                     point.latitude,

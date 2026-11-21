@@ -287,7 +287,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         val mMinute = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_MINUTE, SystemUpdateScheduler.MAINTENANCE_MINUTE)
         _maintenanceWindowTime.value = String.format(Locale.US, "%02d:%02d %s", if (mHour == 0 || mHour == 12) 12 else mHour % 12, mMinute, if (mHour < 12) "AM" else "PM")
         _isMeteredAllowed.value = RegistryManager.getBoolean(context, RegistryManager.KEY_ALLOW_METERED_UPDATES, false)
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         _pendingBalanceCount.value = localDb.getPendingSyncCount()
         _lastBalanceSyncTs.value = RegistryManager.getString(context, RegistryManager.KEY_BALANCE_DELTA_LAST_SYNCED_TS, "Never (Pending Sync)")
 
@@ -700,7 +700,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
         val mMinute = RegistryManager.getInt(context, RegistryManager.KEY_MAINTENANCE_WINDOW_MINUTE, SystemUpdateScheduler.MAINTENANCE_MINUTE)
         _maintenanceWindowTime.value = String.format(Locale.US, "%02d:%02d %s", if (mHour == 0 || mHour == 12) 12 else mHour % 12, mMinute, if (mHour < 12) "AM" else "PM")
         _isMeteredAllowed.value = RegistryManager.getBoolean(context, RegistryManager.KEY_ALLOW_METERED_UPDATES, false)
-        val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         _pendingBalanceCount.value = localDb.getPendingSyncCount()
         _lastBalanceSyncTs.value = RegistryManager.getString(context, RegistryManager.KEY_BALANCE_DELTA_LAST_SYNCED_TS, "Never (Pending Sync)")
                 _checkResultDialog.value = Pair(
@@ -745,7 +745,7 @@ class SystemUpdateViewModel(application: Application) : BaseViewModel(applicatio
             _loadingStatus.postValue("Reconciling yesterday-to-today offline balance data...")
             val count = com.jdroidx.jfindme.data.remote.OfflineSyncManager.getInstance(context).reconcileYesterdayTodayBalance()
             delay(500)
-            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
             _pendingBalanceCount.postValue(db.getPendingSyncCount())
             val nowStr = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date())
             _lastBalanceSyncTs.postValue(nowStr)

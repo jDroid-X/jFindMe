@@ -125,9 +125,29 @@ object MasterDataSyncSentinel {
 
                 SystemLogger.i(TAG, "Local master data pushed to Cloud: $category [$changeType] -> $entityId")
 
-                // 3. Simultaneous Peer Fan-out: Send to all connected/paired devices
+                // 3. Simultaneous Peer Fan-out: Send to all connected/paired devices in parallel
                 val pairedIds = db.getAllPairedDeviceIds()
                 if (pairedIds.isNotEmpty()) {
+                    val mutablePayload = payload.toMutableMap()
+                    if (category == CATEGORY_PROFILE && !mutablePayload.containsKey("avatar_data")) {
+                        try {
+                            val dir = java.io.File(appContext.filesDir, "avatars")
+                            val selfFile = java.io.File(dir, "${localAgentId}_custom.png")
+                            val legacyFile = java.io.File(dir, "custom_photo.png")
+                            val photo = if (selfFile.exists() && selfFile.length() > 0) selfFile else legacyFile
+                            if (photo.exists() && photo.length() > 0) {
+                                val bmp = android.graphics.BitmapFactory.decodeFile(photo.absolutePath)
+                                if (bmp != null) {
+                                    val baos = java.io.ByteArrayOutputStream()
+                                    val thumb = android.graphics.Bitmap.createScaledBitmap(bmp, 180, 180, true)
+                                    thumb.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, baos)
+                                    val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                                    mutablePayload["avatar_data"] = b64
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
                     val peerPacket = mapOf(
                         "sender_agent_id" to localAgentId,
                         "category" to category,
@@ -135,28 +155,30 @@ object MasterDataSyncSentinel {
                         "entity_id" to entityId,
                         "timestamp" to nowEpoch,
                         "forensic_time" to forensicTs,
-                        "payload" to payload
+                        "payload" to mutablePayload
                     )
 
-                    var sentCount = 0
-                    for (peerId in pairedIds) {
-                        // [Variables] cleanPeerId: String | [Constants] None | [Dependencies] FirebaseComm.sanitizeAgentId | [Integration Points] /devices/{id}/inbox
-                        val cleanPeerId = FirebaseComm.sanitizeAgentId(peerId)
-                        if (FirebaseComm.isAgentIdValid(cleanPeerId) && cleanPeerId != localAgentId) {
-                            try {
-                                val inboxRef = FirebaseComm.devicesRef
-                                    .child(cleanPeerId)
-                                    .child("inbox")
-                                    .child("master_sync")
-                                    .push()
-                                inboxRef.setValue(peerPacket)
-                                sentCount++
-                            } catch (e: Exception) {
-                                SystemLogger.w(TAG, "Failed to fan-out to peer $cleanPeerId: ${e.message}")
+                    // [Variables] pairedIds, peerPacket, sentCount, cleanPeerId, inboxRef | [Constants] TAG | [Dependencies] CoroutineScope, Dispatchers.IO, AtomicInteger, FirebaseComm | [Integration Points] Realtime peer inbox push
+                    val sentCount = java.util.concurrent.atomic.AtomicInteger(0)
+                    val jobs = pairedIds.map { peerId ->
+                        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                            val cleanPeerId = FirebaseComm.sanitizeAgentId(peerId)
+                            if (FirebaseComm.isAgentIdValid(cleanPeerId) && cleanPeerId != localAgentId) {
+                                try {
+                                    val inboxRef = FirebaseComm.devicesRef
+                                        .child(cleanPeerId)
+                                        .child("inbox")
+                                        .child("master_sync")
+                                        .push()
+                                    inboxRef.setValue(peerPacket)
+                                    sentCount.incrementAndGet()
+                                } catch (e: Exception) {
+                                    SystemLogger.w(TAG, "Failed to fan-out to peer $cleanPeerId: ${e.message}")
+                                }
                             }
                         }
                     }
-                    SystemLogger.i(TAG, "Simultaneously broadcast master data change to $sentCount connected peer devices.")
+                    SystemLogger.i(TAG, "Simultaneously dispatched parallel master data fan-out to ${pairedIds.size} connected peer targets.")
                 }
 
             } catch (e: Exception) {
@@ -179,6 +201,17 @@ object MasterDataSyncSentinel {
             .child("inbox")
             .child("master_sync")
 
+        // 🚀 BACKLOG THROTTLE: If backlog exceeds 15 items, purge stale entries to prevent GC thrashing
+        inboxRef.get().addOnSuccessListener { snapshot ->
+            if (snapshot.childrenCount > 15) {
+                SystemLogger.i(TAG, "Pruning ${snapshot.childrenCount} backlog inbox items for $localAgentId")
+                inboxRef.removeValue()
+            }
+        }
+
+        // Limit listener strictly to latest 10 messages
+        val inboxQuery = inboxRef.limitToLast(10)
+
         val listener = object : ChildEventListener {
             override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
                 try {
@@ -194,13 +227,72 @@ object MasterDataSyncSentinel {
                         try {
                             val db = DatabaseHelper.getInstance(appContext)
                             if (category == CATEGORY_PROFILE && senderId.isNotEmpty()) {
-                                // Refresh peer cached profile
+                                val cleanSender = DeviceIdentityHelper.toCanonicalAgentId(senderId)
+                                if (db.isDeviceDeleted(cleanSender) || db.isDeviceDeleted(senderId)) return@launch
+                                val payloadSnap = snapshot.child("payload")
+
+                                // 1. Direct Payload Extraction (Immediate Zero-Latency Decode)
+                                val directAvData = payloadSnap.child("avatar_data").value?.toString()
+                                val directAvId = payloadSnap.child("avatar_id").value?.toString() ?: "AV_${cleanSender}_01"
+                                val directName = payloadSnap.child("name").value?.toString()
+                                if (!directAvData.isNullOrEmpty()) {
+                                    try {
+                                        val cleanB64 = if (directAvData.contains(",")) directAvData.substringAfter(",") else directAvData
+                                        val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
+                                        val dir = java.io.File(appContext.filesDir, "avatars")
+                                        if (!dir.exists()) dir.mkdirs()
+                                        for (fname in listOf(senderId, cleanSender, cleanSender.removePrefix("HW_"), "HW_$cleanSender").distinct()) {
+                                            java.io.File(dir, "${fname}_custom.png").writeBytes(bytes)
+                                        }
+                                        db.saveRosterNode(cleanSender, directName ?: "Member", "MEMBER", "ACTIVE", false, true, qrCode = directAvId, avatarId = directAvId, notifyPeers = false)
+                                        db.updateDeviceIdentityAndAvatar(cleanSender, directName, directAvId)
+                                        db.commitAnalyticalDossier(cleanSender, mapOf("avatar_id" to directAvId, "equipped_avatar_id" to "-1"))
+                                        com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(cleanSender)
+                                        com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(senderId)
+                                        com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+                                    } catch (_: Exception) {}
+                                }
+
+                                // 2. Fallback Deep Refresh from Cloud Profile Node
                                 FirebaseComm.devicesRef.child(senderId).child("profile").get().addOnSuccessListener { profSnap ->
                                     if (profSnap.exists()) {
                                         val name = profSnap.child("name").getValue(String::class.java)
                                             ?: profSnap.child("fullName").getValue(String::class.java) ?: "Member"
                                         val phone = profSnap.child("phone").getValue(String::class.java) ?: ""
-                                        db.saveRosterNode(senderId, name, "MEMBER", "ACTIVE", false, true)
+                                        val equippedId = profSnap.child("equipped_avatar_id").getValue(Int::class.java)
+                                            ?: FirebaseComm.safeInt(profSnap.child("equipped_avatar_id"))
+                                        val nestedAv = profSnap.child(cleanSender).child("avatar_id").value?.toString()
+                                        val rawAv = profSnap.child("avatar_id").value?.toString()
+
+                                        val resolvedAv = when {
+                                            !nestedAv.isNullOrEmpty() && nestedAv.startsWith("AV_") -> nestedAv
+                                            equippedId == -1 -> "AV_${cleanSender}_01"
+                                            !rawAv.isNullOrEmpty() && rawAv.startsWith("AV_") -> rawAv
+                                            !rawAv.isNullOrEmpty() && rawAv != "1" && rawAv != "avatar_custom_1" -> rawAv
+                                            equippedId != null && equippedId > 0 -> "avatar_custom_$equippedId"
+                                            !rawAv.isNullOrEmpty() -> rawAv
+                                            else -> "avatar_custom_1"
+                                        }
+
+                                        val avData = profSnap.child("avatar_data").value?.toString()
+                                        if (!avData.isNullOrEmpty()) {
+                                            try {
+                                                val cleanB64 = if (avData.contains(",")) avData.substringAfter(",") else avData
+                                                val bytes = android.util.Base64.decode(cleanB64, android.util.Base64.DEFAULT)
+                                                val dir = java.io.File(appContext.filesDir, "avatars")
+                                                if (!dir.exists()) dir.mkdirs()
+                                                for (fname in listOf(senderId, cleanSender, cleanSender.removePrefix("HW_"), "HW_$cleanSender").distinct()) {
+                                                    java.io.File(dir, "${fname}_custom.png").writeBytes(bytes)
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+
+                                        db.saveRosterNode(cleanSender, name, "MEMBER", "ACTIVE", false, true, qrCode = resolvedAv, avatarId = resolvedAv, notifyPeers = false)
+                                        db.updateDeviceIdentityAndAvatar(cleanSender, name, resolvedAv)
+                                        db.commitAnalyticalDossier(cleanSender, mapOf("avatar_id" to resolvedAv, "equipped_avatar_id" to (equippedId ?: 1).toString()))
+                                        com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(cleanSender)
+                                        com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(senderId)
+                                        com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                                     }
                                 }
                             }
@@ -235,7 +327,7 @@ object MasterDataSyncSentinel {
             }
         }
 
-        inboxRef.addChildEventListener(listener)
+        inboxQuery.addChildEventListener(listener)
         activeListeners[localAgentId] = listener
         SystemLogger.i(TAG, "Real-time master sync inbox listener registered for $localAgentId")
     }
@@ -258,13 +350,55 @@ object MasterDataSyncSentinel {
         }
     }
 
+    private val isAuthRetryScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var authListener: com.google.firebase.auth.FirebaseAuth.AuthStateListener? = null
+
+    /**
+     * [Variables] appContext, auth, authListener | [Constants] TAG | [Dependencies] FirebaseAuth, Handler, Looper | [Integration Points] MasterDataSyncSentinel, OfflineSyncManager
+     * GAP-06: Schedules Auth retry listener & backoff timer to ensure queued mutations are never stalled when network arrives before Auth token.
+     */
+    private fun scheduleAuthRetry(appContext: Context) {
+        if (!isAuthRetryScheduled.compareAndSet(false, true)) return
+
+        try {
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            authListener = object : com.google.firebase.auth.FirebaseAuth.AuthStateListener {
+                override fun onAuthStateChanged(fbAuth: com.google.firebase.auth.FirebaseAuth) {
+                    if (fbAuth.currentUser != null) {
+                        try {
+                            auth.removeAuthStateListener(this)
+                        } catch (_: Exception) {}
+                        isAuthRetryScheduled.set(false)
+                        SystemLogger.i(TAG, "Firebase Auth established via listener! Retrying flushPendingMasterSyncQueue.")
+                        flushPendingMasterSyncQueue(appContext)
+                    }
+                }
+            }
+            auth.addAuthStateListener(authListener!!)
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Failed to attach AuthStateListener: ${e.message}")
+        }
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            isAuthRetryScheduled.set(false)
+            if (isNetworkAvailable(appContext)) {
+                flushPendingMasterSyncQueue(appContext)
+            }
+        }, 4000L)
+    }
+
     /**
      * 🔄 Drains pending master data mutations queued in SQLite SyncQueueTable while device was offline.
      */
     @JvmStatic
     fun flushPendingMasterSyncQueue(context: Context) {
         val appContext = context.applicationContext
-        if (!isNetworkAvailable(appContext) || !FirebaseComm.isAuthenticated()) return
+        if (!isNetworkAvailable(appContext)) return
+        if (!FirebaseComm.isAuthenticated()) {
+            SystemLogger.w(TAG, "Firebase Auth not ready during flushPendingMasterSyncQueue. Scheduling auth listener & retry.")
+            scheduleAuthRetry(appContext)
+            return
+        }
 
         CoroutineScope(Dispatchers.IO).launch {
             try {

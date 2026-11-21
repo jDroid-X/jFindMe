@@ -122,8 +122,7 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
      */
     @JvmOverloads
     fun loadHistorySessions(context: Context, uid: String, timeWindow: Long, fallbackPoints: List<UserLocation> = emptyList()) {
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-        val geocoder = Geocoder(context, Locale.getDefault())
+        val dbHelper = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         val cutoff = System.currentTimeMillis() - timeWindow
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -133,7 +132,8 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
             }
             _historySessions.postValue(sessions)
             
-            // ≡ƒÜÇ QA Fix: Forensic Geocoding Array (Late-Binding Resolution)
+            // OOPS MVC: 2-Tier Caching via ReverseGeocodeEngine SSOT (Late-Binding Resolution)
+            // [Variables] humanAddress, latch, result, copy | [Dependencies] ReverseGeocodeEngine | [Integration Points] HistoryViewModel ⟷ ReverseGeocodeEngine
             val enriched = sessions.map { row ->
                 val addr = row["address"] as? String ?: "Recorded Location Fix"
                 if (addr == "Recorded Location Fix" || addr == "Locating..." || addr.isBlank() || addr == "Tracing...") {
@@ -143,10 +143,20 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
                     
                     if (lat != 0.0 || lng != 0.0) {
                         try {
-                            @Suppress("DEPRECATION")
-                            val addresses = geocoder.getFromLocation(lat, lng, 1)
-                            if (!addresses.isNullOrEmpty()) {
-                                val humanAddress = addresses[0].getAddressLine(0) ?: "Recorded Location Fix"
+                            var humanAddress = "Recorded Location Fix"
+                            val latch = java.util.concurrent.CountDownLatch(1)
+                            com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.resolveAddress(
+                                context, lat, lng, object : com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.AddressCallback {
+                                    override fun onAddressResolved(result: com.jdroidx.jfindme.engine.map.ReverseGeocodeEngine.AddressResult) {
+                                        if (result.isSuccess && result.formattedAddress.isNotBlank()) {
+                                            humanAddress = result.formattedAddress
+                                        }
+                                        latch.countDown()
+                                    }
+                                }
+                            )
+                            latch.await(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                            if (humanAddress != "Recorded Location Fix") {
                                 if (logId.isNotEmpty()) {
                                     dbHelper.updateHistoryAddress(logId, humanAddress)
                                 }
@@ -167,76 +177,85 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
     }
 
     /**
-     * ≡ƒÜÇ QA Logic: Network Asset Scanner (SSOT Mirror)
-     * Extracts all approved target nodes from the validated Roster Table.
-     * Rule: Roster Table is the absolute Forensic SSOT (V36).
+     * 🛡️ SSOT: OOPS-Based MVC Target Resolver
+     * Extracts only authorized, role-scoped connected devices for the host device.
+     * Prevents global cloud pollution, ghost HW_ aliases, and unlinked nodes.
      */
     fun fetchTrackingTargets(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            // [Variables] dbHelper, selfAgentId, myUid, myNick, selfLabel, selfAvatarId, primeTarget, connectedIds, targets, cleanId, ssotName, name, rawRole, role, avId, sortedTargets | [Constants] None | [Dependencies] DeviceRepository, DeviceIdentityHelper, RegistryManager, AvatarLoader, FirebaseComm | [Integration Points] HistoryActivity, SecurityDialogManager
+            val dbHelper = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
             val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
             val myUid = FirebaseAuth.getInstance().uid ?: ""
+            val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(
+                com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+            )
             
             _isLoading.postValue(true)
             
-            // 1. Resolve Local Mirror (SSOT)
-            val offlineNodes = dbHelper.getOfflineRoster()
             val targets = mutableListOf<TrackingTarget>()
             
-            // Include Self-Target for personal travel history inspection
+            // 1. Host Device (Self-Target)
             val myNick = com.jdroidx.jfindme.utils.RegistryManager.getUserNickname(context)
-            val selfLabel = if (myNick.isNotBlank()) "👑 $myNick (My Device)" else "👑 My Device (Host)"
+            val selfLabel = if (myNick.isNotBlank()) myNick else "My Device (Host)"
             val selfAvatarId = "avatar_custom_" + com.jdroidx.jfindme.utils.AvatarLoader.getResolvedAvatarIndex(
                 context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getInt("equipped_avatar_id", 1)
             )
             targets.add(TrackingTarget(selfLabel, selfAgentId, "Host", selfAvatarId))
             
-            // ≡ƒÜÇ PILLAR 2: Validated P2P Matrix
-            offlineNodes.forEach { row ->
-                val uid = row["uid_1"] as? String ?: row["uid"] as? String ?: ""
-                val ssotName = dbHelper.getDeviceCentricName(uid)
-                val name = if (ssotName.isNotBlank() && !ssotName.startsWith("Agent_", true)) ssotName else ((row["fullName"] as? String) ?: "Target ($uid)")
-                val role = row["role_type"] as? String ?: "PEER"
-                val avId = dbHelper.getDeviceCentricAvatar(uid)
-                
-                if (uid.isNotEmpty() && uid != selfAgentId && uid != myUid && !uid.contains("OWNER")) {
-                    targets.add(TrackingTarget("$name ($role)", uid, role, avId))
-                }
+            // [Variables] candidateIds, primeTarget, cleanId, ssotName, name, rawRole, role, avId | [Constants] None | [Dependencies] DeviceRepository, RegistryManager, DeviceIdentityHelper | [Integration Points] HistoryActivity, TrackingTarget
+            // 2. Verified Connected Peers (SSOT from Scoped Connected Devices, strictly excluding fleet wide catch-all pollution)
+            val activeGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+            val candidateIds = mutableSetOf<String>()
+            candidateIds.addAll(dbHelper.getConnectedDeviceIds(selfAgentId))
+            if (primeTarget.isNotBlank()) {
+                candidateIds.add(primeTarget)
             }
             
-            if (targets.isNotEmpty() || !com.jdroidx.jfindme.data.remote.FirebaseComm.isAuthenticated()) {
-                _trackingTargets.postValue(targets)
-                _isLoading.postValue(false)
-            } else {
-                // 🛡️ EMERGENCY FALLBACK: Local table is unpopulated, trigger forensic network scavenge
-                com.jdroidx.jfindme.data.remote.FirebaseComm.devicesRef
-                    .addListenerForSingleValueEvent(object : ValueEventListener {
-                        override fun onDataChange(snapshot: DataSnapshot) {
-                            snapshot.children.forEach { child ->
-                                val childUid = child.key ?: return@forEach
-                                if (childUid != myUid) {
-                                    val liveSnap = child.child("device").child("live")
-                                    val profSnap = child.child("profile")
-                                    val targetName = profSnap.child("name").getValue(String::class.java)
-                                        ?: liveSnap.child("userName").getValue(String::class.java)
-                                        ?: "Target ($childUid)"
-                                    val avatarId = liveSnap.child("avatar_id").getValue(String::class.java) ?: "butterfly"
-                                    
-                                    // If found remotely, save back to SSOT (Persistence Loop)
-                                    dbHelper.saveRosterNode(childUid, targetName, "MIRROR_T", "Handshake Restored", isAdmin = false, isFriend = true,
-                                        ownerName = "P2P Mirror Recovery", connectedDeviceId = childUid, qrCode = avatarId)
-                                    targets.add(TrackingTarget("$targetName (P2P MIRROR)", childUid, "Peer", avatarId))
-                                }
-                            }
-                            _trackingTargets.postValue(targets)
-                            _isLoading.postValue(false)
-                        }
-                        override fun onCancelled(error: DatabaseError) {
-                            _trackingTargets.postValue(targets)
-                            _isLoading.postValue(false)
-                        }
-                    })
+            for (rawId in candidateIds) {
+                if (rawId.isBlank() || rawId.startsWith("HW_")) continue
+                val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(rawId)
+                if (cleanId.isBlank() || cleanId == selfAgentId || cleanId == myUid) continue
+                if (cleanId.contains("OWNER") || cleanId.startsWith("UNKNOWN", ignoreCase = true)) continue
+                if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanId)) continue
+                if (dbHelper.isDeviceDeleted(cleanId, activeGroup)) continue
+                if (!com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(cleanId)) continue
+                
+                val ssotName = dbHelper.getDeviceCentricName(cleanId)
+                val name = if (ssotName.isNotBlank() && !ssotName.startsWith("Agent_", true)) {
+                    ssotName
+                } else {
+                    val dossier = dbHelper.getLocalDossier(cleanId)
+                    dossier["name"]?.takeIf { it.isNotBlank() && !it.startsWith("Agent_", true) } ?: "Device ($cleanId)"
+                }
+                
+                val rawRole = dbHelper.getRoleForDevice(cleanId)
+                val role = if (rawRole.isNotBlank() && !rawRole.equals("None", ignoreCase = true)) {
+                    rawRole
+                } else {
+                    "Peer"
+                }
+                val avId = dbHelper.getDeviceCentricAvatar(cleanId)
+                
+                targets.add(TrackingTarget(name, cleanId, role, avId))
             }
+            
+            // 3. Hierarchical Role-Based Sorting: Host (0) -> Child/Ward (1) -> Guardian/Parent (2) -> Family (3) -> Peer (4)
+            val sortedTargets = targets.sortedWith { a, b ->
+                fun rank(t: TrackingTarget): Int {
+                    if (t.role.equals("Host", ignoreCase = true) || t.uid == selfAgentId) return 0
+                    val r = t.role.uppercase()
+                    if (t.uid == primeTarget || r.contains("CHILD") || r.contains("WARD") || r.contains("SON") || r.contains("DAUGHTER")) return 1
+                    if (r.contains("PARENT") || r.contains("GUARDIAN") || r.contains("MOTHER") || r.contains("FATHER")) return 2
+                    if (r.contains("FAMILY") || r.contains("SIBLING") || r.contains("SISTER") || r.contains("BROTHER") || r.contains("SPOUSE")) return 3
+                    return 4
+                }
+                val rankCompare = rank(a).compareTo(rank(b))
+                if (rankCompare != 0) rankCompare else a.name.compareTo(b.name, ignoreCase = true)
+            }
+            
+            _trackingTargets.postValue(sortedTargets)
+            _isLoading.postValue(false)
         }
     }
 
@@ -250,7 +269,7 @@ class HistoryViewModel(application: android.app.Application) : BaseViewModel(app
             onComplete?.invoke(0)
             return
         }
-        val dbHelper = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val dbHelper = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         _isLoading.value = true
 
         com.jdroidx.jfindme.data.remote.FirebaseComm.rehydrateCloudLocationHistory(myAuthUid, targetUid) { points ->

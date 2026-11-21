@@ -13,7 +13,7 @@ import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.RotateAnimation;
 import android.widget.*;
-import com.jdroidx.jfindme.data.local.DatabaseHelper;
+import com.jdroidx.jfindme.data.repository.DeviceRepository;
 import com.jdroidx.jfindme.ui.base.BaseActivityJava;
 import com.jdroidx.jfindme.ui.base.UiArchitect;
 import com.jdroidx.jfindme.utils.AngelLoader;
@@ -206,7 +206,8 @@ public class FactoryResetActivity extends BaseActivityJava {
     private void renderMatrix(List<FactoryResetViewModel.TableNode> nodes) {
         matrixBox.removeAllViews();
         exportDataBuilder = new StringBuilder("=== JFINDME FORENSIC SYSTEM DUMP ===\n\n");
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
+        // [Variables] db: DeviceRepository | [Constants] None | [Dependencies] DeviceRepository | [Integration Points] View dump metadata
+        DeviceRepository db = DeviceRepository.getInstance(this);
         exportDataBuilder.append("TIME: ").append(db.getReadableNow()).append("\n\n");
         
         for (FactoryResetViewModel.TableNode node : nodes) {

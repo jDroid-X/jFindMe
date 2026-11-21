@@ -80,6 +80,8 @@
         <activity
             android:name=".ui.base.SplashActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -96,6 +98,8 @@
             android:name=".ui.map.MapActivity"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity 
             android:name=".ui.map.MapActivity2"
@@ -118,6 +122,9 @@
         <activity android:name=".ui.settings.HelpSupportActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.group.FamilyFriendsActivity"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:exported="true" />
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.group.GroupActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
@@ -209,10 +216,10 @@
         <receiver
             android:name=".receiver.SecurityReceiver"
             android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_PRESENT" />
                 <action android:name="android.intent.action.AIRPLANE_MODE" />
                 <action android:name="android.intent.action.ACTION_SHUTDOWN" />
                 <action android:name="android.location.PROVIDERS_CHANGED" />

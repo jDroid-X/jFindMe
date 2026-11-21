@@ -170,6 +170,41 @@ public class AvatarLoader {
         return result;
     }
 
+    // [Variables] context, deviceId, avatarIdStr, avatarsDir, clean, candidates, f, firstUnderscore, lastUnderscore, extractedAgent | [Constants] "avatars", "_custom.png" | [Dependencies] File, DeviceIdentityHelper | [Integration Points] AvatarLoader, MapActivity, MultiMarkerEngine
+    public static File resolveCustomAvatarFile(Context context, String deviceId, String avatarIdStr) {
+        if (context == null) return null;
+        File avatarsDir = new File(context.getFilesDir(), "avatars");
+        if (!avatarsDir.exists()) return null;
+
+        java.util.List<String> candidates = new java.util.ArrayList<>();
+        if (deviceId != null && !deviceId.trim().isEmpty()) {
+            String clean = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(deviceId.trim());
+            candidates.add(deviceId.trim());
+            candidates.add(clean);
+            if (!clean.startsWith("HW_")) candidates.add("HW_" + clean);
+            if (clean.startsWith("HW_")) candidates.add(clean.substring(3));
+        }
+
+        if (avatarIdStr != null && avatarIdStr.startsWith("AV_")) {
+            // Format is AV_{agentId}_{seq}
+            try {
+                int firstUnderscore = avatarIdStr.indexOf('_');
+                int lastUnderscore = avatarIdStr.lastIndexOf('_');
+                if (firstUnderscore >= 0 && lastUnderscore > firstUnderscore) {
+                    String extractedAgent = avatarIdStr.substring(firstUnderscore + 1, lastUnderscore);
+                    candidates.add(extractedAgent);
+                    candidates.add("HW_" + extractedAgent);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        for (String idCandidate : candidates) {
+            File f = new File(avatarsDir, idCandidate + "_custom.png");
+            if (f.exists() && f.length() > 0) return f;
+        }
+        return null;
+    }
+
     /**
      * 🚀 High-Fidelity Remote Avatar Bitmap Resolver (2x Double Resolution & Smart Fit)
      */
@@ -184,6 +219,19 @@ public class AvatarLoader {
         String cacheKey = "REMOTE_HQ_" + devKey + "_" + (avatarIdStr != null ? avatarIdStr : "") + "_S_" + doubleSize;
         Bitmap cached = bitmapCache.get(cacheKey);
         if (cached != null) return cached;
+
+        // 🛡️ PHYSICAL DISK TRUTH CHECK: If a device-specific custom avatar exists on disk, load it unconditionally!
+        File peerCustomFile = resolveCustomAvatarFile(context, deviceId, avatarIdStr);
+        if (peerCustomFile != null && peerCustomFile.exists()) {
+            try {
+                Bitmap b = BitmapFactory.decodeFile(peerCustomFile.getAbsolutePath());
+                if (b != null) {
+                    Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
+                    bitmapCache.put(cacheKey, customRes);
+                    return customRes;
+                }
+            } catch (Exception ignored) {}
+        }
 
         int resId = 0;
         if (avatarIdStr != null && !avatarIdStr.isEmpty()) {
@@ -218,18 +266,19 @@ public class AvatarLoader {
                 } catch (Exception ignored) {}
             } else if (isVrm || avatarIdStr.equals("-1") || avatarIdStr.equals("999") || avatarIdStr.contains("custom_photo") || avatarIdStr.startsWith("AV_")) {
                 // 🛡️ Peer Isolation: Check if a peer-specific cached photo exists, but NEVER load host user's custom_photo.png for remote peers!
+                File peerCustom = resolveCustomAvatarFile(context, deviceId, avatarIdStr);
+                if (peerCustom != null && peerCustom.exists()) {
+                    try {
+                        Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
+                        if (b != null) {
+                            Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
+                            bitmapCache.put(cacheKey, customRes);
+                            return customRes;
+                        }
+                    } catch (Exception ignored) {}
+                }
+
                 if (deviceId != null && !deviceId.isEmpty()) {
-                    File peerCustom = new File(context.getFilesDir() + "/avatars", deviceId + "_custom.png");
-                    if (peerCustom.exists()) {
-                        try {
-                            Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
-                            if (b != null) {
-                                Bitmap customRes = Bitmap.createScaledBitmap(b, doubleSize, doubleSize, true);
-                                bitmapCache.put(cacheKey, customRes);
-                                return customRes;
-                            }
-                        } catch (Exception ignored) {}
-                    }
                     String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context);
                     String selfAuth = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
                     if (deviceId.equals(selfAgent) || (selfAuth != null && deviceId.equals(selfAuth)) || "SELF_USER".equals(deviceId) || "You".equalsIgnoreCase(deviceId)) {
@@ -322,17 +371,18 @@ public class AvatarLoader {
             return;
         }
 
+        File peerCustom = resolveCustomAvatarFile(context, deviceId, avatarIdStr);
+        if (peerCustom != null && peerCustom.exists()) {
+            try {
+                Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
+                if (b != null) {
+                    targetView.setImageBitmap(b);
+                    return;
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (deviceId != null && !deviceId.isEmpty()) {
-            File peerCustom = new File(context.getFilesDir() + "/avatars", deviceId + "_custom.png");
-            if (peerCustom.exists()) {
-                try {
-                    Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
-                    if (b != null) {
-                        targetView.setImageBitmap(b);
-                        return;
-                    }
-                } catch (Exception ignored) {}
-            }
             // 🛡️ Self Hardware Identity Anchor: Check custom_photo.png if deviceId matches self
             String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context);
             String selfAuth = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
@@ -446,6 +496,23 @@ public class AvatarLoader {
 
         bitmapCache.put(cacheKey, composited);
         return composited;
+    }
+
+    // [Variables] deviceId, snapshot, key | [Constants] None | [Dependencies] LruCache, Map | [Integration Points] MapActivity, LocationRepository
+    /**
+     * 🎯 Targeted Eviction: Removes only avatar cache entries belonging to a specific device ID,
+     * preserving other fleet node bitmaps to prevent heap thrashing and 60fps drops.
+     */
+    public static void evictDevice(String deviceId) {
+        if (bitmapCache == null || deviceId == null || deviceId.isEmpty()) return;
+        try {
+            java.util.Map<String, Bitmap> snapshot = bitmapCache.snapshot();
+            for (String key : snapshot.keySet()) {
+                if (key.contains(deviceId)) {
+                    bitmapCache.remove(key);
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     public static void clearCache() {

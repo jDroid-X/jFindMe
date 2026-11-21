@@ -82,3 +82,20 @@ Github Location tracker/
 
 jFindMeWeb/
 
+# Scratch databases and SQLite binary caches
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.png
+
+# Scratch debug inspection scripts & test dumps
+check_*.py
+inspect_*.py
+print_*.py
+read_*.py
+scratch_*.md
+jfindme-mindmap*
+.agents/
+

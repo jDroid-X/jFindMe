@@ -634,7 +634,7 @@ public class AuthActivity extends BaseActivityJava {
             if (!isDestroyed() && !isFinishing()) {
                 // 🚀 QA Fix: Identity Matrix Integrity Gate
                 // Check if profile is complete OR if the user chose to 'Save Later' (Bypass Nudge)
-                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
                 String agentId = getSharedPreferences("system_registry", MODE_PRIVATE).getString("agent_id", "");
                 boolean bypassNudge = getSharedPreferences("system_registry", MODE_PRIVATE).getBoolean("profile_bypass_nudge", false);
                 

@@ -449,6 +449,55 @@ object AlertManager {
         SystemLogger.i(TAG, "BUTTERFLY_INVITATION_NOTIFICATION_POSTED: id=$pointId by=$creatorName")
     }
 
+    // [Variables] notificationManager, channelId, notificationId, contentIntent, pContentIntent, builder | [Constants] "device_sharing_invitations" | [Dependencies] NotificationCompat, NotificationChannel, PendingIntent, SystemLogger | [Integration Points] TrackingService, Device Sharing Notifications
+    @JvmStatic
+    fun showDeviceSharingNotification(
+        context: Context,
+        shareId: String,
+        sharerName: String,
+        sharerDeviceId: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "device_sharing_invitations"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Device Sharing Notifications", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Co-Guardian and Device Sharing Invitations"
+                enableLights(true)
+                lightColor = android.graphics.Color.CYAN
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationId = (System.currentTimeMillis() % 10000).toInt() + 20000
+
+        val contentIntent = Intent().apply {
+            setClassName(context, "com.jdroidx.jfindme.ui.map.MapActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("EXTRA_DEVICE_SHARING_ID", shareId)
+        }
+        val pContentIntent = android.app.PendingIntent.getActivity(
+            context,
+            notificationId,
+            contentIntent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE else android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_menu_share)
+            .setContentTitle("📲 Device Sharing Active")
+            .setContentText("$sharerName ($sharerDeviceId) shared device telemetry with you as Co-Guardian.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$sharerName ($sharerDeviceId) has added you as Co-Guardian. Live telemetry and tracking are now synchronized."))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pContentIntent)
+
+        notificationManager.notify(notificationId, builder.build())
+        triggerGeofenceHapticAlert(context)
+        SystemLogger.i(TAG, "DEVICE_SHARING_NOTIFICATION_POSTED: id=$shareId from=$sharerName")
+    }
+
     // [Variables] notificationManager: NotificationManager, channelId: String, notificationId: Int, contentIntent: Intent, pContentIntent: PendingIntent, notification: Notification
     // [Constants] None
     // [Dependencies] NotificationCompat, NotificationManager, Intent, PendingIntent, SystemLogger

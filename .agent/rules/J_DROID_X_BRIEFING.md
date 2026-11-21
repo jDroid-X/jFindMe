@@ -111,3 +111,8 @@ $$\text{Workflow} \longrightarrow \text{Rules} \longrightarrow \text{Agents} \lo
 - **Hardware Pre-Flight**: Battery $\ge 15\%$, Storage $\ge 150\text{ MB}$, Silicon ID anchor verified.
 - **Software Pre-Flight**: Keystore signature match verified before APK handoff; version monotonicity checked; Android 12+ unattended session execution.
 - **Teardown Pre-Flight**: Sentinel services stopped, offline queues flushed to cloud, forensic SQLite export offered before OS `ACTION_DELETE` intent. Zero orphaned background processes.
+
+### Section 22: Sovereign Web Workspace Anchor (`jFindMeWeb`)
+- **Mandatory Sovereign Web Root**: All website, HTML, CSS, client-side JS, web dashboard, and web server development MUST strictly reference and operate within `C:\Users\jiten\jAnitGravity\jFindMeWeb\`.
+- **Zero Web Files in Android Root**: Standalone HTML web presentation files (`*.html`) must never be created inside `C:\Users\jiten\jAnitGravity\jFindMe\`. All web presentation (`index.html`, `database-sync-settings.html`, `jButterflyGithubSync_v2.html`, `launcher.html`) and backend routes (`js/server.js`, `js/static_server.js`) reside strictly in `jFindMeWeb`.
+- **Database Metadata Synchronization**: Web sync portals (`database-sync-settings.html`) operate on Schema V84.0 SSOT, ingesting full SQLite delta metadata across all 34 tables including `system_update_history`, `siren_execution_audit`, `butterfly_point`, and `device_sharing`.

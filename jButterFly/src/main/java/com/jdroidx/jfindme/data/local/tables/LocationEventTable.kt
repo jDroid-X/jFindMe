@@ -40,6 +40,10 @@ object LocationEventTable {
 
     const val COL_CREATED_ON = "created_on"
 
+    // ⚡ V85 High-Performance B-Tree Spatial & Temporal Indexes (Redmi Note 7 / eMMC 5.1 Optimization)
+    const val CREATE_INDEX_IDENTITY_TIMESTAMP = "CREATE INDEX IF NOT EXISTS idx_location_event_identity_ts ON $TABLE_NAME ($COL_IDENTITY_ID, $COL_TIMESTAMP DESC)"
+    const val CREATE_INDEX_TIMESTAMP = "CREATE INDEX IF NOT EXISTS idx_location_event_timestamp ON $TABLE_NAME ($COL_TIMESTAMP DESC)"
+
     val CREATE_TABLE = """
         CREATE TABLE IF NOT EXISTS $TABLE_NAME (
             $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,

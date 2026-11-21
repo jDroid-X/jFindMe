@@ -62,8 +62,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
             if (isSelf) {
                 com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
             } else if (targetAgentId != null) {
-                // [Variables] targetAgentId, av | [Constants] None | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] Local SSOT & Avatar Engine
-                String av = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+                // [Variables] targetAgentId, av | [Constants] None | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] Local SSOT & Avatar Engine
+                String av = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, targetAgentId);
                 com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, av);
             }
         }
@@ -96,11 +96,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
         targetRoleTitle = getIntent().getStringExtra("TARGET_ROLE");
         if (targetRoleTitle == null) targetRoleTitle = getIntent().getStringExtra("target_role");
-        prefs = getSharedPreferences("system_registry", MODE_PRIVATE);
+        // [Variables] prefs: SharedPreferences | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Settings & profile reading
+        prefs = RegistryManager.get(this);
         
         // 🧬 Forensic Anchor: Resolve Auth UID to Agent ID early to prevent lookup failures
-        com.jdroidx.jfindme.data.local.DatabaseHelper dbLocal = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
-        targetAgentId = (targetUid != null) ? dbLocal.resolveAgentIdLocally(targetUid) : null;
+        com.jdroidx.jfindme.data.repository.DeviceRepository repoLocal = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
+        targetAgentId = (targetUid != null) ? repoLocal.resolveAgentIdLocally(targetUid) : null;
         if (targetAgentId == null) targetAgentId = targetUid; // Fallback to raw UID
         
         // 🚀 CRITICAL FIX: Identity Resolve must happen BEFORE Header construction
@@ -141,12 +142,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
         ownerTile.setPadding(sideMargin, sideMargin, sideMargin, sideMargin);
         
         // 🚀 Premium Avatar (Double Size & Smart Fit)
-        // [Variables] targetAgentId, initialAv | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Avatar Resolution
+        // [Variables] targetAgentId, initialAv | [Constants] "butterfly" | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Avatar Resolution
         headerAvatar = new android.widget.ImageView(this);
         if (isSelf) {
             com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
         } else {
-            String initialAv = (targetAgentId != null) ? com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId) : "butterfly";
+            String initialAv = (targetAgentId != null) ? com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, targetAgentId) : "butterfly";
             com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, initialAv);
         }
         headerAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -399,8 +400,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
             int sirenDur = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
             View ringBtn = createIconButton("🔊 RING DEVICE (ACOUSTIC SIREN - " + sirenDur + "S)", android.R.drawable.ic_lock_idle_alarm, v -> {
                 if (targetAgentId != null && !targetAgentId.trim().isEmpty()) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.triggerRemoteRingDevice(targetAgentId, sirenDur);
-                    UiArchitect.showSlideNotificationBanner(this, "Acoustic Siren Dispatched", sirenDur + "-second emergency siren sent to target node.", false, 4000, null, null);
+                    String pName = (etFullName != null && etFullName.getText().length() > 0) ? etFullName.getText().toString() : "Target Device";
+                    com.jdroidx.jfindme.engine.action.TacticalActionDispatcher.triggerAcousticSiren(this, targetAgentId, pName, true);
                 } else {
                     UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
                 }
@@ -424,12 +425,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
             formBox.addView(healthBtn, btnLp);
 
             View historyBtn = createIconButton("⏱️ VIEW LOCATION LOGS", android.R.drawable.ic_menu_recent_history, v -> {
-                Intent historyIntent = new Intent(this, com.jdroidx.jfindme.ui.management.HistoryActivity.class);
                 String sendId = (targetAgentId != null && !targetAgentId.isEmpty()) ? targetAgentId : targetUid;
                 String sendName = (etFullName != null && etFullName.getText() != null) ? etFullName.getText().toString() : "Member";
-                historyIntent.putExtra("TARGET_UID", sendId);
-                historyIntent.putExtra("TARGET_NAME", sendName);
-                startActivity(historyIntent);
+                com.jdroidx.jfindme.engine.action.TacticalActionDispatcher.launchHistory(this, sendId, sendName);
             });
             formBox.addView(historyBtn, btnLp);
 
@@ -539,12 +537,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
     }
 
     /**
-     * [Variables] resolvedFocal: String, connectedIds: Set<String>, nameMap: Map<String, String>, roleMap: Map<String, String> | [Constants] UiArchitect | [Dependencies] DatabaseHelper, FirebaseComm | [Integration Points] PersonDetailsActivity, DatabaseHelper.getConnectedDeviceIds
+     * [Variables] resolvedFocal: String, connectedIds: Set<String>, nameMap: Map<String, String>, roleMap: Map<String, String> | [Constants] UiArchitect | [Dependencies] DeviceRepository, FirebaseComm | [Integration Points] PersonDetailsActivity, DeviceRepository.getConnectedDeviceIds
      * 🛡️ Scoped Connected Device SSOT: Displays target member's connected peers and roles in read-only tree format when viewing other circle members.
      */
     private void renderNonSelfConnectedDevices(String focalTargetId, java.util.List<java.util.Map<String, Object>> roster) {
         if (dynamicTaggingContainer == null) return;
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
         String resolvedFocal = (targetAgentId != null && !targetAgentId.trim().isEmpty()) ? targetAgentId : focalTargetId;
         if (resolvedFocal == null || resolvedFocal.trim().isEmpty()) {
             resolvedFocal = targetUid;
@@ -642,16 +640,21 @@ public class PersonDetailsActivity extends BaseActivityJava {
                 ((android.widget.CheckBox)v).setChecked(false); // Visual reset before opening scanner
                 final String intentRole = roleName.toUpperCase().contains("FRIEND") ? "FRIEND" : (roleName.toUpperCase().contains("CHILD") ? "CHILD" : "SPOUSE");
                 
-                new android.app.AlertDialog.Builder(this)
-                    .setTitle("Initialize " + roleName + " Scope")
-                    .setMessage("Entering physical pairing loop. The QR Scanner will now open specifically locking targets as a [" + intentRole + "].")
-                    .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
+                // [Variables] intentRole, roleName, i | [Dependencies] UiArchitect, NetworkGatewayActivity
+                // [Integration Points] UiArchitect.showConfirmationDialog (L7 Design System)
+                UiArchitect.showConfirmationDialog(
+                    this,
+                    "Initialize " + roleName + " Scope",
+                    "Entering physical pairing loop. The QR Scanner will now open specifically locking targets as a [" + intentRole + "].",
+                    "LAUNCH SCANNER",
+                    "SAVE LATER",
+                    () -> {
                         android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.group.NetworkGatewayActivity.class);
                         i.putExtra("requested_network_role", intentRole);
                         startActivity(i);
-                    })
-                    .setNegativeButton("SAVE LATER", null)
-                    .show();
+                    },
+                    null
+                );
             } else {
                 // Clicking an already checked box cancels it visually, instruct user to use indent targets
                 ((android.widget.CheckBox)v).setChecked(true);
@@ -709,7 +712,8 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         boolean isFriendRole = frRole.equals("Friends") || frRole.contains("Friend");
                         viewModel.updateCitizenRoleProtocol(this, prefs.getString("active_group", null), nodeUid, famRole, frRole, isFriendRole);
                         
-                        String myGrp = getSharedPreferences("system_registry", MODE_PRIVATE).getString("active_group", null);
+                        // [Variables] myGrp: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Member role sync
+                        String myGrp = RegistryManager.getString(this, "active_group", null);
                         if (myGrp != null) {
                             String effectiveRole = isFriendRole ? "Friends" : (famRole.equals("None") ? "Member" : famRole);
                             java.util.Map<String, Object> memberUpdates = new java.util.HashMap<>();
@@ -723,7 +727,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         }
 
                         // 🚀 SSOT Closed-Loop: Update Canonical Device Node in Firebase RTDB
-                        String canonId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(PersonDetailsActivity.this).resolveAgentIdLocally(nodeUid);
+                        String canonId = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(PersonDetailsActivity.this).resolveAgentIdLocally(nodeUid);
                         if (canonId == null) canonId = nodeUid;
                         if (com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(canonId)) {
                             java.util.Map<String, Object> profUpdate = new java.util.HashMap<>();
@@ -764,18 +768,22 @@ public class PersonDetailsActivity extends BaseActivityJava {
         });
         cb.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
-                android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                    .setTitle("Device Pairing Sequence")
-                    .setMessage("This will launch the QR Handshake Scanner to tag a " + targetRole + " device to the network. Proceed?")
-                    .setPositiveButton("LAUNCH SCANNER", (d, w) -> {
+                // [Variables] targetRole, intent | [Dependencies] UiArchitect, NetworkGatewayActivity
+                // [Integration Points] UiArchitect.showConfirmationDialog (L7 Design System)
+                UiArchitect.showConfirmationDialog(
+                    this,
+                    "Device Pairing Sequence",
+                    "This will launch the QR Handshake Scanner to tag a " + targetRole + " device to the network. Proceed?",
+                    "LAUNCH SCANNER",
+                    "SAVE LATER",
+                    () -> {
                         android.content.Intent intent = new android.content.Intent(this, NetworkGatewayActivity.class);
                         intent.putExtra("requested_network_role", targetRole);
                         startActivity(intent);
                         buttonView.setChecked(false); // Resets tick to allow multiple loops
-                    })
-                    .setNegativeButton("SAVE LATER", (d, w) -> buttonView.setChecked(false))
-                    .show();
-                applyDialogTheme(dialog);
+                    },
+                    () -> buttonView.setChecked(false)
+                );
             }
         });
         return cb;
@@ -961,7 +969,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         }
 
         // 🚀 LIVE OBSERVATION PROTOCOL: UI reacts natively to Data Source (Offline SQL & Cloud)
-        // [Variables] avId, dName, targetAgentId | [Constants] "1" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Roster & Name Resolution
+        // [Variables] avId, dName, targetAgentId | [Constants] "1" | [Dependencies] DevicePresentationResolver, DeviceRepository, AvatarLoader | [Integration Points] SSOT Roster & Name Resolution
         viewModel.getDossierLiveData().observe(this, data -> {
             if (data == null) return;
             String avId = data.get("avatar_id");
@@ -970,14 +978,14 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     com.jdroidx.jfindme.utils.AvatarLoader.bindCurrentUserAvatar(this, headerAvatar);
                 } else {
                     if (avId == null || avId.isEmpty() || avId.equals("1")) {
-                        avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId);
+                        avId = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, targetAgentId);
                     }
                     com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, headerAvatar, targetAgentId, avId);
                 }
             }
             String dName = data.get("fullName");
             if ((dName == null || dName.trim().isEmpty()) && targetAgentId != null) {
-                dName = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricName(targetAgentId);
+                dName = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getDeviceCentricName(targetAgentId);
             }
             etFullName.setText(dName != null ? dName : "");
             
@@ -1408,7 +1416,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
     }
 
     private void showTargetAvatarPreviewDialog() {
-        String devAvatar = (targetAgentId != null) ? com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(targetAgentId) : "butterfly";
+        String devAvatar = (targetAgentId != null) ? com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, targetAgentId) : "butterfly";
         String personName = (etFullName != null && !etFullName.getText().toString().isEmpty()) ? etFullName.getText().toString() : "Target Node";
         
         android.widget.LinearLayout dialogView = new android.widget.LinearLayout(this);
@@ -1466,8 +1474,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
     protected void onMasterDataUpdated(String category, String changeType, String entityId, String senderId) {
         super.onMasterDataUpdated(category, changeType, entityId, senderId);
         if (viewModel != null && targetUid != null) {
-            android.content.SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-            viewModel.fetchDossier(this, prefs.getString("active_group", null), targetUid);
+            // [Variables] activeGrp: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Dossier & roster refresh
+            String activeGrp = RegistryManager.getString(this, "active_group", null);
+            viewModel.fetchDossier(this, activeGrp, targetUid);
             viewModel.fetchLocalRoster(this);
         }
     }

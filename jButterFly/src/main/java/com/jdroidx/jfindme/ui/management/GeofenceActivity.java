@@ -429,7 +429,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                     if (loc != null) {
                         LatLng cur = new LatLng(loc.getLatitude(), loc.getLongitude());
                         viewModel.setDraftPin(cur);
-                        if (googleMap != null) googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(cur, 16f));
+                        com.jdroidx.jfindme.engine.map.TacticalCameraController.animateTo(googleMap, cur, 16f);
                         Toast.makeText(this, "📍 Anchor pin set to your current GPS position!", Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(this, "Acquiring GPS location... Please ensure Location Services are ON.", Toast.LENGTH_SHORT).show();
@@ -1204,9 +1204,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         LatLng target = new LatLng(zone.getLat(), zone.getLng());
         viewModel.setDraftPin(target);
-        if (googleMap != null) {
-            googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(target, 16f));
-        }
+        com.jdroidx.jfindme.engine.map.TacticalCameraController.animateTo(googleMap, target, 16f);
 
         openMapEditorState();
     }
@@ -1374,7 +1372,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         // 🚀 L7 MISSION ACCELERATOR: Prioritize Target Node Coordinates (Intent extras) before Local Device Fallback
         if (pendingLat != null && pendingLng != null && (pendingLat != 0.0 || pendingLng != 0.0)) {
             LatLng targetCoord = new LatLng(pendingLat, pendingLng);
-            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(targetCoord, 16f));
+            com.jdroidx.jfindme.engine.map.TacticalCameraController.moveTo(googleMap, targetCoord, 16f);
             viewModel.setDraftPin(targetCoord);
             renderMapDraftRings(targetCoord);
             if (targetName != null && !targetName.isEmpty()) {
@@ -1385,7 +1383,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             LocationServices.getFusedLocationProviderClient(this).getLastLocation().addOnSuccessListener(this, location -> {
                 if (location != null) {
                     LatLng current = new LatLng(location.getLatitude(), location.getLongitude());
-                    googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(current, 15f));
+                    com.jdroidx.jfindme.engine.map.TacticalCameraController.moveTo(googleMap, current, 15f);
                 } else {
                     resolveInitialForensicPosition();
                 }
@@ -1395,7 +1393,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         }
 
         LatLng restored = viewModel.getDraftCoordinateLocation().getValue();
-        if (restored != null) { renderMapDraftRings(restored); this.googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(restored, 16f)); }
+        if (restored != null) { renderMapDraftRings(restored); com.jdroidx.jfindme.engine.map.TacticalCameraController.moveTo(this.googleMap, restored, 16f); }
     }
 
     private void resolveInitialForensicPosition() {
@@ -1408,7 +1406,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                 double defLat = com.jdroidx.jfindme.utils.RegistryManager.getDefaultLatitude(this);
                 double defLng = com.jdroidx.jfindme.utils.RegistryManager.getDefaultLongitude(this);
                 LatLng defaultPos = new LatLng(defLat, defLng);
-                if (googleMap != null) googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultPos, 12f));
+                com.jdroidx.jfindme.engine.map.TacticalCameraController.moveTo(googleMap, defaultPos, 12f);
             }
         });
     }
@@ -1782,8 +1780,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         ImageView avatarView = new ImageView(this);
         int cSize = UiArchitect.getResponsiveIconSize(this, "ICON_STANDARD");
-        // [Variables] name, avId, avatarView | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Geofence Node Avatar
-        String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
+        // [Variables] name, avId, avatarView | [Constants] "butterfly" | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Geofence Node Avatar
+        String avId = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, name);
         if (avId.isEmpty()) avId = "butterfly";
         com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatarView, name, avId);
         
@@ -2027,8 +2025,8 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
         // Profile Avatar Icon
         ImageView ivAvatar = new ImageView(this);
-        // [Variables] name, avId, ivAvatar | [Constants] "butterfly" | [Dependencies] DatabaseHelper, AvatarLoader | [Integration Points] SSOT Geofence Profile Avatar
-        String avId = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this).getDeviceCentricAvatar(name);
+        // [Variables] name, avId, ivAvatar | [Constants] "butterfly" | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Geofence Profile Avatar
+        String avId = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, name);
         if (avId.isEmpty()) avId = "butterfly";
         com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, ivAvatar, name, avId);
         android.graphics.drawable.GradientDrawable gRing = new android.graphics.drawable.GradientDrawable();
@@ -2428,7 +2426,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         });
         
         viewModel.getUiToastEvent().observe(this, e -> { String m = e.getContentIfNotHandled(); if (m != null) Toast.makeText(this, m, Toast.LENGTH_SHORT).show(); });
-        viewModel.getCameraMoveEvent().observe(this, e -> { LatLng t = e.getContentIfNotHandled(); if (t != null && googleMap != null) googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(t, 16f)); });
+        viewModel.getCameraMoveEvent().observe(this, e -> { LatLng t = e.getContentIfNotHandled(); if (t != null) com.jdroidx.jfindme.engine.map.TacticalCameraController.animateTo(googleMap, t, 16f); });
         viewModel.getCloseMapEvent().observe(this, e -> { 
             Boolean a = e.getContentIfNotHandled(); 
             if (a != null && a) {
@@ -2712,7 +2710,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         textBlock.setPadding(scale(40), 0, 0, 0);
         
         // --- 1. OWNER NAME ---
-        com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+        com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         
         // 🚀 QA Fix: Anchor to SSOT (DatabaseHelper)

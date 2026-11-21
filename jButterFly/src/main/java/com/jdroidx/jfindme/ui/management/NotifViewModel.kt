@@ -10,13 +10,14 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.jdroidx.jfindme.data.local.DatabaseHelper
+import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.utils.SystemLogger
 
 class NotifViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "NotifViewModel"
-    private val dbHelper = DatabaseHelper.getInstance(application)
+    // [Variables] dbHelper: DeviceRepository | [Constants] TABLE_ALERTS | [Dependencies] DeviceRepository | [Integration Points] OOPS MVC Decoupling
+    private val dbHelper = DeviceRepository.getInstance(application)
     private val auth = FirebaseAuth.getInstance()
 
     private val _alerts = MutableLiveData<List<Map<String, String>>>()
@@ -34,7 +35,7 @@ class NotifViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadLocalAlerts() {
-        val list = dbHelper.getPagedData(DatabaseHelper.TABLE_ALERTS, 50, 0, null)
+        val list = dbHelper.getPagedData(DeviceRepository.TABLE_ALERTS, 50, 0, null)
         val combined = mutableListOf<Map<String, String>>()
         combined.addAll(cloudAlertsList)
         combined.addAll(list)

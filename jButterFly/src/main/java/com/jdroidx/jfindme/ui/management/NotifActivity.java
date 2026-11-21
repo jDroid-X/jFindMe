@@ -399,7 +399,7 @@ public class NotifActivity extends BaseActivityJava {
         }
 
         if (reqLat != null && reqLng != null && reqRad != null) {
-            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(NotifActivity.this);
+            com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(NotifActivity.this);
             android.content.ContentValues v = new android.content.ContentValues();
             v.put("zone_id", cleanZoneId); v.put("name", name); v.put("lat", reqLat); v.put("lng", reqLng); v.put("radius", reqRad); v.put("st_sync_state", "ACCEPTED");
             v.put("flag_a", 1); v.put("flag_b", 1);
@@ -449,7 +449,7 @@ public class NotifActivity extends BaseActivityJava {
                         Double lng = snap.child("lng").getValue(Double.class);
                         Double rad = snap.child("radius").getValue(Double.class);
                         if (lat != null && lng != null && rad != null) {
-                            com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(NotifActivity.this);
+                            com.jdroidx.jfindme.data.repository.DeviceRepository db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(NotifActivity.this);
                             android.content.ContentValues v = new android.content.ContentValues();
                             v.put("zone_id", cleanZoneId); v.put("name", name); v.put("lat", lat); v.put("lng", lng); v.put("radius", rad); v.put("st_sync_state", "ACCEPTED");
                             v.put("flag_a", 1); v.put("flag_b", 1);
