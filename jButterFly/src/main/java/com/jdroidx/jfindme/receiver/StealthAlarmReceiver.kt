@@ -24,6 +24,12 @@ class StealthAlarmReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             ACTION_STEALTH_PULSE -> {
+                // 🔋 ZERO-REDUNDANCY BATTERY GUARD: If TrackingService is active, suppress redundant stealth pulse
+                if (WatchdogAlarmReceiver.isTrackingServiceRunning(context)) {
+                    SystemLogger.d(TAG, "Suppressed redundant StealthAlarm pulse (TrackingService foreground active).")
+                    StealthAlarmSentinelEngine.scheduleNextStealthPulse(context)
+                    return
+                }
                 SystemLogger.i(TAG, "⏰ ACTION_STEALTH_PULSE received! Initiating stealth telemetry cycle.")
                 val pendingResult = goAsync()
                 StealthAlarmSentinelEngine.executeStealthPulseWithWakeLock(context) {

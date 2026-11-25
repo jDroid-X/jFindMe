@@ -36,6 +36,15 @@ class WatchdogAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         SystemLogger.i(TAG, "Watchdog heartbeat check triggered.")
         
+        // 🛡️ DECOMMISSION GATE: If device was decommissioned by admin, suppress resurrection
+        try {
+            val regPrefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            if (regPrefs.getBoolean("is_decommissioned_by_admin", false)) {
+                SystemLogger.w(TAG, "Device is marked as DECOMMISSIONED by Admin. Watchdog skipping resurrection.")
+                return
+            }
+        } catch (_: Exception) { }
+
         val isRunning = isTrackingServiceRunning(context)
         if (!isRunning) {
             SystemLogger.w(TAG, "TrackingService was found DEAD. Triggering autonomous stealth pulse & reviving service...")
@@ -58,18 +67,21 @@ class WatchdogAlarmReceiver : BroadcastReceiver() {
                 SystemLogger.i(TAG, "TrackingService successfully revived by Watchdog.")
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Watchdog failed to revive service: ${e.message}")
+                // Fallback: ensure stealth pulse schedule remains intact even if background FGS start is restricted
+                com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.scheduleNextStealthPulse(context)
             }
         } else {
             SystemLogger.i(TAG, "TrackingService is healthy and active.")
         }
 
-        // [Variables] intervalMins: Long | [Constants] PREF_WATCHDOG_INTERVAL, PREF_WATCHDOG_ACTIVE | [Dependencies] SharedPreferences, BackgroundJobManager | [Integration Points] Re-arms sub-15min alarm
+        // [Variables] intervalMins: Long, isWatchdogActive: Boolean | [Constants] PREF_WATCHDOG_INTERVAL, PREF_WATCHDOG_ACTIVE | [Dependencies] SharedPreferences, BackgroundJobManager | [Integration Points] Re-arms autonomous watchdog alarm
         try {
             val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
             val isWatchdogActive = prefs.getBoolean(com.jdroidx.jfindme.service.BackgroundJobManager.PREF_WATCHDOG_ACTIVE, true)
             val intervalMins = prefs.getLong(com.jdroidx.jfindme.service.BackgroundJobManager.PREF_WATCHDOG_INTERVAL, com.jdroidx.jfindme.service.BackgroundJobManager.DEFAULT_WATCHDOG_MINS)
-            if (isWatchdogActive && intervalMins < 15L && intervalMins > 0L) {
-                com.jdroidx.jfindme.service.BackgroundJobManager.rescheduleWatchdogWorker(context, intervalMins)
+            if (isWatchdogActive && intervalMins > 0L) {
+                // 🔋 ZERO-CHURN ALARM RE-ARM: Re-arm AlarmManager alarm without churning WorkManager periodic queue
+                com.jdroidx.jfindme.service.BackgroundJobManager.scheduleWatchdogAlarm(context, intervalMins)
             }
         } catch (_: Exception) { }
     }

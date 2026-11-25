@@ -58,8 +58,15 @@ class SimForensicWorker(
     override suspend fun doWork(): Result {
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
         
-        if (prefs.getBoolean("pref_service_halted", false)) {
-            SystemLogger.w(TAG, "Health Engine Suspended.")
+        if (prefs.getBoolean("pref_service_halted", false) ||
+            com.jdroidx.jfindme.engine.security.PrivacyEngine.getPrivacyTier(context) == com.jdroidx.jfindme.engine.security.PrivacyEngine.PrivacyTier.FROZEN) {
+            SystemLogger.w(TAG, "Health Engine / Ghost ACL Suspended: Skipping SIM telemetry pulse.")
+            return Result.success()
+        }
+
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                context, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_PHONE_STATE)) {
+            SystemLogger.w(TAG, "SIM & Cell Tower Telephony Gate paused/denied in Settings. Skipping SIM telemetry.")
             return Result.success()
         }
 
@@ -152,9 +159,26 @@ class SimForensicWorker(
             var resolvedBearing = 0f
 
             try {
+                // [Variables] fusedClient, cts, currentLocTask, loc, lastLocTask | [Constants] 7, 3 | [Dependencies] LocationServices, Priority, Tasks | [Integration Points] SimForensicWorker active background GPS acquisition
                 val fusedClient = LocationServices.getFusedLocationProviderClient(context)
-                val lastLocTask = fusedClient.lastLocation
-                val loc = Tasks.await(lastLocTask, 5, TimeUnit.SECONDS)
+                val cts = com.google.android.gms.tasks.CancellationTokenSource()
+                val currentLocTask = fusedClient.getCurrentLocation(
+                    com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                    cts.token
+                )
+                var loc = try {
+                    Tasks.await(currentLocTask, 7, TimeUnit.SECONDS)
+                } catch (_: Exception) {
+                    null
+                }
+                if (loc == null || (loc.latitude == 0.0 && loc.longitude == 0.0)) {
+                    val lastLocTask = fusedClient.lastLocation
+                    loc = try {
+                        Tasks.await(lastLocTask, 3, TimeUnit.SECONDS)
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
                 if (loc != null && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
                     resolvedLat = loc.latitude
                     resolvedLng = loc.longitude
@@ -167,11 +191,14 @@ class SimForensicWorker(
                 SystemLogger.w(TAG, "Fused location fetch error in worker: ${locEx.message}")
             }
 
-            // Fallback to SQLite last saved position if GPS hardware is completely cold
-            if (resolvedLat == 0.0 && resolvedLng == 0.0) {
-                resolvedLat = RegistryManager.getLastKnownLatitude(context)
-                resolvedLng = RegistryManager.getLastKnownLongitude(context)
-            }
+            // Fallback to SQLite last saved position via DualModeCoordinator SSOT if GPS hardware is completely cold
+            val (safeLat, safeLng) = com.jdroidx.jfindme.engine.location.DualModeCoordinator.resolveSimCoordinates(
+                resolvedLat, resolvedLng,
+                RegistryManager.getLastKnownLatitude(context),
+                RegistryManager.getLastKnownLongitude(context)
+            )
+            resolvedLat = safeLat
+            resolvedLng = safeLng
 
             // =================================================================
             // 4. Commit Cellular Transaction to Local Database

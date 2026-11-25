@@ -28,9 +28,9 @@ object MultiMarkerEngine {
 
     private const val TAG = "MultiMarkerEngine"
 
-    const val DEFAULT_SPACING_DP = 50.0
+    const val DEFAULT_SPACING_DP = 64.0
     const val MIN_SPACING_DP = 50.0
-    const val MAX_SPACING_DP = 90.0
+    const val MAX_SPACING_DP = 100.0
 
     var configuredSpacingDp: Double = DEFAULT_SPACING_DP
 
@@ -61,6 +61,11 @@ object MultiMarkerEngine {
     private val lastRenderedMeta = mutableMapOf<String, String>()
     private var activeGridMap: GoogleMap? = null
 
+    // 🚀 IN-MEMORY HIGH-SPEED CACHES: Eliminates main-thread SQLite queries during 350ms frame renders
+    private var lastRosterFetchEpoch: Long = 0L
+    private var memCachedOfflineRoster: List<Map<String, Any>> = emptyList()
+    private val deletedDevicesMemCache = mutableMapOf<String, Pair<Boolean, Long>>()
+
     private data class SpatialCandidate(
         val deviceId: String,
         val rawLatLng: LatLng,
@@ -79,9 +84,19 @@ object MultiMarkerEngine {
     )
 
     /**
+     * [Variables] context, mapCore, locations, suppressDeviceIds, focusedDeviceId, isSpatialSeparation, isSuppressed | [Constants] None | [Dependencies] GoogleMap, UserLocation, RegistryManager | [Integration Points] MapActivity, MultiMarkerEngine
      * 🚀 MVVM PRIME DIRECTIVE: Strict Unidirectional Waterfall execution.
+     * Supports SOP-5 Spatial Separation: excludes markers currently active in the Left Floating Rail unless focused.
      */
-    fun processViewModelLocations(context: Context, mapCore: GoogleMap, locations: List<UserLocation>) {
+    @JvmStatic
+    @JvmOverloads
+    fun processViewModelLocations(
+        context: Context,
+        mapCore: GoogleMap,
+        locations: List<UserLocation>,
+        suppressDeviceIds: Set<String> = emptySet(),
+        focusedDeviceId: String? = null
+    ) {
         if (activeGridMap != mapCore) {
             resetEngineState()
             activeGridMap = mapCore
@@ -98,13 +113,37 @@ object MultiMarkerEngine {
         val seenDeviceIds = mutableSetOf<String>()
         var selfIncluded = false
 
-        // 🚀 WATERFALL PRIORITY SORTING: SOS emergency first, then Newest Timestamp to Oldest
+        // 🛡️ Scoped Connected Devices SSOT: Enforce Star Topology Hub-and-Spoke isolation on map markers
         val deviceRepo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         val db = deviceRepo
-        val cachedOfflineRoster = deviceRepo.getOfflineRoster()
+        val scopedIds = try {
+            val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (myUid.ifBlank { "" })
+            if (focalId.isNotBlank()) db.getConnectedDeviceIds(focalId) else emptySet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+        val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(context, selfAgentId)
+        val now = System.currentTimeMillis()
+        if (now - lastRosterFetchEpoch > 10000L || memCachedOfflineRoster.isEmpty()) {
+            memCachedOfflineRoster = deviceRepo.getOfflineRoster()
+            lastRosterFetchEpoch = now
+        }
+        val cachedOfflineRoster = memCachedOfflineRoster
+
+        val isDeletedCached: (String) -> Boolean = { dId ->
+            val entry = deletedDevicesMemCache[dId]
+            if (entry != null && (now - entry.second < 10000L)) {
+                entry.first
+            } else {
+                val del = deviceRepo.isDeviceDeleted(dId)
+                deletedDevicesMemCache[dId] = Pair(del, now)
+                del
+            }
+        }
+
         val sortedLocations = locations.filter { loc ->
             val dId = loc.getResolvedUserId()
-            !deviceRepo.isDeviceDeleted(dId)
+            !isDeletedCached(dId)
         }.sortedWith(
             compareByDescending<UserLocation> { it.isSosActive }
                 .thenByDescending { it.getLongTimestamp() }
@@ -126,20 +165,40 @@ object MultiMarkerEngine {
                         (selfAgentId.isNotEmpty() && rawDeviceId.equals(selfAgentId, ignoreCase = true)))
             val deviceId = if (isMe) canonicalSelfId else com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(rawDeviceId)
 
+            // 🛡️ Defense-in-Depth Scoped Isolation: Spoke devices strictly only render Self and Host
+            if (!isMe && !isHost && !scopedIds.contains(deviceId) && !scopedIds.contains(rawDeviceId)) {
+                continue
+            }
+
             var candidateLat = ul.latitude
             var candidateLng = ul.longitude
             var candidateTs = ul.getLongTimestamp()
-            if (candidateLat == 0.0 && candidateLng == 0.0 && !isMe) {
-                val cleanRaw = rawDeviceId.replace("HW_", "").trim()
-                val hist = db.getLatestHistoricalLocation(rawDeviceId) 
-                    ?: db.getLatestHistoricalLocation(cleanRaw)
-                    ?: db.getLatestHistoricalLocation("HW_$cleanRaw")
-                    ?: db.getLatestHistoricalLocation(deviceId)
-                if (hist != null) {
-                    candidateLat = (hist["lat"] as? Double) ?: 0.0
-                    candidateLng = (hist["lng"] as? Double) ?: 0.0
-                    if (candidateTs <= 0L) {
-                        candidateTs = (hist["timestamp"] as? Long) ?: candidateTs
+            if (candidateLat == 0.0 && candidateLng == 0.0) {
+                if (isMe) {
+                    val savedLat = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLatitude(context)
+                    val savedLng = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLongitude(context)
+                    if (savedLat != 0.0 || savedLng != 0.0) {
+                        candidateLat = savedLat
+                        candidateLng = savedLng
+                    } else {
+                        val hist = db.getLatestHistoricalLocation(deviceId) ?: db.getLatestHistoricalLocation(selfAgentId)
+                        if (hist != null) {
+                            candidateLat = (hist["lat"] as? Double) ?: 0.0
+                            candidateLng = (hist["lng"] as? Double) ?: 0.0
+                        }
+                    }
+                } else {
+                    val cleanRaw = rawDeviceId.replace("HW_", "").trim()
+                    val hist = db.getLatestHistoricalLocation(rawDeviceId) 
+                        ?: db.getLatestHistoricalLocation(cleanRaw)
+                        ?: db.getLatestHistoricalLocation("HW_$cleanRaw")
+                        ?: db.getLatestHistoricalLocation(deviceId)
+                    if (hist != null) {
+                        candidateLat = (hist["lat"] as? Double) ?: 0.0
+                        candidateLng = (hist["lng"] as? Double) ?: 0.0
+                        if (candidateTs <= 0L) {
+                            candidateTs = (hist["timestamp"] as? Long) ?: candidateTs
+                        }
                     }
                 }
             }
@@ -165,6 +224,13 @@ object MultiMarkerEngine {
                 false
             }
             if (isFarOffScreen) continue
+
+            // 🛰️ SOP-5 Spatial Separation Gate: If node is currently docked in Left Floating Rail, suppress map marker unless focused
+            val isSpatialSeparation = com.jdroidx.jfindme.utils.RegistryManager.getBoolean(context, "pref_spatial_topology_separation", true)
+            val isSuppressedByFloatingRail = !isMe && !ul.isSosActive && isSpatialSeparation && suppressDeviceIds.isNotEmpty() &&
+                (suppressDeviceIds.contains(deviceId) || suppressDeviceIds.contains(rawDeviceId)) &&
+                (focusedDeviceId == null || (!focusedDeviceId.equals(deviceId, ignoreCase = true) && !focusedDeviceId.equals(rawDeviceId, ignoreCase = true)))
+            if (isSuppressedByFloatingRail) continue
 
             allowedUUIDs.add(deviceId)
             if (candidates.size >= 100) break // Stress limit: 100 concurrent nodes
@@ -206,7 +272,7 @@ object MultiMarkerEngine {
             }
 
             val cleanName = if (isMe) {
-                "You"
+                com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, deviceId, fallbackName = ul.userName, allowPronoun = true)
             } else if (hasValidSsotName) {
                 ssotName
             } else if (!isGenericCloudName) {
@@ -254,12 +320,7 @@ object MultiMarkerEngine {
                 continue
             }
 
-            val modelIcon = if (!ul.avatar_id.isNullOrBlank() && ul.avatar_id != "butterfly" && ul.avatar_id != "1") {
-                ul.avatar_id
-            } else {
-                val rAv = rosterMatch?.get("avatar_id")?.toString()?.takeIf { it.isNotBlank() && it != "butterfly" && it != "1" }
-                rAv ?: db.getDeviceCentricAvatar(deviceId)
-            }
+            val modelIcon = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(context, deviceId, ul.avatar_id)
 
             candidates.add(
                 SpatialCandidate(
@@ -307,8 +368,8 @@ object MultiMarkerEngine {
         }
 
         val density = context.resources.displayMetrics.density
-        // 🚀 Target: Configurable Center-to-Center Collision Trigger (50dp - 90dp Standard with 30% Proximity Buffer)
-        val targetSpacingDp = configuredSpacingDp.coerceIn(MIN_SPACING_DP, MAX_SPACING_DP)
+        // 🚀 Target: Configurable Center-to-Center Collision Trigger (50dp - 90dp Standard from Dynamic Settings SSOT)
+        val targetSpacingDp = com.jdroidx.jfindme.utils.RegistryManager.getClusterSpacingDp(context)
         val collisionThresholdPx = targetSpacingDp.toFloat() * density * 1.30f
 
         // [Variables] projection, density, targetSpacingDp, collisionThresholdPx, displayMetrics, screenW, screenH, validPt, pt | [Constants] MIN_SPACING_DP, MAX_SPACING_DP | [Dependencies] GoogleMap, Point, Context | [Integration Points] MapActivity, MultiMarkerEngine
@@ -441,6 +502,7 @@ object MultiMarkerEngine {
      * - 6 Devices: Hexagon
      * - 8+ Devices: Regular Octagon -> Circle
      */
+    // [Variables] activeSpiderLines, activeCentroidMarkers, prefs, showSpiderLines, hostCandidate, hostPos, clustersByCentroid, spiderLine, sortedNodes, polyPoints, geomPoly, linePoly, centerMarker | [Constants] DEFAULT_SPIDERWEB_ENABLED = true | [Dependencies] GoogleMap, SpatialCandidate, LatLng, PolylineOptions, Dash, Gap, MarkerOptions, BitmapDescriptorFactory, AvatarCalloutGenerator, RegistryManager | [Integration Points] processViewModelLocations, MapActivity Situational Awareness Spiderweb
     private fun renderSpiderwebAnchors(context: Context, map: GoogleMap, candidates: List<SpatialCandidate>) {
         // Clear previous spider lines and centroids
         for (line in activeSpiderLines) {
@@ -454,11 +516,67 @@ object MultiMarkerEngine {
         activeCentroidMarkers.clear()
 
         val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-        val showSpiderLines = prefs.getBoolean("show_cluster_spiderweb", false) // 🚀 Clean & Minimal default: OFF (Uncluttered)
+        val showSpiderLines = prefs.getBoolean("show_cluster_spiderweb", true) // 🚀 SSOT Default: ON (Host Situational Awareness Spiderweb)
         if (!showSpiderLines) return
 
-        val clustersByCentroid = mutableMapOf<String, MutableList<SpatialCandidate>>()
+        val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        val selfAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+        val selfCanon = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(selfAgentId)
 
+        // 1. Identify Host anchor candidate (The user holding this device)
+        val hostCandidate = candidates.find { c ->
+            c.deviceId == myUid || c.deviceId == selfAgentId || c.deviceId == selfCanon || 
+            c.deviceId == "SELF_USER" || c.name.equals("You", ignoreCase = true) ||
+            com.jdroidx.jfindme.utils.DevicePresentationResolver.isSelfDevice(context, c.deviceId)
+        }
+
+        val hostPos: LatLng? = if (hostCandidate != null && (Math.abs(hostCandidate.dispersedLatLng.latitude) > 0.001 || Math.abs(hostCandidate.dispersedLatLng.longitude) > 0.001)) {
+            hostCandidate.dispersedLatLng
+        } else {
+            val savedLat = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLatitude(context)
+            val savedLng = com.jdroidx.jfindme.utils.RegistryManager.getLastKnownLongitude(context)
+            if (Math.abs(savedLat) > 0.001 || Math.abs(savedLng) > 0.001) {
+                LatLng(savedLat, savedLng)
+            } else {
+                null
+            }
+        }
+
+        // 2. 🕸️ Anchor Spiderweb directly to Host's actual location: Radiate vectors to connected peer nodes within visible/tactical range
+        if (hostPos != null) {
+            val visibleBounds = try { map.projection?.visibleRegion?.latLngBounds } catch (e: Exception) { null }
+            for (peer in candidates) {
+                if (peer == hostCandidate) continue
+                if (peer.deviceId == myUid || peer.deviceId == selfAgentId || peer.deviceId == "SELF_USER" || peer.name.equals("You", ignoreCase = true)) continue
+                if (Math.abs(peer.dispersedLatLng.latitude) < 0.001 && Math.abs(peer.dispersedLatLng.longitude) < 0.001) continue
+
+                // 🛰️ Viewport Culling & Tactical Range Gate: Prevent drawing infinite polylines across the continent
+                if (visibleBounds != null) {
+                    val pLat = peer.dispersedLatLng.latitude
+                    val pLng = peer.dispersedLatLng.longitude
+                    val pad = 0.05 // ~5.5km padding
+                    val isNearViewport = (pLat >= visibleBounds.southwest.latitude - pad &&
+                                          pLat <= visibleBounds.northeast.latitude + pad &&
+                                          pLng >= visibleBounds.southwest.longitude - pad &&
+                                          pLng <= visibleBounds.northeast.longitude + pad)
+                    if (!isNearViewport && !peer.isSos) continue
+                }
+
+                val roleColor = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleColor(context, peer.deviceId)
+                val spiderLine = map.addPolyline(
+                    PolylineOptions()
+                        .add(hostPos, peer.dispersedLatLng)
+                        .color(Color.argb(180, Color.red(roleColor), Color.green(roleColor), Color.blue(roleColor)))
+                        .width(3.0f)
+                        .geodesic(true)
+                        .pattern(listOf(Dash(16f), Gap(10f)))
+                )
+                activeSpiderLines.add(spiderLine)
+            }
+        }
+
+        // 3. Cluster Geometric Polygon: Outline co-located dispersed groups
+        val clustersByCentroid = mutableMapOf<String, MutableList<SpatialCandidate>>()
         for (c in candidates) {
             if (c.stackTotal > 1) {
                 val centerKey = "${c.centroidLatLng.latitude}_${c.centroidLatLng.longitude}"
@@ -470,7 +588,7 @@ object MultiMarkerEngine {
             if (cluster.isEmpty()) continue
             val trueCentroid = cluster[0].centroidLatLng
 
-            // 1. Draw glowing anchor dot at true centroid
+            // Draw glowing anchor dot at true cluster centroid
             val centerMarker = map.addMarker(
                 MarkerOptions()
                     .position(trueCentroid)
@@ -481,27 +599,27 @@ object MultiMarkerEngine {
             )
             if (centerMarker != null) activeCentroidMarkers.add(centerMarker)
 
-            // 2. Draw radial dashed anchor lines to centroid
+            // Draw radial dashed anchor lines to centroid
             for (node in cluster) {
                 val spiderLine = map.addPolyline(
                     PolylineOptions()
                         .add(node.dispersedLatLng, trueCentroid)
                         .color(Color.argb(140, 0, 229, 255))
-                        .width(2.5f)
+                        .width(2.0f)
                         .geodesic(true)
-                        .pattern(listOf(Dash(10f), Gap(6f)))
+                        .pattern(listOf(Dash(8f), Gap(6f)))
                 )
                 activeSpiderLines.add(spiderLine)
             }
 
-            // 3. Draw Geometric Perimeter Outline (Line for 2, Triangle for 3, Square for 4, Polygon -> Circle)
+            // Draw Geometric Perimeter Outline (Line for 2, Triangle for 3, Square for 4, Polygon -> Circle)
             val sortedNodes = cluster.sortedBy { it.stackIndex }
             if (sortedNodes.size == 2) {
                 val linePoly = map.addPolyline(
                     PolylineOptions()
                         .add(sortedNodes[0].dispersedLatLng, sortedNodes[1].dispersedLatLng)
                         .color(Color.argb(200, 0, 230, 118))
-                        .width(3f)
+                        .width(2.5f)
                         .geodesic(true)
                         .pattern(listOf(Dash(14f), Gap(8f)))
                 )
@@ -515,7 +633,7 @@ object MultiMarkerEngine {
                     PolylineOptions()
                         .addAll(polyPoints)
                         .color(Color.argb(200, 0, 230, 118))
-                        .width(3f)
+                        .width(2.5f)
                         .geodesic(true)
                         .pattern(listOf(Dash(14f), Gap(8f)))
                 )
@@ -536,34 +654,40 @@ object MultiMarkerEngine {
         val isSelf = (deviceId == myUid || deviceId == selfAgentId || deviceId == "SELF_USER")
         val showName = true // Always show user names prominently on the map
 
-        val targetSize = 256
-        val originalBitmap = if (isSelf) {
-            AvatarLoader.getCurrentUserAvatarBitmap(context, targetSize)
-        } else {
-            AvatarLoader.getRemoteAvatarBitmap(context, deviceId, candidate.avatarId, targetSize)
-        }
-
+        // [Variables] originalBitmap (Lazy Loaded) | [Constants] targetSize = 256 | [Dependencies] AvatarLoader | [Integration Points] updateOrRenderMarker
         var calculatedRole = userRoleCache[deviceId]
         if (calculatedRole == null) {
+            val myDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(context, deviceId, null, myDevId)
+            val upRole = ssotRole.uppercase()
+            calculatedRole = when {
+                upRole.contains("SPOUSE") || upRole.contains("PARTNER") || upRole.contains("WIFE") || upRole.contains("HUSBAND") -> "SPOUSE"
+                upRole.contains("MOTHER") || upRole.contains("FATHER") || upRole.contains("GUARDIAN") || upRole.contains("PARENT") || upRole.contains("ADMIN") || upRole.contains("COMMANDER") || upRole.contains("HOST") -> "GUARDIAN"
+                upRole.contains("FRIEND") || upRole.contains("PEER") || upRole.contains("COLLEAGUE") -> "FRIEND"
+                upRole.contains("CHILD") || upRole.contains("SON") || upRole.contains("DAUGHTER") || upRole.contains("DEPENDENT") || upRole.contains("KID") || upRole.contains("WARD") -> "CHILD"
+                upRole.contains("FAMILY") || upRole.contains("BROTHER") || upRole.contains("SISTER") || upRole.contains("RELATIVE") || upRole.contains("SIBLING") -> "FAMILY"
+                else -> "MEMBER"
+            }
+            userRoleCache[deviceId] = calculatedRole
+            var matchedTitle: String? = ssotRole
             val deviceRepo = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
-            var matchedTitle: String? = null
 
             // 1. Direct role query from SSOT helper
             val directRole = deviceRepo.getRoleForDevice(deviceId)
-            if (!directRole.isNullOrBlank() && !directRole.equals("None", true) && !directRole.equals("Member", true)) {
+            if (!directRole.isNullOrBlank() && !directRole.equals("None", ignoreCase = true) && !directRole.equals("Member", ignoreCase = true)) {
                 matchedTitle = directRole
             }
 
             // 2. Offline roster check across all UID permutations
             if (matchedTitle == null) {
-                val offlineMatrix = deviceRepo.getOfflineRoster()
+                val offlineMatrix: List<Map<String, Any>> = deviceRepo.getOfflineRoster()
                 for (node in offlineMatrix) {
                     if (node["uid_1"]?.toString() == deviceId || 
                         node["uid"]?.toString() == deviceId || 
                         node["uid_2"]?.toString() == deviceId || 
                         node["connected_id"]?.toString() == deviceId) {
                         val rType = node["role_type"]?.toString()
-                        if (!rType.isNullOrBlank() && !rType.equals("None", true)) {
+                        if (!rType.isNullOrBlank() && !rType.equals("None", ignoreCase = true)) {
                             matchedTitle = rType
                             break
                         }
@@ -573,10 +697,10 @@ object MultiMarkerEngine {
 
             // 3. Check local dossier if still unmatched
             if (matchedTitle == null) {
-                val localDb = deviceRepo
+                val localDb = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
                 val dossier = localDb.getLocalDossier(deviceId)
                 val dosRole = (dossier["role_type"] ?: dossier["designation"])?.toString()
-                if (!dosRole.isNullOrBlank() && !dosRole.equals("None", true) && !dosRole.equals("Member", true)) {
+                if (!dosRole.isNullOrBlank() && !dosRole.equals("None", ignoreCase = true) && !dosRole.equals("Member", ignoreCase = true)) {
                     matchedTitle = dosRole
                 }
             }
@@ -623,6 +747,12 @@ object MultiMarkerEngine {
         var iconChanged = false
 
         if (customIconConfig == null || lastRenderedMeta[deviceId] != currentMeta) {
+            val targetSize = 256
+            val originalBitmap = if (isSelf) {
+                AvatarLoader.getCurrentUserAvatarBitmap(context, targetSize)
+            } else {
+                AvatarLoader.getRemoteAvatarBitmap(context, deviceId, candidate.avatarId, targetSize)
+            }
             customIconConfig = AvatarCalloutGenerator.generate(
                 context = context,
                 name = candidate.name,
@@ -642,10 +772,25 @@ object MultiMarkerEngine {
             iconChanged = true
         }
 
+        val isPendingUnlink = try {
+            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context).isDevicePendingUnlink(deviceId)
+        } catch (e: Exception) { false }
+
+        val isStale = candidate.timestamp > 0L && 
+            (System.currentTimeMillis() - candidate.timestamp > 6 * 3600 * 1000L) && 
+            !candidate.isSos
+        val targetAlpha = when {
+            isPendingUnlink -> 0.55f
+            isStale -> 0.65f
+            else -> 1.0f
+        }
+        val markerTitle = if (isPendingUnlink) "${candidate.name} [PENDING UNLINK]" else candidate.name
+
         if (activeDeviceMarkerMap.containsKey(deviceId)) {
             val targetMarker = activeDeviceMarkerMap[deviceId]!!
             targetMarker.tag = deviceId
-            targetMarker.title = candidate.name
+            targetMarker.title = markerTitle
+            targetMarker.alpha = targetAlpha
             if (iconChanged) {
                 targetMarker.setIcon(customIconConfig)
             }
@@ -654,9 +799,10 @@ object MultiMarkerEngine {
             val newMarker = map.addMarker(
                 MarkerOptions()
                     .position(candidate.dispersedLatLng)
-                    .title(candidate.name)
+                    .title(markerTitle)
                     .icon(customIconConfig)
                     .anchor(0.5f, 0.5f)
+                    .alpha(targetAlpha)
                     .flat(false)
             )
 
@@ -715,7 +861,6 @@ object MultiMarkerEngine {
                     }
                 }
             } else {
-                marker.alpha = 1.0f
                 val currentTitle = marker.title ?: "Friend"
                 if (currentTitle.contains(" [OFFLINE]")) {
                     marker.title = currentTitle.replace(" [OFFLINE]", "")

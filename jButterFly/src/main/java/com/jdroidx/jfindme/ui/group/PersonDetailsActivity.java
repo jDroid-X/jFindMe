@@ -278,7 +278,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         View btnEstablish = createIconButton("ESTABLISH GEOSPATIAL DOMAIN", android.R.drawable.ic_menu_add, v -> {
             String addr = etAddress.getText().toString();
             String name = etSafeZoneName.getText().toString();
-            if (addr.isEmpty()) { Toast.makeText(this, "Profile Address Required for Domain Resolution.", Toast.LENGTH_SHORT).show(); return; }
+            if (addr.isEmpty()) { Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_profile_address_required_for_domain), Toast.LENGTH_SHORT).show(); return; }
             android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.management.GeofenceActivity.class);
             i.putExtra("ESTABLISH_DOMAIN_ADDRESS", addr);
             i.putExtra("ESTABLISH_DOMAIN_NAME", name.isEmpty() ? "New Zone" : name);
@@ -390,9 +390,9 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId)
                         .child("force_cloud_sync_trigger")
                         .setValue(System.currentTimeMillis());
-                    UiArchitect.showSlideNotificationBanner(this, "🛰️ GPS Locate Ping Sent", "Sent immediate high-accuracy GPS wakeup request to device.", false, 3500, null, null);
+                    UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_gps_locate_ping_sent, com.jdroidx.jfindme.R.string.notif_banner_sent_immediate_gps_wakeup, false, 3500, null, null);
                 } else {
-                    UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
+                    UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_target_unresolved, com.jdroidx.jfindme.R.string.notif_banner_device_identity_not_found_local, true, 3000, null, null);
                 }
             });
             formBox.addView(syncBtn, btnLp);
@@ -403,7 +403,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                     String pName = (etFullName != null && etFullName.getText().length() > 0) ? etFullName.getText().toString() : "Target Device";
                     com.jdroidx.jfindme.engine.action.TacticalActionDispatcher.triggerAcousticSiren(this, targetAgentId, pName, true);
                 } else {
-                    UiArchitect.showSlideNotificationBanner(this, "Target Unresolved", "Device identity not found in local cache.", true, 3000, null, null);
+                    UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_target_unresolved, com.jdroidx.jfindme.R.string.notif_banner_device_identity_not_found_local, true, 3000, null, null);
                 }
             });
             formBox.addView(ringBtn, btnLp);
@@ -448,7 +448,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
                         public void onChildAdded(com.google.firebase.database.DataSnapshot snapshot, String previousChildName) {
                             if (snapshot.getValue() != null) {
                                 saveCitizenData();
-                                android.widget.Toast.makeText(PersonDetailsActivity.this, "Remote Group Administrator forced Profile Data sync...", android.widget.Toast.LENGTH_SHORT).show();
+                                android.widget.Toast.makeText(PersonDetailsActivity.this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_remote_group_administrator_forced_profile), android.widget.Toast.LENGTH_SHORT).show();
                                 com.jdroidx.jfindme.data.remote.FirebaseComm.getProfileRef(targetAgentId).child("force_cloud_sync_trigger").removeEventListener(this);
                                 syncTriggerListener = null; // 🔧 Mark as consumed
                             }
@@ -658,7 +658,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
             } else {
                 // Clicking an already checked box cancels it visually, instruct user to use indent targets
                 ((android.widget.CheckBox)v).setChecked(true);
-                android.widget.Toast.makeText(this, "Tap the indented avatars below to Reassign or Unassign directly.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_tap_the_indented_avatars_below), android.widget.Toast.LENGTH_LONG).show();
             }
         });
         categoryGroup.addView(cb);
@@ -852,7 +852,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         editBtn.setPadding(10, 10, 10, 10);
         editBtn.setOnClickListener(v -> {
             toggleEditMode(true);
-            android.widget.Toast.makeText(this, "Profile Unlocked for Forensic Update", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_profile_unlocked_for_forensic_update), android.widget.Toast.LENGTH_SHORT).show();
         });
         row.addView(editBtn, new LinearLayout.LayoutParams(iSize, iSize));
         
@@ -959,12 +959,12 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         viewModel.getSaveStatus().observe(this, success -> {
             if (Boolean.TRUE.equals(success)) {
-                Toast.makeText(this, "Dossier Successfully Synchronized!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_dossier_successfully_synchronized), Toast.LENGTH_SHORT).show();
             }
         });
         
         if (targetUid == null) {
-            Toast.makeText(this, "Awaiting Target Matrix. Internal Storage Blocked.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_awaiting_target_matrix_internal_storage), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -1014,16 +1014,15 @@ public class PersonDetailsActivity extends BaseActivityJava {
             if (data.containsKey("role_family") && data.get("role_family") != null) currentRoleFamily = data.get("role_family");
             if (data.containsKey("role_friend") && data.get("role_friend") != null) currentRoleFriend = data.get("role_friend");
             
-            // ACL MVVM Matrix Restore (Defaults to TRUE unless explicitly DENIED or REVOKED)
-            cbAclLiveTracking.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_live_tracking")) && !"REVOKED".equalsIgnoreCase(data.get("acl_live_tracking")));
-            cbAclHistoryAudit.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_history_audit")) && !"REVOKED".equalsIgnoreCase(data.get("acl_history_audit")));
-            cbAclGeofence.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_geofence")) && !"REVOKED".equalsIgnoreCase(data.get("acl_geofence")));
-            cbAclAdminStatus.setChecked("GRANTED".equalsIgnoreCase(data.get("acl_admin")));
-            cbAclGhostOverride.setChecked(!"DENIED".equalsIgnoreCase(data.get("acl_ghost_override")) && !"REVOKED".equalsIgnoreCase(data.get("acl_ghost_override")));
-            
-            cbAclBiometrics.setChecked("GRANTED".equalsIgnoreCase(data.get("acl_biometrics")));
-            
-            cbGlobalCloudSync.setChecked(!"FALSE".equalsIgnoreCase(data.get("cloud_sync_enabled"))); // Defaults to TRUE if missing
+            // ACL MVVM Matrix Restore via ProfileAclDossier SSOT
+            com.jdroidx.jfindme.data.model.ProfileAclDossier parsedAcl = com.jdroidx.jfindme.data.model.ProfileAclDossier.fromMap(data);
+            cbAclLiveTracking.setChecked(parsedAcl.getLiveTracking() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbAclHistoryAudit.setChecked(parsedAcl.getHistoryAudit() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbAclGeofence.setChecked(parsedAcl.getGeofenceBreach() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbAclAdminStatus.setChecked(parsedAcl.getAdminOverride() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbAclGhostOverride.setChecked(parsedAcl.getGhostOverride() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbAclBiometrics.setChecked(parsedAcl.getBiometricLock() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+            cbGlobalCloudSync.setChecked(parsedAcl.getCloudSyncEnabled());
             
             // 🚀 Trigger Country fetch after data Load to initialize dropdowns if needed
             viewModel.fetchCountriesList();
@@ -1077,7 +1076,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         viewModel.getChangeLogLiveData().observe(this, logs -> {
             if (logs == null || logs.isEmpty()) {
-                Toast.makeText(this, "No audit logs found for this Target.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_no_audit_logs_found_for), Toast.LENGTH_SHORT).show();
                 return;
             }
             StringBuilder sb = new StringBuilder();
@@ -1089,10 +1088,10 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
         viewModel.getSaveStatus().observe(this, success -> {
             if (Boolean.TRUE.equals(success)) {
-                Toast.makeText(this, "Local Offline Cache & Cloud Sync Verified!", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_local_offline_cache_cloud_sync), Toast.LENGTH_LONG).show();
                 finish(); // Graceful architectural teardown back to Roster Map
             } else if (Boolean.FALSE.equals(success)) {
-                Toast.makeText(this, "Save Failed. Review Network Stack.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_save_failed_review_network_stack), Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -1218,7 +1217,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
 
     private void saveCitizenData() {
         if (targetUid == null) {
-            Toast.makeText(this, "Cannot synchronize Ghost target.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_cannot_synchronize_ghost_target), Toast.LENGTH_SHORT).show();
             return;
         }
         
@@ -1284,16 +1283,18 @@ public class PersonDetailsActivity extends BaseActivityJava {
         payload.put("safeZoneName", etSafeZoneName.getText().toString());
         payload.put("safeZoneRadius", etSafeZoneRadius.getText().toString());
         
-        // ACL Payload Bundling
-        payload.put("acl_live_tracking", cbAclLiveTracking.isChecked() ? "GRANTED" : "DENIED");
-        payload.put("acl_history_audit", cbAclHistoryAudit.isChecked() ? "GRANTED" : "DENIED");
-        payload.put("acl_geofence", cbAclGeofence.isChecked() ? "GRANTED" : "DENIED");
-        payload.put("acl_admin", cbAclAdminStatus.isChecked() ? "GRANTED" : "DENIED");
-        payload.put("acl_ghost_override", cbAclGhostOverride.isChecked() ? "GRANTED" : "DENIED");
-        payload.put("acl_biometrics", cbAclBiometrics.isChecked() ? "GRANTED" : "DENIED");
-        
-        // Core Cloud Privacy Setting Extraction
-        payload.put("cloud_sync_enabled", cbGlobalCloudSync.isChecked() ? "TRUE" : "FALSE");
+        // ACL Payload Bundling via ProfileAclDossier SSOT
+        com.jdroidx.jfindme.data.model.ProfileAclDossier aclModel = new com.jdroidx.jfindme.data.model.ProfileAclDossier(
+            cbAclLiveTracking.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclHistoryAudit.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclGeofence.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclAdminStatus.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclGhostOverride.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclBiometrics.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbGlobalCloudSync.isChecked(),
+            false, false, false, false, false, false, false
+        );
+        payload.putAll(aclModel.toPayloadMap());
         
         String existingFam = (currentRoleFamily != null && !currentRoleFamily.isEmpty() && !currentRoleFamily.equals("None")) ? currentRoleFamily : getIntent().getStringExtra("TARGET_ROLE_FAMILY");
         String existingFri = (currentRoleFriend != null && !currentRoleFriend.isEmpty() && !currentRoleFriend.equals("None")) ? currentRoleFriend : getIntent().getStringExtra("TARGET_ROLE_FRIEND");
@@ -1306,6 +1307,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         // 🚀 MVVM Architecture: Route payload down into exactly one Repository ViewModel layer!
         if (isSelf) {
+            com.jdroidx.jfindme.data.model.ProfileAclDossier.saveToLocal(this, aclModel);
             String finalName = payload.get("fullName");
             // Instantly sync the local profile cache so ProfileActivity remains synchronized
             prefs.edit().putString("user_nickname", finalName)
@@ -1325,7 +1327,7 @@ public class PersonDetailsActivity extends BaseActivityJava {
         
         String groupId = prefs.getString("active_group", null);
         if (groupId == null) {
-            Toast.makeText(this, "Enterprise Group Offline. Securing to Personal Vault...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_persondetails_enterprise_group_offline_securing_to), Toast.LENGTH_SHORT).show();
         }
         
         viewModel.saveDossier(this, groupId, targetUid, payload);

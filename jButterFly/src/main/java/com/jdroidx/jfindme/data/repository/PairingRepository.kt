@@ -688,13 +688,24 @@ class PairingRepository {
                 else -> "GRP_$cleanDevA"
             }
 
-            // Compute reciprocal role if roleB is unspecified
+            // [Variables] hostGroupId, devAId, devBId, roleA, roleB, pairingCode, callback, cleanDevA, cleanDevB, now, resolvedCtx, selfDevId, prefsGroup, effectiveGroup, isHostB, isHostA, isChildB, computedRoleB | [Constants] None | [Dependencies] FirebaseComm, JFindMeApplication, RegistryManager, DevicePresentationResolver | [Integration Points] MapActivity, FamilyFriendsActivity, DevicePairingTable, LocationRepository
+            // 🛡️ OOPS SSOT Invariant: Host Device is ALWAYS Master Guardian; Peer reciprocity must NEVER demote Host to Child/Ward!
+            val isHostB = resolvedCtx?.let { com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(it, cleanDevB, effectiveGroup) } ?: false
+            val isHostA = resolvedCtx?.let { com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(it, cleanDevA, effectiveGroup) } ?: false
+            val isChildB = resolvedCtx?.let {
+                val prime = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(it)
+                prime.equals(cleanDevB, ignoreCase = true)
+            } ?: false
+
             val computedRoleB = if (!roleB.isNullOrBlank() && roleB != "None") {
-                roleB
+                if (isHostB && (roleB.contains("Child", true) || roleB.contains("Ward", true))) "Master Guardian" else roleB
             } else {
                 when {
-                    roleA.contains("Guardian", ignoreCase = true) || roleA.contains("Parent", ignoreCase = true) -> "Child"
-                    roleA.contains("Child", ignoreCase = true) || roleA.contains("Ward", ignoreCase = true) -> "Guardian"
+                    isHostB -> "Master Guardian"
+                    isChildB -> "Child"
+                    roleA.contains("Co-Guardian", ignoreCase = true) -> if (isHostB) "Master Guardian" else "Co-Guardian"
+                    roleA.contains("Guardian", ignoreCase = true) || roleA.contains("Parent", ignoreCase = true) -> if (isHostB) "Master Guardian" else "Child"
+                    roleA.contains("Child", ignoreCase = true) || roleA.contains("Ward", ignoreCase = true) -> if (isHostB) "Master Guardian" else "Co-Guardian"
                     roleA.contains("Spouse", ignoreCase = true) -> "Spouse"
                     roleA.contains("Friend", ignoreCase = true) -> "Friend"
                     else -> "Member"

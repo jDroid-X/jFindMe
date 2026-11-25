@@ -33,9 +33,32 @@ object DeviceRagEngine {
         val strokeColor: Int
     )
 
+    // [Variables] context, timestamp, batteryLevel, isSos, isDeleted, isGhost, isPendingUnlink, now, deltaMs, staleMins, criticalHours, lowBatteryPct, staleMs, criticalMs, isStale, isLowBattery, mins, hours, timeText, reason, timeFormatted | [Constants] DEFAULT thresholds | [Dependencies] RegistryManager, JFindMeApplication | [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity, MapActivity, ButterflyPointEngine
     @JvmStatic
     @JvmOverloads
     fun evaluate(
+        timestamp: Long,
+        batteryLevel: Int = -1,
+        isSos: Boolean = false,
+        isDeleted: Boolean = false,
+        isGhost: Boolean = false,
+        isPendingUnlink: Boolean = false
+    ): EvaluationResult {
+        return evaluate(
+            context = com.jdroidx.jfindme.JFindMeApplication.getContext(),
+            timestamp = timestamp,
+            batteryLevel = batteryLevel,
+            isSos = isSos,
+            isDeleted = isDeleted,
+            isGhost = isGhost,
+            isPendingUnlink = isPendingUnlink
+        )
+    }
+
+    @JvmStatic
+    @JvmOverloads
+    fun evaluate(
+        context: android.content.Context?,
         timestamp: Long,
         batteryLevel: Int = -1,
         isSos: Boolean = false,
@@ -79,10 +102,10 @@ object DeviceRagEngine {
         val now = System.currentTimeMillis()
         val deltaMs = if (timestamp > 0L) (now - timestamp).coerceAtLeast(0L) else 0L
 
-        val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
-        val staleMins = if (context != null) RegistryManager.getStaleInactiveMinutes(context) else 15
-        val criticalHours = if (context != null) RegistryManager.getCriticalOfflineHours(context) else 6
-        val lowBatteryPct = if (context != null) RegistryManager.getLowBatteryThreshold(context) else 20
+        val appCtx = context ?: com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val staleMins = if (appCtx != null) RegistryManager.getStaleInactiveMinutes(appCtx) else 15
+        val criticalHours = if (appCtx != null) RegistryManager.getCriticalOfflineHours(appCtx) else 6
+        val lowBatteryPct = if (appCtx != null) RegistryManager.getLowBatteryThreshold(appCtx) else 20
 
         val staleMs = staleMins * 60 * 1000L
         val criticalMs = criticalHours * 60 * 60 * 1000L

@@ -484,7 +484,7 @@ class GeofenceViewModel(application: Application) : AndroidViewModel(application
                             val lngVal = snap.child("lng").value?.toString()?.toDoubleOrNull() ?: 0.0
                             val speedVal = snap.child("speed").value?.toString()?.toFloatOrNull() ?: 0f
                             // 🛡️ Type-Safe Firebase Read: battery can be Long, Int, or Boolean in mixed-schema nodes
-                            val batteryVal = snap.child("battery").value?.toString()?.toIntOrNull() ?: 100
+                            val batteryVal = snap.child("battery").value?.toString()?.toIntOrNull()?.takeIf { it in 0..100 } ?: -1
                             // 🛡️ Type-Safe Firebase Read: sos can be Boolean (true/false) or Long (0/1)
                             val sosRaw = snap.child("sos").value
                             val sosVal = when (sosRaw) {

@@ -63,14 +63,24 @@ object ButterflyPointEngine {
         calculateHaversineDistance(lat1, lon1, lat2, lon2)
 
     /**
-     * Formats distance into human-readable metric string.
+     * Formats distance into human-readable metric or imperial string.
      */
     @JvmStatic
-    fun formatDistance(meters: Double): String {
-        return if (meters < 1000.0) {
-            "${meters.roundToInt()} m"
+    @JvmOverloads
+    fun formatDistance(meters: Double, isImperial: Boolean = false): String {
+        return if (isImperial) {
+            val feet = meters * 3.28084
+            if (feet < 5280.0) {
+                "${feet.roundToInt()} ft"
+            } else {
+                String.format(java.util.Locale.US, "%.1f mi", meters / 1609.344)
+            }
         } else {
-            String.format(java.util.Locale.US, "%.1f km", meters / 1000.0)
+            if (meters < 1000.0) {
+                "${meters.roundToInt()} m"
+            } else {
+                String.format(java.util.Locale.US, "%.1f km", meters / 1000.0)
+            }
         }
     }
 
@@ -1240,8 +1250,7 @@ object ButterflyPointEngine {
                 val now = System.currentTimeMillis()
                 val hysteresisDeadband = com.jdroidx.jfindme.utils.RegistryManager.getButterflyHysteresisMeters(context).toDouble()
 
-                val batIntent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
-                val batLevel = batIntent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val (batLevel, _) = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getResolvedBatteryAndCharging(context)
                 val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
                 val isSos = prefs.getBoolean("is_sos_active", false)
 

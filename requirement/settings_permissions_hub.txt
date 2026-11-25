@@ -1,0 +1,12 @@
+[SCREEN]: SettingsActivity (Unified Device Permissions & Access Control Hub)
+[DATE]: 2026-11-25
+[LAYERS]:
+  VIEW       -> SettingsActivity.java (Card 1B: Unified Device Permissions & Access Control Hub + Tab 2 Screen Card + onResume/onRequestPermissionsResult live switch sync) & PrivacyActivity.java (delegates hardware toggle & links to Settings Hub)
+  CONTROLLER -> ProfilePermissionsManager.kt (SSOT PermissionGateSpec table: Mandatory, Background/OEM, Optional, In-App ACL) & OEMPowerWhitelistManager.kt (15+ OEMs)
+  MODEL      -> ProfileAclDossier.kt (SSOT ACL & OS Permission Dossier) + AndroidManifest.xml (Added READ_MEDIA_IMAGES, READ_MEDIA_VISUAL_USER_SELECTED, ACCESS_NOTIFICATION_POLICY, USE_BIOMETRIC)
+
+[CONTRACT]:
+  1. Grouped all 22 device & in-app permissions (4 Mandatory, 4 Background/OEM, 7 Optional, 7 In-App ACLs) in one Settings section (`buildPermissionsHubCard`) with live interactive toggles.
+  2. Toggling ON missing OS permissions triggers runtime escalation, special Settings intents, or 15+ OEM autostart guidance; toggling OFF mandatory gates presents Human-in-the-Loop confirmation (`Pause App Gate` vs `OS Settings`).
+  3. PrivacyActivity delegates hardware location gate cleanly via ProfilePermissionsManager SSOT and opens SettingsActivity directly to the Permissions Hub (`SCROLL_TO_PERMISSIONS=true`).
+  4. Verified via `:jButterFly:compileDebugSources` (BUILD SUCCESSFUL), `audit_permissions_and_contracts.py` (17/17 pass), and `verify_module_parity.py` (26 files synced).

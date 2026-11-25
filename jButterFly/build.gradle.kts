@@ -191,3 +191,16 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
+
+// 🛡️ Permanent Future-Regression Prevention Hook: Validates permissions, ACL SSOT & zero duplicate OEM tables on every build
+val verifyEnterpriseContracts by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Audits AndroidManifest, ProfilePermissionsManager, ProfileAclDossier, and cross-module SSOT contracts."
+    workingDir = rootProject.projectDir
+    commandLine("python", "scripts/audit_permissions_and_contracts.py")
+    isIgnoreExitValue = false
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(verifyEnterpriseContracts)
+}

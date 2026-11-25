@@ -54,15 +54,32 @@ public class AvatarLoader {
     }
 
     /**
-     * 🚀 Binds the local user's equipped avatar to any ImageView with optimal Center Crop
+     * ⭕ SSOT: Enforces 100% Hardware-Accelerated True Circular Masking on any ImageView.
+     * Prevents square bitmaps or rectangular asset drawables from breaking circular UI standards.
+     * [Variables] targetView | [Constants] None | [Dependencies] ViewOutlineProvider, Outline | [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity, MapActivity
+     */
+    public static void applyCircularShape(ImageView targetView) {
+        if (targetView == null) return;
+        targetView.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(android.view.View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+        targetView.setClipToOutline(true);
+    }
+
+    /**
+     * 🚀 Binds the local user's equipped avatar to any ImageView with optimal Center Crop and Circular Masking
      */
     public static void bindCurrentUserAvatar(Context context, ImageView targetView) {
         if (targetView == null || context == null) return;
+        applyCircularShape(targetView);
         
         // 🔧 NULL-002: Add null safety for all operations
         try {
-            targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            targetView.setAdjustViewBounds(true);
+            targetView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            targetView.setAdjustViewBounds(false);
 
             String prefsName = "system_registry";
             android.content.SharedPreferences prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
@@ -90,8 +107,10 @@ public class AvatarLoader {
                     opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
                     Bitmap b = BitmapFactory.decodeFile(targetFile.getAbsolutePath(), opts);
                     if (b != null) {
-                        bitmapCache.put(cacheKey, b);
-                        targetView.setImageBitmap(b);
+                        Bitmap circ = createCircularBitmap(b, Math.max(b.getWidth(), 128));
+                        Bitmap toCache = (circ != null) ? circ : b;
+                        bitmapCache.put(cacheKey, toCache);
+                        targetView.setImageBitmap(toCache);
                         return;
                     }
                 }
@@ -350,8 +369,9 @@ public class AvatarLoader {
 
     public static void bindAvatar(Context context, ImageView targetView, String deviceId, String avatarIdStr, boolean isGreyMode) {
         if (targetView == null || context == null) return;
-        targetView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        targetView.setAdjustViewBounds(true);
+        applyCircularShape(targetView);
+        targetView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        targetView.setAdjustViewBounds(false);
 
         if (isGreyMode) {
             android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix();
@@ -376,7 +396,8 @@ public class AvatarLoader {
             try {
                 Bitmap b = BitmapFactory.decodeFile(peerCustom.getAbsolutePath());
                 if (b != null) {
-                    targetView.setImageBitmap(b);
+                    Bitmap circ = createCircularBitmap(b, Math.max(b.getWidth(), 128));
+                    targetView.setImageBitmap(circ != null ? circ : b);
                     return;
                 }
             } catch (Exception ignored) {}
@@ -392,7 +413,8 @@ public class AvatarLoader {
                     try {
                         Bitmap b = BitmapFactory.decodeFile(selfCustom.getAbsolutePath());
                         if (b != null) {
-                            targetView.setImageBitmap(b);
+                            Bitmap circ = createCircularBitmap(b, Math.max(b.getWidth(), 128));
+                            targetView.setImageBitmap(circ != null ? circ : b);
                             return;
                         }
                     } catch (Exception ignored) {}
@@ -407,7 +429,8 @@ public class AvatarLoader {
                 opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
                 Bitmap b = BitmapFactory.decodeFile(targetFile.getAbsolutePath(), opts);
                 if (b != null) {
-                    targetView.setImageBitmap(b);
+                    Bitmap circ = createCircularBitmap(b, Math.max(b.getWidth(), 128));
+                    targetView.setImageBitmap(circ != null ? circ : b);
                     return;
                 }
             }

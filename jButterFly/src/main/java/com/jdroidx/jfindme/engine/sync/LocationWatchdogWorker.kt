@@ -19,6 +19,15 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
     override suspend fun doWork(): Result {
         SystemLogger.i(TAG, "Watchdog executing background location sync & service resurrection check.")
 
+        // 🛡️ DECOMMISSION GATE: If device was decommissioned by admin, suppress resurrection
+        try {
+            val regPrefs = applicationContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            if (regPrefs.getBoolean("is_decommissioned_by_admin", false)) {
+                SystemLogger.w(TAG, "Device is marked as DECOMMISSIONED by Admin. Watchdog worker aborting.")
+                return Result.success()
+            }
+        } catch (_: Exception) { }
+
         // 1. Resurrect TrackingService if not running
         try {
             val serviceIntent = android.content.Intent(applicationContext, com.jdroidx.jfindme.service.TrackingService::class.java)
@@ -31,31 +40,43 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
             SystemLogger.e(TAG, "Watchdog service resurrection error", e)
         }
 
+        // [Variables] user, localAgentId, finalId, timestamp, cts, locTask, loc, repository, prefs, rawBaseId, dynamicIdx, photoSeq, customAvatarTag, resolvedAvatarId, deviceId, userLoc | [Constants] TAG | [Dependencies] FirebaseAuth, FirebaseComm, DeviceIdentityHelper, LocationServices, LocationRepository, GeohashHelper | [Integration Points] Background location sync, Firebase RTDB, SQLite
         val user = FirebaseAuth.getInstance().currentUser
-        if (user == null) {
-            SystemLogger.w(TAG, "No active user session. Watchdog aborting cloud push.")
+        val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+        val finalId = if (localAgentId.isNotBlank()) localAgentId else (user?.uid ?: "")
+        if (finalId.isBlank()) {
+            SystemLogger.w(TAG, "No valid device identity. Watchdog aborting cloud push.")
             return Result.success()
         }
 
         return try {
             val timestamp = System.currentTimeMillis()
-            val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
-            val finalId = if (localAgentId.isNotBlank()) localAgentId else user.uid
             com.jdroidx.jfindme.data.remote.FirebaseComm.getTelemetryRef(finalId).child("last_heartbeat").setValue(timestamp)
             com.jdroidx.jfindme.data.remote.FirebaseComm.lookupIndicesRef.child("active_monitors").child(finalId).setValue(timestamp)
 
             // Asynchronously resolve cloud mapping as secondary fallback
-            com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(user.uid) { resolvedAgentId ->
-                if (!resolvedAgentId.isNullOrBlank() && resolvedAgentId != finalId) {
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.getTelemetryRef(resolvedAgentId).child("last_heartbeat").setValue(timestamp)
-                    com.jdroidx.jfindme.data.remote.FirebaseComm.lookupIndicesRef.child("active_monitors").child(resolvedAgentId).setValue(timestamp)
+            if (user != null) {
+                com.jdroidx.jfindme.data.remote.FirebaseComm.resolveHardwareIdentity(user.uid) { resolvedAgentId ->
+                    if (!resolvedAgentId.isNullOrBlank() && resolvedAgentId != finalId) {
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.getTelemetryRef(resolvedAgentId).child("last_heartbeat").setValue(timestamp)
+                        com.jdroidx.jfindme.data.remote.FirebaseComm.lookupIndicesRef.child("active_monitors").child(resolvedAgentId).setValue(timestamp)
+                    }
                 }
             }
 
-            // 2. Fetch fresh GPS fix synchronously on worker thread via FusedLocationProviderClient (up to 5s timeout)
+            // 2. Fetch fresh GPS fix synchronously on worker thread via active getCurrentLocation with fallback to lastLocation
             try {
                 val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(applicationContext)
-                val loc = com.google.android.gms.tasks.Tasks.await(fusedClient.lastLocation, 5, java.util.concurrent.TimeUnit.SECONDS)
+                val cts = com.google.android.gms.tasks.CancellationTokenSource()
+                val locTask = fusedClient.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, cts.token)
+                var loc: android.location.Location? = try {
+                    com.google.android.gms.tasks.Tasks.await(locTask, 10, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: Exception) { null }
+                if (loc == null) {
+                    loc = try {
+                        com.google.android.gms.tasks.Tasks.await(fusedClient.lastLocation, 3, java.util.concurrent.TimeUnit.SECONDS)
+                    } catch (e: Exception) { null }
+                }
                 if (loc != null) {
                     val repository = com.jdroidx.jfindme.data.repository.LocationRepository(applicationContext)
                     val prefs = applicationContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
@@ -64,7 +85,6 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
                     val photoSeq = prefs.getInt("custom_avatar_seq", 1)
                     val customAvatarTag = String.format(java.util.Locale.US, "AV_%s_%02d", finalId, photoSeq)
                     val resolvedAvatarId = if (dynamicIdx == -1) customAvatarTag else "avatar_custom_$dynamicIdx"
-                    val rawHw = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getRawAndroidId(applicationContext)
                     val deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(applicationContext)
 
                     val userLoc = com.jdroidx.jfindme.data.model.UserLocation(
@@ -82,9 +102,9 @@ class LocationWatchdogWorker(context: Context, params: WorkerParameters) : Corou
                         avatar_id = resolvedAvatarId
                     )
                     repository.updateMyLocation(userLoc)
-                    SystemLogger.i(TAG, "Watchdog successfully pushed background location: ${loc.latitude}, ${loc.longitude}")
+                    SystemLogger.i(TAG, "Watchdog successfully pushed fresh background location: ${loc.latitude}, ${loc.longitude}")
                 } else {
-                    SystemLogger.d(TAG, "Watchdog lastLocation returned null (cached GPS fix not yet available).")
+                    SystemLogger.d(TAG, "Watchdog location fix returned null (GNSS hardware unavailable).")
                 }
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Watchdog GPS fetch error", e)

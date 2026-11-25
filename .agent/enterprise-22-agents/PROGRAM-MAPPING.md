@@ -23,6 +23,10 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **L0 Kernel** | `KernelWakeLockGateway` | OOPS Gateway Singleton | Agent 5, Agent 7 | `PowerManager`, `SystemLogger` | Safe hardware WakeLock acquisition with 30s timeout ceiling, eliminates battery drain & underflow crashes | Active SSOT |
 | **L0 Cloud** | `FirebaseAtomicGateway` | OOPS Gateway Singleton | Agent 2, Agent 4 | `FirebaseDatabase`, `ConcurrentHashMap`, `SystemLogger` | Atomic `updateChildren` multi-path transactions, eliminates GAP-04 whole-object write clashes & GAP-07 unbounded listener leaks | Active SSOT |
+| **L0 Spatial** | `DualModeCoordinator` | OOPS Coordinator Singleton | Agent 6, Agent 7 | `TrackingService`, `SimTelephonyEngine`, `SystemLogger` | Telemetry arbiter: powers down GPS in background, projects cell tower updates onto centroid, eliminates 0.0, 0.0 wipes | Active SSOT |
+| **L0 Security**| `ProfilePermissionsManager` | OOPS Security Manager | Agent 1, Agent 5 | `ContextCompat`, `ActivityCompat`, `ProfileAclDossier` | Unified SSOT permission table (`PermissionGateSpec`: Mandatory, Background/OEM, Optional, ACL), two-stage permission cascade, toggle binding & settings escalation | Active SSOT |
+| **L0 Security**| `OEMPowerWhitelistManager` | OOPS Security/Power Manager | Agent 5, Agent 7 | `Intent`, `ComponentName`, `Build`, `PowerManager` | Deep-link intent router across 15+ OEMs (Samsung, Xiaomi, Oppo, Vivo, Realme, OnePlus, etc.), prevents background process killing | Active SSOT |
+| **L0 Model**   | `ProfileAclDossier` | OOPS Domain Entity | Agent 1, Agent 2 | `Serializable`, `ProfileViewModel`, `PersonDetailsActivity` | Strongly-typed 7-ACL in-app access control and OS permission state SSOT | Active SSOT |
 | **L1 Root** | `SplashActivity` | MVC Router | Agent 1 | `AuthCheck`, `SessionRouter` | Auto-login & Identity Verification | Active SSOT |
 | **L1 Auth** | `AuthActivity` | MVVM | Agent 1, Agent 2 | `AuthViewModel`, `ValidationEngine` | Firebase Auth ↔ `user_identity` Table | Active SSOT |
 | **L2 Spatial**| `MapActivity` | MVVM / SSOT | Agent 3, Agent 6, Agent 2 | `MapViewModel`, `MultiMarkerEngine`, `LocationEngine` | `/locations/{id}`, `/devices/{id}`, `LocationEventTable`; Master DB [Online: `/devices/{id}/device/live`, Offline: `users`, `devices`], Sub Master / Fact DB [`tracking_history`, `device_vitals`, `MASTER_ROSTER`], Transaction DB [`sys_log`, `outbox_queue`, `alert_history`] | Active SSOT |
@@ -274,11 +278,11 @@ flowchart TD
 
 | Canonical Device ID | Device Name | Hardware Model | Role in Circle | Active Group SSOT | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`2C811042`** | Redmi 5pro | Xiaomi whyred | Parent / Member | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
-| **`2D113789`** | INNOVANT | Android Device | Friend / Member | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
-| **`2T929153`** | REDMI N7 | Redmi Note 7 Pro | Root Circle Admin / Host | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
-| **`4379A761`** | RIDDHI | Android Device | Child / Daughter | `GRP_2T929153`, `GRP_4379A761` | 🟢 ONLINE / ACTIVE |
-| **`F8CAFC67`** | PUSHPA | Redmi Note 10 Pro | Spouse / Parent | `GRP_2T929153`, `GRP_F8CAFC67` | 🟢 ONLINE / ACTIVE |
+| **`2C811042`** | Redmi 5pro | Xiaomi Redmi Note 5 Pro (whyred / SDM636) | Parent / Member | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
+| **`2D113789`** | INNOVANT | Innovant Tab (cattail / M2006C3MII) | Friend / Member | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
+| **`2T929153`** | REDMI N7 | Xiaomi Redmi Note 7 Pro (violet / SDM675) | Root Circle Admin / Host | `GRP_2T929153` | 🟢 ONLINE / ACTIVE |
+| **`4379A761`** | RIDDHI | Realme Narzo 50 5G (RMX3395 / Dimensity 810) | Child / Daughter | `GRP_2T929153`, `GRP_4379A761` | 🟢 ONLINE / ACTIVE |
+| **`F8CAFC67`** | PUSHPA | Xiaomi Redmi Note 10 Pro (sweet / M2101K6G / SDM732G) | Spouse / Parent | `GRP_2T929153`, `GRP_F8CAFC67` | 🟢 ONLINE / ACTIVE |
 
 #### Ghost / Duplicate Nodes RCA & Resolution Summary
 
@@ -295,6 +299,8 @@ flowchart TD
 | `UNIT0001` | Test Mock Stub | Injected by legacy mock testing script | Pruned from RTDB |
 | `UNIT0002` | Test Mock Stub | Injected by legacy mock testing script | Pruned from RTDB |
 | `A7D5968D` | Reinstall Orphan Node | Riddhi's prior device ID before app reinstall; >100k unconsumed sync messages | Consolidated history to `4379A761`, batched-deleted `master_sync`, node pruned |
+| `B1108B1A` | Virtual Staged Node | Staged OTA APK build 232/240 rollout testing by Web Matrix Commander | Permanently purged from cloud RTDB & local SQLite; edge security regex rule added |
+| `UNKNOWN0` | Ghost Socket Node | Pre-handshake socket probe before silicon hardware ID resolved | Permanently purged from cloud RTDB & local SQLite; edge security regex rule added |
 
 ---
 
@@ -509,3 +515,12 @@ flowchart TD
 | Architectural Phase | Subsystem / Files | Prime Directives & Invariants | Architectural Refactoring & Concrete OOPS Resolution | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 20: Arrival Latch State Persistence & Auto-Archive Teardown** | `ButterflyPointEngine.kt`<br>`DatabaseHelper.kt` | 1. **Process-Survivable Terminal Latch:** Arrival status (`STATUS_REACHED`) must never revert to `ON_MOVE` upon app restart or process death within the hysteresis deadband.<br>2. **Atomic Auto-Archive Teardown:** When points expire or are archived in SQLite, active RTDB listeners must be severed immediately.<br>3. **Exact Zero-Distance ETA:** When a user is at or within the rendezvous perimeter, ETA must evaluate to 0 minutes, not coerce to 1 minute. | 1. **Terminal Latch Memory Resilience:** In `ButterflyPointEngine.evaluateDeviceStatus`, updated `wasArrived` to verify `currentStatus == STATUS_REACHED` in addition to `arrivalLatchMap[deviceId]`, and re-latched in memory upon recovery. Prevents false degradation to `STATUS_ON_MOVE` after Android OS process recreation.<br>2. **Auto-Archive Listener Decoupling:** In `DatabaseHelper.archiveButterflyPoint`, added immediate calls to `ButterflyPointEngine.stopActivePointPeerSync(pointId)` and `clearButterflyOverlay()`. Ensures auto-expired points discovered during `getActiveButterflyPoints()` immediately sever background Firebase RTDB listeners.<br>3. **Zero-Distance ETA Normalization:** In `ButterflyPointEngine.calculateEtaMinutes`, added explicit `if (distanceMeters <= 0.0) return 0` guard.<br>4. **Regression Verification:** Executed `:jButterFly:compileDebugSources` (BUILD SUCCESSFUL in 26s) and `:jButterFly:testDebugUnitTest` (BUILD SUCCESSFUL in 10s, 33 tasks, 100% passing). | 🟢 100% DEPLOYED & VERIFIED |
+
+
+---
+
+### 21. High-Cohesion OOPS MVC Battery Optimization & Deep Doze Preservation Sentinel (Build 240 / V1.0.22)
+
+| Architectural Phase | Subsystem / Files | Prime Directives & Invariants | Architectural Refactoring & Concrete OOPS Resolution | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phase 21: Battery Drain Elimination & OOPS MVC Alignment** | `TrackingService.kt`<br>`LocationEngine.kt`<br>`StealthAlarmSentinelEngine.kt`<br>`StealthAlarmReceiver.kt`<br>`WatchdogAlarmReceiver.kt`<br>`BackgroundJobManager.kt`<br>`ButterflyPointEngine.kt`<br>`GroupViewModel.kt`<br>`EnterpriseUnitTestSuite.kt` | 1. **Zero Hardware Thrashing:** State transitions only on true threshold crossing; zero HandlerThread teardown on continuous battery telemetry.<br>2. **Deep Doze Preservation:** Use `setExactAndAllowWhileIdle()`, never `setAlarmClock()` for background pulses.<br>3. **Zero-Duplication Event Pipeline:** Exactly 1 authoritative callback pipeline per engine; no simultaneous callback + PendingIntent duplicate IPC.<br>4. **Stationary Power Breaker:** Anchor speed to 0.0 m/s when stationary, dropping idle CPU WakeLocks.<br>5. **Future Regression Sentinel:** Automated unit tests covering hysteresis FSM, stationary dead-reckoning, and alarm suppression. | 1. **State-Guarded Battery Hysteresis:** In `TrackingService.registerBatteryMonitor()`, added `if (!isLowPowerMode)` (<15%) and `if (isLowPowerMode)` (>20%) guards, completely eliminating the 4–7s HandlerThread restart storm caused by continuous OS battery broadcasts.<br>2. **Stationary Latch & WakeLock Suppression:** In `TrackingService.kt`, pre-seeded `lastUploadedLocation` from cache, latched `speed = 0.0f` on stationary detection, and suppressed `cpuWakeLock` / `getCurrentLocation()` polling when `LocationEngine` is streaming or stationary.<br>3. **Deduplicated LocationEngine IPC:** In `LocationEngine.kt`, removed concurrent `pendingIntent` registration from `startTracking()` and `updateTrackingParams()`, eliminating redundant system-wide broadcast intents on every GPS tick.<br>4. **Doze-Friendly Alarm Sentinel:** In `StealthAlarmSentinelEngine.kt` and `BackgroundJobManager.kt`, replaced `setAlarmClock()` with `setExactAndAllowWhileIdle()` / `setAndAllowWhileIdle()`. Suppressed redundant stealth pulses in `StealthAlarmReceiver.kt` when `TrackingService` is foreground-active.<br>5. **Direct Watchdog Re-Arming:** In `WatchdogAlarmReceiver.kt`, re-arms `scheduleWatchdogAlarm()` directly, eliminating disk write churn to WorkManager's Room database on every alarm interval.<br>6. **Rendezvous Real-Time Observer Link:** Wired `ButterflyPointEngine.processLocalLocationUpdate()` directly to the primary `LocationEngine` callback, guaranteeing real-time ETA updates without polling.<br>7. **Encapsulated Model Access:** Replaced direct `getSharedPreferences` calls in `TrackingService.kt` with `RegistryManager` SSOT.<br>8. **Automated Regression Test Suite:** Added 4 comprehensive sentinel tests to `EnterpriseUnitTestSuite.kt` verifying hysteresis, stationary math, fallback throttling, and stealth suppression.<br>9. **Verification:** Verified with `:jButterFly:compileDebugSources` (SUCCESS in 23s) and `:jButterFly:testDebugUnitTest` (SUCCESS in 26s, 33 tasks, 100% passing). | 🟢 100% DEPLOYED & VERIFIED |

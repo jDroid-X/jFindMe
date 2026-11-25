@@ -28,6 +28,9 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
     private val _profileData = MutableLiveData<Map<String, Any>>()
     val profileData: LiveData<Map<String, Any>> get() = _profileData
 
+    private val _aclDossier = MutableLiveData<com.jdroidx.jfindme.data.model.ProfileAclDossier>()
+    val aclDossier: LiveData<com.jdroidx.jfindme.data.model.ProfileAclDossier> get() = _aclDossier
+
     private val _loadingState = MutableLiveData<String>()
     val loadingState: LiveData<String> get() = _loadingState
 
@@ -60,6 +63,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
             
             if (localDossier.isNotEmpty() && !localDossier["fullName"].isNullOrEmpty()) {
                 _profileData.postValue(localDossier)
+                _aclDossier.postValue(com.jdroidx.jfindme.data.model.ProfileAclDossier.fromMap(localDossier))
                 SystemLogger.i("IdentityHub", "Local Tier 1 Truth Verified for $safeUid")
                 auditHardwareSignature(context)
             } else {
@@ -96,6 +100,7 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
 
                 if (fallback.isNotEmpty()) {
                     _profileData.postValue(fallback)
+                    _aclDossier.postValue(com.jdroidx.jfindme.data.model.ProfileAclDossier.fromMap(fallback))
                     SystemLogger.i("IdentityHub", "Tier 2 Fallback Active for $safeUid")
                 }
 
@@ -112,6 +117,9 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                         }
                         
                         _profileData.postValue(mergedMap)
+                        val syncedAcl = com.jdroidx.jfindme.data.model.ProfileAclDossier.fromMap(mergedMap)
+                        _aclDossier.postValue(syncedAcl)
+                        com.jdroidx.jfindme.data.model.ProfileAclDossier.saveToLocal(context, syncedAcl)
                         viewModelScope.launch(Dispatchers.IO) { 
                             val dossier = mergedMap.mapValues { (_, value) -> value.toString() }
                             val finalName = (mergedMap["userName"] ?: mergedMap["fullName"] ?: mergedMap["name"])?.toString()
@@ -227,7 +235,8 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
         addressVal: String, emergencyNoteVal: String,
         orgName: String, deptName: String,
         prefs: SharedPreferences,
-        ignoreValidation: Boolean = false
+        ignoreValidation: Boolean = false,
+        aclDossier: com.jdroidx.jfindme.data.model.ProfileAclDossier? = null
     ) {
         val missingFields = mutableListOf<String>()
         if (nameVal.isEmpty()) missingFields.add("Name")
@@ -277,11 +286,16 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     "updated_at" to FirebaseComm.getForensicTimestamp()
                 ))
 
+                if (aclDossier != null) {
+                    profilePayload.putAll(aclDossier.toPayloadMap())
+                    _aclDossier.postValue(aclDossier)
+                }
+
                 // [Variables] | [Constants] | [Dependencies] | [Integration Points]
                 // Variables: nameVal, phoneVal, dobVal, genderVal, cVal, sVal, cityVal, pincodeVal, addressVal, orgName, deptName
                 // Dependencies: SharedPreferences, system_registry
                 // Integration Points: fetchProfile Tier 2 Fallback, AuthViewModel rehydration SSOT
-                prefs.edit()
+                val pEdit = prefs.edit()
                     .putString("user_nickname", nameVal)
                     .putString("fullName", nameVal)
                     .putString("userName", nameVal)
@@ -296,11 +310,18 @@ class ProfileViewModel(application: Application) : BaseViewModel(application) {
                     .putString("user_address", addressVal)
                     .putString("user_org", orgName)
                     .putString("user_dept", deptName)
-                    .apply()
+
+                pEdit.apply()
+                if (aclDossier != null) {
+                    com.jdroidx.jfindme.data.model.ProfileAclDossier.saveToLocal(context, aclDossier)
+                }
 
                 val activeGrp = _profileData.value?.get("active_group") as? String
-                FirebaseComm.syncForensicHeartbeat(authUid, safeUid, hardwareId, profilePayload, activeGrp)
-                FirebaseComm.devicesRef.child(safeUid).child("device").child("live").child("avatar_id").setValue(avatarId)
+                val allowCloudPush = aclDossier?.cloudSyncEnabled ?: com.jdroidx.jfindme.data.model.ProfileAclDossier.loadFromLocal(context).cloudSyncEnabled
+                if (allowCloudPush) {
+                    FirebaseComm.syncForensicHeartbeat(authUid, safeUid, hardwareId, profilePayload, activeGrp)
+                    FirebaseComm.devicesRef.child(safeUid).child("device").child("live").child("avatar_id").setValue(avatarId)
+                }
                 
                 launch(Dispatchers.IO) {
                     val dossier = profilePayload.mapValues { (_, value) -> value.toString() }

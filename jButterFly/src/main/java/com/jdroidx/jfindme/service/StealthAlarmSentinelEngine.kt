@@ -64,6 +64,16 @@ object StealthAlarmSentinelEngine {
     @JvmStatic
     fun scheduleNextStealthPulse(context: Context, customIntervalMins: Long = 0L) {
         val appContext = context.applicationContext ?: context
+        // 🛡️ DECOMMISSION GATE: If device was decommissioned by admin, cancel alarms and abort
+        try {
+            val regPrefs = appContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            if (regPrefs.getBoolean("is_decommissioned_by_admin", false)) {
+                SystemLogger.w(TAG, "Device marked as DECOMMISSIONED by Admin. Cancelling stealth alarms.")
+                cancelStealthAlarms(appContext)
+                return
+            }
+        } catch (_: Exception) { }
+
         val repo = DeviceRepository.getInstance(appContext)
         val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val isPowerSave = pm?.isPowerSaveMode ?: false
@@ -102,13 +112,12 @@ object StealthAlarmSentinelEngine {
                 true
             }
 
-            if (canScheduleExact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
-                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-                SystemLogger.i(TAG, "AlarmClock programmed: Fires in $intervalMins mins at $triggerAtMillis")
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (canScheduleExact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
                 SystemLogger.i(TAG, "setExactAndAllowWhileIdle programmed: Fires in $intervalMins mins at $triggerAtMillis")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                SystemLogger.i(TAG, "setAndAllowWhileIdle programmed: Fires in $intervalMins mins at $triggerAtMillis")
             } else {
                 alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             }
@@ -155,6 +164,17 @@ object StealthAlarmSentinelEngine {
     @JvmStatic
     fun executeStealthPulseWithWakeLock(context: Context, onComplete: () -> Unit) {
         val appContext = context.applicationContext ?: context
+        // 🛡️ DECOMMISSION GATE: If device was decommissioned by admin, suppress wake lock and pulse
+        try {
+            val regPrefs = appContext.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            if (regPrefs.getBoolean("is_decommissioned_by_admin", false)) {
+                SystemLogger.w(TAG, "Device marked as DECOMMISSIONED by Admin. Skipping stealth pulse.")
+                cancelStealthAlarms(appContext)
+                onComplete()
+                return
+            }
+        } catch (_: Exception) { }
+
         val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG)?.apply {
             setReferenceCounted(false)
@@ -195,10 +215,19 @@ object StealthAlarmSentinelEngine {
                 var resolvedSpeed = 0f
                 var resolvedBearing = 0f
 
+                // [Variables] fusedClient, cts, locTask, loc | [Constants] TAG | [Dependencies] LocationServices, Tasks, Priority, CancellationTokenSource | [Integration Points] Active GNSS fix polling
                 try {
                     val fusedClient = LocationServices.getFusedLocationProviderClient(appContext)
-                    val locTask = fusedClient.lastLocation
-                    val loc = Tasks.await(locTask, 10, TimeUnit.SECONDS)
+                    val cts = com.google.android.gms.tasks.CancellationTokenSource()
+                    val locTask = fusedClient.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                    var loc: android.location.Location? = try {
+                        Tasks.await(locTask, 10, TimeUnit.SECONDS)
+                    } catch (e: Exception) { null }
+                    if (loc == null) {
+                        try {
+                            loc = Tasks.await(fusedClient.lastLocation, 3, TimeUnit.SECONDS)
+                        } catch (_: Exception) {}
+                    }
                     if (loc != null && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
                         resolvedLat = loc.latitude
                         resolvedLng = loc.longitude
@@ -251,6 +280,13 @@ object StealthAlarmSentinelEngine {
                 } else {
                     // 🛡️ CRITICAL CELLULAR-ONLY FALLBACK: When kid disables GPS and cold coordinates are 0.0,
                     // push cellular baseband pulse to Firebase RTDB so parent map/console sees device is ALIVE with SIM info.
+                    val tier = com.jdroidx.jfindme.engine.security.PrivacyEngine.getPrivacyTier(appContext)
+                    val isGhost = com.jdroidx.jfindme.engine.security.PrivacyEngine.isGhostModeActive(appContext)
+                    if (tier == com.jdroidx.jfindme.engine.security.PrivacyEngine.PrivacyTier.FROZEN || isGhost) {
+                        SystemLogger.w(TAG, "Ghost Mode [FROZEN] active: Pure cellular fallback suppressed for privacy.")
+                        repo.logSecurityEvent("STEALTH_PULSE_SKIPPED", "Cellular fallback suppressed by Ghost Mode [FROZEN]", "INFO")
+                        return@launch
+                    }
                     SystemLogger.w(TAG, "GPS unavailable (0,0); dispatching pure cellular baseband heartbeat.")
                     val fallbackPayload = mutableMapOf<String, Any>(
                         "last_heartbeat" to forensicTs,

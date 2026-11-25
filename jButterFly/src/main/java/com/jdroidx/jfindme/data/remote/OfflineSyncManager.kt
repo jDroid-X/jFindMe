@@ -152,6 +152,13 @@ class OfflineSyncManager private constructor(context: Context) {
         }
         val rUserId = location.getResolvedUserId()
         
+        // 🔒 PRIVACY GATE: If Ghost Mode (FROZEN) is active, suppress cloud sync and offline queueing completely
+        val privacyTier = com.jdroidx.jfindme.engine.security.PrivacyEngine.getPrivacyTier(context)
+        if (privacyTier == com.jdroidx.jfindme.engine.security.PrivacyEngine.PrivacyTier.FROZEN) {
+            SystemLogger.d(TAG, "GHOST_MODE_ACTIVE: Offline sync and cloud dispatch suppressed for $rUserId")
+            return
+        }
+
         // 🔒 Save locally into Database first (Zero Data Loss)
         try {
             val db = DatabaseHelper.getInstance(context)
@@ -301,7 +308,8 @@ class OfflineSyncManager private constructor(context: Context) {
                 val lng = (item["lng"] as? Double) ?: 0.0
                 val bearing = (item["bearing"] as? Double)?.toFloat() ?: 0f
                 val speed = (item["speed"] as? Double)?.toFloat() ?: 0f
-                val battery = (item["battery"] as? Long)?.toInt() ?: 100
+                val rawBatt = (item["battery"] as? Long)?.toInt() ?: -1
+                val battery = if (rawBatt in 0..100) rawBatt else -1
                 val isSos = (item["is_sos"] as? Long) == 1L
                 val ts = (item["timestamp"] as? Long) ?: System.currentTimeMillis()
                 val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)
@@ -398,7 +406,8 @@ class OfflineSyncManager private constructor(context: Context) {
                     val lng = (item["lng"] as? Double) ?: 0.0
                     val bearing = (item["bearing"] as? Double)?.toFloat() ?: 0f
                     val speed = (item["speed"] as? Double)?.toFloat() ?: 0f
-                    val battery = (item["battery"] as? Long)?.toInt() ?: 100
+                    val rawBatt = (item["battery"] as? Long)?.toInt() ?: -1
+                    val battery = if (rawBatt in 0..100) rawBatt else -1
                     val isSos = (item["is_sos"] as? Long) == 1L
                     val ts = (item["timestamp"] as? Long) ?: now
                     val accuracy = (item["accuracy"] as? Double)?.toFloat() ?: ((item["accuracy"] as? Long)?.toFloat() ?: 0f)

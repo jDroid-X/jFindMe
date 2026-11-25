@@ -50,6 +50,12 @@ object PrivacyEngine {
 
     @JvmStatic
     fun getPrivacyTier(context: Context): PrivacyTier {
+        // [Variables] acl, prefs, tierStr | [Constants] PREF_NAME | [Dependencies] ProfileAclDossier | [Integration Points] TrackingService, LocationEngine
+        val acl = com.jdroidx.jfindme.data.model.ProfileAclDossier.loadFromLocal(context)
+        if (!acl.liveTrackingEnabled && !acl.isAdminOverride) {
+            return PrivacyTier.FROZEN
+        }
+
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val tierStr = prefs.getString("privacy_tier", PrivacyTier.PRECISE.name) ?: PrivacyTier.PRECISE.name
         return try {

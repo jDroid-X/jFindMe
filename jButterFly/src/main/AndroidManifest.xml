@@ -23,10 +23,14 @@
     <!-- L1.4: Telephony Hardware & Dual-SIM Identification -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     
-    <!-- L1: Storage Support -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- L1: Storage & Media Support (Android 8-15 Scoped Media + Legacy) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     
     <!-- L1.5: Doze Mode Bypass (Unkillable Service Architect) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -47,12 +51,34 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
-    <!-- 🚀 QA Fix: Android 11+ Package Visibility (Queries) necessary for GMS & hardware intent mapping! -->
+    <!-- 🚀 QA Fix: Android 11+ Package Visibility (Queries) necessary for GMS, hardware & 15+ OEM Power Managers! -->
     <queries>
         <package android:name="com.google.android.gms" />
         <package android:name="com.android.vending" />
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.oplus.safecenter" />
+        <package android:name="com.oplus.battery" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.coloros.oppoguardelf" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.oneplus.security" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.iqoo.secure" />
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.samsung.android.sm" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.hihonor.systemmanager" />
+        <package android:name="com.asus.mobilemanager" />
+        <package android:name="com.transsion.phonemanager" />
+        <package android:name="com.sonymobile.superstamina" />
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="miui.intent.action.OP_AUTO_START" />
+        </intent>
+        <intent>
+            <action android:name="com.samsung.android.sm.ACTION_APP_SLEEP_SETTINGS" />
         </intent>
     </queries>
     <application
@@ -240,6 +266,16 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- L5.6: DownloadManager Completion Sentinel & Clean Installation Handshake -->
+        <receiver
+            android:name=".receiver.DownloadCompletedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
             </intent-filter>
         </receiver>
 

@@ -1,21 +1,38 @@
 package com.jdroidx.jfindme.ui.group
 
 import android.app.Application
+import android.content.Intent
 import android.os.CountDownTimer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.Query
 import com.google.firebase.database.ValueEventListener
+import com.jdroidx.jfindme.data.local.DatabaseHelper
 import com.jdroidx.jfindme.data.repository.DeviceRepository
 import com.jdroidx.jfindme.data.remote.FirebaseComm
+import com.jdroidx.jfindme.utils.DevicePresentationResolver
+import com.jdroidx.jfindme.utils.RegistryManager
 import com.jdroidx.jfindme.utils.SystemLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.Locale
+
+/**
+ * 📦 Legacy Node Candidate DTO for Circle Reclamation
+ */
+data class LegacyNodeCandidate(
+    val uid: String,
+    val name: String,
+    val role: String,
+    val avatarId: String,
+    val isAdmin: Boolean,
+    val isFriend: Boolean
+)
 
 /**
  * 🚀 Enterprise Identity & Grouping ViewModel (MVVM Architecture)
@@ -133,6 +150,7 @@ class GroupViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val roster = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(getApplication()).getOfflineRoster()
+                SystemLogger.i(TAG, "refreshLocalRoster: queried " + (roster?.size ?: 0) + " nodes from SSOT")
                 _rosterData.postValue(roster ?: emptyList())
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Failed to query local offline roster via DeviceRepository", e)
@@ -148,6 +166,7 @@ class GroupViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val roster = db.getOfflineRoster()
+                SystemLogger.i(TAG, "refreshLocalRoster(db): queried " + (roster?.size ?: 0) + " nodes from SSOT")
                 _rosterData.postValue(roster ?: emptyList())
             } catch (e: Exception) {
                 SystemLogger.e(TAG, "Failed to query local offline roster", e)
@@ -397,32 +416,62 @@ class GroupViewModel(application: Application) : AndroidViewModel(application) {
 
                         for (nodeSnap in allNodeSnaps) {
                             val uid = nodeSnap.key ?: continue
+                            // [Variables] memSnap, idSnap, profSnap, role, name, avatar, upper, isAdmin, isFriend | [Constants] "Member", "1" | [Dependencies] DataSnapshot, DeviceRepository | [Integration Points] syncCloudGroupToLocalDb multi-schema cloud sync
+                            val memSnap = if (nodeSnap.hasChild("membership")) nodeSnap.child("membership") else null
+                            val idSnap = if (nodeSnap.hasChild("identity")) nodeSnap.child("identity") else null
                             val profSnap = if (nodeSnap.hasChild("profile")) nodeSnap.child("profile") else nodeSnap
-                            val role = nodeSnap.child("role").getValue(String::class.java) 
+
+                            val role = memSnap?.child("role")?.getValue(String::class.java)
+                                ?: memSnap?.child("role_family")?.getValue(String::class.java)
+                                ?: nodeSnap.child("role").getValue(String::class.java) 
                                 ?: profSnap.child("role_title").getValue(String::class.java)
                                 ?: "Member"
-                            val name = nodeSnap.child("name").getValue(String::class.java) 
+
+                            val name = idSnap?.child("name")?.getValue(String::class.java)
+                                ?: idSnap?.child("full_name")?.getValue(String::class.java)
+                                ?: nodeSnap.child("name").getValue(String::class.java) 
                                 ?: profSnap.child("full_name").getValue(String::class.java)
                                 ?: profSnap.child("display_name").getValue(String::class.java)
                                 ?: nodeSnap.child("fullName").getValue(String::class.java)
                                 ?: "Device_$uid"
-                            val avatar = nodeSnap.child("avatar_id").getValue(String::class.java)
+
+                            val avatar = idSnap?.child("avatar_id")?.getValue(String::class.java)
+                                ?: nodeSnap.child("avatar_id").getValue(String::class.java)
                                 ?: profSnap.child("avatar_id").getValue(String::class.java)
                                 ?: "1"
 
-                            val upper = role.uppercase()
-                            val isAdmin = upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN") || upper.contains("ADMIN")
-                            val isFriend = upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR")
+                            // [Variables] cleanUid, ssotRole, finalRole, finalName, finalAvatar, upper, circleTypeSnap, primeChildId, isChild, isSpouse, isAdmin, isFriend | [Constants] "Member", "1", "Active", "Cloud Group" | [Dependencies] DevicePresentationResolver, RegistryManager, DeviceIdentityHelper | [Integration Points] syncCloudGroupToLocalDb SSOT Protection
+                            val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+                            val rawRole = role
+                            val ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(context, uid).let {
+                                if (it.isNullOrBlank() || it == "Member" || it == "Device" || it == "Host") {
+                                    com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(context, cleanUid)
+                                } else it
+                            }
+                            val finalRole = if (!ssotRole.isNullOrBlank() && ssotRole != "Member" && ssotRole != "Device" && ssotRole != "Host") ssotRole else rawRole
+                            val finalName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, uid, name)
+                            val finalAvatar = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(context, uid, avatar)
+
+                            val upper = finalRole.uppercase()
+                            val circleTypeSnap = memSnap?.child("circle_type")?.getValue(String::class.java)
+                                ?: nodeSnap.child("circle_type").getValue(String::class.java)
+                                ?: ""
+                            val primeChildId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
+                            val isChild = upper.contains("CHILD") || upper.contains("WARD") || upper.contains("DEPENDENT") ||
+                                (!primeChildId.isNullOrEmpty() && (primeChildId.equals(uid, ignoreCase = true) || primeChildId.equals(cleanUid, ignoreCase = true)))
+                            val isSpouse = !isChild && (upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER"))
+                            val isAdmin = !isChild && !isSpouse && (upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("GUARDIAN") || upper.contains("ADMIN") || upper.contains("OWNER"))
+                            val isFriend = !isChild && !isSpouse && !isAdmin && (upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") || "FRIEND".equals(circleTypeSnap, ignoreCase = true))
 
                             db.saveRosterNode(
                                 deviceId = uid,
-                                name = name,
-                                role = role,
+                                name = finalName,
+                                role = finalRole,
                                 status = "Active",
                                 isAdmin = isAdmin,
                                 isFriend = isFriend,
                                 ownerName = "Cloud Group",
-                                avatarId = avatar,
+                                avatarId = finalAvatar,
                                 activeGroupId = groupId
                             )
                         }
@@ -506,6 +555,268 @@ class GroupViewModel(application: Application) : AndroidViewModel(application) {
             activeHandshakeQuery = null
             activeHandshakeListener = null
         }
+    }
+
+    /**
+     * 🛰️ Scans cloud history for legacy assets associated with safeAgentId.
+     * Decouples the 4-phase Firebase asynchronous cascade from the View layer.
+     */
+    // [Variables] app, finalGrp, authorizedLinkedUids, assetRoles, assetIsAdmin, assetIsFriend, candidates
+    // [Constants] "GRP_", "DEFAULT_GROUP", "SCAN COMPLETE", "SCANNIG CLOUD HISTORY..."
+    // [Dependencies] Application, FirebaseComm, RegistryManager, DevicePresentationResolver
+    // [Integration Points] NetworkGatewayActivity legacy circle reclamation
+    fun scanForLegacyCircleNodes(safeAgentId: String, onComplete: (String, List<LegacyNodeCandidate>) -> Unit) {
+        val app = getApplication<Application>()
+        _isLoading.postValue(true)
+        _syncStatus.postValue("SCANNING CLOUD HISTORY...")
+
+        val fallbackGrp = "GRP_$safeAgentId"
+
+        val handleScanFailure = { errorMsg: String ->
+            SystemLogger.e(TAG, "Legacy Circle Scan Failure: $errorMsg")
+            _isLoading.postValue(false)
+            _syncStatus.postValue("SCAN_FAILED")
+            onComplete(fallbackGrp, emptyList())
+        }
+
+        try {
+            // Phase 1: Dual-Path Active Group Resolver
+            FirebaseComm.getDeviceRef(safeAgentId).get().addOnCompleteListener { devTask ->
+                var myGrp: String? = null
+                if (devTask.isSuccessful && devTask.result != null) {
+                    val dSnap = devTask.result
+                    myGrp = dSnap.child("profile").child("active_group").getValue(String::class.java)
+                    if (myGrp.isNullOrEmpty()) {
+                        myGrp = dSnap.child("Identity").child("active_group").getValue(String::class.java)
+                    }
+                }
+                if (myGrp.isNullOrEmpty() || myGrp == "DEFAULT_GROUP") {
+                    myGrp = RegistryManager.getEffectiveActiveGroup(app)
+                }
+                val finalGrp = if (!myGrp.isNullOrEmpty()) myGrp else fallbackGrp
+
+                // Phase 2: Precise Circle Discovery (Direct relationships)
+                FirebaseComm.getDeviceRef(safeAgentId).child("relationships").get().addOnCompleteListener { relTask ->
+                    val authorizedLinkedUids = mutableSetOf<String>()
+                    val assetRoles = mutableMapOf<String, String>()
+                    val assetIsAdmin = mutableMapOf<String, Boolean>()
+                    val assetIsFriend = mutableMapOf<String, Boolean>()
+
+                    if (relTask.isSuccessful && relTask.result != null) {
+                        for (child in relTask.result.children) {
+                            val key = child.key
+                            if (key != null && key != safeAgentId) {
+                                authorizedLinkedUids.add(key)
+                                var r: String? = null
+                                if (child.hasChild("role_title")) r = child.child("role_title").getValue(String::class.java)
+                                else if (child.hasChild("role")) r = child.child("role").getValue(String::class.java)
+
+                                val branch = child.child("branch_type").getValue(String::class.java)
+                                val isFr = "friends".equals(branch, ignoreCase = true) || (r != null && r.lowercase(Locale.US).contains("friend"))
+                                val isAdm = (r != null && (r.uppercase(Locale.US).contains("GUARDIAN") || r.uppercase(Locale.US).contains("ADMIN") || r.uppercase(Locale.US).contains("MOTHER") || r.uppercase(Locale.US).contains("FATHER") || r.uppercase(Locale.US).contains("PARENT")))
+
+                                if (r.isNullOrEmpty()) {
+                                    r = if (isFr) "Friend" else "Child"
+                                }
+                                assetRoles[key] = r
+                                assetIsFriend[key] = isFr
+                                assetIsAdmin[key] = isAdm
+                            }
+                        }
+                    }
+
+                    // Phase 3: Shared groups membership query
+                    FirebaseComm.relationshipsRef.get().addOnCompleteListener { groupsTask ->
+                        if (groupsTask.isSuccessful && groupsTask.result != null) {
+                            for (grpChild in groupsTask.result.children) {
+                                if (grpChild.hasChild("members") && grpChild.child("members").hasChild(safeAgentId)) {
+                                    for (m in grpChild.child("members").children) {
+                                        val mKey = m.key
+                                        if (mKey != null && mKey != safeAgentId) {
+                                            authorizedLinkedUids.add(mKey)
+                                            if (!assetRoles.containsKey(mKey)) {
+                                                var mRole = m.child("role").getValue(String::class.java)
+                                                if (mRole.isNullOrEmpty() || mRole.equals("Member", ignoreCase = true)) {
+                                                    mRole = "Child"
+                                                }
+                                                val isFr = mRole.lowercase(Locale.US).contains("friend")
+                                                val isAdm = mRole.uppercase(Locale.US).contains("GUARDIAN") || mRole.uppercase(Locale.US).contains("ADMIN") || mRole.uppercase(Locale.US).contains("PARENT")
+                                                assetRoles[mKey] = mRole
+                                                assetIsFriend[mKey] = isFr
+                                                assetIsAdmin[mKey] = isAdm
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Phase 4: Device profile resolution for verified linked nodes
+                        // [Variables] authorizedLinkedUids, finalGrp | [Constants] "SCAN COMPLETE" | [Dependencies] LegacyNodeCandidate, FirebaseComm | [Integration Points] NetworkGatewayActivity
+                        if (authorizedLinkedUids.isEmpty()) {
+                            _isLoading.postValue(false)
+                            _syncStatus.postValue("SCAN COMPLETE")
+                            onComplete(finalGrp, emptyList())
+                            return@addOnCompleteListener
+                        }
+
+                        FirebaseComm.devicesRef.get().addOnCompleteListener { devicesTask ->
+                            val candidates = mutableListOf<LegacyNodeCandidate>()
+
+                            if (devicesTask.isSuccessful && devicesTask.result != null) {
+                                val devSnap = devicesTask.result
+                                for (linkedId in authorizedLinkedUids) {
+                                    if (devSnap.hasChild(linkedId)) {
+                                        val child = devSnap.child(linkedId)
+                                        var name: String? = null
+                                        if (child.hasChild("profile") && child.child("profile").hasChild("name")) {
+                                            name = child.child("profile").child("name").getValue(String::class.java)
+                                        } else if (child.hasChild("Identity") && child.child("Identity").hasChild("name")) {
+                                            name = child.child("Identity").child("name").getValue(String::class.java)
+                                        } else if (child.hasChild("name")) {
+                                            name = child.child("name").getValue(String::class.java)
+                                        }
+                                        name = DevicePresentationResolver.resolveDisplayName(app, linkedId, name)
+
+                                        var avatarId = "1"
+                                        if (child.hasChild("profile") && child.child("profile").hasChild("avatar_id")) {
+                                            avatarId = child.child("profile").child("avatar_id").value?.toString() ?: "1"
+                                        }
+
+                                        val rTitle = assetRoles[linkedId] ?: "Family Member"
+                                        val isAdmin = assetIsAdmin[linkedId] ?: false
+                                        val isFriend = assetIsFriend[linkedId] ?: false
+
+                                        candidates.add(
+                                            LegacyNodeCandidate(
+                                                uid = linkedId,
+                                                name = name,
+                                                role = rTitle,
+                                                avatarId = avatarId,
+                                                isAdmin = isAdmin,
+                                                isFriend = isFriend
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+
+                            _isLoading.postValue(false)
+                            _syncStatus.postValue("SCAN COMPLETE")
+                            onComplete(finalGrp, candidates)
+                        }.addOnFailureListener { e -> handleScanFailure(e.message ?: "Devices query failed") }
+                    }.addOnFailureListener { e -> handleScanFailure(e.message ?: "Relationships query failed") }
+                }.addOnFailureListener { e -> handleScanFailure(e.message ?: "Device relationships query failed") }
+            }.addOnFailureListener { e -> handleScanFailure(e.message ?: "Device ref query failed") }
+        } catch (e: Exception) {
+            handleScanFailure(e.message ?: "Unexpected exception during legacy scan")
+        }
+    }
+
+    /**
+     * 🔄 Restores selected legacy nodes to targetGroup in Cloud and Local SQLite SSOT.
+     */
+    // [Variables] app, repoLocal, targetGrp, groupInfo, selfName, selfAvatar, selfIdentity, curRole, isAuthorizedAdmin, selfMembership, count, nodeIdentity, nodeMembership
+    // [Constants] "Primary Circle", "HOST_DEV", "CLIENT_DEV", "Active", "Cloud Group", "ACTION_ROSTER_REFRESH"
+    // [Dependencies] Application, DeviceRepository, DatabaseHelper, FirebaseComm, RegistryManager, LocalBroadcastManager
+    // [Integration Points] NetworkGatewayActivity, FamilyFriendsActivity
+    fun restoreLegacyCircleNodes(
+        safeAgentId: String,
+        targetGroup: String,
+        selectedNodes: List<LegacyNodeCandidate>,
+        onComplete: (Int) -> Unit
+    ) {
+        val app = getApplication<Application>()
+        val repoLocal = DeviceRepository.getInstance(app)
+        val targetGrp = if (targetGroup.isEmpty()) ("GRP_$safeAgentId") else targetGroup
+
+        // 1. Ensure Self is registered in Cloud Group with uniform structure
+        val groupInfo = hashMapOf<String, Any>(
+            "group_name" to "Primary Circle",
+            "host_device_id" to safeAgentId,
+            "created_at" to System.currentTimeMillis()
+        )
+        FirebaseComm.relationshipsRef.child(targetGrp).child("group_info").setValue(groupInfo)
+
+        val selfName = RegistryManager.getUserNickname(app)
+        val selfAvatar = RegistryManager.getEquippedAvatarId(app).toString()
+        val selfIdentity = hashMapOf<String, Any>(
+            "name" to selfName,
+            "full_name" to selfName,
+            "avatar_id" to selfAvatar
+        )
+
+        val curRole = RegistryManager.getRoleFamily(app, "Guardian")
+        val isAuthorizedAdmin = curRole.uppercase(Locale.US).contains("GUARDIAN") ||
+                curRole.uppercase(Locale.US).contains("ADMIN") ||
+                curRole.uppercase(Locale.US).contains("MOTHER") ||
+                curRole.uppercase(Locale.US).contains("FATHER") ||
+                curRole.uppercase(Locale.US).contains("PARENT")
+
+        val selfMembership = hashMapOf<String, Any>(
+            "role" to if (isAuthorizedAdmin) "ADMIN" else "MEMBER",
+            "role_family" to curRole,
+            "role_friend" to "None",
+            "status" to "Active",
+            "ts_joined" to System.currentTimeMillis()
+        )
+
+        FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(safeAgentId).child("identity").setValue(selfIdentity)
+        FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(safeAgentId).child("membership").setValue(selfMembership)
+
+        FirebaseComm.getIdentityRef(safeAgentId).child("active_group").setValue(targetGrp)
+        FirebaseComm.getProfileRef(safeAgentId).child("active_group").setValue(targetGrp)
+        FirebaseComm.getDatabaseRef().child("users").child(safeAgentId).child("joined_circles").child(targetGrp).setValue(true)
+        RegistryManager.setActiveGroup(app, targetGrp)
+
+        var count = 0
+        for (node in selectedNodes) {
+            val nodeIdentity = hashMapOf<String, Any>(
+                "name" to node.name,
+                "full_name" to node.name,
+                "avatar_id" to node.avatarId
+            )
+            val nodeMembership = hashMapOf<String, Any>(
+                "role" to node.role,
+                "role_family" to node.role,
+                "role_friend" to if (node.isFriend) "Friend" else "None",
+                "status" to "Active",
+                "ts_joined" to System.currentTimeMillis()
+            )
+
+            FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(node.uid).child("identity").setValue(nodeIdentity)
+            FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(node.uid).child("membership").setValue(nodeMembership)
+            FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(safeAgentId).child("paired_with").child(node.uid).setValue(true)
+            FirebaseComm.relationshipsRef.child(targetGrp).child("devices").child(node.uid).child("paired_with").child(safeAgentId).setValue(true)
+
+            FirebaseComm.getIdentityRef(node.uid).child("active_group").setValue(targetGrp)
+            FirebaseComm.getProfileRef(node.uid).child("active_group").setValue(targetGrp)
+            FirebaseComm.getDatabaseRef().child("users").child(node.uid).child("joined_circles").child(targetGrp).setValue(true)
+
+            // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation
+            repoLocal.saveRosterNode(
+                node.uid, node.name, node.role, "Active",
+                node.isAdmin, node.isFriend, "Cloud Group",
+                null, null, null, node.avatarId, targetGrp
+            )
+
+            // 🗄️ SSOT Bilateral Pair Link
+            DatabaseHelper.getInstance(app).logDevicePairing(
+                safeAgentId,
+                selfName,
+                "HOST_DEV",
+                node.uid,
+                node.name,
+                "CLIENT_DEV",
+                node.role,
+                targetGrp
+            )
+            count++
+        }
+
+        LocalBroadcastManager.getInstance(app).sendBroadcast(Intent("ACTION_ROSTER_REFRESH"))
+        syncCloudGroupToLocalDb(app, targetGrp)
+        onComplete(count)
     }
 
     override fun onCleared() {

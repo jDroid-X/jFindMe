@@ -69,6 +69,10 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private Double pendingLat;
     private Double pendingLng;
     private Double pendingRadius;
+    private int pendingStartHour = 0;
+    private int pendingEndHour = 23;
+    private String pendingDays = "ALL";
+    private String pendingExistingId = null;
     
     private LinearLayout listStateContainer;
     private FrameLayout mapStateContainer;
@@ -404,7 +408,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                 Toast.makeText(this, "Locating: " + qStr + "...", Toast.LENGTH_SHORT).show();
                 viewModel.executeOSGeocodingQuery(qStr);
             } else {
-                Toast.makeText(this, "Please enter an address or place name", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_please_enter_an_address_or), Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -430,7 +434,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                         LatLng cur = new LatLng(loc.getLatitude(), loc.getLongitude());
                         viewModel.setDraftPin(cur);
                         com.jdroidx.jfindme.engine.map.TacticalCameraController.animateTo(googleMap, cur, 16f);
-                        Toast.makeText(this, "📍 Anchor pin set to your current GPS position!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_anchor_pin_set), Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(this, "Acquiring GPS location... Please ensure Location Services are ON.", Toast.LENGTH_SHORT).show();
                     }
@@ -495,7 +499,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                     if (previewCircle != null) previewCircle.remove();
                     if (previewMarker != null) previewMarker.remove();
                     clearPolygonDraft();
-                    UiArchitect.showSlideNotificationBanner(GeofenceActivity.this, "Polygon Mode Active", "Tap map to place at least 3 perimeter vertices.", false, 3000, null, null);
+                    UiArchitect.showSlideNotificationBanner(GeofenceActivity.this, com.jdroidx.jfindme.R.string.title_banner_polygon_mode_active, com.jdroidx.jfindme.R.string.notif_banner_tap_map_place_vertices, false, 3000, null, null);
                 }
             }
         );
@@ -829,7 +833,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
                         return;
                     }
                     if (selectedNodes.isEmpty()) {
-                        Toast.makeText(this, "Target connected device selection is mandatory for dependent perimeter alerts.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_target_connected_device_selection_is), Toast.LENGTH_LONG).show();
                         showMultiNodeSelector();
                         return;
                     }
@@ -868,7 +872,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
 
                 // 🛑 MANDATORY TARGET NODE VALIDATION: Target node selection is mandatory
                 if (selectedNodes.isEmpty()) {
-                    Toast.makeText(this, "Target connected device selection is mandatory for dependent perimeter alerts.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_target_connected_device_selection_is), Toast.LENGTH_LONG).show();
                     showMultiNodeSelector();
                     return;
                 }
@@ -1236,7 +1240,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         listStateContainer.setAlpha(0.3f);
         listStateContainer.setClickable(false);
         mapStateContainer.setVisibility(View.VISIBLE);
-        Toast.makeText(this, "📍 Tap map, search place, or tap GPS button to set center anchor!", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_tap_map_search_place_or), Toast.LENGTH_SHORT).show();
     }
 
     private void closeMapEditorState() {
@@ -1433,7 +1437,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
         previewCircle = googleMap.addCircle(new CircleOptions()
             .center(pos)
             .radius(currentRadius)
-            .strokeWidth(5)
+            .strokeWidth(scale(2))
             .strokeColor(accent)
             .fillColor(Color.argb(50, Color.red(accent), Color.green(accent), Color.blue(accent))));
             
@@ -1443,19 +1447,41 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     }
 
     private void checkPermissionsAndAdd(String n, String a, double lat, double lng, double r, int s, int e, String days, String existingId) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, GEOFENCE_PERMISSION_CODE);
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.ACL_GEOFENCE)) {
+            android.widget.Toast.makeText(this, "Geofence Perimeter Alerts ACL is paused in Settings/Profile. Re-enable to deploy safe zones.", android.widget.Toast.LENGTH_LONG).show();
             return;
         }
 
-        // 🛡️ Android 10+ Background Location Check
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, GEOFENCE_PERMISSION_CODE);
-                return;
-            }
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isOsGateGranted(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION)) {
+            pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
+            pendingStartHour = s; pendingEndHour = e; pendingDays = days; pendingExistingId = existingId;
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION, GEOFENCE_PERMISSION_CODE
+            );
+            return;
+        }
+
+        // 🛡️ Android 10/11+ Sequential Background Location Check with Rationale Dialog
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+            !com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isBackgroundLocationGranted(this)) {
+            pendingZoneName = n; pendingAssignedName = a; pendingLat = lat; pendingLng = lng; pendingRadius = r;
+            pendingStartHour = s; pendingEndHour = e; pendingDays = days; pendingExistingId = existingId;
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("🛡️ Background Location Required for Geofencing")
+                .setMessage("Geofence alerts work 24/7 only when Location access is set to \"Allow all the time\".")
+                .setPositiveButton("ALLOW ALL THE TIME", (d, w) ->
+                    com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                        this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BACKGROUND_LOCATION, GEOFENCE_PERMISSION_CODE
+                    )
+                )
+                .setNegativeButton("CONTINUE ANYWAY", (d, w) -> {
+                    com.jdroidx.jfindme.utils.AngelLoader.show(this);
+                    viewModel.submitCloudCoordinateSync(n, a, lat, lng, r, s, e, days, existingId);
+                })
+                .show();
+            return;
         }
 
         com.jdroidx.jfindme.utils.AngelLoader.show(this);
@@ -1672,7 +1698,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             if (isZoneActive) {
                 viewModel.toggleBellAlertState(id, alertsEnabled);
             } else {
-                Toast.makeText(this, "Activate Safe Zone to configure alerts.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_activating_safe_zone), Toast.LENGTH_SHORT).show();
             }
         });
         card4.addView(ivBell, new LinearLayout.LayoutParams(iSize + bp, iSize));
@@ -1687,7 +1713,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             if (isZoneActive) {
                 viewModel.fetchGeofenceHistory(id);
             } else {
-                Toast.makeText(this, "Activate Safe Zone to view history logs.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_activate_safe_zone_to_view), Toast.LENGTH_SHORT).show();
             }
         });
         card4.addView(ivHist, new LinearLayout.LayoutParams(iSize + bp, iSize));
@@ -2087,7 +2113,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     private void showArchivedSafeZonesDialog() {
         java.util.List<RenderedGeofence> archived = viewModel.getArchivedZones().getValue();
         if (archived == null || archived.isEmpty()) {
-            Toast.makeText(this, "📦 Archive Folder is currently empty.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_geofence_archive_folder_is_currently_empty), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -2492,11 +2518,19 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == GEOFENCE_PERMISSION_CODE && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == GEOFENCE_PERMISSION_CODE &&
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isOsGateGranted(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION)) {
             if (pendingZoneName != null && pendingLat != null && pendingLng != null) {
                 com.jdroidx.jfindme.utils.AngelLoader.show(this);
-                viewModel.submitCloudCoordinateSync(pendingZoneName, pendingAssignedName, 
-                    pendingLat, pendingLng, pendingRadius != null ? pendingRadius : 100.0);
+                viewModel.submitCloudCoordinateSync(
+                    pendingZoneName, pendingAssignedName,
+                    pendingLat, pendingLng,
+                    pendingRadius != null ? pendingRadius : 100.0,
+                    pendingStartHour, pendingEndHour, pendingDays, pendingExistingId
+                );
+                pendingZoneName = null;
+                pendingExistingId = null;
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     com.jdroidx.jfindme.utils.AngelLoader.hide(this);
                     closeMapEditorState(); // 🚀 QA Fix: Force navigation back after permission acquisition sync
@@ -2803,7 +2837,7 @@ public class GeofenceActivity extends BaseActivityJava implements OnMapReadyCall
             int fill = Color.argb(60, Color.red(accent), Color.green(accent), Color.blue(accent));
             com.google.android.gms.maps.model.PolygonOptions polyOpts = new com.google.android.gms.maps.model.PolygonOptions()
                 .addAll(polygonDraftPoints)
-                .strokeWidth(6)
+                .strokeWidth(scale(3))
                 .strokeColor(accent)
                 .fillColor(fill);
             previewPolygon = googleMap.addPolygon(polyOpts);

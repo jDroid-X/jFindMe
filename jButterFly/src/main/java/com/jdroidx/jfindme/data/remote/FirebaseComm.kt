@@ -272,55 +272,54 @@ object FirebaseComm {
             SystemLogger.w("FirebaseComm", "OFFLINE_STANDBY: Device access sync suppressed for unauthenticated node: $agentId")
             return
         }
+        if (!com.jdroidx.jfindme.data.model.ProfileAclDossier.loadFromLocal(context).cloudSyncEnabled) {
+            SystemLogger.d("FirebaseComm", "OFFLINE_ONLY_ACL: Device access sync withheld for $agentId")
+            return
+        }
         try {
-            val pm = context.packageManager
-            val pkg = context.packageName
-            val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
-            val isDozeIgnored = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && powerManager != null) {
-                powerManager.isIgnoringBatteryOptimizations(pkg)
-            } else true
-
-            val canInstall = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                pm.canRequestPackageInstalls()
-            } else true
-
-            fun checkPerm(perm: String): Boolean {
-                return androidx.core.content.ContextCompat.checkSelfPermission(context, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            }
-
+            val mgr = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager
+            val dossier = mgr.snapshotDossierPermissions(context)
             val accessMap = mutableMapOf<String, Any>()
-            accessMap["location_fine"] = checkPerm(android.Manifest.permission.ACCESS_FINE_LOCATION)
-            accessMap["location_coarse"] = checkPerm(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-            accessMap["location_background"] = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                checkPerm(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            } else true
 
-            accessMap["notifications"] = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                checkPerm(android.Manifest.permission.POST_NOTIFICATIONS)
-            } else true
+            // Mandatory OS Permissions
+            accessMap["location_fine"] = dossier.hasFineLocation
+            accessMap["location_coarse"] = dossier.hasCoarseLocation
+            accessMap["read_phone_state"] = dossier.hasPhoneState
+            accessMap["notifications"] = dossier.hasNotifications
+            accessMap["foreground_service"] = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.FOREGROUND_SERVICE) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-            accessMap["foreground_service"] = checkPerm(android.Manifest.permission.FOREGROUND_SERVICE)
-            accessMap["camera"] = checkPerm(android.Manifest.permission.CAMERA)
-            accessMap["storage"] = checkPerm(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-            accessMap["request_install_packages"] = canInstall
-            accessMap["ignoring_battery_optimizations"] = isDozeIgnored
-            accessMap["wake_lock"] = checkPerm(android.Manifest.permission.WAKE_LOCK)
-            accessMap["receive_boot_completed"] = checkPerm(android.Manifest.permission.RECEIVE_BOOT_COMPLETED)
-            accessMap["network_state"] = checkPerm(android.Manifest.permission.ACCESS_NETWORK_STATE)
+            // Background & OEM Survivability
+            accessMap["location_background"] = dossier.hasBackgroundLocation
+            accessMap["ignoring_battery_optimizations"] = dossier.isBatteryOptimizationIgnored
+            accessMap["schedule_exact_alarm"] = dossier.canScheduleExactAlarms
+            accessMap["oem_autostart_whitelisted"] = mgr.isOsGateGranted(context, mgr.GATE_OEM_AUTOSTART)
+            accessMap["wake_lock"] = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WAKE_LOCK) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            accessMap["receive_boot_completed"] = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECEIVE_BOOT_COMPLETED) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            accessMap["network_state"] = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_NETWORK_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                accessMap["bluetooth_scan"] = checkPerm(android.Manifest.permission.BLUETOOTH_SCAN)
-                accessMap["bluetooth_connect"] = checkPerm(android.Manifest.permission.BLUETOOTH_CONNECT)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                accessMap["nearby_wifi_devices"] = checkPerm(android.Manifest.permission.NEARBY_WIFI_DEVICES)
-            }
+            // Optional Feature Hardware (Scoped Storage + Media + DND + OTA + Biometric + BT/Wi-Fi)
+            accessMap["activity_recognition"] = dossier.hasActivityRecognition
+            accessMap["camera"] = dossier.hasCamera
+            accessMap["storage"] = dossier.hasMediaStorage
+            accessMap["bluetooth_mesh"] = dossier.hasBluetoothMesh
+            accessMap["dnd_override"] = dossier.hasDndOverride
+            accessMap["request_install_packages"] = dossier.canRequestInstallPackages
+            accessMap["biometric_hw"] = mgr.isOsGateGranted(context, mgr.GATE_BIOMETRIC_HW)
+
+            // Effective App-Level Gate Flags + Profile ACLs
+            accessMap["effective_fine_location"] = mgr.isEffectiveGateActive(context, mgr.GATE_FINE_LOCATION)
+            accessMap["effective_phone_state"] = mgr.isEffectiveGateActive(context, mgr.GATE_PHONE_STATE)
+            accessMap["acl_live_tracking"] = dossier.liveTrackingEnabled
+            accessMap["acl_history_audit"] = dossier.historyAuditEnabled
+            accessMap["acl_geofence"] = dossier.geofenceAlertsEnabled
+            accessMap["acl_ghost_override"] = dossier.ghostModeAllowed
+            accessMap["acl_cloud_sync"] = dossier.cloudSyncEnabled
 
             accessMap["updated_at"] = getForensicTimestamp()
             accessMap["epoch_ms"] = System.currentTimeMillis()
 
             getAccessRef(agentId).setValue(accessMap)
-            SystemLogger.i("FirebaseComm", "✅ Device Access matrix synchronized for Node: $agentId")
+            SystemLogger.i("FirebaseComm", "✅ Unified Device Access + ACL matrix synchronized for Node: $agentId")
         } catch (e: Exception) {
             SystemLogger.e("FirebaseComm", "Failed to sync device access matrix: ${e.message}")
         }
@@ -1227,11 +1226,7 @@ object FirebaseComm {
         val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
         val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
         val isUnified = if (appCtx != null) com.jdroidx.jfindme.utils.RegistryManager.isUnifiedDeviceIdSyncEnabled(appCtx) else true
-        val targetPaths = if (!isUnified && cleanId.length == 8) {
-            listOf("$NODE_DEVICES/$cleanId/device/live", "$NODE_DEVICES/HW_$cleanId/device/live")
-        } else {
-            listOf("$NODE_DEVICES/$cleanId/device/live")
-        }
+        val targetPaths = listOf("$NODE_DEVICES/$cleanId/device/live")
 
         // 1. LIVE NODE: Unified Real-Time Telemetry Cursor
         for (livePath in targetPaths) {
@@ -1309,11 +1304,7 @@ object FirebaseComm {
         val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
         val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
         val isUnified = if (appCtx != null) com.jdroidx.jfindme.utils.RegistryManager.isUnifiedDeviceIdSyncEnabled(appCtx) else true
-        val targetPaths = if (!isUnified && cleanId.length == 8) {
-            listOf("$NODE_DEVICES/$cleanId/device/live", "$NODE_DEVICES/HW_$cleanId/device/live")
-        } else {
-            listOf("$NODE_DEVICES/$cleanId/device/live")
-        }
+        val targetPaths = listOf("$NODE_DEVICES/$cleanId/device/live")
         for (livePath in targetPaths) {
             updates["$livePath/latitude"] = eventData.latitude
             updates["$livePath/longitude"] = eventData.longitude
@@ -1492,8 +1483,8 @@ object FirebaseComm {
                             val batVal = pointSnap.child("battery").value
                             val battery = when (batVal) {
                                 is Number -> batVal.toInt()
-                                is String -> batVal.toIntOrNull() ?: 100
-                                else -> 100
+                                is String -> batVal.toIntOrNull() ?: -1
+                                else -> -1
                             }
                             val accuracyVal = pointSnap.child("accuracy").value
                             val accuracy = when (accuracyVal) {
@@ -1574,8 +1565,8 @@ object FirebaseComm {
                     val batVal = pointSnap.child("battery").value
                     val battery = when (batVal) {
                         is Number -> batVal.toInt()
-                        is String -> batVal.toIntOrNull() ?: 100
-                        else -> 100
+                        is String -> batVal.toIntOrNull() ?: -1
+                        else -> -1
                     }
 
                     val accuracyVal = pointSnap.child("accuracy").value

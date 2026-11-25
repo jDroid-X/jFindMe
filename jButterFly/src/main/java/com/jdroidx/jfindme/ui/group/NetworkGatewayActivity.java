@@ -135,32 +135,102 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     private com.jdroidx.jfindme.data.repository.DeviceRepository db;
     private String forensicAgentId = "";
     private String safeUid = "LOCAL_DEVICE";
+    private AlertDialog activeDialog = null;
+
+    private void dismissActiveDialog() {
+        if (activeDialog != null && activeDialog.isShowing()) {
+            try {
+                activeDialog.dismiss();
+            } catch (Exception ignored) {}
+        }
+        activeDialog = null;
+    }
+
+    private void showSafeDialog(AlertDialog dialog) {
+        if (isFinishing() || isDestroyed() || dialog == null) return;
+        dismissActiveDialog();
+        activeDialog = dialog;
+        dialog.show();
+        applyDialogTheme(dialog);
+    }
 
     // Reactive SSOT Observers & Listeners
     private final Map<String, ValueEventListener> liveDeviceListeners = new HashMap<>();
     private androidx.lifecycle.Observer<List<com.jdroidx.jfindme.data.model.UserLocation>> locationObserver = null;
+
+    // [Variables] raw, trimmed, uri, qParam, path, sb, c | [Constants] None | [Dependencies] Uri, Locale | [Integration Points] barcodeLauncher, handleDeepLinkIntent
+    /**
+     * 🛰️ Intelligent Pairing Code Extractor: Gracefully parses raw PINs, hardware tokens,
+     * deep link URIs (jfindme://pair?code=...), web URLs (https://.../pair/...), query params, or JSON payloads.
+     */
+    private String extractPairingCode(String raw) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return "";
+
+        // Check if it's a URI format (e.g., jfindme://pair?code=... or https://.../pair/...)
+        try {
+            if (trimmed.contains("://") || trimmed.startsWith("jfindme:") || trimmed.startsWith("http:") || trimmed.startsWith("https:")) {
+                android.net.Uri uri = android.net.Uri.parse(trimmed);
+                String qParam = uri.getQueryParameter("code");
+                if (qParam == null || qParam.isEmpty()) {
+                    qParam = uri.getQueryParameter("pin");
+                }
+                if (qParam != null && !qParam.isEmpty()) {
+                    return sanitizeCodeString(qParam);
+                }
+                String path = uri.getPath();
+                if (path != null && path.contains("/pair/")) {
+                    return sanitizeCodeString(path.substring(path.indexOf("/pair/") + 6));
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Check query parameter in non-URI raw string (e.g. "code=XYZ123")
+        if (trimmed.contains("code=")) {
+            int idx = trimmed.indexOf("code=") + 5;
+            int endIdx = trimmed.indexOf("&", idx);
+            if (endIdx == -1) endIdx = trimmed.length();
+            return sanitizeCodeString(trimmed.substring(idx, endIdx));
+        }
+
+        return sanitizeCodeString(trimmed);
+    }
+
+    private String sanitizeCodeString(String input) {
+        if (input == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                sb.append(Character.toUpperCase(c));
+            }
+        }
+        return sb.toString();
+    }
 
     // QR Code Scanner Result Launcher
     private final ActivityResultLauncher<ScanOptions> barcodeLauncher = registerForActivityResult(
             new ScanContract(),
             result -> {
                 if (result.getContents() != null) {
-                    String rawCode = result.getContents().trim().toUpperCase();
+                    String raw = result.getContents().trim();
+                    String cleanCode = extractPairingCode(raw);
                     triggerHapticFeedback();
-                    showTacticalHandshakeOverlay(rawCode);
+                    showTacticalHandshakeOverlay(cleanCode);
 
-                    if (rawCode.length() == 8) {
-                        if (etLocalCode != null) etLocalCode.setText(rawCode);
+                    if (cleanCode.length() == 8) {
+                        if (etLocalCode != null) etLocalCode.setText(cleanCode);
                         switchToTab(TAB_NEARBY_P2P);
-                        showRoleSelectionDialogForLocalJoin(rawCode);
+                        showRoleSelectionDialogForLocalJoin(cleanCode);
                         UiArchitect.showSlideNotificationBanner(this, "Local Node Scanned", "8-digit hardware PIN identified. Confirm role to connect.", false, 3000, null, null);
-                    } else if (rawCode.length() == 6) {
-                        if (etCode != null) etCode.setText(rawCode);
+                    } else if (cleanCode.length() == 6) {
+                        if (etCode != null) etCode.setText(cleanCode);
                         switchToTab(TAB_REMOTE_CLOUD);
-                        showRoleSelectionDialogBeforeJoin(rawCode);
+                        showRoleSelectionDialogBeforeJoin(cleanCode);
                         UiArchitect.showSlideNotificationBanner(this, "Cloud Invite Scanned", "6-digit circle code verified. Select relationship role.", false, 3000, null, null);
                     } else {
-                        UiArchitect.showSlideNotificationBanner(this, "QR Format Warning", "Unrecognized QR code (" + rawCode.length() + " chars). Expected 6 or 8 digits.", true, 3500, null, null);
+                        UiArchitect.showSlideNotificationBanner(this, "QR Format Warning", "Unrecognized QR code (" + cleanCode.length() + " chars). Expected 6 or 8 digits.", true, 3500, null, null);
                     }
                 }
             }
@@ -312,17 +382,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (intent == null) return;
         String pairCode = null;
         if (intent.getData() != null) {
-            android.net.Uri uri = intent.getData();
-            pairCode = uri.getQueryParameter("code");
-            if (pairCode == null || pairCode.isEmpty()) {
-                String path = uri.getPath();
-                if (path != null && path.contains("/pair/")) {
-                    pairCode = path.substring(path.indexOf("/pair/") + 6);
-                }
-            }
+            pairCode = extractPairingCode(intent.getData().toString());
         }
         if (pairCode == null || pairCode.isEmpty()) {
-            pairCode = intent.getStringExtra("PAIRING_CODE");
+            pairCode = extractPairingCode(intent.getStringExtra("PAIRING_CODE"));
         }
         if (pairCode != null && !pairCode.trim().isEmpty()) {
             final String cleanCode = pairCode.trim().toUpperCase(Locale.US);
@@ -373,7 +436,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             AvatarLoader.bindCurrentUserAvatar(this, ownerAvatarView);
         }
         if (ownerNameView != null) {
-            String nameStr = RegistryManager.getUserNickname(this);
+            String nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, null, RegistryManager.getUserNickname(this));
             ownerNameView.setText("👤 " + nameStr.toUpperCase());
         }
         if (ownerMetaView != null) {
@@ -459,7 +522,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (history.isEmpty()) {
             builder.setMessage("No device sharing transactions recorded yet.\n\nTransactions and silent handshakes will appear here automatically.");
             builder.setPositiveButton("CLOSE", null);
-            builder.show();
+            showSafeDialog(builder.create());
             return;
         }
 
@@ -513,7 +576,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         scroll.addView(listRoot);
         builder.setView(scroll);
         builder.setPositiveButton("DONE", null);
-        builder.show();
+        showSafeDialog(builder.create());
     }
 
     private View buildCompactIdentityStrip() {
@@ -542,7 +605,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         details.setPadding(scale(14), 0, 0, 0);
         details.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        String nameStr = RegistryManager.getUserNickname(this);
+        String nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, null, RegistryManager.getUserNickname(this));
         String deviceId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
         String activeGroup = getResolvedActiveGroup();
 
@@ -659,6 +722,10 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (selectedTab == tabIndex) return;
         selectedTab = tabIndex;
         triggerHapticFeedback();
+        dismissActiveDialog();
+        if (selectedTab == TAB_ACTIVE_ROSTER && viewModel != null) {
+            viewModel.refreshLocalRoster();
+        }
         updateTabVisibility();
     }
 
@@ -907,7 +974,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         joinActions.addView(btnLink, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         Button btnScan = new Button(this);
-        btnScan.setText("📷 SCAN QR");
+        btnScan.setText(getString(com.jdroidx.jfindme.R.string.title_networkgateway_scan_qr));
         btnScan.setTextColor(Color.WHITE);
         btnScan.setTypeface(null, Typeface.BOLD);
         LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -1150,7 +1217,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         joinActions.addView(btnLink, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         Button btnScan = new Button(this);
-        btnScan.setText("📷 SCAN QR");
+        btnScan.setText(getString(com.jdroidx.jfindme.R.string.title_networkgateway_scan_qr));
         btnScan.setTextColor(Color.WHITE);
         btnScan.setTypeface(null, Typeface.BOLD);
         LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -1308,9 +1375,26 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         int pad = scale(12);
         card.setPadding(pad, pad, pad, pad);
 
-        // Owner Avatar
+        String selfAgent = (forensicAgentId != null && !forensicAgentId.isEmpty()) ? forensicAgentId : RegistryManager.getAgentId(this);
+        String hostId = com.jdroidx.jfindme.utils.DevicePresentationResolver.getCircleHostDeviceId(this, null);
+        boolean isSelfHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(this, selfAgent, null);
+
+        // Owner/Host Avatar (100% True Circular Masking with Theme Ring)
+        // [Variables] avatar, avBg, avSize, hostAvatar, hostId, isSelfHost | [Constants] None | [Dependencies] AvatarLoader, GradientDrawable, DevicePresentationResolver | [Integration Points] buildRootGuardianAnchor SSOT circular avatar
         ImageView avatar = new ImageView(this);
-        AvatarLoader.bindCurrentUserAvatar(this, avatar);
+        if (isSelfHost) {
+            AvatarLoader.bindCurrentUserAvatar(this, avatar);
+        } else {
+            String defaultHostAvatar = "AV_" + hostId + "_01";
+            String hostAvatar = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, hostId, defaultHostAvatar);
+            AvatarLoader.bindAvatar(this, avatar, hostId, hostAvatar);
+        }
+        AvatarLoader.applyCircularShape(avatar);
+        GradientDrawable avBg = new GradientDrawable();
+        avBg.setShape(GradientDrawable.OVAL);
+        avBg.setColor(getPrimaryColor());
+        avBg.setStroke(scale(2), getGradientStart());
+        avatar.setBackground(avBg);
         int avSize = scale(52);
         card.addView(avatar, new LinearLayout.LayoutParams(avSize, avSize));
 
@@ -1320,16 +1404,24 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         details.setPadding(scale(12), 0, 0, 0);
         details.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        String myName = RegistryManager.getUserNickname(this);
         TextView tvName = new TextView(this);
-        tvName.setText("👑 YOU (MASTER GUARDIAN)");
+        TextView tvSub = new TextView(this);
+
+        if (isSelfHost) {
+            String myName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, selfAgent, RegistryManager.getUserNickname(this));
+            tvName.setText("👑 YOU (MASTER GUARDIAN)");
+            tvSub.setText("🟢 ONLINE NOW ● " + myName.toUpperCase());
+        } else {
+            String dynamicHostName = RegistryManager.getCircleHostName(this);
+            String hostName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, hostId, dynamicHostName != null && !dynamicHostName.isEmpty() ? dynamicHostName : "Master Guardian");
+            tvName.setText("👑 " + hostName.toUpperCase() + " (MASTER GUARDIAN)");
+            tvSub.setText("🟢 CIRCLE HOST ● ACTIVE NETWORK ANCHOR");
+        }
         tvName.setTextColor(getTextColor());
         tvName.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tvName, "TEXT_TITLE");
         details.addView(tvName);
 
-        TextView tvSub = new TextView(this);
-        tvSub.setText("🟢 ONLINE NOW ● " + myName.toUpperCase());
         tvSub.setTextColor(Color.parseColor("#00E676"));
         UiArchitect.applyText(this, tvSub, "TEXT_MINI");
         details.addView(tvSub);
@@ -1354,24 +1446,34 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         return card;
     }
 
+    // [Variables] uid, node, authUid, agentId, deviceUid, myHwId, uid2Obj, uid2 | [Constants] "UNKNOWN_UID" | [Dependencies] DevicePresentationResolver, FirebaseAuth, RegistryManager, FirebasePairingManager | [Integration Points] NetworkGatewayActivity SSOT self node check
     private boolean isSelfNode(String uid, Map<String, Object> node) {
-        if (uid == null) return false;
-        if (uid.equals(safeUid) || uid.equals(forensicAgentId)) return true;
+        if (uid == null || uid.trim().isEmpty() || "UNKNOWN_UID".equalsIgnoreCase(uid)) return false;
+        if (com.jdroidx.jfindme.utils.DevicePresentationResolver.isSelfDevice(this, uid)) return true;
+
+        if (safeUid != null && !safeUid.isEmpty() && uid.equalsIgnoreCase(safeUid)) return true;
+        if (forensicAgentId != null && !forensicAgentId.isEmpty() && uid.equalsIgnoreCase(forensicAgentId)) return true;
 
         String authUid = FirebaseAuth.getInstance().getUid();
-        if (authUid != null && uid.equals(authUid)) return true;
+        if (authUid != null && !authUid.isEmpty() && uid.equalsIgnoreCase(authUid)) return true;
 
         String agentId = RegistryManager.getOwnerAgentId(this);
-        if (agentId != null && !agentId.isEmpty() && uid.equals(agentId)) return true;
+        if (agentId != null && !agentId.isEmpty() && uid.equalsIgnoreCase(agentId)) return true;
 
         String deviceUid = RegistryManager.getString(this, "device_uid", "");
-        if (!deviceUid.isEmpty() && uid.equals(deviceUid)) return true;
+        if (!deviceUid.isEmpty() && uid.equalsIgnoreCase(deviceUid)) return true;
 
         String myHwId = FirebasePairingManager.INSTANCE.getDeviceId(this);
-        if (myHwId != null && uid.equals(myHwId)) return true;
+        if (myHwId != null && !myHwId.isEmpty() && uid.equalsIgnoreCase(myHwId)) return true;
 
-        String uid2 = (String) node.get("uid_2");
-        if (uid2 != null && (uid2.equals(deviceUid) || uid2.equals(myHwId))) return true;
+        Object uid2Obj = node.get("uid_2");
+        if (uid2Obj instanceof String) {
+            String uid2 = ((String) uid2Obj).trim();
+            if (!uid2.isEmpty()) {
+                if (!deviceUid.isEmpty() && uid2.equalsIgnoreCase(deviceUid)) return true;
+                if (myHwId != null && !myHwId.isEmpty() && uid2.equalsIgnoreCase(myHwId)) return true;
+            }
+        }
 
         return false;
     }
@@ -1403,6 +1505,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     private void rebuildRosterView(List<Map<String, Object>> liveData) {
         clearLiveDeviceListeners();
         currentCachedRoster = (liveData != null) ? liveData : new ArrayList<>();
+        SystemLogger.INSTANCE.i(TAG, "rebuildRosterView called: liveData size=" + currentCachedRoster.size() + ", subTab=" + selectedRosterSubTab);
         if (rosterContainer == null) return;
         rosterContainer.removeAllViews();
 
@@ -1416,34 +1519,41 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 ? repoLocal.getConnectedDeviceIds(forensicAgentId) 
                 : java.util.Collections.emptySet();
 
+        String selfAgent = (forensicAgentId != null && !forensicAgentId.isEmpty()) ? forensicAgentId : RegistryManager.getAgentId(this);
+        String hostId = com.jdroidx.jfindme.utils.DevicePresentationResolver.getCircleHostDeviceId(this, null);
+        boolean isSelfHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(this, selfAgent, null);
+        String anchorNodeId = isSelfHost ? selfAgent : hostId;
+
         for (Map<String, Object> node : currentCachedRoster) {
             String uid = (String) node.get("uid_1");
             if (uid == null) uid = (String) node.get("uid");
             if (uid == null) uid = (String) node.get("identity_id");
             if (uid == null) uid = "UNKNOWN_UID";
 
-            if (isSelfNode(uid, node)) {
-                continue; // Skip self in member list (rendered via Root Guardian Anchor)
-            }
-
-            // [Variables] primeTarget: String, isPrime: boolean, canon: String, cleanUid: String, actGrp: String | [Constants] None | [Dependencies] RegistryManager, DeviceIdentityHelper, DeviceRepository | [Integration Points] NetworkGatewayActivity, FamilyFriendsViewModel
-            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers and prime target
-            String primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
             String cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid);
-            String actGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
-            String canon = repoLocal.resolveAgentIdLocally(uid);
+            boolean isSelf = isSelfNode(uid, node);
 
-            if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, cleanUid) ||
-                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, uid) ||
-                repoLocal.isDeviceDeleted(cleanUid, actGrp) || repoLocal.isDeviceDeleted(uid, actGrp)) {
+            // 👑 Skip whichever node is currently rendered in the top Root Guardian Anchor
+            boolean isAnchorNode = (anchorNodeId != null && !anchorNodeId.isEmpty() && 
+                    (uid.equalsIgnoreCase(anchorNodeId) || cleanUid.equalsIgnoreCase(anchorNodeId)));
+            if (isAnchorNode && selectedRosterSubTab == ROSTER_SUBTAB_FAMILY) {
+                SystemLogger.INSTANCE.i(TAG, "rebuildRoster: node " + uid + " isAnchorNode=true, skipping in member list");
                 continue;
             }
 
-            boolean isPrime = primeTarget.equalsIgnoreCase(uid) || (canon != null && primeTarget.equalsIgnoreCase(canon));
-            if (!isPrime && scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
-                if (canon == null || !scopedIds.contains(canon)) {
-                    continue;
-                }
+            // [Variables] primeTarget: String, isPrime: boolean, canon: String, cleanUid: String, actGrp: String, ssotRole: String, primeChildId: String, isPrimeChild: boolean, isChild: boolean, isSpouse: boolean, isGuardian: boolean, isFriend: boolean, isDecom: boolean, isDel: boolean | [Constants] "Member" | [Dependencies] RegistryManager, DeviceIdentityHelper, DeviceRepository, DevicePresentationResolver | [Integration Points] NetworkGatewayActivity dynamic roster categorization & SSOT Identity
+            // 🛡️ Scoped Connected Device SSOT: strictly isolate to respective connected peers and prime target
+            String primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
+            String actGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
+            String canon = repoLocal.resolveAgentIdLocally(uid);
+
+            boolean isDecom = com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, cleanUid) ||
+                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(this, uid);
+            boolean isDel = repoLocal.isDeviceDeleted(cleanUid, actGrp) || repoLocal.isDeviceDeleted(uid, actGrp);
+
+            if (isDecom || isDel) {
+                SystemLogger.INSTANCE.i(TAG, "rebuildRoster: node " + uid + " isDecom=" + isDecom + " isDel=" + isDel + ", skipping");
+                continue;
             }
 
             String name = (String) node.get("fullName");
@@ -1452,7 +1562,25 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             if (role == null) role = (String) node.get("role_title");
             if (role == null) role = "Member";
 
-            if (!matchesSearchFilter(name, role, uid)) continue;
+            String myDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+            String ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(this, uid, null, myDevId);
+            if (ssotRole == null || ssotRole.isEmpty() || "Member".equalsIgnoreCase(ssotRole) || "Device".equalsIgnoreCase(ssotRole) || "Host".equalsIgnoreCase(ssotRole)) {
+                if (cleanUid != null && !cleanUid.isEmpty()) {
+                    ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(this, cleanUid, null, myDevId);
+                }
+            }
+            if (ssotRole != null && !ssotRole.isEmpty() && !"Member".equalsIgnoreCase(ssotRole) && !"Device".equalsIgnoreCase(ssotRole) && !"Host".equalsIgnoreCase(ssotRole)) {
+                role = ssotRole;
+            }
+            name = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, uid, name);
+            node.put("role_type", role);
+            node.put("fullName", name);
+            node.put("display_name", name);
+
+            if (!matchesSearchFilter(name, role, uid)) {
+                SystemLogger.INSTANCE.i(TAG, "rebuildRoster: node " + uid + " filtered by search query");
+                continue;
+            }
 
             Object fr = node.get("is_friend");
             boolean isF = false;
@@ -1467,17 +1595,49 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             else if (adm instanceof String) isAdm = "1".equals(adm) || "true".equalsIgnoreCase((String) adm);
 
             String upper = role.toUpperCase();
+            String primeChildId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
+            boolean isPrimeChild = (primeChildId != null && !primeChildId.isEmpty() && (primeChildId.equalsIgnoreCase(uid) || primeChildId.equalsIgnoreCase(cleanUid)));
+            boolean isChild = isPrimeChild || upper.contains("CHILD") || upper.contains("DAUGHTER") || upper.contains("SON") || upper.contains("WARD") || upper.contains("DEPENDENT");
+            boolean isPrime = isChild || (primeTarget != null && !primeTarget.isEmpty() && (primeTarget.equalsIgnoreCase(uid) || primeTarget.equalsIgnoreCase(cleanUid) || (canon != null && primeTarget.equalsIgnoreCase(canon))));
 
-            if (isF || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR")) {
-                friends.add(node);
-            } else if (upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER")) {
-                spouses.add(node);
-            } else if (isAdm || upper.contains("FATHER") || upper.contains("MOTHER") || upper.contains("GUARDIAN") || upper.contains("PARENT") || upper.contains("ADMIN")) {
-                guardians.add(node);
-            } else {
+            if (!isPrime && scopedIds != null && !scopedIds.isEmpty() && !scopedIds.contains(uid)) {
+                if (canon == null || !scopedIds.contains(canon)) {
+                    if (cleanUid == null || !scopedIds.contains(cleanUid)) {
+                        SystemLogger.INSTANCE.i(TAG, "rebuildRoster: node " + uid + " filtered by scopedIds");
+                        continue;
+                    }
+                }
+            }
+
+            boolean isSpouse = !isChild && (upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER"));
+            boolean isGuardian = !isChild && !isSpouse && (isAdm || upper.contains("FATHER") || upper.contains("MOTHER") || upper.contains("GUARDIAN") || upper.contains("PARENT") || upper.contains("ADMIN") || upper.contains("CO_GUARDIAN"));
+            boolean isFriend = !isChild && !isSpouse && !isGuardian && (isF || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR"));
+
+            // 🛡️ Ground Truth SSOT Protection: Dynamic Prime Target child evaluation
+            String primeTargetId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
+            if (cleanUid.equalsIgnoreCase(primeTargetId) || uid.equalsIgnoreCase(primeTargetId)) {
+                isChild = true;
+                isSpouse = false;
+                isGuardian = false;
+                isFriend = false;
+            }
+
+            SystemLogger.INSTANCE.i(TAG, "rebuildRoster: ACCEPTED node " + uid + " (" + name + "), role=" + role + ", isChild=" + isChild + ", isSpouse=" + isSpouse + ", isGuardian=" + isGuardian + ", isFriend=" + isFriend);
+
+            if (isChild) {
                 children.add(node);
+            } else if (isSpouse) {
+                spouses.add(node);
+            } else if (isGuardian) {
+                guardians.add(node);
+            } else if (isFriend) {
+                friends.add(node);
+            } else {
+                guardians.add(node); // Default adult / family members to guardians, never child
             }
         }
+
+        SystemLogger.INSTANCE.i(TAG, "rebuildRosterView parsed: guardians=" + guardians.size() + ", spouses=" + spouses.size() + ", children=" + children.size() + ", friends=" + friends.size());
 
         // Accurate total count: exact distinct peers + 1 (Master Anchor)
         int familyCount = guardians.size() + spouses.size() + children.size() + 1;
@@ -1607,6 +1767,20 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         if (role == null) role = (String) node.get("role_title");
         if (role == null) role = "Member";
 
+        // [Variables] cleanUid, ssotRole, finalUid, finalName, finalRole | [Constants] "Member", "Secure Node" | [Dependencies] DeviceIdentityHelper, DevicePresentationResolver | [Integration Points] buildMemberCard SSOT display name & role
+        String cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid);
+        String myDevId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+        String ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(this, uid, null, myDevId);
+        if (ssotRole == null || ssotRole.isEmpty() || "Member".equalsIgnoreCase(ssotRole) || "Device".equalsIgnoreCase(ssotRole) || "Host".equalsIgnoreCase(ssotRole)) {
+            if (cleanUid != null && !cleanUid.isEmpty()) {
+                ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(this, cleanUid, null, myDevId);
+            }
+        }
+        if (ssotRole != null && !ssotRole.isEmpty() && !"Member".equalsIgnoreCase(ssotRole) && !"Device".equalsIgnoreCase(ssotRole) && !"Host".equalsIgnoreCase(ssotRole)) {
+            role = ssotRole;
+        }
+        name = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, uid, name);
+
         final String finalUid = uid;
         final String finalName = name;
         final String finalRole = role;
@@ -1643,16 +1817,18 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         // Member Avatar
         // [Variables] avatar, avatarRef, finalUid | [Constants] "butterfly" | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Network Card Rendering
-        // Member Avatar with SSOT Lookup & Smart Fallback
+        // Member Avatar with SSOT Lookup, 100% True Circular Masking & RAG Ring
+        // [Variables] avatar, avatarRef, avBg, avSize | [Constants] None | [Dependencies] DevicePresentationResolver, AvatarLoader | [Integration Points] SSOT Network Card Rendering
         ImageView avatar = new ImageView(this);
         String avatarRef = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveAvatarId(this, finalUid, (String) node.get("avatar_id"));
         com.jdroidx.jfindme.utils.AvatarLoader.bindAvatar(this, avatar, finalUid, avatarRef);
+        com.jdroidx.jfindme.utils.AvatarLoader.applyCircularShape(avatar);
 
         avatar.setPadding(3, 3, 3, 3);
         GradientDrawable avBg = new GradientDrawable();
         avBg.setShape(GradientDrawable.OVAL);
         avBg.setColor(getPrimaryColor());
-        avBg.setStroke(2, accentColor);
+        avBg.setStroke(scale(2), accentColor);
         avatar.setBackground(avBg);
         int avSize = scale(52);
         card.addView(avatar, new LinearLayout.LayoutParams(avSize, avSize));
@@ -1671,11 +1847,14 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         else if (rUpper.contains("FRIEND") || rUpper.contains("PEER") || rUpper.contains("COLLEAGUE")) roleIcon = "🤝";
         final String finalRoleIcon = roleIcon;
 
-        String ssotName = db.getDeviceCentricName(finalUid);
-        String displayNodeName = (ssotName != null && !ssotName.startsWith("Agent_") && !ssotName.equalsIgnoreCase("null")) ? ssotName : finalName;
+        // [Variables] displayNodeName, tvName, isSelf | [Constants] None | [Dependencies] DevicePresentationResolver, UiArchitect | [Integration Points] SSOT Display Name resolution
+        String displayNodeName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, finalUid, finalName);
+        if (isSelfNode(finalUid, node)) {
+            displayNodeName = displayNodeName + " (YOU)";
+        }
 
         TextView tvName = new TextView(this);
-        tvName.setText("👤 " + displayNodeName.toUpperCase());
+        tvName.setText(displayNodeName.toUpperCase());
         tvName.setTextColor(getTextColor());
         tvName.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, tvName, "TEXT_TITLE");
@@ -1706,19 +1885,27 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         tvStatus.setText(roleIcon + " " + finalRole + " • " + initRag.getStatusText() + (isTrackingActive ? "" : " (Paused)"));
         tvStatus.setTextColor(initRag.getStatusColor());
         card.setAlpha(initRag.getCardAlpha());
-        avBg.setStroke(2, initRag.getStrokeColor());
+        avBg.setStroke(scale(2), initRag.getStrokeColor());
         UiArchitect.applyText(this, tvStatus, "TEXT_MINI");
         details.addView(tvStatus);
 
         card.addView(details);
 
+        // Unified Actions Layout
+        LinearLayout actionsLayout = new LinearLayout(this);
+        actionsLayout.setOrientation(LinearLayout.HORIZONTAL);
+        actionsLayout.setGravity(Gravity.CENTER_VERTICAL);
+
+        int actTouchSize = scale(38);
+        int actIconPad = scale(6);
+
         // Action 1: Settings / Person Details
         ImageView infoBtn = new ImageView(this);
         infoBtn.setImageResource(android.R.drawable.ic_menu_manage);
         infoBtn.setColorFilter(accentColor);
-        int actSize = UiArchitect.getResponsiveIconSize(this, "ICON_TINY");
-        LinearLayout.LayoutParams iLp = new LinearLayout.LayoutParams(actSize, actSize);
-        iLp.setMargins(scale(4), 0, scale(4), 0);
+        infoBtn.setPadding(actIconPad, actIconPad, actIconPad, actIconPad);
+        LinearLayout.LayoutParams iLp = new LinearLayout.LayoutParams(actTouchSize, actTouchSize);
+        iLp.setMargins(scale(2), 0, scale(2), 0);
         infoBtn.setLayoutParams(iLp);
         infoBtn.setFocusable(true);
         infoBtn.setClickable(true);
@@ -1730,23 +1917,26 @@ public class NetworkGatewayActivity extends BaseActivityJava {
             pdIntent.putExtra("TARGET_NAME", finalName);
             startActivity(pdIntent);
         });
-        card.addView(infoBtn);
+        actionsLayout.addView(infoBtn);
 
         // Action 2: Delete / Purge
         ImageView delBtn = new ImageView(this);
         delBtn.setImageResource(android.R.drawable.ic_menu_delete);
         delBtn.setColorFilter(Color.parseColor("#FF5252"));
+        delBtn.setPadding(actIconPad, actIconPad, actIconPad, actIconPad);
         delBtn.setLayoutParams(iLp);
         delBtn.setFocusable(true);
         delBtn.setClickable(true);
         delBtn.setOnClickListener(v -> promptPurgeMemberDialog(finalUid, finalName));
-        card.addView(delBtn);
+        actionsLayout.addView(delBtn);
+
+        card.addView(actionsLayout);
 
         // Tap card to navigate directly to Live Map focus (with privacy awareness)
         card.setOnClickListener(v -> {
             triggerHapticFeedback();
             if (!isTrackingActive) {
-                new AlertDialog.Builder(this)
+                AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("\uD83D\uDEAB Live Tracking Paused")
                     .setMessage("Live GPS tracking is currently paused for " + finalName + " in Person Details privacy settings.\n\nEnable tracking in Person Details to view live markers on the map.")
                     .setPositiveButton("Manage Profile", (d, w) -> {
@@ -1761,7 +1951,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                         mapIntent.putExtra("target_uid", finalUid);
                         startActivity(mapIntent);
                     })
-                    .show();
+                    .create();
+                showSafeDialog(dialog);
                 return;
             }
             Intent mapIntent = new Intent(this, MapActivity.class);
@@ -1792,9 +1983,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                     if (cloudName == null) cloudName = prof.child("full_name").getValue(String.class);
                     if (cloudName == null) cloudName = prof.child("name").getValue(String.class);
                     if (cloudName == null) cloudName = live.child("userName").getValue(String.class);
-                    if (cloudName != null && !cloudName.isEmpty() && !cloudName.startsWith("Agent_")) {
-                        tvName.setText("👤 " + cloudName.toUpperCase());
-                    }
+                    // [Variables] resolvedLiveName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] NetworkGatewayActivity live name observer
+                    String resolvedLiveName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(NetworkGatewayActivity.this, finalUid, cloudName);
+                    tvName.setText(resolvedLiveName.toUpperCase());
 
                     long ts = 0L;
                     Object tsObj = live.child("last_heartbeat").getValue();
@@ -1937,7 +2128,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         com.jdroidx.jfindme.ui.base.SecurityDialogManager.showPinTtlSelectionDialog(this, chosen -> {
             if (viewModel != null) {
                 viewModel.startCountdown(chosen, selectedTab == TAB_NEARBY_P2P, () -> {
-                    Toast.makeText(this, "PIN / Token Expired.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_networkgateway_pin_token_expired), Toast.LENGTH_SHORT).show();
                     return kotlin.Unit.INSTANCE;
                 });
             }
@@ -1961,14 +2152,13 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 if (code != null && !code.isEmpty()) {
                     if (tvCode != null) tvCode.setText(code);
                     viewModel.startCountdown(ttlMinutes, false, () -> {
-                        if (!isFinishing() && !isDestroyed()) {
-                            new AlertDialog.Builder(this)
-                                .setTitle("🔴 Cloud Pairing PIN Expired")
-                                .setMessage("The current pairing session has timed out for security.\n\nWould you like to generate a fresh pairing PIN now?")
-                                .setPositiveButton("⚡ REGENERATE PIN", (d, w) -> executeHostSessionSpinup())
-                                .setNegativeButton("DISMISS", null)
-                                .show();
-                        }
+                        AlertDialog dialog = new AlertDialog.Builder(this)
+                            .setTitle("🔴 Cloud Pairing PIN Expired")
+                            .setMessage("The current pairing session has timed out for security.\n\nWould you like to generate a fresh pairing PIN now?")
+                            .setPositiveButton("⚡ REGENERATE PIN", (d, w) -> executeHostSessionSpinup())
+                            .setNegativeButton("DISMISS", null)
+                            .create();
+                        showSafeDialog(dialog);
                         return kotlin.Unit.INSTANCE;
                     });
                     if (qrBitmap != null && ivQrCode != null) {
@@ -1992,6 +2182,15 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     }
 
     private void executeLocalHostSessionSpinup() {
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BLUETOOTH_MESH)) {
+            Toast.makeText(this, "Grant Bluetooth & Nearby P2P Mesh permission to host local session.", Toast.LENGTH_SHORT).show();
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BLUETOOTH_MESH,
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_SINGLE_GATE
+            );
+            return;
+        }
         triggerHapticFeedback();
         if (tvLocalCode != null) tvLocalCode.setText("SPINNING UP...");
         if (pbLocalLoading != null) pbLocalLoading.setVisibility(View.VISIBLE);
@@ -2000,7 +2199,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
         LocalPairingManager.INSTANCE.setOnLocalMergeCompletedCallback(() -> {
             runOnUiThread(() -> {
-                Toast.makeText(this, "Local Node Linked Successfully! ✅", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_networkgateway_local_node_linked_successfully), Toast.LENGTH_LONG).show();
                 viewModel.refreshLocalRoster();
                 initiateCloudSync(forensicAgentId);
             });
@@ -2012,14 +2211,13 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 if (pbLocalLoading != null) pbLocalLoading.setVisibility(View.GONE);
                 if (tvLocalCode != null) tvLocalCode.setText(localToken);
                 viewModel.startCountdown(ttlMinutes, true, () -> {
-                    if (!isFinishing() && !isDestroyed()) {
-                        new AlertDialog.Builder(this)
-                            .setTitle("🔴 Local P2P Token Expired")
-                            .setMessage("The local broadcast token has timed out.\n\nWould you like to spin up a fresh local token?")
-                            .setPositiveButton("⚡ REGENERATE TOKEN", (d, w) -> executeLocalHostSessionSpinup())
-                            .setNegativeButton("DISMISS", null)
-                            .show();
-                    }
+                    AlertDialog dialog = new AlertDialog.Builder(this)
+                        .setTitle("🔴 Local P2P Token Expired")
+                        .setMessage("The local broadcast token has timed out.\n\nWould you like to spin up a fresh local token?")
+                        .setPositiveButton("⚡ REGENERATE TOKEN", (d, w) -> executeLocalHostSessionSpinup())
+                        .setNegativeButton("DISMISS", null)
+                        .create();
+                    showSafeDialog(dialog);
                     return kotlin.Unit.INSTANCE;
                 });
                 if (ivLocalQrCode != null) {
@@ -2031,7 +2229,13 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         });
     }
 
-    private void showRoleSelectionDialogBeforeJoin(String code) {
+    // [Variables] code, isLocal, cleaned, sv, container, title, roles, icons, dialog, role, icon, card, lp, rText | [Constants] None | [Dependencies] UiArchitect, AlertDialog, ScrollView, LinearLayout | [Integration Points] NetworkGatewayActivity, barcodeLauncher, handleDeepLinkIntent
+    /**
+     * 🏷️ Unified Role Selection Dialog (OOPS MVC SSOT):
+     * Eliminates duplicate code between Cloud and Nearby P2P role identification dialogs.
+     */
+    private void showRoleSelectionDialog(String code, boolean isLocal) {
+        dismissActiveDialog();
         final String cleaned = code.trim().toUpperCase();
         ScrollView sv = new ScrollView(this);
         LinearLayout container = new LinearLayout(this);
@@ -2039,7 +2243,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         container.setPadding(scale(20), scale(16), scale(20), scale(16));
 
         TextView title = new TextView(this);
-        title.setText("🏷️ IDENTIFY YOUR ROLE (CLOUD)");
+        title.setText(isLocal ? "🏷️ IDENTIFY YOUR ROLE (NEARBY)" : "🏷️ IDENTIFY YOUR ROLE (CLOUD)");
         title.setTextColor(getTextColor());
         title.setTypeface(null, Typeface.BOLD);
         UiArchitect.applyText(this, title, "TEXT_TITLE");
@@ -2049,6 +2253,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         String[] roles = {"Father", "Mother", "Guardian", "Spouse", "Child", "Friends"};
         String[] icons = {"👑", "👑", "🛡️", "💍", "🧸", "🤝"};
         AlertDialog dialog = new AlertDialog.Builder(this).create();
+        activeDialog = dialog;
 
         for (int i = 0; i < roles.length; i++) {
             final String role = roles[i];
@@ -2065,14 +2270,14 @@ public class NetworkGatewayActivity extends BaseActivityJava {
 
             TextView rText = new TextView(this);
             rText.setText(icon + "  " + role.toUpperCase());
-            rText.setTextColor(getGradientStart());
+            rText.setTextColor(isLocal ? getGradientEnd() : getGradientStart());
             rText.setTypeface(null, Typeface.BOLD);
             UiArchitect.applyText(this, rText, "TEXT_BODY");
             card.addView(rText);
 
             card.setOnClickListener(v -> {
                 dialog.dismiss();
-                promptGdprConsentAndJoin(cleaned, role, false);
+                promptGdprConsentAndJoin(cleaned, role, isLocal);
             });
             container.addView(card);
         }
@@ -2085,58 +2290,12 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         }
     }
 
+    private void showRoleSelectionDialogBeforeJoin(String code) {
+        showRoleSelectionDialog(code, false);
+    }
+
     private void showRoleSelectionDialogForLocalJoin(String code) {
-        final String cleaned = code.trim().toUpperCase();
-        ScrollView sv = new ScrollView(this);
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(scale(20), scale(16), scale(20), scale(16));
-
-        TextView title = new TextView(this);
-        title.setText("🏷️ IDENTIFY YOUR ROLE (NEARBY)");
-        title.setTextColor(getTextColor());
-        title.setTypeface(null, Typeface.BOLD);
-        UiArchitect.applyText(this, title, "TEXT_TITLE");
-        title.setPadding(0, 0, 0, scale(16));
-        container.addView(title);
-
-        String[] roles = {"Father", "Mother", "Guardian", "Spouse", "Child", "Friends"};
-        String[] icons = {"👑", "👑", "🛡️", "💍", "🧸", "🤝"};
-        AlertDialog dialog = new AlertDialog.Builder(this).create();
-
-        for (int i = 0; i < roles.length; i++) {
-            final String role = roles[i];
-            final String icon = icons[i];
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.HORIZONTAL);
-            card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setPadding(scale(16), scale(12), scale(16), scale(12));
-            UiArchitect.applyCard(this, card, "CARD_STANDARD");
-
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, 0, 0, scale(10));
-            card.setLayoutParams(lp);
-
-            TextView rText = new TextView(this);
-            rText.setText(icon + "  " + role.toUpperCase());
-            rText.setTextColor(getGradientEnd());
-            rText.setTypeface(null, Typeface.BOLD);
-            UiArchitect.applyText(this, rText, "TEXT_BODY");
-            card.addView(rText);
-
-            card.setOnClickListener(v -> {
-                dialog.dismiss();
-                promptGdprConsentAndJoin(cleaned, role, true);
-            });
-            container.addView(card);
-        }
-
-        sv.addView(container);
-        dialog.setView(sv);
-        if (!isFinishing() && !isDestroyed()) {
-            dialog.show();
-            applyDialogTheme(dialog);
-        }
+        showRoleSelectionDialog(code, true);
     }
 
     private void promptGdprConsentAndJoin(String cleanedCode, String selectedRole, boolean isLocal) {
@@ -2190,9 +2349,9 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         btnRow.addView(btnDecline, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         Button btnAgree = new Button(this);
-        btnAgree.setText("✅ AGREE & CONNECT");
+        btnAgree.setText(getString(com.jdroidx.jfindme.R.string.title_networkgateway_agree_connect));
         btnAgree.setTextColor(Color.WHITE);
-        btnAgree.setBackgroundColor(Color.parseColor("#00E676"));
+        btnAgree.setBackgroundColor(getTacticalColor(com.jdroidx.jfindme.R.color.color_accent_green));
         LinearLayout.LayoutParams aLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         aLp.setMargins(scale(8), 0, 0, 0);
         btnAgree.setLayoutParams(aLp);
@@ -2209,10 +2368,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         container.addView(btnRow);
         sv.addView(container);
         dialog.setView(sv);
-        if (!isFinishing() && !isDestroyed()) {
-            dialog.show();
-            applyDialogTheme(dialog);
-        }
+        showSafeDialog(dialog);
     }
 
     // [Variables] inputMatrix, selectedRole, myAgentId, success, message, multiSuccess, multiMsg, pinSuccess, pinMessage
@@ -2291,6 +2447,15 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     }
 
     private void executeLocalJoinRequestWithRole(String inputMatrix, String selectedRole) {
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BLUETOOTH_MESH)) {
+            Toast.makeText(this, "Grant Bluetooth & Nearby P2P Mesh permission to discover local host.", Toast.LENGTH_SHORT).show();
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BLUETOOTH_MESH,
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_SINGLE_GATE
+            );
+            return;
+        }
         Toast.makeText(this, "Searching for Local Node: " + inputMatrix + "...", Toast.LENGTH_SHORT).show();
         LocalPairingManager.INSTANCE.startLocalDiscoveryBinding(inputMatrix, this, selectedRole, hostId -> {
             runOnUiThread(() -> {
@@ -2321,13 +2486,14 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         Map<String, String> pairingHistory = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).getPairingHistoryAndLocation(childId);
 
         if (pairingHistory != null) {
-            new AlertDialog.Builder(this)
+            AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("🚨 Node Already Paired")
                     .setMessage("Node (" + childName + ") is already in your trust matrix.\n\nDo you want to re-authorize and update role?")
                     .setPositiveButton("RE-AUTHORIZE", (d, w) -> showRoleApprovalOptions(childId, childName, childPrelimRole, activeCode))
                     .setNegativeButton("CANCEL", (d, w) -> FirebasePairingManager.INSTANCE.rejectHandshake(activeCode))
                     .setCancelable(false)
-                    .show();
+                    .create();
+            showSafeDialog(dialog);
         } else {
             showRoleApprovalOptions(childId, childName, childPrelimRole, activeCode);
         }
@@ -2398,15 +2564,21 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                 String childRoleToSave = childPrelimRole;
                 String hostRoleToSave = hostRole;
 
-                if ("Child".equals(childPrelimRole)) {
+                if ("Child".equalsIgnoreCase(childPrelimRole)) {
                     childRoleToSave = "Child";
                     hostRoleToSave = hostRole;
                 } else if (Arrays.asList("Father", "Mother", "Guardian").contains(childPrelimRole)) {
                     childRoleToSave = childPrelimRole;
                     hostRoleToSave = "Child";
+                } else if ("Spouse".equalsIgnoreCase(childPrelimRole)) {
+                    childRoleToSave = "Spouse";
+                    hostRoleToSave = "Spouse";
+                } else if ("Friends".equalsIgnoreCase(childPrelimRole) || "Friend".equalsIgnoreCase(childPrelimRole)) {
+                    childRoleToSave = "Friends";
+                    hostRoleToSave = "Friends";
                 }
 
-                boolean isFriend = "Friends".equals(hostRole);
+                boolean isFriend = "Friends".equalsIgnoreCase(hostRole) || "Friend".equalsIgnoreCase(hostRole);
                 final String finalChild = childRoleToSave;
                 final boolean finalIsFriend = isFriend;
 
@@ -2421,6 +2593,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
                                     finalIsFriend,
                                     activeGroupId
                             );
+                            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(NetworkGatewayActivity.this)
+                                    .sendBroadcast(new Intent("ACTION_ROSTER_REFRESH"));
                             Toast.makeText(this, "🛡️ Handshake Approved! Node Added.", Toast.LENGTH_SHORT).show();
                             viewModel.refreshLocalRoster();
                             startActivity(new Intent(this, MapActivity.class));
@@ -2448,10 +2622,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         sv.addView(container);
         dialog.setView(sv);
         dialog.setCancelable(false);
-        if (!isFinishing() && !isDestroyed()) {
-            dialog.show();
-            applyDialogTheme(dialog);
-        }
+        showSafeDialog(dialog);
     }
 
     private void promptPurgeMemberDialog(String uid, String name) {
@@ -2460,37 +2631,51 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         String grp = getResolvedActiveGroup();
 
         if (isParked) {
-            new AlertDialog.Builder(this)
+            AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("⏳ Manage Parked Unlink")
                     .setMessage("Device (" + name + ") is currently PARKED for unlinking in Grey state. What would you like to do?")
                     .setPositiveButton("✅ FINALIZE UNLINK", (d, w) -> {
                         viewModel.deleteMember(uid, grp, null, () -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(NetworkGatewayActivity.this)
+                                    .sendBroadcast(new Intent("ACTION_ROSTER_REFRESH"));
                             Toast.makeText(this, "Device unlinked and permanently purged.", Toast.LENGTH_SHORT).show();
                         });
                     })
                     .setNeutralButton("↩️ RESTORE ACTIVE", (d, w) -> {
                         viewModel.cancelParkedDeletion(uid, grp, null, () -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(NetworkGatewayActivity.this)
+                                    .sendBroadcast(new Intent("ACTION_ROSTER_REFRESH"));
                             Toast.makeText(this, "Connection restored to Active.", Toast.LENGTH_SHORT).show();
                         });
                     })
                     .setNegativeButton("CLOSE", null)
-                    .show();
+                    .create();
+            showSafeDialog(dialog);
         } else {
-            new AlertDialog.Builder(this)
+            AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("Manage Connection: " + name)
                     .setMessage("Choose unlinking method for (" + name + "):")
                     .setPositiveButton("🔘 PARK & NOTIFY", (d, w) -> {
                         viewModel.parkMemberForDeletion(uid, grp, null, () -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(NetworkGatewayActivity.this)
+                                    .sendBroadcast(new Intent("ACTION_ROSTER_REFRESH"));
                             Toast.makeText(this, "Device parked in Grey state & push notification sent.", Toast.LENGTH_LONG).show();
                         });
                     })
                     .setNeutralButton("🗑️ IMMEDIATE PURGE", (d, w) -> {
                         viewModel.deleteMember(uid, grp, null, () -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(NetworkGatewayActivity.this)
+                                    .sendBroadcast(new Intent("ACTION_ROSTER_REFRESH"));
                             Toast.makeText(this, "Device purged immediately.", Toast.LENGTH_SHORT).show();
                         });
                     })
                     .setNegativeButton("CANCEL", null)
-                    .show();
+                    .create();
+            showSafeDialog(dialog);
         }
     }
 
@@ -2503,219 +2688,50 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         final String safeAgentId = forensicAgentId != null && !forensicAgentId.isEmpty() ? forensicAgentId : DeviceIdentityHelper.getOrGenerateAgentId(this);
         Toast.makeText(this, "Scanning cloud history for legacy assets...", Toast.LENGTH_SHORT).show();
 
-        // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-        // Dual-Path Active Group Resolver: Checks /profile/active_group and /Identity/active_group
-        FirebaseComm.getDeviceRef(safeAgentId).get().addOnCompleteListener(devTask -> {
-            String myGrp = null;
-            if (devTask.isSuccessful() && devTask.getResult() != null) {
-                DataSnapshot dSnap = devTask.getResult();
-                myGrp = dSnap.child("profile").child("active_group").getValue(String.class);
-                if (myGrp == null || myGrp.isEmpty()) {
-                    myGrp = dSnap.child("Identity").child("active_group").getValue(String.class);
-                }
-            }
-            if (myGrp == null || myGrp.isEmpty() || myGrp.equals("DEFAULT_GROUP")) {
-                myGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
-            }
-            final String finalGrp = (myGrp != null && !myGrp.isEmpty()) ? myGrp : ("GRP_" + safeAgentId);
-
-            // 🛰️ Precise Circle Discovery: Check direct relationships + shared circle history
-            FirebaseComm.getDeviceRef(safeAgentId).child("relationships").get().addOnCompleteListener(relTask -> {
-                final Set<String> authorizedLinkedUids = new HashSet<>();
-                final Map<String, String> assetRoles = new HashMap<>();
-                final Map<String, Boolean> assetIsAdmin = new HashMap<>();
-                final Map<String, Boolean> assetIsFriend = new HashMap<>();
-
-                if (relTask.isSuccessful() && relTask.getResult() != null) {
-                    for (DataSnapshot child : relTask.getResult().getChildren()) {
-                        String key = child.getKey();
-                        if (key != null && !key.equals(safeAgentId)) {
-                            authorizedLinkedUids.add(key);
-                            String r = null;
-                            if (child.hasChild("role_title")) r = child.child("role_title").getValue(String.class);
-                            else if (child.hasChild("role")) r = child.child("role").getValue(String.class);
-
-                            String branch = child.child("branch_type").getValue(String.class);
-                            boolean isFr = "friends".equalsIgnoreCase(branch) || (r != null && r.toLowerCase().contains("friend"));
-                            boolean isAdm = (r != null && (r.toUpperCase().contains("GUARDIAN") || r.toUpperCase().contains("ADMIN") || r.toUpperCase().contains("MOTHER") || r.toUpperCase().contains("FATHER") || r.toUpperCase().contains("PARENT")));
-
-                            if (r == null || r.isEmpty()) {
-                                r = isFr ? "Friend" : "Child";
-                            }
-                            assetRoles.put(key, r);
-                            assetIsFriend.put(key, isFr);
-                            assetIsAdmin.put(key, isAdm);
-                        }
-                    }
-                }
-
-                // Also check all shared groups where safeAgentId is a member
-                FirebaseComm.getRelationshipsRef().get().addOnCompleteListener(groupsTask -> {
-                    if (groupsTask.isSuccessful() && groupsTask.getResult() != null) {
-                        for (DataSnapshot grpChild : groupsTask.getResult().getChildren()) {
-                            if (grpChild.hasChild("members") && grpChild.child("members").hasChild(safeAgentId)) {
-                                for (DataSnapshot m : grpChild.child("members").getChildren()) {
-                                    String mKey = m.getKey();
-                                    if (mKey != null && !mKey.equals(safeAgentId)) {
-                                        authorizedLinkedUids.add(mKey);
-                                        if (!assetRoles.containsKey(mKey)) {
-                                            String mRole = m.child("role").getValue(String.class);
-                                            if (mRole == null || mRole.isEmpty() || mRole.equalsIgnoreCase("Member")) {
-                                                mRole = "Child";
-                                            }
-                                            boolean isFr = mRole.toLowerCase().contains("friend");
-                                            boolean isAdm = mRole.toUpperCase().contains("GUARDIAN") || mRole.toUpperCase().contains("ADMIN") || mRole.toUpperCase().contains("PARENT");
-                                            assetRoles.put(mKey, mRole);
-                                            assetIsFriend.put(mKey, isFr);
-                                            assetIsAdmin.put(mKey, isAdm);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Query profiles for verified linked nodes only
-                    FirebaseComm.getDevicesRef().get().addOnCompleteListener(devicesTask -> {
-                        final List<String> assetNames = new ArrayList<>();
-                        final List<String> assetUids = new ArrayList<>();
-                        final Map<String, String> assetAvatars = new HashMap<>();
-
-                        if (devicesTask.isSuccessful() && devicesTask.getResult() != null) {
-                            DataSnapshot devSnap = devicesTask.getResult();
-                            for (String linkedId : authorizedLinkedUids) {
-                                if (devSnap.hasChild(linkedId)) {
-                                    DataSnapshot child = devSnap.child(linkedId);
-                                    String name = null;
-                                    if (child.hasChild("profile") && child.child("profile").hasChild("name")) {
-                                        name = child.child("profile").child("name").getValue(String.class);
-                                    } else if (child.hasChild("Identity") && child.child("Identity").hasChild("name")) {
-                                        name = child.child("Identity").child("name").getValue(String.class);
-                                    } else if (child.hasChild("name")) {
-                                        name = child.child("name").getValue(String.class);
-                                    }
-                                    if (name == null || name.isEmpty() || name.startsWith("Agent_")) {
-                                        name = "Node " + linkedId;
-                                    }
-                                    String avatarId = "1";
-                                    if (child.hasChild("profile") && child.child("profile").hasChild("avatar_id")) {
-                                        avatarId = String.valueOf(child.child("profile").child("avatar_id").getValue());
-                                    }
-
-                                    String rTitle = assetRoles.containsKey(linkedId) ? assetRoles.get(linkedId) : "Family Member";
-                                    assetNames.add(name + " [" + rTitle + "] (" + linkedId + ")");
-                                    assetUids.add(linkedId);
-                                    assetAvatars.put(linkedId, avatarId);
-                                }
-                            }
-                        }
-                        displayRestoreDialog(safeAgentId, finalGrp, assetNames, assetUids, assetAvatars, assetRoles, assetIsAdmin, assetIsFriend);
-                    });
-                });
-            });
+        // [Variables] safeAgentId | [Constants] None | [Dependencies] GroupViewModel, LegacyNodeCandidate | [Integration Points] NetworkGatewayActivity passive View delegation
+        viewModel.scanForLegacyCircleNodes(safeAgentId, (finalGrp, candidates) -> {
+            if (isFinishing() || isDestroyed()) return kotlin.Unit.INSTANCE;
+            displayRestoreDialog(safeAgentId, finalGrp, candidates);
+            return kotlin.Unit.INSTANCE;
         });
     }
 
-    private void displayRestoreDialog(String safeAgentId, String finalGrp, List<String> assetNames, List<String> assetUids, Map<String, String> assetAvatars,
-                                       Map<String, String> assetRoles, Map<String, Boolean> assetIsAdmin, Map<String, Boolean> assetIsFriend) {
-        if (assetNames.isEmpty()) {
+    // [Variables] safeAgentId, finalGrp, candidates, items, checkedItems, selected | [Constants] "NO LEGACY NODES FOUND", "🔄 Reclaim Legacy Circle Nodes", "RESTORE SELECTED", "Circle Restored" | [Dependencies] GroupViewModel, LegacyNodeCandidate, AlertDialog | [Integration Points] NetworkGatewayActivity passive View rendering
+    private void displayRestoreDialog(String safeAgentId, String finalGrp, List<LegacyNodeCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
             showValidationDialog("NO LEGACY NODES FOUND", "No other registered device nodes found in Cloud Matrix. Use the QR Scan or PIN Pairing tabs to link new devices.");
             return;
         }
 
-        final String[] items = assetNames.toArray(new String[0]);
-        final boolean[] checkedItems = new boolean[items.length];
-        Arrays.fill(checkedItems, true);
+        final String[] items = new String[candidates.size()];
+        final boolean[] checkedItems = new boolean[candidates.size()];
+        for (int i = 0; i < candidates.size(); i++) {
+            LegacyNodeCandidate c = candidates.get(i);
+            items[i] = c.getName() + " [" + c.getRole() + "] (" + c.getUid() + ")";
+            checkedItems[i] = true;
+        }
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("🔄 Reclaim Legacy Circle Nodes")
                 .setMultiChoiceItems(items, checkedItems, (d, which, isChecked) -> checkedItems[which] = isChecked)
                 .setPositiveButton("RESTORE SELECTED", (d, which) -> {
-                    String targetGroup = finalGrp.isEmpty() ? ("GRP_" + safeAgentId) : finalGrp;
-                    com.jdroidx.jfindme.data.repository.DeviceRepository repoLocal = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this);
-
-                    // 1. Ensure Self is registered as ADMIN in Cloud Group with uniform structure
-                    Map<String, Object> groupInfo = new HashMap<>();
-                    groupInfo.put("group_name", "Primary Circle");
-                    groupInfo.put("host_device_id", safeAgentId);
-                    groupInfo.put("created_at", System.currentTimeMillis());
-                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("group_info").setValue(groupInfo);
-
-                    Map<String, Object> selfIdentity = new HashMap<>();
-                    selfIdentity.put("name", RegistryManager.getUserNickname(this));
-                    selfIdentity.put("full_name", RegistryManager.getUserNickname(this));
-                    selfIdentity.put("avatar_id", String.valueOf(RegistryManager.getEquippedAvatarId(this)));
-                    
-                    Map<String, Object> selfMembership = new HashMap<>();
-                    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-                    // Anti-Privilege Escalation: Reclaim role dynamically based on local registry authority rather than auto-granting ADMIN
-                    String curRole = RegistryManager.getRoleFamily(this, "Guardian");
-                    boolean isAuthorizedAdmin = curRole.toUpperCase().contains("GUARDIAN") || curRole.toUpperCase().contains("ADMIN") || curRole.toUpperCase().contains("MOTHER") || curRole.toUpperCase().contains("FATHER") || curRole.toUpperCase().contains("PARENT");
-                    selfMembership.put("role", isAuthorizedAdmin ? "ADMIN" : "MEMBER");
-                    selfMembership.put("role_family", curRole);
-                    selfMembership.put("role_friend", "None");
-                    selfMembership.put("status", "Active");
-                    selfMembership.put("ts_joined", System.currentTimeMillis());
-
-                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("identity").setValue(selfIdentity);
-                    FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("membership").setValue(selfMembership);
-                    // [Variables] | [Constants] | [Dependencies] | [Integration Points]
-                    // Dual-Path Synchronization + User Indexed Circle
-                    FirebaseComm.INSTANCE.getIdentityRef(safeAgentId).child("active_group").setValue(targetGroup);
-                    FirebaseComm.INSTANCE.getProfileRef(safeAgentId).child("active_group").setValue(targetGroup);
-                    FirebaseComm.getDatabaseRef().child("users").child(safeAgentId).child("joined_circles").child(targetGroup).setValue(true);
-                    RegistryManager.setActiveGroup(this, targetGroup);
-
-                    int count = 0;
+                    List<LegacyNodeCandidate> selected = new ArrayList<>();
                     for (int i = 0; i < checkedItems.length; i++) {
                         if (checkedItems[i]) {
-                            String nodeUid = assetUids.get(i);
-                            String rawName = assetNames.get(i);
-                            String cleanName = rawName.contains(" [") ? rawName.substring(0, rawName.indexOf(" [")) : rawName;
-                            String avatarId = assetAvatars.get(nodeUid);
-                            if (avatarId == null) avatarId = "1";
-
-                            String nodeRole = assetRoles.containsKey(nodeUid) ? assetRoles.get(nodeUid) : "Child";
-                            boolean isAdmin = assetIsAdmin.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsAdmin.get(nodeUid));
-                            boolean isFriend = assetIsFriend.containsKey(nodeUid) && Boolean.TRUE.equals(assetIsFriend.get(nodeUid));
-
-                            // Cloud Member Payload (Uniform devices/ schema)
-                            Map<String, Object> nodeIdentity = new HashMap<>();
-                            nodeIdentity.put("name", cleanName);
-                            nodeIdentity.put("full_name", cleanName);
-                            nodeIdentity.put("avatar_id", avatarId);
-
-                            Map<String, Object> nodeMembership = new HashMap<>();
-                            nodeMembership.put("role", nodeRole);
-                            nodeMembership.put("role_family", nodeRole);
-                            nodeMembership.put("role_friend", isFriend ? "Friend" : "None");
-                            nodeMembership.put("status", "Active");
-                            nodeMembership.put("ts_joined", System.currentTimeMillis());
-
-                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("identity").setValue(nodeIdentity);
-                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("membership").setValue(nodeMembership);
-                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(safeAgentId).child("paired_with").child(nodeUid).setValue(true);
-                            FirebaseComm.INSTANCE.getRelationshipsRef().child(targetGroup).child("devices").child(nodeUid).child("paired_with").child(safeAgentId).setValue(true);
-                            // Dual-Path Synchronization + User Indexed Circle
-                            FirebaseComm.INSTANCE.getIdentityRef(nodeUid).child("active_group").setValue(targetGroup);
-                            FirebaseComm.INSTANCE.getProfileRef(nodeUid).child("active_group").setValue(targetGroup);
-                            FirebaseComm.getDatabaseRef().child("users").child(nodeUid).child("joined_circles").child(targetGroup).setValue(true);
-
-                            // Local SQLite Mirror with explicit role, isAdmin, and isFriend allocation
-                            repoLocal.saveRosterNode(nodeUid, cleanName, nodeRole, "Active", isAdmin, isFriend, "Cloud Group", null, null, null, avatarId, targetGroup);
-                            count++;
+                            selected.add(candidates.get(i));
                         }
                     }
-
-                    showSlideNotification("Circle Restored", "Successfully restored " + count + " node(s) with family/friends roles to group " + targetGroup,
-                            android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
-                    initiateCloudSync(safeAgentId);
+                    viewModel.restoreLegacyCircleNodes(safeAgentId, finalGrp, selected, count -> {
+                        if (isFinishing() || isDestroyed()) return kotlin.Unit.INSTANCE;
+                        showSlideNotification("Circle Restored", "Successfully restored " + count + " node(s) with family/friends roles to group " + finalGrp,
+                                android.R.drawable.ic_dialog_info, Color.parseColor("#00E676"), null, null);
+                        return kotlin.Unit.INSTANCE;
+                    });
                 })
                 .setNegativeButton("CANCEL", null)
                 .create();
 
-        dialog.show();
-        applyDialogTheme(dialog);
+        showSafeDialog(dialog);
     }
 
     private void initiateCloudSync(String agentId) {
@@ -2750,7 +2766,7 @@ public class NetworkGatewayActivity extends BaseActivityJava {
         Intent shareIntent = new Intent(Intent.ACTION_SEND);
         shareIntent.setType("text/plain");
         shareIntent.putExtra(Intent.EXTRA_SUBJECT, "jFindMe Pairing Invitation");
-        shareIntent.putExtra(Intent.EXTRA_TEXT, "Join my private family network on jFindMe! Pairing PIN: " + text);
+        shareIntent.putExtra(Intent.EXTRA_TEXT, "Join my private family network on jFindMe!\nPairing PIN: " + text + "\nDirect link: jfindme://pair?code=" + text);
         startActivity(Intent.createChooser(shareIntent, "Share Pairing Code"));
     }
 
@@ -2827,6 +2843,8 @@ public class NetworkGatewayActivity extends BaseActivityJava {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        dismissActiveDialog();
+        FirebasePairingManager.INSTANCE.cancelActiveSession();
         clearLiveDeviceListeners();
         if (locationObserver != null) {
             try {

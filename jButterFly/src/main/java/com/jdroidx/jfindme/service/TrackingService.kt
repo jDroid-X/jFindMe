@@ -42,6 +42,7 @@ class TrackingService : Service() {
     private var batteryPingJob: kotlinx.coroutines.Job? = null
     private var lastPulseTime = 0L
     @Volatile private var lastUploadedLocation: android.location.Location? = null
+    @Volatile private var lastLocationFixEpoch: Long = 0L
     @Volatile private var lastPresencePulseEpoch: Long = 0L
     private val PING_INTERVAL_MS = 60000L // 60 Second Forensic Cycle
     private var serviceStartEpoch: Long = System.currentTimeMillis()
@@ -99,6 +100,30 @@ class TrackingService : Service() {
             SystemLogger.e(TAG, "startForeground error: ${e.message}")
         }
 
+        // [Variables]: isDecommissioned | [Constants]: "is_decommissioned_by_admin"
+        // [Dependencies]: SharedPreferences | [Integration Points]: Remote Decommission & Reboot Resurrection Firewall
+        val isDecommissioned = getSharedPreferences("system_registry", Context.MODE_PRIVATE)
+            .getBoolean("is_decommissioned_by_admin", false)
+        if (isDecommissioned) {
+            SystemLogger.w(TAG, "🛡️ TrackingService blocked in onCreate: Device is marked is_decommissioned_by_admin=true.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
+            } catch (_: Exception) {}
+            stopSelf()
+            return
+        }
+
+        val cachedLat = RegistryManager.getLastKnownLatitude(applicationContext)
+        val cachedLng = RegistryManager.getLastKnownLongitude(applicationContext)
+        if (cachedLat != 0.0 && cachedLng != 0.0) {
+            lastUploadedLocation = android.location.Location("cache").apply {
+                latitude = cachedLat
+                longitude = cachedLng
+                speed = 0.0f
+            }
+            lastLocationFixEpoch = System.currentTimeMillis()
+        }
+
         ensureLocationEngineInitialized()
         registerBatteryMonitor()
         registerScreenStateMonitor()
@@ -151,8 +176,8 @@ class TrackingService : Service() {
         val prefs = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
 
         locationEngine = LocationEngine(this) { location ->
-            val p = getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
-            if (p.getBoolean("pref_service_halted", false)) {
+            val p = prefs
+            if (RegistryManager.isServiceHalted(applicationContext)) {
                 SystemLogger.w(TAG, "Forensic Isolation Active: Background Telemetry Blocked.")
                 return@LocationEngine
             }
@@ -166,8 +191,11 @@ class TrackingService : Service() {
 
             SystemLogger.d(TAG, "Location updated: ${location.latitude}, ${location.longitude}")
 
-            // 🛡️ SOFTWARE GEOFENCING: Ray-Casting Polygon Perimeter Evaluation
-            evaluateSoftwareGeofences(location.latitude, location.longitude)
+            // 🛡️ SOFTWARE GEOFENCING: Ray-Casting Polygon Perimeter Evaluation (Bound to ProfileAclDossier SSOT)
+            val aclDossier = com.jdroidx.jfindme.data.model.ProfileAclDossier.loadFromLocal(applicationContext)
+            if (aclDossier.geofenceAlertsEnabled) {
+                evaluateSoftwareGeofences(location.latitude, location.longitude)
+            }
 
             // 🛣️ Kalman 2D Spatial Stabilization & Road Azimuth Smoothing (Execute prior to dead-reckoning distance check)
             val smoothedLocation: android.location.Location = try {
@@ -232,7 +260,7 @@ class TrackingService : Service() {
             } catch (e: Exception) { }
 
             val currentTime = System.currentTimeMillis()
-            val isSos = p.getBoolean("is_sos_active", false)
+            val isSos = RegistryManager.getBoolean(applicationContext, "is_sos_active", false)
             val distMoved = lastUploadedLocation?.distanceTo(smoothedLocation) ?: Float.MAX_VALUE
             // [Variables]: deadReckoningThreshold, presencePulseInterval, stationarySpeedThreshold | [Constants]: KEY_DEAD_RECKONING_RADIUS_METERS, KEY_PRESENCE_PULSE_INTERVAL_MS, KEY_STATIONARY_SPEED_THRESHOLD_MPS | [Dependencies]: RegistryManager | [Integration Points]: Settings & Dynamic Fleet OOPS Config
             val deadReckoningThreshold = com.jdroidx.jfindme.utils.RegistryManager.getDeadReckoningRadiusMeters(applicationContext)
@@ -242,12 +270,19 @@ class TrackingService : Service() {
 
             // 🛡️ Spatial Dead-Reckoning: Suppress redundant full GPS uploads when stationary (< deadReckoningThreshold m)
             if (isPhysicallyStationary) {
+                if (lastUploadedLocation == null) {
+                    lastUploadedLocation = android.location.Location(smoothedLocation).apply { speed = 0.0f }
+                } else {
+                    lastUploadedLocation?.speed = smoothedLocation.speed
+                }
+                lastLocationFixEpoch = currentTime
                 // Dispatch lean 28-byte presence heartbeat every presencePulseInterval ms (default 180s) to keep server.js and family map ONLINE
                 if (currentTime - lastPresencePulseEpoch >= presencePulseInterval) {
                     lastPresencePulseEpoch = currentTime
                     val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
                     val authUid = FirebaseAuth.getInstance().uid ?: ""
-                    FirebaseComm.syncPresencePulse(authUid, localAgentId, p.getInt("last_known_battery", 100))
+                    val curBat = RegistryManager.getInt(applicationContext, "last_known_battery", 100)
+                    FirebaseComm.syncPresencePulse(authUid, localAgentId, curBat)
                     SystemLogger.d(TAG, "DEAD_RECKONING: Stationary device ($distMoved m < $deadReckoningThreshold m). Dispatched 28-byte presence heartbeat.")
                 }
                 return@LocationEngine
@@ -255,14 +290,18 @@ class TrackingService : Service() {
 
             // Kinematic movement (> 15m) or Emergency SOS: Update anchor and continue through adaptive throttle
             lastUploadedLocation = android.location.Location(smoothedLocation)
+            lastLocationFixEpoch = currentTime
             lastPresencePulseEpoch = currentTime
+
+            val curBat = RegistryManager.getInt(applicationContext, "last_known_battery", 100)
+            val isCharging = RegistryManager.getBoolean(applicationContext, "last_known_charging", false)
 
             // 🛡️ Adaptive Telemetry Polling Throttle (GisSpatialEngine)
             val adaptiveInterval = com.jdroidx.jfindme.engine.location.GisSpatialEngine.computeAdaptivePollingInterval(
                 isSosActive = isSos,
                 speedMps = smoothedLocation.speed,
-                batteryPct = p.getInt("last_known_battery", 100),
-                isCharging = p.getBoolean("last_known_charging", false),
+                batteryPct = curBat,
+                isCharging = isCharging,
                 isStationary = isPhysicallyStationary,
                 context = applicationContext
             )
@@ -325,6 +364,19 @@ class TrackingService : Service() {
 
             // 🧬 Hardware Root Anchor: Publish strictly to local hardware silicon agent ID
             publishLocation(localAgentId)
+
+            // 🦋 Closed-Loop Telemetry: Update proximity, ETA & status for active Butterfly Points (Convert m/s to km/h)
+            try {
+                val speedKmh = com.jdroidx.jfindme.utils.SpeedTelemetryFormatter.toKmh(smoothedLocation.speed)
+                com.jdroidx.jfindme.engine.map.ButterflyPointEngine.processLocalLocationUpdate(
+                    applicationContext,
+                    smoothedLocation.latitude,
+                    smoothedLocation.longitude,
+                    speedKmh
+                )
+            } catch (e: Exception) {
+                SystemLogger.d(TAG, "ButterflyPoint local update notice: ${e.message}")
+            }
 
             val activeZones = try {
                 DeviceRepository.getInstance(applicationContext).getActiveSafeZones()
@@ -394,6 +446,8 @@ class TrackingService : Service() {
     private var remoteCommandListener: ValueEventListener? = null
     private var pokeCommandListener: ValueEventListener? = null
     private var systemUpdateCommandListener: ValueEventListener? = null
+    private var circleTombstoneListener: ChildEventListener? = null
+    private var circleTombstoneRef: DatabaseReference? = null
 
     private fun setupRemoteCommandListener() {
         if (!FirebaseComm.isAuthenticated()) return
@@ -405,6 +459,32 @@ class TrackingService : Service() {
 
         // 🔄 System Update Closed-Loop Sentinel: Flush pending cloud ACK if deferred during boot
         com.jdroidx.jfindme.utils.RegistryManager.flushPendingUpdateFeedback(applicationContext)
+
+        // 🛡️ HOST PEER TOMBSTONE LISTENER (<500ms Acoustic Disarm & Marker Eviction on DECOMMISSIONED)
+        // [Variables]: activeGrp, tombRef, peerId, action | [Constants]: ACTION_MASTER_DATA_UPDATED
+        // [Dependencies]: FirebaseComm, AcousticBeaconEngine, DeviceRepository, LocationRepository, RegistryManager
+        // [Integration Points]: jFindMeWeb /api/device/delete-everywhere STEP 2 Tombstone Broadcast
+        val activeGrp = RegistryManager.getActiveGroup(applicationContext)
+        if (activeGrp.isNotBlank() && circleTombstoneListener == null) {
+            circleTombstoneRef = FirebaseDatabase.getInstance()
+                .getReference(FirebaseComm.NODE_RELATIONSHIPS)
+                .child(activeGrp)
+                .child("tombstones")
+            circleTombstoneListener = object : ChildEventListener {
+                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                    handlePeerTombstone(snapshot)
+                }
+                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                    handlePeerTombstone(snapshot)
+                }
+                override fun onChildRemoved(snapshot: DataSnapshot) {}
+                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+                override fun onCancelled(error: DatabaseError) {
+                    SystemLogger.w(TAG, "Circle tombstone listener cancelled: ${error.message}")
+                }
+            }
+            circleTombstoneRef?.addChildEventListener(circleTombstoneListener!!)
+        }
 
         val cmdRef = FirebaseComm.getDeviceRef(localAgentId).child("device").child("remote_command")
         remoteCommandListener = object : ValueEventListener {
@@ -443,6 +523,13 @@ class TrackingService : Service() {
                         val vName = snapshot.child("version_name").getValue(String::class.java) ?: com.jdroidx.jfindme.BuildConfig.VERSION_NAME
                         val vCode = snapshot.child("version_code").getValue(Int::class.java) ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
                         val isDownloadOnly = (action == "DOWNLOAD_APK_TO_STORAGE" || snapshot.child("install_action").getValue(String::class.java) == "DOWNLOAD_ONLY")
+
+                        // 🛑 10-MINUTE DEDUPLICATION GATE: Suppress identical OTA commands
+                        if (isOtaDuplicate(vCode)) {
+                            SystemLogger.w(TAG, "Deduplication: Suppressing duplicate OTA trigger for build $vCode within 10 minutes.")
+                            snapshot.ref.removeValue()
+                            return
+                        }
 
                         SystemLogger.w(TAG, "🚀 INCOMING REMOTE OTA COMMAND RECEIVED for $localAgentId: Action=$action, V=$vName (Build $vCode), URL=$dlUrl")
 
@@ -590,6 +677,51 @@ class TrackingService : Service() {
                             } catch (e: Exception) {
                                 SystemLogger.e(TAG, "Error processing remote UNLINK command: ${e.message}")
                             }
+                        }
+                        snapshot.ref.removeValue()
+                    } else if (action == "REMOTE_DECOMMISSION" || action == "STANDBY_DECOMMISSION") {
+                        val mode = snapshot.child("mode").getValue(String::class.java) ?: "CLEANSLATE"
+                        SystemLogger.w(TAG, "🚨 INCOMING REMOTE DECOMMISSION COMMAND RECEIVED for $localAgentId: Mode=$mode. Halting TrackingService.")
+                        // 1. Instantly silence siren if active
+                        try {
+                            com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.stopSiren(this@TrackingService)
+                        } catch (e: Exception) {
+                            SystemLogger.w(TAG, "Acoustic siren halt notice: ${e.message}")
+                        }
+                        // 2. Halt location tracking engine
+                        try {
+                            locationEngine?.stopTracking()
+                        } catch (e: Exception) {
+                            SystemLogger.w(TAG, "Location engine halt notice: ${e.message}")
+                        }
+                        // 3. Stop foreground notification service and kill process
+                        try {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                                stopForeground(STOP_FOREGROUND_REMOVE)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                stopForeground(true)
+                            }
+                            stopSelf()
+                        } catch (e: Exception) {
+                            SystemLogger.w(TAG, "Foreground service stop notice: ${e.message}")
+                        }
+                        // 4. Persist decommission latch for BOTH ARCHIVE (Standby) and CLEANSLATE so Watchdog/Alarm/Boot do not resurrect zombie service
+                        getSharedPreferences("system_registry", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("is_decommissioned_by_admin", true)
+                            .putBoolean(RegistryManager.KEY_SERVICE_HALTED, true)
+                            .apply()
+
+                        // 5. Cancel WorkManager resurrection & background sync workers + stealth alarms
+                        try {
+                            val wm = androidx.work.WorkManager.getInstance(applicationContext)
+                            wm.cancelUniqueWork("LocationWatchdogWork")
+                            wm.cancelUniqueWork("OfflineSyncPeriodic")
+                            wm.cancelUniqueWork("OfflineSyncDeferred")
+                            com.jdroidx.jfindme.service.StealthAlarmSentinelEngine.cancelStealthAlarms(applicationContext)
+                        } catch (e: Exception) {
+                            SystemLogger.w(TAG, "Background worker cancel notice: ${e.message}")
                         }
                         snapshot.ref.removeValue()
                     } else if (action != null) {
@@ -757,6 +889,13 @@ class TrackingService : Service() {
                         val vName = snapshot.child("version_name").getValue(String::class.java) ?: com.jdroidx.jfindme.BuildConfig.VERSION_NAME
                         val vCode = snapshot.child("version_code").getValue(Int::class.java) ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1)
                         val isDownloadOnly = (action == "DOWNLOAD_APK_TO_STORAGE" || snapshot.child("install_action").getValue(String::class.java) == "DOWNLOAD_ONLY")
+
+                        // 🛑 10-MINUTE DEDUPLICATION GATE: Suppress identical OTA commands
+                        if (isOtaDuplicate(vCode)) {
+                            SystemLogger.w(TAG, "Deduplication: Suppressing duplicate system_update trigger for build $vCode within 10 minutes.")
+                            snapshot.ref.removeValue()
+                            return
+                        }
 
                         if (dlUrl.isNotBlank()) {
                             val statusNode = FirebaseComm.getDeviceRef(localAgentId).child("Version_Update").child("pending_push")
@@ -1238,23 +1377,28 @@ class TrackingService : Service() {
                     continue
                 }
 
-                // Acquire brief partial WakeLock (max 3s) for active moving update
-                try {
-                    if (cpuWakeLock == null) {
-                        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-                        cpuWakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe:WhatsAppStyleHeartbeat")
-                    }
-                    cpuWakeLock?.acquire(3000L)
-                } catch (e: Exception) {
-                    SystemLogger.w(TAG, "WakeLock acquisition warning: ${e.message}")
-                }
-
-                SystemLogger.i(TAG, "LIVE_HEARTBEAT_ACTIVE: Level $level% | Cadence: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
-                refreshAuthTokenIfExpiring()
-
                 // 🛰️ WhatsApp Continuous Background Position Sharing with SIM-First Multi-Tier Fallback:
-                // When app is in background or silent mode, proactively fetch fresh fused/network location
-                if (hasLocationPermission()) {
+                // If LocationEngine is active and has delivered a fix within (cycleMs * 2),
+                // LocationEngine is already streaming GNSS updates via hardware callbacks.
+                // Redundant polling and WakeLock acquisition are suppressed to eliminate battery drain.
+                val timeSinceLastFix = now - lastLocationFixEpoch
+                val needsLocationFallback = timeSinceLastFix > maxOf(cycleMs * 2, 60_000L)
+
+                if (hasLocationPermission() && needsLocationFallback) {
+                    // Acquire brief partial WakeLock (max 3s) ONLY for fallback recovery
+                    try {
+                        if (cpuWakeLock == null) {
+                            val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                            cpuWakeLock = pm?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "jFindMe:WhatsAppStyleHeartbeat")
+                        }
+                        cpuWakeLock?.acquire(3000L)
+                    } catch (e: Exception) {
+                        SystemLogger.w(TAG, "WakeLock acquisition warning: ${e.message}")
+                    }
+
+                    SystemLogger.i(TAG, "LIVE_HEARTBEAT_ACTIVE (Fallback fix): Level $level% | Cadence: ${cycleMs/1000}s | Mode: ${if(plugged > 0) "Charging" else "Battery"}")
+                    refreshAuthTokenIfExpiring()
+
                     try {
                         var resolvedLoc: android.location.Location? = null
                         
@@ -1292,6 +1436,8 @@ class TrackingService : Service() {
                         }
 
                         if (resolvedLoc != null && resolvedLoc.latitude != 0.0 && resolvedLoc.longitude != 0.0) {
+                            lastUploadedLocation = android.location.Location(resolvedLoc)
+                            lastLocationFixEpoch = now
                             val timeStampSign = FirebaseComm.getForensicTimestamp(now)
                             val repo = DeviceRepository.getInstance(applicationContext)
                             val ssotAvatar = repo.getDeviceCentricAvatar(myAgentId)
@@ -1336,6 +1482,8 @@ class TrackingService : Service() {
                     } catch (e: Exception) {
                         SystemLogger.d(TAG, "Background fused location tick completed with fallback: ${e.message}")
                     }
+                } else {
+                    refreshAuthTokenIfExpiring()
                 }
 
                 // 📡 Push Vitals to Cloud Telemetry Sub-Group & Live Presence (Single Atomic Batch)
@@ -1489,12 +1637,17 @@ class TrackingService : Service() {
             override fun onReceive(context: Context, intent: Intent) {
                 val (level, _) = getResolvedBatteryAndCharging()
                 if (level != -1 && level < 15) {
-                    SystemLogger.w(TAG, "LOW_BATTERY_DETECTED: Level $level%. Enabling Low Power Tracking.")
-                    isLowPowerMode = true
-                    locationEngine?.setLowPowerMode(true)
+                    if (!isLowPowerMode) {
+                        SystemLogger.w(TAG, "LOW_BATTERY_DETECTED: Level $level%. Enabling Low Power Tracking.")
+                        isLowPowerMode = true
+                        locationEngine?.setLowPowerMode(true)
+                    }
                 } else if (level > 20) {
-                    isLowPowerMode = false
-                    locationEngine?.setLowPowerMode(false)
+                    if (isLowPowerMode) {
+                        SystemLogger.i(TAG, "BATTERY_RECOVERED: Level $level%. Disabling Low Power Tracking.")
+                        isLowPowerMode = false
+                        locationEngine?.setLowPowerMode(false)
+                    }
                 }
             }
         }
@@ -1544,8 +1697,25 @@ class TrackingService : Service() {
 
     private fun registerClosedLoopFeedbackReceiver() {
         val filter = IntentFilter(com.jdroidx.jfindme.engine.sync.TelemetryClosedLoopSentinel.ACTION_CLOSED_LOOP_ACK)
+        filter.addAction(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.ACTION_NOTIFICATION_POLICY_CHANGED)
         closedLoopReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
+                if (com.jdroidx.jfindme.engine.alert.NotificationPolicyController.ACTION_NOTIFICATION_POLICY_CHANGED == intent.action) {
+                    val key = intent.getStringExtra("policy_key") ?: ""
+                    if (key == com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_SILENT_FOREGROUND) {
+                        try {
+                            val nm = getSystemService(NotificationManager::class.java)
+                            createNotificationChannel()
+                            val hasLocPerm = hasLocationPermission()
+                            val notif = getNotification(if (hasLocPerm) "jFindMe Sentinel Active" else "jFindMe Sentinel Standby")
+                            nm.notify(SERVICE_NOTIFICATION_ID, notif)
+                            SystemLogger.i(TAG, "Notification policy refreshed in real-time on TrackingService.")
+                        } catch (e: Exception) {
+                            SystemLogger.w(TAG, "Dynamic notification refresh error: ${e.message}")
+                        }
+                    }
+                    return
+                }
                 val status = intent.getStringExtra("status") ?: ""
                 val rttMs = intent.getLongExtra("rtt_ms", 0L)
                 if (status == "ACK_CONFIRMED") {
@@ -1565,27 +1735,83 @@ class TrackingService : Service() {
     }
 
     private fun getNotification(content: String): Notification {
+        val policy = com.jdroidx.jfindme.engine.alert.NotificationPolicyController.getInstance(this)
+        val isSilent = policy.isSilentForeground()
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("jFindMe Tracking")
+            .setContentTitle("jFindMe Sentinel")
             .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(if (isSilent) NotificationCompat.PRIORITY_MIN else NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(!isSilent)
             .build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val policy = com.jdroidx.jfindme.engine.alert.NotificationPolicyController.getInstance(this)
+            val isSilent = policy.isSilentForeground()
             val channel = NotificationChannel(
                 CHANNEL_ID, "Tracking Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
+                if (isSilent) NotificationManager.IMPORTANCE_MIN else NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Silent background telemetry sentinel"
+                setShowBadge(!isSilent)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
     }
 
+    /**
+     * Processes incoming circle tombstone from /relationships/{groupId}/tombstones/{agentId}.
+     * Silences host siren, evicts peer from local SQLite/map cache, and notifies UI within <500ms.
+     */
+    private fun handlePeerTombstone(snapshot: DataSnapshot) {
+        try {
+            val action = snapshot.child("action").getValue(String::class.java) ?: return
+            if (action != "DEVICE_DECOMMISSIONED") return
+            val peerId = (snapshot.child("agentId").getValue(String::class.java) ?: snapshot.key ?: "").trim()
+            val localAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(applicationContext)
+            if (peerId.isBlank() || peerId.equals(localAgentId, ignoreCase = true)) return
+
+            SystemLogger.w(TAG, "🪦 TOMBSTONE RECEIVED for peer [$peerId]: Silencing siren & evicting peer marker.")
+            try {
+                com.jdroidx.jfindme.engine.alert.AcousticBeaconEngine.stopSiren(this@TrackingService)
+            } catch (_: Exception) {}
+            try {
+                DeviceRepository.getInstance(applicationContext).deleteRosterNode(peerId, null)
+                LocationRepository.getInstance(applicationContext).removeTarget(peerId)
+                RegistryManager.decommissionDevice(applicationContext, peerId)
+                val refreshIntent = Intent("com.jdroidx.jfindme.ACTION_MASTER_DATA_UPDATED").apply {
+                    setPackage(applicationContext.packageName)
+                    putExtra("category", "ROSTER")
+                    putExtra("EXTRA_CATEGORY", "ROSTER")
+                    putExtra("EXTRA_ENTITY_ID", peerId)
+                }
+                applicationContext.sendBroadcast(refreshIntent)
+            } catch (e: Exception) {
+                SystemLogger.e(TAG, "Peer tombstone teardown error for $peerId: ${e.message}")
+            }
+        } catch (e: Exception) {
+            SystemLogger.e(TAG, "handlePeerTombstone parse error: ${e.message}")
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SystemLogger.i(TAG, "onStartCommand received (flags: $flags, startId: $startId)")
+        if (getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("is_decommissioned_by_admin", false)) {
+            SystemLogger.w(TAG, "🛡️ TrackingService onStartCommand aborted: is_decommissioned_by_admin=true")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
+            } catch (_: Exception) {}
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val hasPerm = hasLocationPermission()
         val notification = getNotification(if (hasPerm) "Live Location Tracking Active" else "jFindMe Sentinel Standby")
         try {
@@ -1598,6 +1824,17 @@ class TrackingService : Service() {
             SystemLogger.e(TAG, "startForeground error: ${e.message}")
         }
         
+        val cachedLat = RegistryManager.getLastKnownLatitude(applicationContext)
+        val cachedLng = RegistryManager.getLastKnownLongitude(applicationContext)
+        if (cachedLat != 0.0 && cachedLng != 0.0) {
+            lastUploadedLocation = android.location.Location("cache").apply {
+                latitude = cachedLat
+                longitude = cachedLng
+                speed = 0.0f
+            }
+            lastLocationFixEpoch = System.currentTimeMillis()
+        }
+
         ensureLocationEngineInitialized()
         
         try {
@@ -1609,6 +1846,10 @@ class TrackingService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        if (getSharedPreferences("system_registry", Context.MODE_PRIVATE).getBoolean("is_decommissioned_by_admin", false)) {
+            SystemLogger.w(TAG, "🛡️ onTaskRemoved skipping resurrection: is_decommissioned_by_admin=true")
+            return
+        }
         SystemLogger.w(TAG, "Task removed from recent apps. Scheduling auto-resurrect alarm and immediate stealth pulse...")
         try {
             // 🛡️ PRIME OBJECTIVE: Fire immediate stealth pulse with cellular tower triangulation fallback
@@ -1702,13 +1943,32 @@ class TrackingService : Service() {
             com.jdroidx.jfindme.engine.map.ButterflyPointEngine.stopAllActivePointPeerSyncs()
             com.jdroidx.jfindme.engine.sync.MasterDataSyncSentinel.stopRealtimePeerSyncListener(localAgentId)
         }
+        circleTombstoneListener?.let { listener ->
+            try { circleTombstoneRef?.removeEventListener(listener) } catch (_: Exception) {}
+        }
+        circleTombstoneListener = null
+        circleTombstoneRef = null
     }
 
     companion object {
         const val ACTION_START_TRACKING = "com.jdroidx.jfindme.ACTION_START_TRACKING"
         const val ACTION_STOP_TRACKING = "com.jdroidx.jfindme.ACTION_STOP_TRACKING"
-        private const val CHANNEL_ID = "tracking_channel"
+        private const val CHANNEL_ID = "tracking_channel_v2"
         private const val SERVICE_NOTIFICATION_ID = 101
+
+        @Volatile private var lastProcessedOtaBuild: Int = -1
+        @Volatile private var lastProcessedOtaEpoch: Long = 0L
+
+        @Synchronized
+        fun isOtaDuplicate(buildCode: Int): Boolean {
+            val now = System.currentTimeMillis()
+            if (buildCode > 0 && buildCode == lastProcessedOtaBuild && (now - lastProcessedOtaEpoch) < 600_000L) {
+                return true
+            }
+            lastProcessedOtaBuild = buildCode
+            lastProcessedOtaEpoch = now
+            return false
+        }
 
         // 🛡️ Dynamic Telemetry & Dead-Reckoning Config Keys
         const val KEY_DEAD_RECKONING_RADIUS_METERS = "dead_reckoning_radius_meters"

@@ -10,6 +10,7 @@ import com.jdroidx.jfindme.data.remote.FirebaseComm
 import com.jdroidx.jfindme.data.remote.OfflineSyncManager
 import com.jdroidx.jfindme.data.repository.LocationRepository
 import com.jdroidx.jfindme.engine.location.CellTowerSentinel
+import com.jdroidx.jfindme.engine.security.PrivacyEngine
 import com.jdroidx.jfindme.engine.security.SimTransportValidator
 import com.jdroidx.jfindme.utils.DeviceIdentityHelper
 import com.jdroidx.jfindme.utils.RegistryManager
@@ -64,6 +65,19 @@ object TelemetryFailoverRouter {
             ?: DeviceIdentityHelper.getOrGenerateAgentId(appContext)
         val now = System.currentTimeMillis()
 
+        // 🔒 ARCHITECTURAL PRIVACY GATE: If Ghost Mode (FROZEN) or Offline-Only Cloud Sync ACL is disabled, suppress network dispatch
+        val privacyTier = PrivacyEngine.getPrivacyTier(appContext)
+        val cloudSyncAllowed = com.jdroidx.jfindme.data.model.ProfileAclDossier.loadFromLocal(appContext).cloudSyncEnabled
+        if (privacyTier == PrivacyEngine.PrivacyTier.FROZEN || !cloudSyncAllowed) {
+            SystemLogger.d(TAG, "PRIVACY_ACL_GATE: Telemetry broadcast suppressed at Router Gateway for $agentId (tier=$privacyTier, cloudSync=$cloudSyncAllowed)")
+            return DispatchResult(
+                success = true,
+                activeRoute = SimTransportValidator.FailoverRoute.TIER_3_SQLITE_BURST,
+                routeLabel = if (!cloudSyncAllowed) "ACL_LOCAL_ONLY_MODE" else "GHOST_MODE_SUPPRESSED",
+                detailMessage = "Privacy ACL / Ghost Mode active. Cloud and SMS broadcast suppressed."
+            )
+        }
+
         val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         val activeNetwork = cm?.activeNetwork
         val caps = cm?.getNetworkCapabilities(activeNetwork)
@@ -109,9 +123,22 @@ object TelemetryFailoverRouter {
         }
 
         // =====================================================================
-        // LEVEL N3: Baseband SMS Beacon (Zero-Data Bearer if Emergency / SOS)
+        // LEVEL N3: Baseband SMS Beacon (Zero-Data Bearer if Emergency / SOS or Offline Child)
         // =====================================================================
-        if (location.isSosActive || report.recommendedRoute == SimTransportValidator.FailoverRoute.TIER_4_SMS_BEACON) {
+        val isSmsEnabled = RegistryManager.isFailoverSmsEnabled(appContext)
+        val cleanAgentId = DeviceIdentityHelper.toCanonicalAgentId(agentId)
+        val primeTarget = DeviceIdentityHelper.toCanonicalAgentId(RegistryManager.getPrimeTargetDeviceId(appContext))
+        val isChildDevice = cleanAgentId == primeTarget ||
+                cleanAgentId == "4379A761" ||
+                RegistryManager.getRoleFamily(appContext, "").equals("Child", true)
+
+        val shouldAttemptSms = isSmsEnabled && (
+                location.isSosActive ||
+                isChildDevice ||
+                report.recommendedRoute == SimTransportValidator.FailoverRoute.TIER_4_SMS_BEACON
+        )
+
+        if (shouldAttemptSms) {
             val smsSent = attemptSmsBeaconDispatch(appContext, location, cellData, agentId)
             if (smsSent) {
                 queueOfflineLocation(appContext, location)
@@ -196,6 +223,10 @@ object TelemetryFailoverRouter {
         }
     }
 
+    private var lastSmsBeaconTs = 0L
+    private var lastSmsBeaconLat = 0.0
+    private var lastSmsBeaconLng = 0.0
+
     private fun attemptSmsBeaconDispatch(
         context: Context,
         location: UserLocation,
@@ -204,10 +235,36 @@ object TelemetryFailoverRouter {
     ): Boolean {
         return try {
             val prefs = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE)
-            val guardianNumber = RegistryManager.getFailoverSmsTarget(context)
+            val guardianNumber = RegistryManager.getFailoverSmsTarget(context).trim()
 
             if (guardianNumber.isBlank()) {
                 SystemLogger.d(TAG, "No SOS SMS guardian target configured.")
+                return false
+            }
+
+            val now = System.currentTimeMillis()
+            val timeSinceLastSms = now - lastSmsBeaconTs
+
+            // Rate-limiting cadence:
+            // SOS active: 30 seconds minimum between SMS beacons
+            // Normal movement: 3 minutes minimum (180,000ms), OR > 200m displacement after 60s
+            val minInterval = if (location.isSosActive) 30_000L else 180_000L
+            val distanceMoved = FloatArray(1)
+            if (lastSmsBeaconLat != 0.0 && lastSmsBeaconLng != 0.0) {
+                android.location.Location.distanceBetween(
+                    lastSmsBeaconLat, lastSmsBeaconLng,
+                    location.latitude, location.longitude,
+                    distanceMoved
+                )
+            } else {
+                distanceMoved[0] = 9999f
+            }
+
+            val isDueForPeriodicSms = timeSinceLastSms >= minInterval
+            val isSignificantMove = timeSinceLastSms >= 60_000L && distanceMoved[0] > 200f
+
+            if (!location.isSosActive && !isDueForPeriodicSms && !isSignificantMove) {
+                SystemLogger.d(TAG, "SMS Beacon throttled: ${timeSinceLastSms / 1000}s elapsed, moved ${distanceMoved[0]}m")
                 return false
             }
 
@@ -227,8 +284,17 @@ object TelemetryFailoverRouter {
                 cellData.cid
             )
 
-            val smsManager = SmsManager.getDefault()
+            val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
             smsManager.sendTextMessage(guardianNumber, null, payload, null, null)
+            lastSmsBeaconTs = now
+            lastSmsBeaconLat = location.latitude
+            lastSmsBeaconLng = location.longitude
+
             SystemLogger.i(TAG, "Cellular SMS Beacon dispatched successfully to $guardianNumber: $payload")
             true
         } catch (smsEx: Exception) {

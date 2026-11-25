@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "jFindMe Universal ValueBase & Settings Control Schema",
+  "description": "Single-Source-of-Truth Dynamic Control Registry mapping application variables to UI controls across any device",
+  "version": "1.0.0",
+  "controls": [
+    {
+      "key": "PREF_GHOST_MODE",
+      "category": "Privacy & Stealth",
+      "title": "Ghost Mode (Concealment)",
+      "description": "Completely hides host position from all circles and radar markers",
+      "control_type": "SWITCH",
+      "default_value": false
+    },
+    {
+      "key": "PREF_OBFUSCATION_RADIUS",
+      "category": "Privacy & Stealth",
+      "title": "Location Jitter Obfuscation",
+      "description": "Applies random spatial offset to public breadcrumbs",
+      "control_type": "RANGE_SLIDER",
+      "min": 100,
+      "max": 1500,
+      "step": 50,
+      "unit": "meters",
+      "default_value": 500
+    },
+    {
+      "key": "PREF_HAPTIC_10SEC",
+      "category": "Notifications & Alerts",
+      "title": "10-Sec Persistent Haptic Alert",
+      "description": "Vibrates 10 seconds continuous on critical breaches instead of 1 short pulse",
+      "control_type": "SWITCH",
+      "default_value": true
+    },
+    {
+      "key": "PREF_BLOAT_WARN",
+      "category": "Database & Storage",
+      "title": "Database Bloat Warning",
+      "description": "Alerts when forensic logs exceed storage allocation",
+      "control_type": "SWITCH",
+      "default_value": true
+    },
+    {
+      "key": "MAP_TYPE_PREF",
+      "category": "Spatial Radar Viewport",
+      "title": "Radar Map Style",
+      "description": "Tile render layer on Google Map",
+      "control_type": "RADIO_BUTTONS",
+      "options": [
+        { "label": "Standard Vector", "value": "NORMAL" },
+        { "label": "Satellite Imagery", "value": "SATELLITE" },
+        { "label": "Hybrid Tactical", "value": "HYBRID" },
+        { "label": "High-Contrast Terrain", "value": "TERRAIN" }
+      ],
+      "default_value": "NORMAL"
+    },
+    {
+      "key": "PREF_UNIT_SYSTEM",
+      "category": "Localization & Geography",
+      "title": "Measurement System",
+      "description": "Display format for distance and speed telemetry",
+      "control_type": "RADIO_BUTTONS",
+      "options": [
+        { "label": "Metric (km, m, km/h)", "value": "METRIC" },
+        { "label": "Imperial (miles, ft, mph)", "value": "IMPERIAL" }
+      ],
+      "default_value": "METRIC"
+    },
+    {
+      "key": "PREF_SHARING_PERMISSIONS",
+      "category": "Social & Peer Access",
+      "title": "Default Peer Sharing Scope",
+      "description": "Granular data streams broadcasted to mutual circle connections",
+      "control_type": "MULTI_OPTION_TICK",
+      "options": [
+        { "id": "SHARE_LIVE_GPS", "label": "Live GPS Coordinate Stream", "default": true },
+        { "id": "SHARE_BATTERY_VITALS", "label": "Battery Level & Charging State", "default": true },
+        { "id": "SHARE_SPEED_ALTITUDE", "label": "Real-time Speed & Altitude", "default": true },
+        { "id": "SHARE_NETWORK_CARRIER", "label": "SIM Operator & Signal Strength", "default": false },
+        { "id": "ALLOW_REMOTE_SIREN", "label": "Allow Circle Admins to Trigger Siren", "default": true }
+      ]
+    },
+    {
+      "key": "PREF_GPS_FREQ",
+      "category": "Telemetry & Battery Duty-Cycle",
+      "title": "Foreground GPS Update Cadence",
+      "description": "Interval between continuous GPS location polls",
+      "control_type": "RADIO_BUTTONS",
+      "options": [
+        { "label": "Tactical Realtime (5s) - High Battery", "value": 5000 },
+        { "label": "Balanced Dynamic (15s) - Recommended", "value": 15000 },
+        { "label": "Power Saver (60s) - Low Battery", "value": 60000 },
+        { "label": "Ultra Stealth (5m) - Extended Life", "value": 300000 }
+      ],
+      "default_value": 15000
+    },
+    {
+      "key": "PREF_SAFE_ZONE_MIN_RADIUS",
+      "category": "Geofencing Engine",
+      "title": "Safe Zone Radius Limits",
+      "description": "Allowed perimeter boundary radius range",
+      "control_type": "RANGE_DATA_MIN_MAX",
+      "min": 25,
+      "max": 5000,
+      "step": 25,
+      "unit": "meters",
+      "default_value": {
+        "min": 50,
+        "max": 2000
+      }
+    },
+    {
+      "key": "PREF_RENDEZVOUS_SAFEGUARD",
+      "category": "Butterfly Point System",
+      "title": "Max Rendezvous Distance Safeguard",
+      "description": "Maximum spatial distance allowed before requiring admin confirmation",
+      "control_type": "RANGE_SLIDER",
+      "min": 50,
+      "max": 1000,
+      "step": 50,
+      "unit": "km",
+      "default_value": 500
+    },
+    {
+      "key": "PREF_THERMAL_WARNING_CEILING",
+      "category": "Hardware Health Sentinel",
+      "title": "Battery Thermal Warning Ceiling",
+      "description": "Temperature threshold triggering overheat alert",
+      "control_type": "RANGE_SLIDER",
+      "min": 35.0,
+      "max": 50.0,
+      "step": 0.5,
+      "unit": "°C",
+      "default_value": 42.0
+    },
+    {
+      "key": "PREF_STALE_PEER_TIMEOUT",
+      "category": "Radar Telemetry",
+      "title": "Peer Inactivity Stale Threshold",
+      "description": "Time elapsed before peer marker turns amber/gray",
+      "control_type": "RANGE_SLIDER",
+      "min": 15,
+      "max": 720,
+      "step": 15,
+      "unit": "minutes",
+      "default_value": 120
+    }
+  ]
+}

@@ -310,9 +310,22 @@ object KmlSerializer {
 object CameraTorchController {
     fun setTorchMode(context: Context, cameraId: String = "0", enabled: Boolean) {
         try {
-            val cm = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
-            cm?.setTorchMode(cameraId, enabled)
-        } catch (e: Exception) {}
+            if (!context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FLASH)) {
+                return
+            }
+            val cm = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager ?: return
+            val targetId = if (cm.cameraIdList.contains(cameraId)) {
+                cameraId
+            } else {
+                cm.cameraIdList.firstOrNull { id ->
+                    val chars = cm.getCameraCharacteristics(id)
+                    chars.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                } ?: "0"
+            }
+            cm.setTorchMode(targetId, enabled)
+        } catch (e: Throwable) {
+            com.jdroidx.jfindme.utils.SystemLogger.w("CameraTorchController", "Torch mode failed gracefully: ${e.message}")
+        }
     }
 }
 

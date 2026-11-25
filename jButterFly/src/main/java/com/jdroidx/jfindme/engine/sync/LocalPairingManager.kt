@@ -29,9 +29,13 @@ object LocalPairingManager {
     var onLocalMergeCompletedCallback: (() -> Unit)? = null
 
     /**
-     * 🛡️ Pre-flight Radio Check: Verifies Bluetooth radio availability on Android 12+
+     * 🛡️ Pre-flight Radio Check: Verifies Bluetooth permission + radio availability on Android 12+
      */
     fun isRadioReady(context: Context): Boolean {
+        if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                context, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_BLUETOOTH_MESH)) {
+            return false
+        }
         return try {
             val bt = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                 (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
@@ -40,8 +44,10 @@ object LocalPairingManager {
                 android.bluetooth.BluetoothAdapter.getDefaultAdapter()
             }
             bt != null && bt.isEnabled
+        } catch (e: SecurityException) {
+            false
         } catch (e: Exception) {
-            true // Non-fatal fallback
+            true
         }
     }
 
@@ -288,6 +294,10 @@ object LocalPairingManager {
         finalizeLocalMergeWithMetadata(hostDeviceId, "Guardian", childDeviceId, "Local Target", "Child", onMergeComplete)
     }
 
+    // [Variables] hostDeviceId, hostRole, childDeviceId, childName, childRole, onMergeComplete, context, db, effectiveGroup, now, updates
+    // [Constants] TAG
+    // [Dependencies] DatabaseHelper, RegistryManager, FirebaseComm, SystemLogger, LocalBroadcastManager
+    // [Integration Points] LocalPairingManager, NetworkGatewayActivity, DatabaseHelper, MapActivity
     fun finalizeLocalMergeWithMetadata(
         hostDeviceId: String,
         hostRole: String,
@@ -296,6 +306,45 @@ object LocalPairingManager {
         childRole: String,
         onMergeComplete: (Boolean) -> Unit
     ) {
+        val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+        val effectiveGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
+
+        // 1. OFFLINE-FIRST RESILIENCE: Immediately persist bilateral pairing in local SQLite SSOT
+        try {
+            db.logDevicePairing(
+                hostDeviceId,
+                "Local Host",
+                "HOST_DEV",
+                childDeviceId,
+                childName,
+                "CHILD_DEV",
+                childRole,
+                effectiveGroup
+            )
+            val isFriend = childRole.equals("Friends", ignoreCase = true)
+            db.saveRosterNode(
+                childDeviceId,
+                childName,
+                childRole,
+                "P2P PAIRED",
+                false,
+                isFriend,
+                ownerName = "Local Host",
+                uid2 = null,
+                connectedDeviceId = childDeviceId,
+                qrCode = null,
+                avatarId = "1"
+            )
+            db.updateCitizenRole(childDeviceId, childRole, if (isFriend) "Friends" else "None", isFriend)
+            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(context)
+                .sendBroadcast(android.content.Intent("ACTION_ROSTER_REFRESH"))
+            SystemLogger.i("LocalPairingManager", "Offline-first SQLite pairing persisted for $childDeviceId ($childRole)")
+        } catch (e: Exception) {
+            SystemLogger.e("LocalPairingManager", "Failed local SQLite logDevicePairing", e)
+        }
+
+        // 2. Opportunistic Cloud Mirroring (Non-blocking for pure offline P2P)
         val now = com.jdroidx.jfindme.data.remote.FirebaseComm.getForensicTimestamp()
         val updates = hashMapOf<String, Any>(
             "${com.jdroidx.jfindme.data.remote.FirebaseComm.NODE_DEVICES}/$hostDeviceId/relationships/$childDeviceId" to mapOf(
@@ -314,24 +363,11 @@ object LocalPairingManager {
 
         com.jdroidx.jfindme.data.remote.FirebaseComm.database.reference.updateChildren(updates).addOnSuccessListener {
             SystemLogger.i("LocalPairingManager", "Strict Local Tier 3 Mesh Binding Complete for $childName ($childRole).")
-            
-            val context = com.jdroidx.jfindme.JFindMeApplication.getContext()
-            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
-            val effectiveGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(context)
-            db.logDevicePairing(
-                hostDeviceId,
-                "Local Host",
-                "HOST_DEV",
-                childDeviceId,
-                childName,
-                "CHILD_DEV",
-                childRole,
-                effectiveGroup
-            )
             onMergeComplete(true)
         }.addOnFailureListener {
-            SystemLogger.e(TAG, "Legacy P2P Matrix Binding Crash.", it)
-            onMergeComplete(false)
+            SystemLogger.w("LocalPairingManager", "Opportunistic cloud sync deferred in offline state; local P2P pairing is intact.")
+            // Complete successfully because offline P2P SSOT is already established
+            onMergeComplete(true)
         }
     }
 

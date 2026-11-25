@@ -43,6 +43,8 @@ class DeviceRepository private constructor(private val context: Context) {
         }
     }
 
+    val dbHelper: DatabaseHelper get() = db
+
     /**
      * Resolves human-readable device name from local SQLite SSOT.
      */
@@ -193,11 +195,11 @@ class DeviceRepository private constructor(private val context: Context) {
                     }
                 }
                 seen.add(uid.uppercase())
+                // [Variables] name, uid | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] DeviceRepository candidate device names
                 var name = node["name_alias"] as? String
                 if (name.isNullOrBlank()) name = node["fullName"] as? String
                 if (name.isNullOrBlank()) name = node["device_name"] as? String
-                if (name.isNullOrBlank()) name = db.getDeviceCentricName(uid)
-                if (name.isBlank()) name = "Node $uid"
+                name = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, uid, name)
                 candidates.add(android.util.Pair(uid, name))
             }
         }
@@ -221,6 +223,10 @@ class DeviceRepository private constructor(private val context: Context) {
     fun getAllPairedDeviceIds(): Set<String> = db.getAllPairedDeviceIds()
 
     fun getConnectedDeviceIds(agentId: String): Set<String> = db.getConnectedDeviceIds(agentId)
+
+    fun resolveInternalId(agentId: String): Long = db.resolveInternalId(agentId)
+
+    fun inspectSubsetDependencies(agentId: String): List<DatabaseHelper.DeviceSubsetDependency> = db.inspectSubsetDependencies(agentId)
 
     fun getOfflineRoster(): List<Map<String, Any>> = db.getOfflineRoster()
 

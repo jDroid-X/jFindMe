@@ -5,6 +5,37 @@ import com.jdroidx.jfindme.utils.SystemLogger;
 
 public class JFindMeApplication extends Application {
     private static JFindMeApplication instance;
+    private static int runningActivityCount = 0;
+    private static final java.util.List<AppLifecycleListener> lifecycleListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public interface AppLifecycleListener {
+        void onAppForegroundStateChanged(boolean isForeground);
+    }
+
+    public static boolean isAppInForeground() {
+        return runningActivityCount > 0;
+    }
+
+    public static void addLifecycleListener(AppLifecycleListener listener) {
+        if (listener != null && !lifecycleListeners.contains(listener)) {
+            lifecycleListeners.add(listener);
+            listener.onAppForegroundStateChanged(isAppInForeground());
+        }
+    }
+
+    public static void removeLifecycleListener(AppLifecycleListener listener) {
+        if (listener != null) {
+            lifecycleListeners.remove(listener);
+        }
+    }
+
+    private static void notifyLifecycleListeners(boolean isForeground) {
+        for (AppLifecycleListener l : lifecycleListeners) {
+            try {
+                l.onAppForegroundStateChanged(isForeground);
+            } catch (Exception ignored) {}
+        }
+    }
 
     public static JFindMeApplication getContext() {
         return instance;
@@ -14,6 +45,29 @@ public class JFindMeApplication extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
+
+        // 🛰️ Phase 1 SSOT: Real-Time Application Lifecycle Tracking
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(android.app.Activity activity, android.os.Bundle savedInstanceState) {}
+            @Override public void onActivityStarted(android.app.Activity activity) {
+                runningActivityCount++;
+                if (runningActivityCount == 1) {
+                    SystemLogger.i("AppLifecycle", "App transitioned to FOREGROUND (Active Activities: " + runningActivityCount + ")");
+                    notifyLifecycleListeners(true);
+                }
+            }
+            @Override public void onActivityResumed(android.app.Activity activity) {}
+            @Override public void onActivityPaused(android.app.Activity activity) {}
+            @Override public void onActivityStopped(android.app.Activity activity) {
+                runningActivityCount = Math.max(0, runningActivityCount - 1);
+                if (runningActivityCount == 0) {
+                    SystemLogger.i("AppLifecycle", "App transitioned to BACKGROUND (All Activities Stopped)");
+                    notifyLifecycleListeners(false);
+                }
+            }
+            @Override public void onActivitySaveInstanceState(android.app.Activity activity, android.os.Bundle outState) {}
+            @Override public void onActivityDestroyed(android.app.Activity activity) {}
+        });
         // 🛡️ Enterprise FinalizerDaemon & Conscrypt Socket Crash Shield
         // Neutralizes known OEM/Conscrypt finalize() NullPointerExceptions thrown during SSL socket garbage collection
         Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
@@ -48,14 +102,21 @@ public class JFindMeApplication extends Application {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(android.content.Context.NOTIFICATION_SERVICE);
             if (nm != null) {
+                // 🛡️ FORENSIC UPGRADE: Register v2 channel to guarantee IMPORTANCE_MIN even on existing app installs
                 android.app.NotificationChannel channel = new android.app.NotificationChannel(
-                    "tracking_channel",
+                    "tracking_channel_v2",
                     "jFindMe Active Tracking Sentinel",
-                    android.app.NotificationManager.IMPORTANCE_LOW
+                    android.app.NotificationManager.IMPORTANCE_MIN
                 );
                 channel.setDescription("Maintains continuous real-time telemetry and geofence safety monitoring.");
                 channel.setShowBadge(false);
+                channel.enableLights(false);
+                channel.enableVibration(false);
+                channel.setSound(null, null);
                 nm.createNotificationChannel(channel);
+                try {
+                    nm.deleteNotificationChannel("tracking_channel");
+                } catch (Exception ignored) {}
 
                 android.app.NotificationChannel alertChannel = new android.app.NotificationChannel(
                     "jfindme_alerts",

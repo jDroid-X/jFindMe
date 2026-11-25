@@ -356,7 +356,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         playBtn.setOnClickListener(v -> startPathReplay());
         
         View stopBtn = createReplayButton("STOP\nREPLAY", android.R.drawable.ic_media_pause);
-        stopBtn.setOnClickListener(v -> { isReplaying = false; Toast.makeText(this, "Replay Terminated", Toast.LENGTH_SHORT).show(); });
+        stopBtn.setOnClickListener(v -> { isReplaying = false; Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_history_replay_terminated), Toast.LENGTH_SHORT).show(); });
 
         replayButtonsRow.addView(wrapInRow(playBtn), btnLp);
         replayButtonsRow.addView(wrapInRow(stopBtn), btnLp);
@@ -747,7 +747,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
 
     private void animateReplay(final int index) {
         if (!isReplaying || index >= historyPoints.size() - 1) {
-            if (isReplaying) Toast.makeText(this, "Replay Completed", Toast.LENGTH_SHORT).show();
+            if (isReplaying) Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_history_replay_completed), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -787,7 +787,7 @@ public class HistoryActivity extends BaseActivityJava implements OnMapReadyCallb
         
         viewModel.getHistoryPoints().observe(this, points -> {
             if (points == null || points.isEmpty()) {
-                Toast.makeText(this, "No forensic data segments located.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_history_no_forensic_segments), Toast.LENGTH_SHORT).show();
                 if (tvWaypointsCount != null) tvWaypointsCount.setText("0 WAYPOINTS LOADED SECURELY");
             } else {
                 historyPoints = points;

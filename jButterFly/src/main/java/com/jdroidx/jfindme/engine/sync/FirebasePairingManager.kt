@@ -167,7 +167,7 @@ object FirebasePairingManager {
                         )
                     )
                 } else if (assignedChild != finalChildId && status != "waiting") {
-                     onStatusUpdate(false, "Code is already actively pairing with another device.")
+                     onStatusUpdate(false, "Host is currently approving another device. Please retry in a moment.")
                      return@addOnSuccessListener
                 }
 
@@ -295,7 +295,18 @@ object FirebasePairingManager {
 
                     com.jdroidx.jfindme.utils.AngelLoader.hide(context)
                     onComplete(true)
-                    clearSession(inviteCode)
+                    // 🛡️ Multi-Device Fleet Attachment (BR6): Reset knock state to allow secondary devices to join under active TTL
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (activePairingCode == inviteCode) {
+                            val resetPayload = mapOf(
+                                "status" to "waiting",
+                                "childDeviceId" to "",
+                                "child_name" to "",
+                                "child_role_preliminary" to ""
+                            )
+                            pairingRequestsEndpoint.child(inviteCode).updateChildren(resetPayload)
+                        }
+                    }, 2000)
                 }.addOnFailureListener { 
                     com.jdroidx.jfindme.utils.AngelLoader.hide(context)
                     onComplete(false) 
@@ -312,7 +323,17 @@ object FirebasePairingManager {
 
     fun rejectHandshake(inviteCode: String) {
         pairingRequestsEndpoint.child(inviteCode).child("status").setValue("rejected")
-        clearSession(inviteCode)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            if (activePairingCode == inviteCode) {
+                val resetPayload = mapOf(
+                    "status" to "waiting",
+                    "childDeviceId" to "",
+                    "child_name" to "",
+                    "child_role_preliminary" to ""
+                )
+                pairingRequestsEndpoint.child(inviteCode).updateChildren(resetPayload)
+            }
+        }, 2000)
     }
 
     private fun listenForAcceptance(context: android.content.Context, inviteCode: String, finalChildId: String, onStatusUpdate: (Boolean, String) -> Unit) {

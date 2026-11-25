@@ -16,6 +16,7 @@
       "$agentId": {
         ".read": "auth != null",
         ".write": "auth != null",
+        ".validate": "!$agentId.matches(/^(UNKNOWN.*|B1108B1A.*)$/)",
         "Identity": {
           ".read": "auth != null",
           ".write": "auth != null"
@@ -67,6 +68,7 @@
       "$agentId": {
         ".read": "auth != null",
         ".write": "auth != null",
+        ".validate": "!$agentId.matches(/^(UNKNOWN.*|B1108B1A.*)$/)",
         ".indexOn": [".key", "timestamp"]
       }
     },
@@ -104,7 +106,8 @@
     "relationships": {
       "$groupId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null",
+        ".validate": "!$groupId.matches(/^GRP_(HW_)?(UNKNOWN.*|B1108B1A.*)$/)"
       }
     },
     "groups": {

@@ -50,14 +50,14 @@ class AppUpgradeReceiver : BroadcastReceiver() {
                 SystemLogger.w(TAG, "Failed to clean update APK cache: ${e.message}")
             }
 
-            // 3. Sync Cloud Metadata to Firebase
+            // 3. Sync Cloud Metadata to Firebase & Close Loop on Pending Push
             val agentId = RegistryManager.getAgentId(context)
             if (agentId.isNotEmpty()) {
                 try {
-                    // [Variables] context, agentId
+                    // [Variables] context, agentId, dateStr
                     // [Constants] RegistryManager.DEFAULT_PACKAGE_SIZE
                     // [Dependencies] FirebaseComm, RegistryManager
-                    // [Integration Points] Post-Upgrade Package Metadata Cloud Synchronization
+                    // [Integration Points] Post-Upgrade Package Metadata Cloud Synchronization & Closed-Loop ACK
                     FirebaseComm.syncVersionUpdateMetadata(
                         context,
                         agentId,
@@ -65,6 +65,21 @@ class AppUpgradeReceiver : BroadcastReceiver() {
                         0L,
                         RegistryManager.DEFAULT_PACKAGE_SIZE
                     )
+                    // Close feedback loop on pending_push node
+                    com.google.firebase.database.FirebaseDatabase.getInstance().getReference("Version_Update")
+                        .child(agentId).child("pending_push")
+                        .updateChildren(
+                            mapOf<String, Any>(
+                                "status" to "COMPLETED",
+                                "stage" to "INSTALLED_VERIFIED",
+                                "completed_at" to dateStr,
+                                "epoch_ms" to System.currentTimeMillis()
+                            )
+                        )
+                    // Purge lingering command triggers from cloud
+                    FirebaseComm.getDeviceRef(agentId).child("commands").child("system_update").removeValue()
+                    FirebaseComm.getDeviceRef(agentId).child("device").child("remote_command").removeValue()
+
                     FirebaseComm.logChange(
                         agentId,
                         "System_Update",

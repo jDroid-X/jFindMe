@@ -77,7 +77,17 @@ data class SettingsModel(
     var butterflyMaxAvailabilityDays: Int = 7,
     var butterflyNominalSpeedKmh: Float = 25.0f,
     var butterflyApproachWindowMinutes: Int = 45,
-    var butterflyTacticalRadiusKm: Float = 3.0f
+    var butterflyTacticalRadiusKm: Float = 3.0f,
+
+    // Section 11: Tactical Map HUD & Multi-Marker Anti-Overlap Engine
+    var mapRenderThrottleMs: Long = 350L,
+    var clusterSpacingDp: Double = 50.0,
+
+    // Section 12: Dynamic Fleet Silicon Roster & Ghost Nodes Blacklist
+    var fleetHardwareMap: String = com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_FLEET_HARDWARE_MAP,
+    var decommissionedAgentIds: String = com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_DECOMMISSIONED_AGENT_IDS,
+    // Section 13: Dynamic Relational Role Matrix (Zero Hardcoded Pairwise Values)
+    var relativeRolesMap: String = com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_RELATIVE_ROLES_MAP
 )
 
 /**
@@ -140,11 +150,27 @@ class SettingsController(private val context: Context) {
             butterflyMaxAvailabilityDays = prefs.getInt("butterfly_max_availability_days", 7),
             butterflyNominalSpeedKmh = prefs.getFloat("butterfly_nominal_speed_kmh", 25.0f),
             butterflyApproachWindowMinutes = prefs.getInt("butterfly_approach_window_mins", 45),
-            butterflyTacticalRadiusKm = prefs.getFloat("butterfly_tactical_radius_km", 3.0f)
+            butterflyTacticalRadiusKm = prefs.getFloat("butterfly_tactical_radius_km", 3.0f),
+
+            // Section 11: Tactical Map HUD & Multi-Marker Anti-Overlap Engine
+            mapRenderThrottleMs = com.jdroidx.jfindme.utils.RegistryManager.getMapRenderThrottleMs(context),
+            clusterSpacingDp = com.jdroidx.jfindme.utils.RegistryManager.getClusterSpacingDp(context),
+
+            // Section 12: Dynamic Fleet Silicon Roster & Ghost Nodes Blacklist
+            fleetHardwareMap = com.jdroidx.jfindme.utils.RegistryManager.getString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_FLEET_HARDWARE_MAP, com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_FLEET_HARDWARE_MAP),
+            decommissionedAgentIds = com.jdroidx.jfindme.utils.RegistryManager.getString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_DECOMMISSIONED_AGENT_IDS, com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_DECOMMISSIONED_AGENT_IDS),
+            // Section 13: Dynamic Relational Role Matrix
+            relativeRolesMap = com.jdroidx.jfindme.utils.RegistryManager.getRelativeRolesMap(context)
         )
     }
 
     fun saveSettings(model: SettingsModel) {
+        // Persist dynamic SSOT keys via RegistryManager to avoid SharedPreferences type mismatch ClassCastException
+        com.jdroidx.jfindme.utils.RegistryManager.setClusterSpacingDp(context, model.clusterSpacingDp)
+        com.jdroidx.jfindme.utils.RegistryManager.setMapRenderThrottleMs(context, model.mapRenderThrottleMs)
+        com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_FLEET_HARDWARE_MAP, model.fleetHardwareMap)
+        com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_DECOMMISSIONED_AGENT_IDS, model.decommissionedAgentIds)
+
         prefs.edit().apply {
             putLong("pref_tracking_interval", model.pingIntervalSec * 1000L)
             putInt("telemetry_ping_interval", model.pingIntervalSec)
@@ -208,6 +234,12 @@ class SettingsController(private val context: Context) {
             putFloat("butterfly_nominal_speed_kmh", model.butterflyNominalSpeedKmh)
             putInt("butterfly_approach_window_mins", model.butterflyApproachWindowMinutes)
             putFloat("butterfly_tactical_radius_km", model.butterflyTacticalRadiusKm)
+
+            // Section 11: Tactical Map HUD & Multi-Marker Anti-Overlap Engine
+            putLong("pref_map_render_throttle_ms", model.mapRenderThrottleMs)
+
+            // Section 13: Dynamic Relational Role Matrix
+            putString(com.jdroidx.jfindme.utils.RegistryManager.KEY_RELATIVE_ROLES_MAP, model.relativeRolesMap)
             apply()
         }
     }
@@ -217,6 +249,10 @@ class SettingsController(private val context: Context) {
     fun setLowBatteryThreshold(threshold: Float) = prefs.edit().putFloat("low_battery_threshold", threshold).apply()
     fun setWatchdogFrequency(frequencySec: Int) = prefs.edit().putInt("watchdog_frequency_sec", frequencySec).apply()
     fun setOtaChannel(channel: String) = prefs.edit().putString("ota_channel", channel).apply()
+    fun setClusterSpacingDp(dp: Double) = com.jdroidx.jfindme.utils.RegistryManager.setClusterSpacingDp(context, dp)
+    fun setMapRenderThrottleMs(ms: Long) = com.jdroidx.jfindme.utils.RegistryManager.setMapRenderThrottleMs(context, ms)
+    fun setFleetHardwareMap(mapping: String) = com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_FLEET_HARDWARE_MAP, mapping)
+    fun setDecommissionedAgentIds(ids: String) = com.jdroidx.jfindme.utils.RegistryManager.putString(context, com.jdroidx.jfindme.utils.RegistryManager.KEY_DECOMMISSIONED_AGENT_IDS, ids)
 }
 
 // 🏛️ Enterprise Coordinate Tree Domain Facades & Sentinel Controllers

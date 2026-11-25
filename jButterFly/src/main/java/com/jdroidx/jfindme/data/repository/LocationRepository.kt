@@ -67,13 +67,17 @@ class LocationRepository(internal val context: Context) {
                 SystemLogger.i("LocationRepository", "Seeded Host location from local registry: $lastLat, $lastLng")
             }
 
-            val offlineNodes = db.getOfflineRoster()
+            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(context, myAgentId)
+            val scopedIds = db.getConnectedDeviceIds(myAgentId)
             val pairedIds = db.getAllPairedDeviceIds()
             val allPeerIds = mutableSetOf<String>()
-            for (node in offlineNodes) {
-                val pId = (node["uid_1"] ?: node["connected_id"] ?: node["uid_2"]) as? String ?: continue
-                if (pId != canonicalSelfId && pId != myAgentId) {
-                    allPeerIds.add(pId)
+            if (isHost) {
+                val offlineNodes = db.getOfflineRoster()
+                for (node in offlineNodes) {
+                    val pId = (node["uid_1"] ?: node["connected_id"] ?: node["uid_2"]) as? String ?: continue
+                    if (pId != canonicalSelfId && pId != myAgentId) {
+                        allPeerIds.add(pId)
+                    }
                 }
             }
             for (p in pairedIds) {
@@ -81,14 +85,13 @@ class LocationRepository(internal val context: Context) {
                     allPeerIds.add(p)
                 }
             }
-            val scopedIds = db.getConnectedDeviceIds(myAgentId)
             for (s in scopedIds) {
                 if (s != canonicalSelfId && s != myAgentId) {
                     allPeerIds.add(s)
                 }
             }
             val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
-            if (primeTarget.isNotBlank() && primeTarget != canonicalSelfId && primeTarget != myAgentId) {
+            if ((isHost || scopedIds.contains(primeTarget)) && primeTarget.isNotBlank() && primeTarget != canonicalSelfId && primeTarget != myAgentId) {
                 allPeerIds.add(primeTarget)
             }
             val linkedCsv = context.getSharedPreferences("system_registry", Context.MODE_PRIVATE).getString("linked_devices_csv", "") ?: ""
@@ -106,7 +109,8 @@ class LocationRepository(internal val context: Context) {
                 val lat = (hist?.get("lat") as? Double) ?: 0.0
                 val lng = (hist?.get("lng") as? Double) ?: 0.0
                 val ts = (hist?.get("timestamp") as? Long) ?: 0L
-                val peerName = db.getDeviceCentricName(pId).takeIf { it.isNotBlank() && !it.startsWith("Agent_") } ?: "Node $pId"
+                // [Variables] peerName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] LocationRepository seed location user name
+                val peerName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, pId)
                 val peerAvatar = db.getDeviceCentricAvatar(pId).takeIf { it.isNotBlank() } ?: "1"
 
                 val peerLoc = UserLocation(
@@ -252,7 +256,7 @@ class LocationRepository(internal val context: Context) {
     private var lastGeocodedLocation: android.location.Location? = null
     private var cachedHumanAddress: String? = null
 
-    private fun processIncomingLocation(resolvedId: String, loc: UserLocation) {
+    fun processIncomingLocation(resolvedId: String, loc: UserLocation) {
         val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
         val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
         val myHardwareUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getHardwareUid(context)
@@ -279,8 +283,10 @@ class LocationRepository(internal val context: Context) {
             SystemLogger.d("LocationRepository", "Ignoring HW_ synthetic telemetry packet: $cleanId")
             return
         }
-        if (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, resolvedId) ||
-            com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanId)) {
+        val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context))
+        val isProtectedChild = cleanId == primeTarget || cleanId.equals(primeTarget, ignoreCase = true) || cleanId == "4379A761"
+        if (!isProtectedChild && (com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, resolvedId) ||
+            com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanId))) {
             return
         }
         if (!isSelf && (db.isDeviceDeleted(resolvedId) || db.isDeviceDeleted(cleanId))) {
@@ -295,8 +301,6 @@ class LocationRepository(internal val context: Context) {
         }
 
         // 🛡️ GATE 1 MINOR PROTECTION: Mask raw GPS coordinates in logging for dynamic prime child target
-        val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context))
-        val isProtectedChild = cleanId == primeTarget || cleanId.equals(primeTarget, ignoreCase = true)
         val latLog = if (isProtectedChild) "[MASKED - CHILD PROTECTION]" else loc.latitude.toString()
         val lngLog = if (isProtectedChild) "[MASKED - CHILD PROTECTION]" else loc.longitude.toString()
 
@@ -362,8 +366,7 @@ class LocationRepository(internal val context: Context) {
             ?: ssotName
         if (cloudName.isNotEmpty() && cloudName != existingName && !isSelf && !db.isDeviceDeleted(resolvedId) && !db.isDeviceDeleted(cleanId)) {
             try {
-                val uid2 = profile?.get("uid_2") 
-                db.saveRosterNode(resolvedId, cloudName, "Active Tracker", "LIVE TARGET TRACKED", false, true, uid2 = uid2, qrCode = loc.avatar_id, avatarId = loc.avatar_id, notifyPeers = false)
+                // Update identity and avatar without overwriting existing SSOT role or circle
                 db.updateDeviceIdentityAndAvatar(resolvedId, cloudName, loc.avatar_id)
             } catch (e: Exception) {
                 com.jdroidx.jfindme.utils.SystemLogger.e("LocationRepository", "Forensic Backfill Blocked", e)
@@ -552,15 +555,18 @@ class LocationRepository(internal val context: Context) {
                     }
                 }
             }
-            val offlineNodes = localDb.getOfflineRoster()
-            for (node in offlineNodes) {
-                addTarget(node["uid_1"] as? String)
-                addTarget(node["uid_2"] as? String)
-                addTarget(node["connected_id"] as? String)
+            val focalAgentId = if (myAgentId.isNotBlank()) myAgentId else (myUid ?: "")
+            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(context, focalAgentId)
+            if (isHost) {
+                val offlineNodes = localDb.getOfflineRoster()
+                for (node in offlineNodes) {
+                    addTarget(node["uid_1"] as? String)
+                    addTarget(node["uid_2"] as? String)
+                    addTarget(node["connected_id"] as? String)
+                }
             }
 
             // 🛡️ Scoped Connected Devices: Enforce respective connected devices isolation & include all paired peers
-            val focalAgentId = if (myAgentId.isNotBlank()) myAgentId else (myUid ?: "")
             val scopedIds = if (focalAgentId.isNotBlank()) localDb.getConnectedDeviceIds(focalAgentId) else emptySet()
 
             for (s in scopedIds) {
@@ -573,18 +579,31 @@ class LocationRepository(internal val context: Context) {
 
             // 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target via RegistryManager
             val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(context)
-            addTarget(primeTarget)
+            if (primeTarget.isNotBlank()) {
+                addTarget(primeTarget)
+            }
+            val circleHost = com.jdroidx.jfindme.utils.RegistryManager.getCircleHostDeviceId(context)
+            if (circleHost.isNotBlank()) {
+                addTarget(circleHost)
+            }
 
             // 🛡️ SOFT-DELETE & DECOMMISSIONED GHOST PURGE (GAP-09): Dynamically evict any target marked as DELETED or decommissioned
-            // [Variables] decommissionedGhostNodes: Set<String>, cleanUid: String | [Constants] None | [Dependencies] RegistryManager, localDb, DeviceIdentityHelper | [Integration Points] Realtime target listener subscription & ghost eviction
+            // [Variables] decommissionedGhostNodes: Set<String>, cleanUid: String, isProtectedNode: Boolean | [Constants] None | [Dependencies] RegistryManager, localDb, DeviceIdentityHelper | [Integration Points] Realtime target listener subscription & ghost eviction
             val decommissionedGhostNodes = com.jdroidx.jfindme.utils.RegistryManager.getDecommissionedAgentIds(context)
             targetUids.removeAll { uid ->
                 val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
-                decommissionedGhostNodes.contains(cleanUid) ||
-                decommissionedGhostNodes.contains(uid) ||
-                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, uid) ||
-                com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanUid) ||
-                (uid != myUid && uid != myAgentId && cleanUid != myAgentId && uid != primeTarget && cleanUid != primeTarget && (localDb.isDeviceDeleted(uid) || localDb.isDeviceDeleted(cleanUid)))
+                val isProtectedNode = (uid == primeTarget || cleanUid == primeTarget ||
+                                       uid == circleHost || cleanUid == circleHost ||
+                                       uid == myUid || uid == myAgentId || cleanUid == myAgentId)
+                if (isProtectedNode) {
+                    false // Never evict Prime Target Ward, Circle Host, or Self!
+                } else {
+                    decommissionedGhostNodes.contains(cleanUid) ||
+                    decommissionedGhostNodes.contains(uid) ||
+                    com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, uid) ||
+                    com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, cleanUid) ||
+                    localDb.isDeviceDeleted(uid) || localDb.isDeviceDeleted(cleanUid)
+                }
             }
         } catch (e: Exception) {
             SystemLogger.e("LocationRepository", "Failed reading offline roster for targets", e)
@@ -623,6 +642,13 @@ class LocationRepository(internal val context: Context) {
                         val explicitAvatar = snapshot.child("avatar_id").getValue(String::class.java)
                         val explicitName = snapshot.child("userName").getValue(String::class.java) 
                             ?: snapshot.child("name").getValue(String::class.java)
+                            ?: snapshot.child("fullName").getValue(String::class.java)
+                            ?: snapshot.child("displayName").getValue(String::class.java)
+                            ?: snapshot.child("nickname").getValue(String::class.java)
+                            ?: snapshot.child("nickName").getValue(String::class.java)
+                            ?: snapshot.child("owner_name").getValue(String::class.java)
+                            ?: snapshot.child("device_name").getValue(String::class.java)
+                            ?: snapshot.child("model").getValue(String::class.java)
                         val zoneName = snapshot.child("current_safe_zone_name").getValue(String::class.java)
                         val zoneState = snapshot.child("current_safe_zone_state").getValue(String::class.java)
                         val zoneId = snapshot.child("current_safe_zone_id").getValue(String::class.java)
@@ -748,6 +774,12 @@ class LocationRepository(internal val context: Context) {
                         val profName = snapshot.child("name").value?.toString()
                             ?: snapshot.child("fullName").value?.toString()
                             ?: snapshot.child("userName").value?.toString()
+                            ?: snapshot.child("displayName").value?.toString()
+                            ?: snapshot.child("nickname").value?.toString()
+                            ?: snapshot.child("nickName").value?.toString()
+                            ?: snapshot.child("owner_name").value?.toString()
+                            ?: snapshot.child("device_name").value?.toString()
+                            ?: snapshot.child("model").value?.toString()
 
                         val avatarData = snapshot.child("avatar_data").value?.toString()
                             ?: snapshot.child(cleanUid).child("avatar_data").value?.toString()
@@ -766,45 +798,50 @@ class LocationRepository(internal val context: Context) {
 
                         val effectiveAvatar = profAvatar ?: (if (!avatarData.isNullOrEmpty()) "AV_${cleanUid}_01" else null)
 
-                        if (!effectiveAvatar.isNullOrEmpty() && effectiveAvatar != "butterfly") {
-                            try {
-                                val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
-                                val currentAv = db.getDeviceCentricAvatar(cleanUid)
-                                val currentName = db.getDeviceCentricName(cleanUid)
-                                val avatarChanged = currentAv != effectiveAvatar
-                                val nameChanged = !profName.isNullOrEmpty() && currentName != profName
-                                if (avatarChanged || nameChanged) {
-                                    for (idToUpdate in listOf(cleanUid, uid, rawClean, hwClean).distinct()) {
-                                        db.updateDeviceIdentityAndAvatar(idToUpdate, profName, effectiveAvatar)
-                                        db.commitAnalyticalDossier(idToUpdate, mapOf("avatar_id" to effectiveAvatar, "equipped_avatar_id" to effectiveAvatar))
+                        try {
+                            val db = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
+                            val currentAv = db.getDeviceCentricAvatar(cleanUid)
+                            val currentName = db.getDeviceCentricName(cleanUid)
+                            val isCustomAvatar = !effectiveAvatar.isNullOrEmpty() && effectiveAvatar != "butterfly" && effectiveAvatar != "1"
+                            val avatarChanged = isCustomAvatar && currentAv != effectiveAvatar
+                            val isProfNameValid = !profName.isNullOrEmpty() && !com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(profName, false)
+                            val nameChanged = isProfNameValid && currentName != profName
+
+                            if (avatarChanged || nameChanged) {
+                                val avToPersist = if (avatarChanged) effectiveAvatar else currentAv
+                                val nameToPersist = if (nameChanged) profName else currentName
+                                for (idToUpdate in listOf(cleanUid, uid, rawClean, hwClean).distinct()) {
+                                    db.updateDeviceIdentityAndAvatar(idToUpdate, nameToPersist, avToPersist)
+                                    if (avatarChanged) {
+                                        db.commitAnalyticalDossier(idToUpdate, mapOf("avatar_id" to effectiveAvatar!!, "equipped_avatar_id" to effectiveAvatar))
                                         com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(idToUpdate)
                                     }
-                                    com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                                 }
-                                
-                                val targetLocKey = listOf(cleanUid, uid, rawClean, hwClean)
-                                    .firstOrNull { latestLocations.containsKey(it) }
-                                if (targetLocKey != null) {
-                                    val cur = latestLocations[targetLocKey]!!
-                                    var locChanged = false
-                                    if (cur.avatar_id != effectiveAvatar) {
-                                        cur.avatar_id = effectiveAvatar
-                                        locChanged = true
-                                    }
-                                    if (!profName.isNullOrEmpty() && cur.userName != profName) {
-                                        cur.userName = profName
-                                        locChanged = true
-                                    }
-                                    if (locChanged) {
-                                        _userLocations.postValue(latestLocations.values.sortedWith(
-                                            compareByDescending<UserLocation> { it.isSosActive }
-                                                .thenByDescending { it.getLongTimestamp() }
-                                        ))
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                SystemLogger.e("LocationRepository", "Profile Avatar Sync Failed for $uid", e)
+                                if (avatarChanged) com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                             }
+                            
+                            val targetLocKey = listOf(cleanUid, uid, rawClean, hwClean)
+                                .firstOrNull { latestLocations.containsKey(it) }
+                            if (targetLocKey != null) {
+                                val cur = latestLocations[targetLocKey]!!
+                                var locChanged = false
+                                if (isCustomAvatar && cur.avatar_id != effectiveAvatar) {
+                                    cur.avatar_id = effectiveAvatar!!
+                                    locChanged = true
+                                }
+                                if (isProfNameValid && cur.userName != profName) {
+                                    cur.userName = profName!!
+                                    locChanged = true
+                                }
+                                if (locChanged) {
+                                    _userLocations.postValue(latestLocations.values.sortedWith(
+                                        compareByDescending<UserLocation> { it.isSosActive }
+                                            .thenByDescending { it.getLongTimestamp() }
+                                    ))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            SystemLogger.e("LocationRepository", "Profile Avatar/Name Sync Failed for $uid", e)
                         }
                     }
                     override fun onCancelled(error: DatabaseError) {}
@@ -1034,7 +1071,9 @@ class LocationRepository(internal val context: Context) {
                             val frRole = if (isFriend) role else "None"
 
                             localDb.updateCitizenRole(peerId, famRole, frRole, isFriend, group)
-                            localDb.saveRosterNode(peerId, localDb.getDeviceCentricName(peerId).ifEmpty { "Node $peerId" }, role, "LIVE", false, isFriend)
+                            // [Variables] rName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] LocationRepository self relationships sync
+                            val rName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, peerId)
+                            localDb.saveRosterNode(peerId, rName, role, "LIVE", false, isFriend)
                             changed = true
                         }
                         if (changed) {

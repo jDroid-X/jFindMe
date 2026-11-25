@@ -26,6 +26,21 @@ object DeviceIdentityHelper {
     val CANONICAL_ROSTER_IDS = listOf("2T929153", "2C811042", "F8CAFC67", "4379A761", "2D113789")
 
     /**
+     * [Variables] context, appCtx, dynamicIds | [Constants] CANONICAL_ROSTER_IDS | [Dependencies] RegistryManager, Context | [Integration Points] Canonical Roster Resolution
+     * 🛡️ Returns the active list of canonical hardware IDs, dynamically sourced from RegistryManager with static fallback.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun getCanonicalRosterIds(context: Context? = null): List<String> {
+        val appCtx = context ?: com.jdroidx.jfindme.JFindMeApplication.getContext()
+        if (appCtx != null) {
+            val dynamicIds = RegistryManager.getFleetHardwareMapping(appCtx).values.map { it.uppercase() }
+            if (dynamicIds.isNotEmpty()) return dynamicIds
+        }
+        return CANONICAL_ROSTER_IDS
+    }
+
+    /**
      * [Variables] clean, prev, changed | [Constants] HW_PREFIX | [Dependencies] String | [Integration Points] SSOT Canonical Identity Resolution
      * 🛡️ SSOT Canonical Ingestion Normalizer: Unconditionally strips tenant prefixes (HW_, DEV_, GRP_)
      * and normalizes to an uppercase 8-character canonical device key.
@@ -224,15 +239,17 @@ object DeviceIdentityHelper {
             }
         }
 
-        // Secondary fallback to canonical roster if fleetMap did not match
+        // Secondary fallback to default fleet mapping if custom mapping did not match
         if (canonicalRosterId == null) {
-            canonicalRosterId = when {
-                rawHw.contains("2T92") || device.contains("VIOLET") || product.contains("VIOLET") || model.contains("NOTE 7 PRO") -> "2T929153"
-                rawHw.contains("2C81") || device.contains("WHYRED") || product.contains("WHYRED") || model.contains("NOTE 5 PRO") -> "2C811042"
-                rawHw.contains("F8CA") || device.contains("SWEET") || product.contains("SWEET") || model.contains("NOTE 10 PRO") -> "F8CAFC67"
-                rawHw.contains("4379") || model.contains(RegistryManager.getPrimeTargetName(context), ignoreCase = true) -> RegistryManager.getPrimeTargetDeviceId(context)
-                rawHw.contains("2D11") || model.contains("INNOVANT") || model.contains("M2006C3MII") || device.contains("CATTAIL") -> "2D113789"
-                else -> null
+            val defaultFleetMap = RegistryManager.DEFAULT_FLEET_HARDWARE_MAP.split(",").associate {
+                val parts = it.split(":")
+                if (parts.size == 2) parts[0].trim().uppercase() to parts[1].trim().uppercase() else "" to ""
+            }
+            for ((key, value) in defaultFleetMap) {
+                if (key.isNotBlank() && (rawHw.contains(key) || device.contains(key) || product.contains(key) || model.contains(key))) {
+                    canonicalRosterId = value
+                    break
+                }
             }
         }
 
@@ -556,72 +573,10 @@ object DeviceIdentityHelper {
 
     /**
      * 🛡️ OEM Aggressive Battery Optimizer & Autostart Intent Dispatcher
-     * Bypasses Xiaomi (MIUI/HyperOS), Samsung (OneUI), Huawei (EMUI), Oppo/Realme (ColorOS), Vivo (FuntouchOS)
-     * and falls back to standard ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.
-     * Returns true if an OEM or system intent was successfully dispatched.
+     * Delegates cleanly by call-by-reference to canonical SSOT [OEMPowerWhitelistManager].
      */
     @JvmStatic
     fun requestOemBatteryExemption(context: Context): Boolean {
-        val pkgName = context.packageName
-
-        val oemIntents = listOf(
-            // Xiaomi / Redmi / Poco (MIUI / HyperOS Autostart)
-            android.content.Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
-            android.content.Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.powercenter.PowerSettings")),
-            // Samsung (OneUI Battery Device Care)
-            android.content.Intent().setComponent(android.content.ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity")),
-            android.content.Intent().setComponent(android.content.ComponentName("com.samsung.android.sm", "com.samsung.android.sm.ui.battery.BatteryActivity")),
-            // Huawei / Honor (EMUI Startup Manager)
-            android.content.Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
-            android.content.Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")),
-            // Oppo / Realme (ColorOS Startup)
-            android.content.Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
-            android.content.Intent().setComponent(android.content.ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity")),
-            // Vivo / iQOO (FuntouchOS Background Run)
-            android.content.Intent().setComponent(android.content.ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")),
-            android.content.Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"))
-        )
-
-        for (intent in oemIntents) {
-            try {
-                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    context.startActivity(intent)
-                    SystemLogger.i(TAG, "Dispatched OEM battery autostart intent: ${intent.component?.flattenToShortString()}")
-                    return true
-                }
-            } catch (ignored: Exception) { }
-        }
-
-        // Generic Android 6.0+ Battery Optimization Exemption Request
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-                if (powerManager != null && !powerManager.isIgnoringBatteryOptimizations(pkgName)) {
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = android.net.Uri.parse("package:$pkgName")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        context.startActivity(intent)
-                        return true
-                    }
-                }
-            } catch (e: Exception) {
-                SystemLogger.w(TAG, "Standard battery optimization request fallback: ${e.message}")
-            }
-        }
-
-        // Final Fallback: Open General Application Details Settings
-        return try {
-            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = android.net.Uri.parse("package:$pkgName")
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            true
-        } catch (e: Exception) {
-            false
-        }
+        return com.jdroidx.jfindme.engine.power.OEMPowerWhitelistManager.launchOemAutostartSettings(context)
     }
 }

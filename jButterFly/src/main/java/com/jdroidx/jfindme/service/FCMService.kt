@@ -71,21 +71,35 @@ class FCMService : FirebaseMessagingService() {
                         AlertManager.showLowBatteryNotification(applicationContext, avatarName.ifEmpty { "Monitored Device" }, pct)
                     }
                     "SYSTEM_UPDATE_AVAILABLE", "DOWNLOAD_APK" -> {
-                        // [Variables] ver: String, bld: String, dlUrl: String, isDownloadOnly: Boolean
+                        // [Variables] ver, bld, bldCode, dlUrl, isDownloadOnly, prefs, lastPushBld, lastPushEpoch, now, prompt
                         // [Constants] None
-                        // [Dependencies] BuildConfig, ApkInstallerHelper, AlertManager
-                        // [Integration Points] Cloud FCM OTA Push Update Pipeline
+                        // [Dependencies] BuildConfig, ApkInstallerHelper, AlertManager, SystemLogger
+                        // [Integration Points] Cloud FCM OTA Push Update Pipeline with 10-Minute Dormancy Deduplication
                         val ver = data["version_name"] ?: (com.jdroidx.jfindme.BuildConfig.VERSION_NAME)
                         val bld = data["version_code"] ?: (com.jdroidx.jfindme.BuildConfig.VERSION_CODE + 1).toString()
+                        val bldCode = bld.toIntOrNull() ?: 0
                         val dlUrl = data["download_url"] ?: ""
                         val isDownloadOnly = (data["type"] == "DOWNLOAD_APK" || data["action"] == "DOWNLOAD_ONLY" || data["auto_install"] == "false")
 
-                        val prompt = if (isDownloadOnly) {
-                            "jButterFly V$ver (Build $bld) downloading to /sdcard/Download/..."
-                        } else {
-                            "New jFindMe update available: V$ver (Build $bld). Tap to review."
+                        // 🛑 FCM DEDUPLICATION GATE: Mute repeated pushes for the same build within 10 minutes
+                        val prefs = getSharedPreferences("system_registry", MODE_PRIVATE)
+                        val lastPushBld = prefs.getInt("last_fcm_ota_build", -1)
+                        val lastPushEpoch = prefs.getLong("last_fcm_ota_epoch", 0L)
+                        val now = System.currentTimeMillis()
+                        if (bldCode > 0 && bldCode == lastPushBld && (now - lastPushEpoch) < 600_000L) {
+                            SystemLogger.w(TAG, "FCM_UPDATE_DORMANT: Build $bldCode notification already pushed recently. Muting duplicate.")
+                            return
                         }
-                        AlertManager.showGeofenceNotification(applicationContext, prompt)
+                        prefs.edit().putInt("last_fcm_ota_build", bldCode).putLong("last_fcm_ota_epoch", now).apply()
+
+                        // Single authoritative progress notification: Display ONLY if OS did not already render root notification block
+                        if (remoteMessage.notification == null) {
+                            com.jdroidx.jfindme.utils.ApkInstallerHelper.showUpdateProgressNotification(
+                                applicationContext,
+                                "jButterFly V$ver (Build $bld)",
+                                if (isDownloadOnly) "Downloading update to /sdcard/Download/..." else "System update available. Tap to review."
+                            )
+                        }
 
                         if (dlUrl.isNotBlank()) {
                             if (isDownloadOnly) {
@@ -115,14 +129,16 @@ class FCMService : FirebaseMessagingService() {
                         requestImmediateLocationAndBroadcast()
                     }
                     "UNLINK_REQUEST" -> {
-                        AlertManager.showGeofenceNotification(
+                        AlertManager.showDeviceSharingNotification(
                             applicationContext,
+                            "Unlink Request",
                             body.ifEmpty { "Connection unlink request received. Tap to review in Network Gateway." }
                         )
                     }
                     "UNLINK_CANCELLED" -> {
-                        AlertManager.showGeofenceNotification(
+                        AlertManager.showDeviceSharingNotification(
                             applicationContext,
+                            "Unlink Cancelled",
                             body.ifEmpty { "Unlink request was cancelled. Connection restored." }
                         )
                     }

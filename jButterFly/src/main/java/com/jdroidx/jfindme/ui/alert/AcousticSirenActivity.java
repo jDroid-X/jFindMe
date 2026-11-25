@@ -58,7 +58,8 @@ public class AcousticSirenActivity extends AppCompatActivity {
 
         String initiator = getIntent().getStringExtra("INITIATOR_NAME");
         if (initiator == null || initiator.isEmpty()) initiator = "Family Guardian";
-        int durationSec = getIntent().getIntExtra("DURATION_SEC", 30);
+        int defaultDuration = com.jdroidx.jfindme.utils.RegistryManager.getSirenDurationSec(this);
+        int durationSec = getIntent().getIntExtra("DURATION_SEC", defaultDuration);
 
         try {
             sirenAuditId = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this).recordSirenStart(
@@ -104,7 +105,7 @@ public class AcousticSirenActivity extends AppCompatActivity {
 
         // Title
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("ACOUSTIC SIREN ACTIVE");
+        tvTitle.setText(getString(com.jdroidx.jfindme.R.string.title_acousticsiren_acoustic_siren_active));
         tvTitle.setTextColor(Color.parseColor("#F87171"));
         tvTitle.setTextSize(22f);
         tvTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);

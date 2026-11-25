@@ -28,6 +28,7 @@ object UserIdentityTable {
     
     // --- V60.2 RESTORED Forensic Identity Block ---
     const val COL_FULL_NAME = "id_full_name"         // Display Identity (Blank by default)
+    const val COL_ID_FULL_NAME = "id_full_name"      // Backward Parity Alias
     const val COL_NAME_ALIAS = "full_name"           // Tri-Tier & Spec Parity Alias
     const val COL_SESSION_STATE = "st_session_state" // Connectivity Socket
     const val COL_IS_ADMIN = "is_admin"              // Authority Level (Blank by default)

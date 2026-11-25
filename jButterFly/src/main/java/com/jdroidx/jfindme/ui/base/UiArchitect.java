@@ -1005,7 +1005,7 @@ public class UiArchitect {
         box.setFocusable(true);
         box.setOnClickListener(v -> {
             if (items == null || items.isEmpty()) {
-                android.widget.Toast.makeText(activity, "No items available in list", android.widget.Toast.LENGTH_SHORT).show();
+                android.widget.Toast.makeText(activity, activity.getString(com.jdroidx.jfindme.R.string.notif_uiarchitect_no_items_available_in_list), android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
             String[] arr = items.toArray(new String[0]);
@@ -2517,6 +2517,20 @@ public class UiArchitect {
     }
 
     // 8. SLIDE IN/OUT BOTTOM-RIGHT NOTIFICATION BANNER
+    public static void showSlideNotificationBanner(BaseActivityJava activity, int titleResId, int messageResId,
+                                                   boolean isAlert, long durationMs, String actionText, Runnable actionCallback) {
+        if (activity == null) return;
+        showSlideNotificationBanner(activity, activity.getString(titleResId), activity.getString(messageResId),
+                isAlert, durationMs, actionText, actionCallback);
+    }
+
+    public static void showSlideNotificationBanner(BaseActivityJava activity, int titleResId, String message,
+                                                   boolean isAlert, long durationMs, String actionText, Runnable actionCallback) {
+        if (activity == null) return;
+        showSlideNotificationBanner(activity, activity.getString(titleResId), message,
+                isAlert, durationMs, actionText, actionCallback);
+    }
+
     public static void showSlideNotificationBanner(BaseActivityJava activity, String title, String message, 
                                                    boolean isAlert, long durationMs, String actionText, Runnable actionCallback) {
         int accentColor = isAlert ? Color.parseColor("#EF4444") : activity.getGradientStart();

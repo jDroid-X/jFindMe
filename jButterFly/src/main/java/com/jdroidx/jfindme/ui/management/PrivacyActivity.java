@@ -66,6 +66,15 @@ public class PrivacyActivity extends BaseActivityJava {
         pPanel.addView(createHardwarePermission("Location Services", android.Manifest.permission.ACCESS_FINE_LOCATION, com.jdroidx.jfindme.R.drawable.ic_locator_pin));
         pPanel.addView(createActivePrefsToggle("Telemetry Feedback", "telemetry_enabled", true, com.jdroidx.jfindme.R.drawable.ic_device_health));
         pPanel.addView(createActivePrefsToggle("Developer Logging", "developer_logging_enabled", false, com.jdroidx.jfindme.R.drawable.ic_settings_gears));
+        View openSettingsPermsBtn = UiArchitect.createSecondaryButton(this, "OPEN ALL DEVICE PERMISSIONS & TOGGLES", android.R.drawable.ic_menu_manage, v -> {
+            android.content.Intent i = new android.content.Intent(this, com.jdroidx.jfindme.ui.settings.SettingsActivity.class);
+            i.putExtra("ACTIVE_TAB", "UNIVERSAL");
+            i.putExtra("SCROLL_TO_PERMISSIONS", true);
+            startActivity(i);
+        });
+        LinearLayout.LayoutParams permBtnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        permBtnLp.setMargins(0, scale(15), 0, 0);
+        pPanel.addView(openSettingsPermsBtn, permBtnLp);
         
         content.addView(pPanel);
 
@@ -265,9 +274,15 @@ public class PrivacyActivity extends BaseActivityJava {
         row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
         android.widget.Switch toggle = new android.widget.Switch(this);
-        boolean g = androidx.core.content.ContextCompat.checkSelfPermission(this, p) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        boolean g = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isOsGateGranted(
+            this,
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION
+        );
         // 🚀 QA Fix: Master Override. Checking both OS Permission AND the internal Service Halt flag.
-        boolean isServiceActive = g && !prefs.getBoolean("pref_service_halted", false);
+        boolean isServiceActive = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+            this,
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION
+        );
         toggle.setChecked(isServiceActive);
         toggle.setFocusable(false);
         toggle.setClickable(false);
@@ -277,13 +292,21 @@ public class PrivacyActivity extends BaseActivityJava {
         row.setOnClickListener(v -> {
             boolean wasActive = toggle.isChecked();
             if (!wasActive && !g) {
-                 // Trigger OS Permission Request
-                 androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{p}, 100); 
+                 // Trigger OS Permission Request via SSOT ProfilePermissionsManager
+                 com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                     this,
+                     com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION,
+                     100
+                 );
             } else {
                  boolean nextState = !wasActive;
                  toggle.setChecked(nextState);
-                 // 🔒 Enterprise Logic: If user manually switches OFF, we halt the service logic globally
-                 prefs.edit().putBoolean("pref_service_halted", !nextState).apply();
+                 // 🔒 Enterprise Logic: If user manually switches OFF, we halt the service logic globally via SSOT
+                 com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.setSoftGateDisabled(
+                     this,
+                     com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_FINE_LOCATION,
+                     !nextState
+                 );
                  com.jdroidx.jfindme.utils.SystemLogger.w("PrivacyShield", "Background Protection Strategy Mutated: Service Halt = " + !nextState);
             }
             v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);

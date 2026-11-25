@@ -43,7 +43,56 @@ import java.util.regex.Pattern
 object ApkInstallerHelper {
 
     private const val TAG = "ApkInstallerHelper"
+    const val NOTIFICATION_ID_UPDATE_PROGRESS = 7787
+    const val NOTIFICATION_ID_UPDATE_READY = 7788
+    const val CHANNEL_ID_UPDATES = "system_updates_channel"
     @Volatile var pendingInstallApkFile: File? = null
+
+    /**
+     * 🔔 Shows or updates the single authoritative in-progress download notification.
+     */
+    @JvmStatic
+    fun showUpdateProgressNotification(context: Context, title: String, body: String) {
+        try {
+            val policy = com.jdroidx.jfindme.engine.alert.NotificationPolicyController.getInstance(context)
+            if (!policy.isSystemUpdateAllowed()) {
+                return
+            }
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = android.app.NotificationChannel(
+                    CHANNEL_ID_UPDATES,
+                    "System Updates",
+                    android.app.NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Notifications for in-progress and completed jFindMe system updates"
+                    enableVibration(false)
+                }
+                nm.createNotificationChannel(channel)
+            }
+            val builder = androidx.core.app.NotificationCompat.Builder(context, CHANNEL_ID_UPDATES)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .setAutoCancel(false)
+            nm.notify(NOTIFICATION_ID_UPDATE_PROGRESS, builder.build())
+        } catch (e: Exception) {
+            SystemLogger.w(TAG, "Failed to show update progress notification: ${e.message}")
+        }
+    }
+
+    /**
+     * 🔕 Dismisses the in-progress download notification cleanly once finished or cancelled.
+     */
+    @JvmStatic
+    fun dismissUpdateProgressNotification(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            nm.cancel(NOTIFICATION_ID_UPDATE_PROGRESS)
+        } catch (_: Exception) {}
+    }
 
     /**
      * Extracts Google Drive file ID from various Drive URL formats.
@@ -235,7 +284,24 @@ object ApkInstallerHelper {
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         val directUrl = resolveDirectDownloadUrl(downloadUrl)
-        val apkFile = File(activity.cacheDir, "update_jfindme.apk")
+        var apkFile = File(activity.cacheDir, "update_jfindme.apk")
+
+        // 🛡️ REUSE PUBLIC DOWNLOAD: If already downloaded to /sdcard/Download/ via OTA push, reuse it without re-downloading
+        val targetCode = metadata?.targetVersionCode ?: 0
+        if (!apkFile.exists() || !isValidApkFile(activity, apkFile)) {
+            val pubDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (pubDir != null && pubDir.exists()) {
+                val pubCandidateVersioned = if (targetCode > 0) File(pubDir, "jButterFly_V${targetCode}.apk") else null
+                val pubCandidateDefault = File(pubDir, "jButterFly.apk")
+                if (pubCandidateVersioned != null && pubCandidateVersioned.exists() && isValidApkFile(activity, pubCandidateVersioned)) {
+                    SystemLogger.i(TAG, "Reusing verified public download: $pubCandidateVersioned")
+                    apkFile = pubCandidateVersioned
+                } else if (pubCandidateDefault.exists() && isValidApkFile(activity, pubCandidateDefault)) {
+                    SystemLogger.i(TAG, "Reusing verified public download: $pubCandidateDefault")
+                    apkFile = pubCandidateDefault
+                }
+            }
+        }
 
         // 🛡️ 24-HOUR BUFFER & LOCAL CACHE REUSE: Avoid wasteful re-downloads
         if (apkFile.exists() && isValidApkFile(activity, apkFile)) {
@@ -1209,23 +1275,20 @@ object ApkInstallerHelper {
      */
     fun launchPackageInstaller(activity: Activity, apkFile: File) {
         try {
-            // Android 8.0+ Unknown sources permission check
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!activity.packageManager.canRequestPackageInstalls()) {
-                    pendingInstallApkFile = apkFile
-                    AlertDialog.Builder(activity)
-                        .setTitle("⚙️ Permission Required")
-                        .setMessage("To install this system update, please allow 'Install unknown apps' permission for jFindMe in Android Settings.")
-                        .setPositiveButton("ALLOW IN SETTINGS") { _, _ ->
-                            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                data = Uri.parse("package:${activity.packageName}")
-                            }
-                            activity.startActivity(intent)
-                        }
-                        .setNegativeButton("CANCEL", null)
-                        .show()
-                    return
-                }
+            if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                    activity, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_INSTALL_PACKAGES)) {
+                pendingInstallApkFile = apkFile
+                AlertDialog.Builder(activity)
+                    .setTitle("⚙️ Permission Required")
+                    .setMessage("To install this system update, enable 'In-App Silent OTA Updates' and grant 'Install unknown apps' permission for jFindMe.")
+                    .setPositiveButton("ALLOW IN SETTINGS") { _, _ ->
+                        com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                            activity, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_INSTALL_PACKAGES
+                        )
+                    }
+                    .setNegativeButton("CANCEL", null)
+                    .show()
+                return
             }
 
             // Pre-flight Signature Check
@@ -1458,6 +1521,7 @@ object ApkInstallerHelper {
      * 📥 Enqueues system-level background download via Android DownloadManager.
      * Writes directly into /sdcard/Download/ with native OS progress notification.
      * Bypasses app background execution limits and permission restrictions across Android 8-16.
+     * Features: Local file pre-existence check & active task deduplication.
      */
     @JvmStatic
     fun enqueueSystemDownload(
@@ -1470,6 +1534,46 @@ object ApkInstallerHelper {
         return try {
             val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? android.app.DownloadManager ?: return -1L
             val directUrl = resolveDirectDownloadUrl(downloadUrl)
+
+            // 1. Check if the target package is ALREADY downloaded to public storage and valid
+            val pubDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (pubDir != null && pubDir.exists()) {
+                val existingFile = File(pubDir, fileName)
+                if (existingFile.exists() && existingFile.length() > 0 && isValidApkFile(context, existingFile)) {
+                    SystemLogger.i(TAG, "📦 Package $fileName is already downloaded in public Downloads ($existingFile). Bypassing duplicate download.")
+                    dismissUpdateProgressNotification(context)
+                    notifyUpdateReadyToInstall(context, existingFile, title)
+                    return 0L
+                }
+            }
+
+            // 2. Active Download Deduplication Gate: Check if this directUrl is ALREADY downloading in DownloadManager
+            try {
+                val query = android.app.DownloadManager.Query().setFilterByStatus(
+                    android.app.DownloadManager.STATUS_RUNNING or android.app.DownloadManager.STATUS_PENDING
+                )
+                val cursor = dm.query(query)
+                if (cursor != null) {
+                    try {
+                        val uriCol = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_URI)
+                        while (cursor.moveToNext()) {
+                            if (uriCol >= 0) {
+                                val activeUri = cursor.getString(uriCol)
+                                if (activeUri != null && (activeUri == directUrl || activeUri.contains(fileName))) {
+                                    SystemLogger.w(TAG, "📥 Active download already running in DownloadManager for $fileName. Suppressing duplicate enqueue.")
+                                    return 0L
+                                }
+                            }
+                        }
+                    } finally {
+                        cursor.close()
+                    }
+                }
+            } catch (e: Exception) {
+                SystemLogger.w(TAG, "DownloadManager active task query notice: ${e.message}")
+            }
+
+            // 3. Dispatch native DownloadManager request
             val uri = android.net.Uri.parse(directUrl)
             val request = android.app.DownloadManager.Request(uri).apply {
                 setTitle(title)
@@ -1504,8 +1608,17 @@ object ApkInstallerHelper {
         versionName: String
     ) {
         try {
+            // Dismiss in-progress download notification immediately
+            dismissUpdateProgressNotification(context)
+
+            val policy = com.jdroidx.jfindme.engine.alert.NotificationPolicyController.getInstance(context)
+            if (!policy.isSystemUpdateAllowed()) {
+                SystemLogger.d(TAG, "Update ready notification suppressed by policy.")
+                return
+            }
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
-            val channelId = "system_updates_channel"
+            val channelId = CHANNEL_ID_UPDATES
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = android.app.NotificationChannel(
@@ -1545,12 +1658,12 @@ object ApkInstallerHelper {
             val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle("📦 System Update V$versionName Ready")
-                .setContentText("jFindMe has downloaded the latest package in background. Tap to install now.")
+                .setContentText("Package is downloaded and verified. Tap to install now.")
                 .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
 
-            notificationManager.notify(7788, builder.build())
+            notificationManager.notify(NOTIFICATION_ID_UPDATE_READY, builder.build())
             SystemLogger.i(TAG, "Notification dispatched for update V$versionName")
 
         } catch (e: Exception) {

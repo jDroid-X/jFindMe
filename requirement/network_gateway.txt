@@ -1,0 +1,34 @@
+# Screen Requirement & Bug Fix Log: NetworkGatewayActivity
+- Screen: NetworkGatewayActivity (com.jdroidx.jfindme.ui.group.NetworkGatewayActivity)
+- Tier / Architecture: L7 MVVM / Clean Architecture OOPS MVC (Squad 1 Experience / View + Squad 2 Core / Controller + Squad 3 Data / Model)
+- Primary SSOT Files:
+  - Controller/View: `NetworkGatewayActivity.java`
+  - ViewModel: `GroupViewModel.kt`
+  - Repositories: `PairingRepository.kt`, `DeviceRepository.kt`, `LocationRepository.kt`
+  - Local Database: `DatabaseHelper.kt` (tables: `device_pairings`, `devices`, `user_profile`, `group_members`, `device_vitals`, `device_sharing_transactions`)
+  - Cloud Remote: `FirebasePairingManager.kt`, `LocalPairingManager.kt`, `FirebaseComm.kt`
+
+- Screen-Action-Affordance Contract:
+  - Header: Back Navigation | Screen Title ("NETWORK PAIRING GATEWAY") | Subtitle ("Cloud PIN, QR Matrix Scanner & Nearby P2P Offline Discovery") | Audit History (`btnHistory`) | Restore Old Fleet (`btnRestoreGroup`) | Live Refresh (`btnRefresh`)
+  - Compact Identity Strip: Active Forensic Agent ID, Nickname, Hardware Model, Circle ID badge, Avatar View
+  - Segmented Tab Switcher:
+    - Tab 0: Active Citizen Roster (Sub-tabs: ALL, ONLINE, OFFLINE; dynamic search; Root Guardian Anchor; Member cards with RAG indicators, vitals, Map fly-to, Acoustic Siren, Unlink)
+    - Tab 1: Remote Cloud PIN & QR Matrix (2x2 symmetrical grid: Generate PIN with TTL dialog [5m, 15m, 1h, 24h], ZXing 512x512 QR code display, Monospace PIN display, Copy & Share buttons with deep link, Camera Scanner launcher, Manual PIN input, Role identification dialog, GDPR Article 6 disclosure, Bilateral host approval)
+    - Tab 2: Nearby P2P Offline Discovery (Broadcast local hardware token, Local QR display, Copy & Share, Camera Scanner, Manual token input, Wi-Fi Direct Nearby Connections handshake, Offline-first SQLite persistence)
+
+- Deep Dive Gap Analysis & Landed Architectural Fixes:
+  1. Intelligent QR & Deep Link Code Extractor:
+     - *Issue:* Barcode scanner (`barcodeLauncher`) only accepted raw 6 or 8-digit strings. Scanning structured URLs (`jfindme://pair?code=...`, `https://.../pair/...`) or text containing query parameters resulted in "QR Format Warning" and handshake abortion.
+     - *Fix:* Added centralized `extractPairingCode(String raw)` extracting 6-digit cloud PINs or 8-digit local hardware tokens across custom schemes, web URLs, query parameters (`code=`, `pin=`), and path segments. Integrated into both `barcodeLauncher` and `handleDeepLinkIntent`.
+  2. One-Click Pairing Invitation Links:
+     - *Issue:* `sharePairingCode` only shared bare plaintext PIN without deep links, forcing manual copy-paste.
+     - *Fix:* Enhanced shared text with `jfindme://pair?code={PIN}` deep link enabling 1-click automatic app launch and pairing.
+  3. Offline-First Nearby P2P Resilience:
+     - *Issue:* In `LocalPairingManager.kt`, bilateral pairing persistence in SQLite (`db.logDevicePairing`) was gated inside Firebase `.addOnSuccessListener`. In offline/dead-zone field scenarios without internet access, local pairing failed.
+     - *Fix:* Inverted execution sequence to persist in SQLite immediately (Offline-First), sending `ACTION_ROSTER_REFRESH` broadcast, and treating Firebase cloud mirroring as opportunistic background sync.
+  4. Complete Bilateral SSOT in Fleet Recovery:
+     - *Issue:* When reclaiming historical circles via `displayRestoreDialog`, restored nodes were inserted into `user_profile` but `device_pairings` table was not updated. Consequently, downstream services (such as Butterfly Point rendezvous and Map tactical dispatchers) failed bilateral pairing checks.
+     - *Fix:* Added `DatabaseHelper.getInstance().logDevicePairing()` for every restored node and dispatched `ACTION_ROSTER_REFRESH`.
+  5. Multi-Surface Roster Notification:
+     - *Issue:* Unlinking, parking, and restoring nodes did not notify active background listeners on other screens.
+     - *Fix:* Dispatched `ACTION_ROSTER_REFRESH` local broadcast on member delete, park, unpark, restore, and handshake approval.

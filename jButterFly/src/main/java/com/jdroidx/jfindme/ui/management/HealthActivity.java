@@ -259,7 +259,7 @@ public class HealthActivity extends BaseActivityJava {
         // --- LAYER 3: ACTION CONTROLLER ---
         View btnRefresh = UiArchitect.createPrimaryButton(this, "RERUN SYSTEM DIAGNOSTICS", android.R.drawable.ic_popup_sync, v -> {
             updateMetrics();
-            UiArchitect.showSlideNotificationBanner(this, "Diagnostics Refreshed", "Hardware & network diagnostics updated successfully.", false, 3000, null, null);
+            UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_diagnostics_refreshed, com.jdroidx.jfindme.R.string.notif_banner_diagnostics_updated_successfully, false, 3000, null, null);
         });
 
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -445,11 +445,18 @@ public class HealthActivity extends BaseActivityJava {
         int level = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) : -1;
         int status = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1) : -1;
         boolean isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+        int tempRaw = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) : 0;
+        float tempC = tempRaw / 10.0f;
 
         if (tvBattery != null) {
-            String bText = level + "% " + (isCharging ? "(⚡ CHARGING)" : "(DISCHARGING)");
+            String bText = level + "% " + (isCharging ? "(⚡ CHARGING)" : "(DISCHARGING)") + (tempC > 0 ? String.format(java.util.Locale.US, " | %.1f°C", tempC) : "");
             tvBattery.setText(bText);
-            tvBattery.setTextColor(level > 20 ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+            float thermalCeiling = isCharging ? 45.0f : 40.0f;
+            if (tempC > thermalCeiling) {
+                tvBattery.setTextColor(Color.parseColor("#FF5722")); // Thermal Alert Orange
+            } else {
+                tvBattery.setTextColor(level > 20 ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+            }
         }
 
         // 2. Network Metric

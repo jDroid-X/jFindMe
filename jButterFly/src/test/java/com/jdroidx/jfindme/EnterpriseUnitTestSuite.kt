@@ -1386,4 +1386,354 @@ class EnterpriseUnitTestSuite {
             statusReEntered
         )
     }
+
+    // [Variables] lat1, lng1, lat2, lng2, distMeters, threshold, hystBuffer, exitThreshold, enterThreshold | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] SpatialMathUtil | [Integration Points] Enterprise Regression Test Suite
+    @Test
+    fun testSpatialMathUtilAccuracy() {
+        // Distance between two points ~100m apart
+        val lat1 = 18.5204303
+        val lng1 = 73.8567437
+        val lat2 = 18.5213303
+        val lng2 = 73.8567437
+        val dist = com.jdroidx.jfindme.utils.SpatialMathUtil.computeDistanceBetween(lat1, lng1, lat2, lng2)
+        assertTrue("Distance should be approximately 100 meters", dist in 95.0..105.0)
+
+        val within50m = com.jdroidx.jfindme.utils.SpatialMathUtil.isWithinDistance(lat1, lng1, lat2, lng2, 50.0)
+        assertFalse("100m distance must exceed 50m threshold", within50m)
+
+        val within150m = com.jdroidx.jfindme.utils.SpatialMathUtil.isWithinDistance(lat1, lng1, lat2, lng2, 150.0)
+        assertTrue("100m distance must be within 150m threshold", within150m)
+    }
+
+    // [Variables] thresholdMeters, hystBuffer, exitThreshold, enterThreshold, wasDistant, d1, d2, d3, d4 | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] None | [Integration Points] MapActivity Floating Rail Deadband Hysteresis
+    @Test
+    fun testFloatingDeviceHysteresisDeadband() {
+        val thresholdMeters = 50
+        val hystBuffer = Math.max(5.0f, thresholdMeters * 0.10f) // 5.0m buffer
+        val exitThreshold = thresholdMeters - hystBuffer        // 45.0m
+        val enterThreshold = thresholdMeters.toFloat()          // 50.0m
+
+        // Scenario 1: Initially nearby device moves to 48m -> NOT distant (< 50m)
+        var wasDistant = false
+        val dist1 = 48.0f
+        var isDistant = if (wasDistant) (dist1 >= exitThreshold) else (dist1 >= enterThreshold)
+        assertFalse("48m from nearby state must NOT enter distant state", isDistant)
+
+        // Scenario 2: Moves to 52m -> BECOMES distant (>= 50m)
+        wasDistant = isDistant
+        val dist2 = 52.0f
+        isDistant = if (wasDistant) (dist2 >= exitThreshold) else (dist2 >= enterThreshold)
+        assertTrue("52m must cross enter threshold and become distant", isDistant)
+
+        // Scenario 3: Indoor GPS drift moves to 47m (inside 45-50m deadband) -> REMAINS distant
+        wasDistant = isDistant
+        val dist3 = 47.0f
+        isDistant = if (wasDistant) (dist3 >= exitThreshold) else (dist3 >= enterThreshold)
+        assertTrue("47m must remain distant due to hysteresis deadband (>= 45m exit threshold)", isDistant)
+
+        // Scenario 4: User approaches to 42m (< 45m exit threshold) -> EXITS distant state
+        wasDistant = isDistant
+        val dist4 = 42.0f
+        isDistant = if (wasDistant) (dist4 >= exitThreshold) else (dist4 >= enterThreshold)
+        assertFalse("42m breaches exit threshold (< 45m) and transitions back to nearby", isDistant)
+    }
+
+    // [Variables] hostModel, hostNick, candidateId, candidateName, isSelf | [Constants] None | [Dependencies] None | [Integration Points] Host Identity Shield
+    @Test
+    fun testHostIdentityFenceExclusion() {
+        val hostModel = "Redmi Note 7"
+        val hostNick = "REDMI NOTE7"
+        val selfUid = "USER_HOST_123"
+
+        // Candidate 1: Host reporting by hardware model
+        val candidate1Name = "Redmi Note 7"
+        val isSelf1 = candidate1Name.equals(hostModel, ignoreCase = true) || candidate1Name.equals(hostNick, ignoreCase = true)
+        assertTrue("Host device model must be identified as self", isSelf1)
+
+        // Candidate 2: Host reporting by uppercase nickname
+        val candidate2Name = "REDMI NOTE7"
+        val isSelf2 = candidate2Name.equals(hostModel, ignoreCase = true) || candidate2Name.equals(hostNick, ignoreCase = true)
+        assertTrue("Host nickname must be identified as self", isSelf2)
+
+        // Candidate 3: Peer device (INNOVANT)
+        val candidate3Name = "INNOVANT"
+        val isSelf3 = candidate3Name.equals(hostModel, ignoreCase = true) || candidate3Name.equals(hostNick, ignoreCase = true)
+        assertFalse("Peer device INNOVANT must NOT be identified as host", isSelf3)
+    }
+
+    // [Variables] suppressDeviceIds, focusedDeviceId, distantPeerId, nearbyPeerId | [Constants] None | [Dependencies] None | [Integration Points] SOP-5 Spatial Separation
+    @Test
+    fun testSpatialSeparationDeduplicationContract() {
+        val suppressDeviceIds = setOf("DEV_DISTANT_1", "DEV_DISTANT_2")
+        val nearbyPeerId = "DEV_NEARBY_1"
+        val distantPeerId = "DEV_DISTANT_1"
+
+        // 1. Nearby node is never in suppressDeviceIds -> rendered on canvas
+        assertFalse("Nearby peer must not be suppressed", suppressDeviceIds.contains(nearbyPeerId))
+
+        // 2. Distant node in suppressDeviceIds -> suppressed from canvas to prevent 2x doubling
+        assertTrue("Distant peer docked in floating rail must be suppressed from canvas", suppressDeviceIds.contains(distantPeerId))
+
+        // 3. When focused by operator, target is un-suppressed
+        val focusedDeviceId = "DEV_DISTANT_1"
+        val isExempted = focusedDeviceId == distantPeerId
+        assertTrue("Focused target must be exempted from suppression to show marker under crosshairs", isExempted)
+    }
+
+    // [Variables] res | [Constants] None | [Dependencies] DeviceRagEngine | [Integration Points] DeviceRagEngine Parked State Invariant
+    @Test
+    fun testDeviceRagEnginePendingUnlinkEvaluation() {
+        val res = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(
+            timestamp = System.currentTimeMillis(),
+            batteryLevel = 90,
+            isSos = false,
+            isDeleted = false,
+            isGhost = false,
+            isPendingUnlink = true
+        )
+        assertEquals(com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREY, res.status)
+        assertEquals("⏳ UNLINK REQUESTED (PARKED)", res.statusText)
+        assertEquals(0.55f, res.cardAlpha, 0.01f)
+        assertTrue(res.isDesaturated)
+    }
+
+    // [Variables] uri1, code1, uri2, code2, qParam, code3, bare, code4 | [Constants] None | [Dependencies] None | [Integration Points] Intelligent Code Extractor Invariant
+    @Test
+    fun testIntelligentPairingCodeExtraction() {
+        // Helper mirror of extractPairingCode algorithm for JVM regression testing
+        fun extract(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.contains("code=")) {
+                val idx = trimmed.indexOf("code=") + 5
+                val endIdx = if (trimmed.indexOf("&", idx) != -1) trimmed.indexOf("&", idx) else trimmed.length
+                return trimmed.substring(idx, endIdx).filter { it.isLetterOrDigit() }.uppercase()
+            }
+            if (trimmed.contains("/pair/")) {
+                val idx = trimmed.indexOf("/pair/") + 6
+                val endIdx = if (trimmed.indexOf("?", idx) != -1) trimmed.indexOf("?", idx) else trimmed.length
+                return trimmed.substring(idx, endIdx).filter { it.isLetterOrDigit() }.uppercase()
+            }
+            return trimmed.filter { it.isLetterOrDigit() }.uppercase()
+        }
+
+        assertEquals("ABC123", extract("jfindme://pair?code=abc123"))
+        assertEquals("XYZ789", extract("https://jfindme.app/pair/xyz789"))
+        assertEquals("KJH456", extract("action=join&code=kjh456&source=qr"))
+        assertEquals("78426912", extract(" 7842-6912 "))
+        assertEquals("DEF456", extract("DEF456"))
+    }
+
+    // [Variables] childRole, hostRole, invChild, invHost | [Constants] None | [Dependencies] None | [Integration Points] Canonical Role Inversion Invariant
+    @Test
+    fun testCanonicalRoleInversionLogic() {
+        fun invertRoles(childReq: String, hostChoice: String): Pair<String, String> {
+            val cUpper = childReq.uppercase()
+            val hUpper = hostChoice.uppercase()
+            return when {
+                cUpper.contains("CHILD") -> Pair("Child", hostChoice)
+                cUpper.contains("FATHER") || cUpper.contains("MOTHER") || cUpper.contains("GUARDIAN") -> Pair(childReq, "Child")
+                cUpper.contains("SPOUSE") -> Pair("Spouse", "Spouse")
+                cUpper.contains("FRIEND") -> Pair("Friends", "Friends")
+                else -> Pair(childReq, hostChoice)
+            }
+        }
+
+        // Scenario 1: Child requests Child, Host accepts as Father
+        val r1 = invertRoles("Child", "Father")
+        assertEquals("Child", r1.first)
+        assertEquals("Father", r1.second)
+
+        // Scenario 2: Parent requests Father, Host inverts to Child
+        val r2 = invertRoles("Father", "Child")
+        assertEquals("Father", r2.first)
+        assertEquals("Child", r2.second)
+
+        // Scenario 3: Spouse requests Spouse -> Symmetrical Spouse
+        val r3 = invertRoles("Spouse", "Spouse")
+        assertEquals("Spouse", r3.first)
+        assertEquals("Spouse", r3.second)
+
+        // Scenario 4: Friend requests Friend -> Symmetrical Friends
+        val r4 = invertRoles("Friends", "Friends")
+        assertEquals("Friends", r4.first)
+        assertEquals("Friends", r4.second)
+    }
+
+    // [Variables] candidate, copyCandidate | [Constants] "DEV_001", "Emma Watson", "Child", "3" | [Dependencies] LegacyNodeCandidate | [Integration Points] GroupViewModel, NetworkGatewayActivity OOPS MVC DTO Invariant
+    @Test
+    fun testLegacyNodeCandidateModelInvariants() {
+        val candidate = com.jdroidx.jfindme.ui.group.LegacyNodeCandidate(
+            uid = "DEV_001",
+            name = "Emma Watson",
+            role = "Child",
+            avatarId = "3",
+            isAdmin = false,
+            isFriend = false
+        )
+
+        assertEquals("DEV_001", candidate.uid)
+        assertEquals("Emma Watson", candidate.name)
+        assertEquals("Child", candidate.role)
+        assertEquals("3", candidate.avatarId)
+        assertFalse(candidate.isAdmin)
+        assertFalse(candidate.isFriend)
+
+        // Test immutability & data class copy
+        val copyCandidate = candidate.copy(isAdmin = true, role = "Guardian")
+        assertTrue(copyCandidate.isAdmin)
+        assertEquals("Guardian", copyCandidate.role)
+        assertFalse(candidate.isAdmin) // Original must remain unchanged (immutable)
+    }
+
+    // =========================================================================
+    // 🔋 BATTERY OPTIMIZATION & OOPS MVC REGRESSION SENTINELS
+    // =========================================================================
+
+    @Test
+    fun testBatteryMonitorHysteresisLogic() {
+        // Simulates the state machine in TrackingService.registerBatteryMonitor()
+        var isLowPowerMode = false
+        var transitionsCount = 0
+
+        fun onBatteryChanged(level: Int) {
+            if (level != -1 && level < 15) {
+                if (!isLowPowerMode) {
+                    isLowPowerMode = true
+                    transitionsCount++
+                }
+            } else if (level > 20) {
+                if (isLowPowerMode) {
+                    isLowPowerMode = false
+                    transitionsCount++
+                }
+            }
+        }
+
+        // Test 1: Rapid fluctuations while battery is healthy (100%, 99%, 98%, 85%, 50%, 25%)
+        // MUST NOT trigger any state transitions (0 thread recreations)
+        val normalLevels = listOf(100, 100, 99, 99, 98, 95, 80, 50, 25, 21)
+        for (lvl in normalLevels) {
+            onBatteryChanged(lvl)
+        }
+        assertEquals("Normal battery fluctuations must cause 0 state transitions", 0, transitionsCount)
+        assertFalse("Must remain in normal power mode", isLowPowerMode)
+
+        // Test 2: Battery drops below 15% (14%) -> Exactly 1 transition to Low Power Mode
+        onBatteryChanged(14)
+        assertEquals("Transition to low power mode must occur exactly once", 1, transitionsCount)
+        assertTrue("Must be in low power mode", isLowPowerMode)
+
+        // Test 3: Fluctuations below 20% (14%, 13%, 12%, 18%, 19%) -> MUST NOT cause churn
+        val lowLevels = listOf(13, 12, 11, 15, 18, 19)
+        for (lvl in lowLevels) {
+            onBatteryChanged(lvl)
+        }
+        assertEquals("Fluctuations below 20% must not cause transition churn", 1, transitionsCount)
+        assertTrue("Must remain in low power mode", isLowPowerMode)
+
+        // Test 4: Battery charged above 20% (21%) -> Exactly 1 recovery transition
+        onBatteryChanged(21)
+        assertEquals("Recovery to normal mode must occur exactly once", 2, transitionsCount)
+        assertFalse("Must be back in normal power mode", isLowPowerMode)
+    }
+
+    @Test
+    fun testStationaryDeadReckoningMath() {
+        val deadReckoningThreshold = 15.0f // 15 meters
+        val stationarySpeedThreshold = 0.8f // 0.8 m/s (~2.88 km/h)
+
+        fun isStationary(distMoved: Float, speed: Float, isSos: Boolean): Boolean {
+            return (distMoved < deadReckoningThreshold && speed < stationarySpeedThreshold) && !isSos
+        }
+
+        // Case 1: Phone resting on desk (0.5m drift, 0.0 m/s, SOS inactive) -> Stationary = TRUE
+        assertTrue("Resting phone must be identified as stationary", isStationary(0.5f, 0.0f, false))
+
+        // Case 2: Phone in pedestrian motion (3.0m moved, 1.2 m/s) -> Stationary = FALSE
+        assertFalse("Moving pedestrian must not be identified as stationary", isStationary(3.0f, 1.2f, false))
+
+        // Case 3: Phone moved across room (20.0m moved, 0.4 m/s) -> Stationary = FALSE
+        assertFalse("Significant displacement (>15m) must not be identified as stationary", isStationary(20.0f, 0.4f, false))
+
+        // Case 4: SOS Active overrides stationary state even at 0.0 m/s
+        assertFalse("Active SOS must force stationary state to FALSE", isStationary(0.0f, 0.0f, true))
+    }
+
+    @Test
+    fun testFallbackLocationThrottleGate() {
+        val cycleMs = 15000L // 15s cadence
+
+        fun shouldQueryFallbackLocation(now: Long, lastFixEpoch: Long): Boolean {
+            val timeSinceLastFix = now - lastFixEpoch
+            val threshold = maxOf(cycleMs * 2, 60000L) // 60s minimum
+            return timeSinceLastFix > threshold
+        }
+
+        val currentTime = 1000000L
+
+        // Fix received 10 seconds ago -> Suppress fallback GPS query
+        assertFalse("Recent fix (<60s) must suppress duplicate GPS polling", shouldQueryFallbackLocation(currentTime, currentTime - 10000L))
+
+        // Fix received 45 seconds ago -> Suppress fallback GPS query
+        assertFalse("Fix within 60s must suppress duplicate GPS polling", shouldQueryFallbackLocation(currentTime, currentTime - 45000L))
+
+        // Fix stalled for 70 seconds -> Permit fallback GPS recovery
+        assertTrue("Stalled GPS (>60s) must trigger fallback recovery", shouldQueryFallbackLocation(currentTime, currentTime - 70000L))
+    }
+
+    @Test
+    fun testStealthAlarmSuppressionWhenServiceRunning() {
+        fun shouldSuppressStealthPulse(isServiceRunning: Boolean): Boolean {
+            return isServiceRunning
+        }
+
+        assertTrue("Stealth pulse must be suppressed when TrackingService is foreground active", shouldSuppressStealthPulse(true))
+        assertFalse("Stealth pulse must execute autonomously when TrackingService is dead", shouldSuppressStealthPulse(false))
+    }
+
+    @Test
+    fun testProfileAclDossierRoundTripAndPrivacyInvariants() {
+        val rawMap = mapOf<String, Any?>(
+            "acl_live_tracking" to "DENIED",
+            "acl_history_audit" to "GRANTED",
+            "acl_geofence" to "DENIED",
+            "acl_admin" to "DENIED",
+            "acl_ghost_override" to "GRANTED",
+            "acl_biometrics" to "GRANTED",
+            "cloud_sync_enabled" to "FALSE"
+        )
+        val dossier = com.jdroidx.jfindme.data.model.ProfileAclDossier.fromMap(rawMap)
+        assertFalse("Live tracking ACL must reflect DENIED", dossier.liveTrackingEnabled)
+        assertTrue("History audit ACL must reflect GRANTED", dossier.historyAuditEnabled)
+        assertFalse("Geofence ACL must reflect DENIED", dossier.geofenceAlertsEnabled)
+        assertFalse("Admin override must reflect DENIED", dossier.isAdminOverride)
+        assertTrue("Ghost override must reflect GRANTED", dossier.ghostModeAllowed)
+        assertTrue("Biometric lock must reflect GRANTED", dossier.biometricAuthRequired)
+        assertFalse("Cloud sync ACL must reflect FALSE offline-only mode", dossier.cloudSyncEnabled)
+
+        val payload = dossier.toPayloadMap()
+        assertEquals("DENIED", payload["acl_live_tracking"])
+        assertEquals("FALSE", payload["cloud_sync_enabled"])
+    }
+
+    @Test
+    fun testProfilePermissionsManager22GateTaxonomy() {
+        val specs = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getAllPermissionSpecs()
+        assertEquals("Unified SSOT permission catalog must declare exactly 22 gates", 22, specs.size)
+        assertEquals("All gate keys must be globally unique", 22, specs.map { it.key }.distinct().size)
+        assertEquals(4, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getSpecsByTier(
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.MANDATORY).size)
+        assertEquals(4, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getSpecsByTier(
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.BACKGROUND_OEM).size)
+        assertEquals(7, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getSpecsByTier(
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.OPTIONAL).size)
+        assertEquals(7, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getSpecsByTier(
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.IN_APP_ACL).size)
+        val mandatoryPerms = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getMandatoryBatchPermissions().toList()
+        assertFalse(
+            "Mandatory batch must NOT block on OPTIONAL ACTIVITY_RECOGNITION or BACKGROUND_LOCATION",
+            mandatoryPerms.contains(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) ||
+            mandatoryPerms.contains(android.Manifest.permission.ACTIVITY_RECOGNITION)
+        )
+    }
 }

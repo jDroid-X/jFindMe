@@ -152,7 +152,7 @@ object AvatarCalloutGenerator {
         } else {
             DeviceRagEngine.evaluate(timestamp, batteryLevel, isSos)
         }
-        val isOnline = ragResult.status == DeviceRagEngine.RagStatus.GREEN || (System.currentTimeMillis() - timestamp < 15 * 60 * 1000L)
+        val isOnline = ragResult.status == DeviceRagEngine.RagStatus.GREEN
 
         // Motion Badge Text: Active Driving or SOS
         val speedKmh = speedMps * 3.6f

@@ -29,6 +29,10 @@ object AvatarSyncEngine {
     // AUDIT FIX [AUD-007]: Corrected from 'users/' to 'devices/' (authoritative RTDB root)
     private val devicesRef = FirebaseDatabase.getInstance().reference.child(FirebaseComm.NODE_DEVICES)
     
+    // Deduplication & Anti-Cascade Cache
+    private val lastPropagatedPayload = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val lastPropagatedTimestamp = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    
     // 3. SYNC QUEUE SYSTEM (CRITICAL)
     private val pendingUpdates = mutableMapOf<String, Any>()
     
@@ -164,6 +168,24 @@ object AvatarSyncEngine {
     // [Variables] agentId, newAvatarId, newName, update, updateCircle, grpSnap, groupId, snap, gid, relSnap, groupChild | [Constants] None | [Dependencies] FirebaseDatabase, ServerValue, FirebaseComm, AvatarLoader, SystemLogger | [Integration Points] ProfileViewModel, MasterDataSyncSentinel, FamilyFriendsViewModel, MapActivity
     fun propagateAvatarUpdate(agentId: String, newAvatarId: String, newName: String) {
         if (agentId.isBlank()) return
+        val cleanId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(agentId)
+        val stateKey = "$cleanId:$newAvatarId:$newName"
+        val now = System.currentTimeMillis()
+        val prevKey = lastPropagatedPayload[cleanId]
+        val prevTime = lastPropagatedTimestamp[cleanId] ?: 0L
+        if (stateKey == prevKey && (now - prevTime < 8000L)) {
+            return
+        }
+        lastPropagatedPayload[cleanId] = stateKey
+        lastPropagatedTimestamp[cleanId] = now
+
+        val appCtx = com.jdroidx.jfindme.JFindMeApplication.getContext()
+        val selfAid = appCtx?.let { com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(it) } ?: ""
+        val selfCanon = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(selfAid)
+        val myAuthUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+        val isSelf = (cleanId.equals(selfCanon, true) || cleanId.equals(selfAid, true) || (myAuthUid.isNotBlank() && cleanId.equals(myAuthUid, true)))
+
         val update = mapOf(
             "avatar_id" to newAvatarId,
             "name" to newName,
@@ -172,77 +194,68 @@ object AvatarSyncEngine {
             "updated_at" to ServerValue.TIMESTAMP
         )
         
-        // 1. Direct device profile & telemetry nodes
-        devicesRef.child(agentId).child("profile").updateChildren(update)
-            .addOnSuccessListener {
-                devicesRef.child(agentId).child("device").child("live").child("avatar_id").setValue(newAvatarId)
-                devicesRef.child(agentId).child("device").child("live").child("userName").setValue(newName)
-                devicesRef.child(agentId).child("Identity").child("avatar_id").setValue(newAvatarId)
-                devicesRef.child(agentId).child("Identity").child("name").setValue(newName)
-                devicesRef.child(agentId).child("Identity").child("fullName").setValue(newName)
-                com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
-                
-                // Helper to update a specific relationship group
-                val updateCircle = { groupId: String ->
-                    if (groupId.isNotBlank()) {
-                        val relRef = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.child(groupId)
-                        // 1. Unified `devices/` Structure
-                        relRef.child("devices").child(agentId).child("identity").updateChildren(mapOf(
-                            "avatar_id" to newAvatarId,
-                            "name" to newName,
-                            "full_name" to newName
-                        ))
-                        // 2. Legacy Redundancy for backwards compatibility
-                        relRef.child("members").child(agentId).updateChildren(mapOf(
-                            "avatar_id" to newAvatarId,
-                            "name" to newName,
-                            "display_name" to newName
-                        ))
-                        relRef.child("citizen_dossiers").child(agentId).updateChildren(mapOf(
-                            "avatar_id" to newAvatarId,
-                            "fullName" to newName,
-                            "name" to newName
-                        ))
-                    }
+        // 1. Direct device profile & telemetry nodes (ONLY FOR SELF DEVICE TO RESPECT CLOUD ACL PERMISSIONS & PREVENT ECHO LOOPS)
+        if (isSelf) {
+            devicesRef.child(cleanId).child("profile").updateChildren(update)
+                .addOnSuccessListener {
+                    devicesRef.child(cleanId).child("device").child("live").child("avatar_id").setValue(newAvatarId)
+                    devicesRef.child(cleanId).child("device").child("live").child("userName").setValue(newName)
+                    devicesRef.child(cleanId).child("Identity").child("avatar_id").setValue(newAvatarId)
+                    devicesRef.child(cleanId).child("Identity").child("name").setValue(newName)
+                    devicesRef.child(cleanId).child("Identity").child("fullName").setValue(newName)
                 }
 
-                // 2. Cascade update to ALL active & historical Group Hubs where this agent belongs
-                // A. Active group
-                devicesRef.child(agentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
-                    val groupId = grpSnap.getValue(String::class.java)
-                    if (!groupId.isNullOrEmpty()) updateCircle(groupId)
+            // Helper to update a specific relationship group
+            val updateCircle = { groupId: String ->
+                if (groupId.isNotBlank()) {
+                    val relRef = com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.child(groupId)
+                    relRef.child("devices").child(cleanId).child("identity").updateChildren(mapOf(
+                        "avatar_id" to newAvatarId,
+                        "name" to newName,
+                        "full_name" to newName
+                    ))
+                    relRef.child("members").child(cleanId).updateChildren(mapOf(
+                        "avatar_id" to newAvatarId,
+                        "name" to newName,
+                        "display_name" to newName
+                    ))
+                    relRef.child("citizen_dossiers").child(agentId).updateChildren(mapOf(
+                        "avatar_id" to newAvatarId,
+                        "fullName" to newName,
+                        "name" to newName
+                    ))
                 }
-
-                // B. Default self group
-                updateCircle("GRP_$agentId")
-
-                // C. Scan users/{agentId}/joined_circles
-                FirebaseDatabase.getInstance().reference.child("users").child(agentId).child("joined_circles")
-                    .get().addOnSuccessListener { snap ->
-                        for (child in snap.children) {
-                            val gid = child.key ?: child.getValue(String::class.java)
-                            if (!gid.isNullOrBlank()) updateCircle(gid)
-                        }
-                    }
-
-                // D. Scan entire relationships root for groups where agentId is listed in members, devices, or dossiers
-                com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.get().addOnSuccessListener { relSnap ->
-                    for (groupChild in relSnap.children) {
-                        val gid = groupChild.key ?: continue
-                        if (groupChild.child("devices").hasChild(agentId) || 
-                            groupChild.child("members").hasChild(agentId) || 
-                            groupChild.child("citizen_dossiers").hasChild(agentId)) {
-                            updateCircle(gid)
-                        }
-                    }
-                }
-                
-                SystemLogger.i(TAG, "LOOP-001 Avatar propagation complete across all cloud matrix circles: agentId=$agentId avatar=$newAvatarId")
-                closedLoopCallbacks.forEach { cb -> cb(agentId, update) }
             }
-            .addOnFailureListener { e ->
-                SystemLogger.e(TAG, "LOOP-001 Avatar propagation failed for agentId=$agentId", e)
+
+            // Cascade update only for self device
+            devicesRef.child(agentId).child("profile").child("active_group").get().addOnSuccessListener { grpSnap ->
+                val groupId = grpSnap.getValue(String::class.java)
+                if (!groupId.isNullOrEmpty()) updateCircle(groupId)
             }
+            updateCircle("GRP_$agentId")
+
+            FirebaseDatabase.getInstance().reference.child("users").child(agentId).child("joined_circles")
+                .get().addOnSuccessListener { snap ->
+                    for (child in snap.children) {
+                        val gid = child.key ?: child.getValue(String::class.java)
+                        if (!gid.isNullOrBlank()) updateCircle(gid)
+                    }
+                }
+
+            com.jdroidx.jfindme.data.remote.FirebaseComm.relationshipsRef.get().addOnSuccessListener { relSnap ->
+                for (groupChild in relSnap.children) {
+                    val gid = groupChild.key ?: continue
+                    if (groupChild.child("devices").hasChild(agentId) || 
+                        groupChild.child("members").hasChild(agentId) || 
+                        groupChild.child("citizen_dossiers").hasChild(agentId)) {
+                        updateCircle(gid)
+                    }
+                }
+            }
+        }
+        com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+        SystemLogger.i(TAG, "LOOP-001 Avatar propagation complete: agentId=$agentId avatar=$newAvatarId isSelf=$isSelf")
+        closedLoopCallbacks.forEach { cb -> cb(agentId, update) }
     }
 
     /**
@@ -397,11 +410,29 @@ object AvatarSyncEngine {
                                 val liveAv = liveSnap.value?.toString()
                                 if (!liveAv.isNullOrBlank()) {
                                     applyAvatarBytes(liveAv)
+                                } else if (!avId.isNullOrBlank() && avId != "1" && avId != "butterfly") {
+                                    // 🛡️ Catalog Avatar Reconciliation: Ensure custom avatar ID (e.g. avatar_custom_14) updates in SQLite
+                                    db.updateDeviceIdentityAndAvatar(cleanPeer, name, avId)
+                                    com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(cleanPeer)
+                                    com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
                                 }
                             }
                     }
                 }.addOnFailureListener { e ->
                     SystemLogger.w(TAG, "fetchAndCachePeerAvatars failed for $cleanPeer: ${e.message}")
+                }
+            } else {
+                // 🛡️ Disk file already exists, but verify whether avatar_id in cloud has changed
+                FirebaseComm.devicesRef.child(cleanPeer).child("profile").child("avatar_id").get().addOnSuccessListener { idSnap ->
+                    val remoteAvId = idSnap.value?.toString()
+                    if (!remoteAvId.isNullOrBlank() && remoteAvId != "1" && remoteAvId != "butterfly") {
+                        val localAv = db.getDeviceCentricAvatar(cleanPeer)
+                        if (localAv != remoteAvId) {
+                            db.updateDeviceIdentityAndAvatar(cleanPeer, null, remoteAvId)
+                            com.jdroidx.jfindme.utils.AvatarLoader.evictDevice(cleanPeer)
+                            com.jdroidx.jfindme.utils.AvatarLoader.clearCache()
+                        }
+                    }
                 }
             }
         }

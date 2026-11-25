@@ -125,6 +125,7 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
             
             if (!(this instanceof com.jdroidx.jfindme.ui.settings.HelpSupportActivity) && 
                 !(this instanceof com.jdroidx.jfindme.ui.map.MapActivity) && 
+                !(this instanceof com.jdroidx.jfindme.ui.group.FamilyFriendsActivity) && 
                 !(this.getClass().getSimpleName().equals("SplashActivity"))) {
                 masterWrap.addView(globalHelpBtn);
             }
@@ -1188,6 +1189,20 @@ public abstract class BaseActivityJava extends AppCompatActivity implements Shar
      */
     public void showSlideNotification(String title, String message, int iconRes, int accentColor, String actionText, Runnable onAction) {
         UiArchitect.showSlideNotification(this, title, message, iconRes, accentColor, actionText, onAction);
+    }
+
+    /**
+     * 👑 Universal Tactical Color Resolver from colors_tactical.xml
+     */
+    public int getTacticalColor(int colorResId) {
+        return androidx.core.content.ContextCompat.getColor(this, colorResId);
+    }
+
+    /**
+     * 👑 Universal Slide-In Notification Banner by Resource IDs
+     */
+    public void showSlideNotification(int titleResId, int messageResId) {
+        showSlideNotification(getString(titleResId), getString(messageResId), 0, getAccentColor(), null, null);
     }
 
     /**

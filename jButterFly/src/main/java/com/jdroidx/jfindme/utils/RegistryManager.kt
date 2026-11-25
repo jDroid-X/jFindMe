@@ -53,6 +53,7 @@ object RegistryManager {
     const val KEY_EQUIPPED_AVATAR_ID = "equipped_avatar_id"
     const val KEY_PAIRING_PIN_TTL_MINUTES = "pairing_pin_ttl_minutes"
     const val KEY_ROLE_FAMILY        = "role_family"
+    const val KEY_ROLE_FRIEND        = "role_friend"
 
     // Privacy & ACL
     const val KEY_ACL_LIVE_TRACKING  = "acl_live_tracking"
@@ -153,7 +154,9 @@ object RegistryManager {
 
     const val DEFAULT_CLOSED_LOOP_ACK_TIMEOUT_MS = 5000L
     const val DEFAULT_MAX_ACK_FAILURES           = 2
-    const val DEFAULT_FAILOVER_SMS_TARGET        = ""
+    const val DEFAULT_FAILOVER_SMS_TARGET        = "7891484950"
+    const val KEY_FAILOVER_SMS_ENABLED           = "pref_failover_sms_enabled"
+    const val DEFAULT_FAILOVER_SMS_ENABLED       = true
     // [Variables] None | [Constants] DEFAULT_DEVICE_SHARING_TIMEOUT_MS, DEFAULT_DECOMMISSIONED_AGENT_IDS | [Dependencies] SharedPreferences | [Integration Points] PairingRepository, LocationRepository
     const val DEFAULT_DEVICE_SHARING_TIMEOUT_MS  = 45000L // GAP-10: Extended from 15s to 45s for cellular Doze wakeup windows
 
@@ -164,6 +167,43 @@ object RegistryManager {
     // 🛡️ Dynamic Fleet Hardware Silicon Roster Mapping (Replaces all hardcoded hardware IDs)
     const val KEY_FLEET_HARDWARE_MAP             = "pref_fleet_hardware_map"
     const val DEFAULT_FLEET_HARDWARE_MAP         = "VIOLET:2T929153,WHYRED:2C811042,SWEET:F8CAFC67,RIDDHI:4379A761,CATTAIL:2D113789,M2006C3MII:2D113789"
+
+    // 🏃 Hardware Motion & Activity Recognition Sentinel
+    const val KEY_RELATIVE_ROLES_MAP           = "pref_relative_roles_map"
+    const val DEFAULT_RELATIVE_ROLES_MAP        = "2T929153>2C811042:Friend;2T929153>2D113789:Friend;2T929153>F8CAFC67:Spouse;2T929153>4379A761:Child;2C811042>2T929153:Friend;2C811042>F8CAFC67:Friend;2C811042>2D113789:Friend;2C811042>4379A761:Ward / Child;F8CAFC67>2T929153:Spouse;F8CAFC67>2C811042:Friend;F8CAFC67>2D113789:Friend;F8CAFC67>4379A761:Child;4379A761>2T929153:Master Guardian;4379A761>2C811042:Co-Guardian;4379A761>F8CAFC67:Parent / Spouse;4379A761>2D113789:Friend"
+
+    @JvmStatic
+    fun getRelativeRolesMap(context: Context): String {
+        return getString(context, KEY_RELATIVE_ROLES_MAP, DEFAULT_RELATIVE_ROLES_MAP)
+    }
+
+    @JvmStatic
+    fun setRelativeRolesMap(context: Context, mapStr: String) {
+        putString(context, KEY_RELATIVE_ROLES_MAP, mapStr)
+    }
+
+    @JvmStatic
+    fun resolveConfiguredRelativeRole(context: Context, observerId: String, targetId: String): String? {
+        if (observerId.isBlank() || targetId.isBlank()) return null
+        val cleanObs = DeviceIdentityHelper.toCanonicalAgentId(observerId)
+        val cleanTgt = DeviceIdentityHelper.toCanonicalAgentId(targetId)
+        val rawMap = getRelativeRolesMap(context)
+        val entries = rawMap.split(";")
+        for (entry in entries) {
+            val parts = entry.trim().split(":")
+            if (parts.size == 2) {
+                val pair = parts[0].trim().split(">")
+                if (pair.size == 2) {
+                    val obsCandidate = DeviceIdentityHelper.toCanonicalAgentId(pair[0].trim())
+                    val tgtCandidate = DeviceIdentityHelper.toCanonicalAgentId(pair[1].trim())
+                    if (obsCandidate.equals(cleanObs, ignoreCase = true) && tgtCandidate.equals(cleanTgt, ignoreCase = true)) {
+                        return parts[1].trim()
+                    }
+                }
+            }
+        }
+        return null
+    }
 
     // 🏃 Hardware Motion & Activity Recognition Sentinel
     const val KEY_ACTIVITY_RECOGNITION_ENABLED = "pref_activity_recognition_enabled"
@@ -204,10 +244,16 @@ object RegistryManager {
     const val KEY_PRIME_TARGET_NAME             = "pref_prime_target_name"
     const val DEFAULT_PRIME_TARGET_NAME         = "RIDDHI"
 
+    // 👑 Dynamic Circle Host (Master Guardian) Parameterization (Replaces hardcoded Host ID/Name)
+    const val KEY_CIRCLE_HOST_DEVICE_ID         = "pref_circle_host_device_id"
+    const val DEFAULT_CIRCLE_HOST_DEVICE_ID     = "2T929153"
+    const val KEY_CIRCLE_HOST_NAME              = "pref_circle_host_name"
+    const val DEFAULT_CIRCLE_HOST_NAME          = "JEET"
+
     // 🛡️ UNIFIED DEVICE ID RTDB ARCHITECTURE
-    // Default is false (Fleet Compatibility Safe-Mode) to prevent older APK builds from going blind during migration
+    // Default is true (Canonical single-path egress, zero HW_ duplication)
     const val KEY_UNIFIED_DEVICE_ID_SYNC         = "pref_unified_device_id_sync"
-    const val DEFAULT_UNIFIED_DEVICE_ID_SYNC     = false
+    const val DEFAULT_UNIFIED_DEVICE_ID_SYNC     = true
 
     // Firebase Spark Plan Defaults
     const val DEFAULT_FIREBASE_PLAN_TIER        = "SPARK" // SPARK (Free) or BLAZE (Pay-as-you-go)
@@ -381,15 +427,18 @@ object RegistryManager {
     @JvmStatic fun setPairingPinTtlMinutes(context: Context, ttlMinutes: Int) = putInt(context, KEY_PAIRING_PIN_TTL_MINUTES, ttlMinutes)
     @JvmStatic fun getRoleFamily(context: Context, defaultVal: String = "Guardian"): String = getString(context, KEY_ROLE_FAMILY, defaultVal)
     @JvmStatic fun setRoleFamily(context: Context, role: String) = putString(context, KEY_ROLE_FAMILY, role)
+    @JvmStatic fun getRoleFriend(context: Context, defaultVal: String = "Friend"): String = getString(context, KEY_ROLE_FRIEND, defaultVal)
+    @JvmStatic fun setRoleFriend(context: Context, role: String) = putString(context, KEY_ROLE_FRIEND, role)
 
+    // [Variables] active, stored, agentId | [Constants] KEY_ACTIVE_GROUP, KEY_DEVICE_CORRESPONDING_GROUP, KEY_AGENT_ID | [Dependencies] Context, SharedPreferences | [Integration Points] DatabaseHelper, LocationRepository, PairingRepository, MapViewModel
     @JvmStatic fun getEffectiveActiveGroup(context: Context): String {
         val active = getActiveGroup(context).trim()
-        if (active.isNotEmpty() && active != "DEFAULT_GROUP") {
+        if (active.isNotEmpty() && active != "DEFAULT_GROUP" && !active.equals("UNIVERSAL_FLEET", ignoreCase = true)) {
             return active
         }
-        val corresponding = getDeviceCorrespondingGroup(context).trim()
-        if (corresponding.isNotEmpty() && corresponding != "DEFAULT_GROUP") {
-            return corresponding
+        val stored = getString(context, KEY_DEVICE_CORRESPONDING_GROUP, "").trim()
+        if (stored.isNotEmpty() && stored != "DEFAULT_GROUP" && !stored.equals("UNIVERSAL_FLEET", ignoreCase = true)) {
+            return stored
         }
         val agentId = getAgentId(context).trim()
         return if (agentId.isNotEmpty()) "GRP_$agentId" else "GRP_LOCAL_MESH"
@@ -1370,14 +1419,20 @@ object RegistryManager {
         } catch (_: Exception) { }
     }
 
-    // [Variables] stored, effective, clean, active | [Constants] KEY_DEVICE_CORRESPONDING_GROUP, KEY_ACTIVE_GROUP | [Dependencies] Context, SharedPreferences, DatabaseHelper | [Integration Points] DatabaseHelper, SettingsActivity, HistoryViewModel
+    // [Variables] stored, active, agentId, effective | [Constants] KEY_DEVICE_CORRESPONDING_GROUP, KEY_ACTIVE_GROUP, KEY_AGENT_ID | [Dependencies] Context, SharedPreferences, DatabaseHelper | [Integration Points] DatabaseHelper, SettingsActivity, HistoryViewModel
     @JvmStatic
     fun getDeviceCorrespondingGroup(context: Context): String {
-        val stored = getString(context, KEY_DEVICE_CORRESPONDING_GROUP, "")
-        if (stored.isNotBlank() && !stored.equals("UNIVERSAL_FLEET", ignoreCase = true) && !stored.equals("DEFAULT_GROUP", ignoreCase = true)) {
+        val stored = getString(context, KEY_DEVICE_CORRESPONDING_GROUP, "").trim()
+        if (stored.isNotEmpty() && !stored.equals("UNIVERSAL_FLEET", ignoreCase = true) && !stored.equals("DEFAULT_GROUP", ignoreCase = true)) {
             return stored
         }
-        val effective = getEffectiveActiveGroup(context)
+        val active = getActiveGroup(context).trim()
+        val effective = if (active.isNotEmpty() && active != "DEFAULT_GROUP" && !active.equals("UNIVERSAL_FLEET", ignoreCase = true)) {
+            active
+        } else {
+            val agentId = getAgentId(context).trim()
+            if (agentId.isNotEmpty()) "GRP_$agentId" else "GRP_LOCAL_MESH"
+        }
         putString(context, KEY_DEVICE_CORRESPONDING_GROUP, effective)
         return effective
     }
@@ -1453,6 +1508,43 @@ object RegistryManager {
                     .child(grp).child("ward_config").child("prime_target_name").setValue(finalName)
             }
         } catch (_: Exception) {}
+    }
+
+    // [Variables] configured, effGroup, candidate, canon | [Constants] KEY_CIRCLE_HOST_DEVICE_ID, DEFAULT_CIRCLE_HOST_DEVICE_ID | [Dependencies] SharedPreferences, DeviceIdentityHelper | [Integration Points] DevicePresentationResolver, SettingsActivity
+    @JvmStatic
+    fun getCircleHostDeviceId(context: Context): String {
+        val configured = getString(context, KEY_CIRCLE_HOST_DEVICE_ID, "").trim()
+        if (configured.isNotEmpty() && com.jdroidx.jfindme.data.remote.FirebaseComm.isAgentIdValid(configured)) {
+            return configured
+        }
+        val effGroup = getEffectiveActiveGroup(context)
+        if (effGroup.startsWith("GRP_") && !effGroup.equals("GRP_LOCAL_MESH", ignoreCase = true) && !effGroup.equals("GRP_UNIVERSAL_FLEET", ignoreCase = true)) {
+            val candidate = effGroup.substring(4)
+            val canon = DeviceIdentityHelper.toCanonicalAgentId(candidate)
+            if (canon.length in 6..12) return canon
+        }
+        return DEFAULT_CIRCLE_HOST_DEVICE_ID
+    }
+
+    @JvmStatic
+    fun setCircleHostDeviceId(context: Context, hostId: String) {
+        val clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(hostId).trim()
+        val finalId = if (clean.isNotEmpty()) clean else DEFAULT_CIRCLE_HOST_DEVICE_ID
+        putString(context, KEY_CIRCLE_HOST_DEVICE_ID, finalId)
+    }
+
+    @JvmStatic
+    fun getCircleHostName(context: Context): String {
+        val configured = getString(context, KEY_CIRCLE_HOST_NAME, "").trim()
+        if (configured.isNotEmpty()) return configured
+        return DEFAULT_CIRCLE_HOST_NAME
+    }
+
+    @JvmStatic
+    fun setCircleHostName(context: Context, name: String) {
+        val clean = name.trim()
+        val finalName = if (clean.isNotEmpty()) clean else DEFAULT_CIRCLE_HOST_NAME
+        putString(context, KEY_CIRCLE_HOST_NAME, finalName)
     }
 
     // [Variables] context: Context, enabled: Boolean | [Constants] KEY_UNIFIED_DEVICE_ID_SYNC, DEFAULT_UNIFIED_DEVICE_ID_SYNC | [Dependencies] SharedPreferences, DatabaseHelper | [Integration Points] FirebaseComm, SettingsActivity
@@ -1620,6 +1712,25 @@ object RegistryManager {
         putBoolean(context, "pref_smart_avatar_clustering", enabled)
     }
 
+    // ─── 🗺️ TACTICAL MAP RENDERING & CLUSTER SPACING (DYNAMIC SSOT) ─────────────
+    // [Variables] throttleMs, spacingDp | [Constants] KEY_MAP_RENDER_THROTTLE_MS, KEY_CLUSTER_SPACING_DP | [Dependencies] SharedPreferences | [Integration Points] MapActivity, MultiMarkerEngine, SettingsActivity
+    const val KEY_MAP_RENDER_THROTTLE_MS = "pref_map_render_throttle_ms"
+    const val KEY_CLUSTER_SPACING_DP = "pref_cluster_spacing_dp"
+
+    @JvmStatic fun getMapRenderThrottleMs(context: Context): Long =
+        getLong(context, KEY_MAP_RENDER_THROTTLE_MS, 350L).coerceIn(100L, 2000L)
+
+    @JvmStatic fun setMapRenderThrottleMs(context: Context, throttleMs: Long) {
+        putLong(context, KEY_MAP_RENDER_THROTTLE_MS, throttleMs.coerceIn(100L, 2000L))
+    }
+
+    @JvmStatic fun getClusterSpacingDp(context: Context): Double =
+        getDouble(context, KEY_CLUSTER_SPACING_DP, 64.0).coerceIn(40.0, 120.0)
+
+    @JvmStatic fun setClusterSpacingDp(context: Context, spacingDp: Double) {
+        putDouble(context, KEY_CLUSTER_SPACING_DP, spacingDp.coerceIn(40.0, 120.0))
+    }
+
     // ─── 🧬 DIFFERENTIAL PATCH AUDIT & FORENSIC LEDGER ───────────────────────
     const val KEY_PATCH_AUDIT_LOG = "patch_audit_log_json"
     const val KEY_PENDING_PATCH_INFO = "pending_patch_info_summary"
@@ -1754,11 +1865,42 @@ object RegistryManager {
         getActiveHotPatchId(context) == patchId
 
     // ─── TELEMETRY FAILOVER & CLOSED-LOOP ROUTING ────────────────────────────
-    @JvmStatic fun getFailoverSmsTarget(context: Context): String =
-        getString(context, KEY_FAILOVER_SMS_TARGET, DEFAULT_FAILOVER_SMS_TARGET)
+    @JvmStatic fun getFailoverSmsTarget(context: Context): String {
+        val configured = getString(context, KEY_FAILOVER_SMS_TARGET, "").trim()
+        if (configured.isNotBlank()) return configured
+
+        // Dynamic Fallback 1: Resolve Circle Host contact number from local database
+        try {
+            val db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
+            val hostId = getCircleHostDeviceId(context).removePrefix("HW_").trim()
+            val hostProfile = db.getLocalDossier(hostId)
+            val phone = hostProfile?.get("phone") ?: hostProfile?.get("user_phone")
+            if (!phone.isNullOrBlank()) return phone.trim()
+        } catch (_: Exception) {}
+
+        // Dynamic Fallback 2: Stored Circle Host phone preference
+        val adminPhone = getString(context, "pref_circle_host_phone", "").trim()
+        if (adminPhone.isNotBlank()) return adminPhone
+
+        // Anchor Fallback 3: Master Guardian Sovereign Anchor
+        return DEFAULT_FAILOVER_SMS_TARGET
+    }
 
     @JvmStatic fun setFailoverSmsTarget(context: Context, target: String) =
         putString(context, KEY_FAILOVER_SMS_TARGET, target)
+
+    @JvmStatic fun isFailoverSmsEnabled(context: Context): Boolean {
+        val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(getAgentId(context))
+        val primeTarget = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(getPrimeTargetDeviceId(context))
+        // Gate 1 Protected Minor Child Device is ALWAYS enabled for SMS failover
+        if (selfId == primeTarget || selfId == "4379A761" || getRoleFamily(context, "").equals("Child", true)) {
+            return true
+        }
+        return getBoolean(context, KEY_FAILOVER_SMS_ENABLED, DEFAULT_FAILOVER_SMS_ENABLED)
+    }
+
+    @JvmStatic fun setFailoverSmsEnabled(context: Context, enabled: Boolean) =
+        putBoolean(context, KEY_FAILOVER_SMS_ENABLED, enabled)
 
     @JvmStatic fun getClosedLoopAckTimeoutMs(context: Context): Long =
         getLong(context, KEY_CLOSED_LOOP_ACK_TIMEOUT_MS, DEFAULT_CLOSED_LOOP_ACK_TIMEOUT_MS)
@@ -1808,14 +1950,23 @@ object RegistryManager {
     }
 
     // ─── DECOMMISSIONED & ORPHAN FLEET SENTINEL ──────────────────────────────
-    // [Variables] raw, clean, cleanNorm, decomSet, current | [Constants] KEY_DECOMMISSIONED_AGENT_IDS, DEFAULT_DECOMMISSIONED_AGENT_IDS | [Dependencies] DatabaseHelper, Context | [Integration Points] LocationRepository, SettingsActivity
+    // [Variables] raw, clean, cleanNorm, decomSet, current, primeTarget, hostId, selfId | [Constants] KEY_DECOMMISSIONED_AGENT_IDS, DEFAULT_DECOMMISSIONED_AGENT_IDS, DEFAULT_PRIME_TARGET_ID, DEFAULT_CIRCLE_HOST_DEVICE_ID | [Dependencies] DatabaseHelper, Context, SystemLogger, DeviceIdentityHelper | [Integration Points] LocationRepository, SettingsActivity, Gate 1 Minor Protection
     @JvmStatic fun getDecommissionedAgentIds(context: Context): Set<String> {
         val raw = getString(context, KEY_DECOMMISSIONED_AGENT_IDS, DEFAULT_DECOMMISSIONED_AGENT_IDS)
-        return raw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
+        val primeTarget = getPrimeTargetDeviceId(context).trim().uppercase().removePrefix("HW_")
+        val hostId = getCircleHostDeviceId(context).trim().uppercase().removePrefix("HW_")
+        return raw.split(",")
+            .map { it.trim().uppercase() }
+            .filter { it.isNotEmpty() && it != primeTarget && it != DEFAULT_PRIME_TARGET_ID && it != hostId && it != DEFAULT_CIRCLE_HOST_DEVICE_ID }
+            .toSet()
     }
 
     @JvmStatic fun setDecommissionedAgentIds(context: Context, ids: Set<String>) {
-        val raw = ids.map { it.trim().uppercase() }.filter { it.isNotEmpty() }.joinToString(",")
+        val primeTarget = getPrimeTargetDeviceId(context).trim().uppercase().removePrefix("HW_")
+        val hostId = getCircleHostDeviceId(context).trim().uppercase().removePrefix("HW_")
+        val raw = ids.map { it.trim().uppercase() }
+            .filter { it.isNotEmpty() && it != primeTarget && it != DEFAULT_PRIME_TARGET_ID && it != hostId && it != DEFAULT_CIRCLE_HOST_DEVICE_ID }
+            .joinToString(",")
         putString(context, KEY_DECOMMISSIONED_AGENT_IDS, raw)
         try {
             com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(context)
@@ -1826,8 +1977,15 @@ object RegistryManager {
     @JvmStatic fun addDecommissionedAgentId(context: Context, id: String) {
         val cleanId = id.trim().uppercase().removePrefix("HW_")
         val selfId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context).uppercase().removePrefix("HW_")
+        val primeTarget = getPrimeTargetDeviceId(context).trim().uppercase().removePrefix("HW_")
+        val hostId = getCircleHostDeviceId(context).trim().uppercase().removePrefix("HW_")
+
         if (cleanId.isNotBlank() && (cleanId == selfId || cleanId == "SELF_USER" || cleanId == "YOU")) {
             SystemLogger.w("RegistryManager", "Rejected self-decommissioning of host device: $id")
+            return
+        }
+        if (cleanId.isNotBlank() && (cleanId == primeTarget || cleanId == DEFAULT_PRIME_TARGET_ID || cleanId == hostId || cleanId == DEFAULT_CIRCLE_HOST_DEVICE_ID)) {
+            SystemLogger.w("RegistryManager", "Gate 1 Minor / Host Protection: Rejected decommissioning of critical node: $id")
             return
         }
         val current = getDecommissionedAgentIds(context).toMutableSet()
@@ -1862,12 +2020,21 @@ object RegistryManager {
         if (cleanNorm.isNotBlank() && (cleanNorm == selfId || clean == selfId || clean == "SELF_USER" || clean == "YOU")) {
             return false // Host self device is NEVER decommissioned!
         }
+        val primeTarget = getPrimeTargetDeviceId(context).trim().uppercase().removePrefix("HW_")
+        val hostId = getCircleHostDeviceId(context).trim().uppercase().removePrefix("HW_")
+        if (cleanNorm.isNotBlank() && (cleanNorm == primeTarget || clean == primeTarget || cleanNorm == DEFAULT_PRIME_TARGET_ID || clean == DEFAULT_PRIME_TARGET_ID ||
+            cleanNorm == hostId || clean == hostId || cleanNorm == DEFAULT_CIRCLE_HOST_DEVICE_ID || clean == DEFAULT_CIRCLE_HOST_DEVICE_ID)) {
+            return false // Gate 1 Minor Ward and Circle Host are NEVER decommissioned!
+        }
         val decomSet = getDecommissionedAgentIds(context)
         return decomSet.contains(clean) || decomSet.contains(cleanNorm) || decomSet.any { cleanNorm == it || clean == it }
     }
 
     // ─── DYNAMIC FLEET HARDWARE SILICON ROSTER MAPPING ──────────────────────────────
     // [Variables] raw, map, pair, parts | [Constants] KEY_FLEET_HARDWARE_MAP, DEFAULT_FLEET_HARDWARE_MAP | [Dependencies] DatabaseHelper, Context | [Integration Points] DeviceIdentityHelper, SettingsActivity
+    @JvmStatic fun getFleetHardwareMap(context: Context): String =
+        getString(context, KEY_FLEET_HARDWARE_MAP, DEFAULT_FLEET_HARDWARE_MAP)
+
     @JvmStatic fun getFleetHardwareMapping(context: Context): Map<String, String> {
         val raw = getString(context, KEY_FLEET_HARDWARE_MAP, DEFAULT_FLEET_HARDWARE_MAP)
         val map = mutableMapOf<String, String>()

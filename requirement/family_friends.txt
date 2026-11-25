@@ -1,0 +1,7 @@
+# Screen Requirement & Bug Fix Log: FamilyFriendsActivity
+- Build: 247 (V1.0.23)
+- Defect: Top-right header buttons (`btnSync`, `btnAdd`) unresponsive / blocked.
+- Root Cause: `BaseActivityJava` injected `globalHelpBtn` (size 100px, elevation 25) with `gravity = TOP | END` at `[955,121][1055,221]`, directly overlapping the top-right header buttons (`[944,136][1040,184]`).
+- Mitigation & OOPS MVC Architecture Fix:
+  1. Excluded `FamilyFriendsActivity` from `globalHelpBtn` in `BaseActivityJava.java`.
+  2. Physical Verification: Automated tap test confirmed `btnAdd` (`Add Family Member or Friend` dialog) and `btnSync` are 100% unobstructed and responsive.

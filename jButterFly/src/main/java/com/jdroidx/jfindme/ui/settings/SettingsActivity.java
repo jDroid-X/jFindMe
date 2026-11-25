@@ -93,6 +93,8 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvStaleVal;
     private TextView tvCriticalOfflineVal;
     private TextView tvDistantVal;
+    private TextView tvMapThrottleVal;
+    private TextView tvClusterSpacingVal;
     private TextView tvRadarRadiusVal;
     private TextView tvRemoteLocateTimeoutVal;
     private TextView tvSirenDurationVal;
@@ -104,6 +106,10 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvGuardianPinVal;
     private TextView tvPrimeTargetVal;
     private TextView tvPrimeTargetNameVal;
+    private TextView tvCircleHostIdVal;
+    private TextView tvCircleHostNameVal;
+    private TextView tvActiveCircleGroupVal;
+    private TextView tvLocalDeviceRoleVal;
     private TextView tvUnifiedDeviceIdSyncVal;
     private TextView tvPauseDurationVal;
     private TextView tvPinTtlVal;
@@ -125,6 +131,9 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView tvDeadReckoningVal;
     private TextView tvPresencePulseVal;
     private TextView tvDeviceGroupVal;
+    private TextView tvFleetHardwareMapVal;
+    private TextView tvDecommissionedAgentIdsVal;
+    private TextView tvRelativeRolesMapVal;
     private TextView tvStorageRetentionVal;
     private TextView tvGeocodeCacheVal;
     private TextView tvDatabaseEngineTtlVal;
@@ -146,6 +155,28 @@ public class SettingsActivity extends BaseActivityJava {
     private TextView badgeHistoryTv;
     private TextView badgeHealthTv;
     private TextView badgeProfileTv;
+
+    // [Variables] permissionsHubHeaderView, tvPermissionsSummaryVal, badgePermissionsTv, permissionToggleBindings, isRefreshingPermissionToggles
+    // [Constants] None | [Dependencies] ProfilePermissionsManager, SwitchCompat | [Integration Points] Card 1B Device Permissions & ACL Hub
+    private View permissionsHubHeaderView;
+    private TextView tvPermissionsSummaryVal;
+    private TextView badgePermissionsTv;
+    private boolean isRefreshingPermissionToggles = false;
+
+    private static class PermissionToggleBinding {
+        final com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionGateSpec spec;
+        final androidx.appcompat.widget.SwitchCompat toggleSwitch;
+        final TextView tvStatus;
+        PermissionToggleBinding(
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionGateSpec spec,
+                androidx.appcompat.widget.SwitchCompat toggleSwitch,
+                TextView tvStatus) {
+            this.spec = spec;
+            this.toggleSwitch = toggleSwitch;
+            this.tvStatus = tvStatus;
+        }
+    }
+    private final List<PermissionToggleBinding> permissionToggleBindings = new ArrayList<>();
 
     // Search Matrix for Screen Cards
     private static class ScreenCardHolder {
@@ -270,10 +301,33 @@ public class SettingsActivity extends BaseActivityJava {
         }
         switchTab(savedTab);
 
+        if (getIntent() != null && getIntent().getBooleanExtra("SCROLL_TO_PERMISSIONS", false)) {
+            switchTab(0);
+            if (scrollUniversal != null) {
+                scrollUniversal.post(() -> {
+                    if (permissionsHubHeaderView != null) {
+                        scrollUniversal.smoothScrollTo(0, permissionsHubHeaderView.getTop());
+                    }
+                });
+            }
+        }
+
         // Asynchronously load real-time database badges for Screen Modules
         loadLiveMetricsForScreens();
 
         return root;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshPermissionToggleStates();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @androidx.annotation.NonNull String[] permissions, @androidx.annotation.NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        refreshPermissionToggleStates();
     }
 
     /**
@@ -377,7 +431,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 1: 🛡️ CHILD PROTECTION & MASTER SECURITY (Priority 1)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🛡️ CHILD PROTECTION & MASTER SECURITY (PRIORITY 1)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_child_protection_master_security_priority));
         LinearLayout secCard = new LinearLayout(this);
         secCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -420,6 +474,19 @@ public class SettingsActivity extends BaseActivityJava {
         String primeName = RegistryManager.getPrimeTargetName(this);
         secCard.addView(createSettingTile("PRIMARY CHILD / WARD TARGET NAME", "Target Name: " + primeName + " (Priority 0 Monitored Ward Name)", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> showPrimeTargetNameDialog(), tv -> tvPrimeTargetNameVal = tv), btnLp);
 
+        String hostId = RegistryManager.getCircleHostDeviceId(this);
+        secCard.addView(createSettingTile("ROOT CIRCLE HOST DEVICE ID", "Host ID: " + hostId + " (Master Guardian Silicon Anchor)", com.jdroidx.jfindme.R.drawable.ic_privacy_lock, v -> showCircleHostIdDialog(), tv -> tvCircleHostIdVal = tv), btnLp);
+
+        String hostName = RegistryManager.getCircleHostName(this);
+        secCard.addView(createSettingTile("ROOT CIRCLE HOST NAME", "Host Name: " + hostName + " (Circle Authority Anchor)", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> showCircleHostNameDialog(), tv -> tvCircleHostNameVal = tv), btnLp);
+
+        String activeCircle = RegistryManager.getActiveGroup(this);
+        if (activeCircle == null || activeCircle.isEmpty() || activeCircle.equals("DEFAULT_GROUP")) activeCircle = RegistryManager.getEffectiveActiveGroup(this);
+        secCard.addView(createSettingTile("PRIMARY CIRCLE GROUP PARTITION", "Active Circle: " + activeCircle + " (Shared SSOT Group)", com.jdroidx.jfindme.R.drawable.ic_family_friends, v -> showActiveCircleGroupDialog(), tv -> tvActiveCircleGroupVal = tv), btnLp);
+
+        String localRole = RegistryManager.getRoleFamily(this, "Master Guardian");
+        secCard.addView(createSettingTile("LOCAL DEVICE ROLE IN CIRCLE", "Assigned Role: " + localRole + " (Social Authority Tier)", com.jdroidx.jfindme.R.drawable.ic_user_profile, v -> showLocalDeviceRoleDialog(), tv -> tvLocalDeviceRoleVal = tv), btnLp);
+
         int pauseMins = RegistryManager.getLocationPauseDurationMin(this);
         secCard.addView(createSettingTile("LOCATION PAUSE APPROVAL WINDOW", "Window: " + pauseMins + " Min (Standby pause duration before auto-resume)", android.R.drawable.ic_menu_recent_history, v -> showLocationPauseDurationDialog(), tv -> tvPauseDurationVal = tv), btnLp);
 
@@ -433,9 +500,14 @@ public class SettingsActivity extends BaseActivityJava {
         content.addView(secCard, getCardParams());
 
         // ══════════════════════════════════════════════════════════════════════
+        // CARD 1B: 🔐 DEVICE PERMISSIONS & ACCESS CONTROL HUB (Unified Priority 1B)
+        // ══════════════════════════════════════════════════════════════════════
+        buildPermissionsHubCard(content, btnLp);
+
+        // ══════════════════════════════════════════════════════════════════════
         // CARD 2: 🛰️ GPS SAMPLING CADENCE & BATTERY DEFENSE (Priority 2)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🔋 GPS CADENCE & BATTERY DEFENSE (PRIORITY 2)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_gps_cadence_battery_defense_priority));
         LinearLayout gpsCard = new LinearLayout(this);
         gpsCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -444,13 +516,8 @@ public class SettingsActivity extends BaseActivityJava {
         String pingSub = "Active Cadence: " + currInterval + "s" + drainWarning + " | Preset/Stepper Mode";
         gpsCard.addView(createSettingTile("BATTERY OPTIMIZER & PING HUB", pingSub, com.jdroidx.jfindme.R.drawable.ic_device_health, v -> showBatteryOptimizerDialog(), tv -> tvPingIntervalVal = tv), btnLp);
 
-        gpsCard.addView(createSettingTile("OEM AUTOSTART & BATTERY SHIELD", "Punch through MIUI, OneUI, ColorOS background process killing", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
-            if (com.jdroidx.jfindme.utils.MiuiOptimizationHelper.isXiaomiOrRedmi()) {
-                com.jdroidx.jfindme.utils.MiuiOptimizationHelper.showMiuiOptimizationDialog(this);
-            } else {
-                boolean dispatched = com.jdroidx.jfindme.utils.DeviceIdentityHelper.requestOemBatteryExemption(this);
-                UiArchitect.showSlideNotificationBanner(this, "Battery Shield", dispatched ? "OEM optimization screen opened. Grant autostart & unconstrained battery." : "Battery settings unconstrained.", false, 3500, null, null);
-            }
+        gpsCard.addView(createSettingTile("OEM AUTOSTART & BATTERY SHIELD", "Punch through MIUI, OneUI, ColorOS, OriginOS background process killing across 15+ OEMs", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
+            com.jdroidx.jfindme.engine.power.OEMPowerWhitelistManager.showOemGuidanceDialog(this);
         }, null), btnLp);
 
         // Hardware Motion Co-Processor (Parent Switch)
@@ -500,7 +567,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 3: 🛣️ ROAD ALIGNMENT & 2D KALMAN FILTERING (Priority 3)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🛣️ ROAD ALIGNMENT & MOTION SMOOTHING (PRIORITY 3)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_road_alignment_motion_smoothing_priority));
         LinearLayout roadCard = new LinearLayout(this);
         roadCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -532,7 +599,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 4: 🌐 GEOFENCING SENTINEL & PERIMETER BOUNDARIES (Priority 4)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🌐 GEOFENCING SENTINEL & PERIMETER BOUNDARIES (PRIORITY 4)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_geofencing_sentinel_perimeter_boundaries_priority));
         LinearLayout geoCard = new LinearLayout(this);
         geoCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -577,7 +644,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 5: 🚦 RAG TELEMETRY & ALERT THRESHOLDS (Priority 5)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🚦 RAG TELEMETRY & ALERT THRESHOLDS (PRIORITY 5)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_rag_telemetry_alert_thresholds_priority));
         LinearLayout ragCard = new LinearLayout(this);
         ragCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -608,9 +675,78 @@ public class SettingsActivity extends BaseActivityJava {
         content.addView(ragCard, getCardParams());
 
         // ══════════════════════════════════════════════════════════════════════
+        // CARD 5.5: 🔔 NOTIFICATION SETTINGS & VISIBILITY POLICIES (Priority 5.5)
+        // ══════════════════════════════════════════════════════════════════════
+        content.addView(createSectionHeader("🔔 NOTIFICATION SETTINGS & VISIBILITY POLICIES"));
+        LinearLayout notifCard = new LinearLayout(this);
+        notifCard.setOrientation(LinearLayout.VERTICAL);
+
+        com.jdroidx.jfindme.engine.alert.NotificationPolicyController notifController =
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.getInstance(this);
+
+        // 1. Mandatory Security & Authentication (Always On / Mandatory)
+        View authNotifSwitch = UiArchitect.createSwitch(this, "Authentication & Security Alerts (Mandatory)", notifController.isAuthSecurityAllowed(), (v, isChecked) -> {
+            if (!isChecked) {
+                UiArchitect.showSlideNotificationBanner(this, "Authentication Mandatory", "Security & authentication notifications are required and remain active.", true, 3000, null, null);
+                // Revert
+                if (v instanceof androidx.appcompat.widget.SwitchCompat) {
+                    ((androidx.appcompat.widget.SwitchCompat) v).setChecked(true);
+                }
+                notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_AUTH_SECURITY, true);
+                return;
+            }
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_AUTH_SECURITY, true);
+        });
+        notifCard.addView(authNotifSwitch, btnLp);
+
+        // 2. Device Sharing & Mesh Sync (Default: OFF / Silent)
+        View shareNotifSwitch = UiArchitect.createSwitch(this, "Device Sharing & Peer Sync Notifications", notifController.isDeviceSharingAllowed(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_DEVICE_SHARING, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Device Sharing Alerts", isChecked ? "Device sharing & sync notifications enabled." : "Device sharing notifications silenced.", false, 2500, null, null);
+        });
+        notifCard.addView(shareNotifSwitch, btnLp);
+
+        // 3. Geofence Perimeter Transition Alerts (Default: OFF / Silent)
+        View geoNotifSwitch = UiArchitect.createSwitch(this, "Geofence Perimeter Breaches", notifController.isGeofenceAllowed(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_GEOFENCE, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Geofence Alerts", isChecked ? "Perimeter breach notifications enabled." : "Perimeter alerts silenced.", false, 2500, null, null);
+        });
+        notifCard.addView(geoNotifSwitch, btnLp);
+
+        // 4. Butterfly Point Rendezvous (Default: OFF / Silent)
+        View butterflyNotifSwitch = UiArchitect.createSwitch(this, "Butterfly Rendezvous & Quorum Alerts", notifController.isButterflyAllowed(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_BUTTERFLY, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Butterfly Rendezvous Alerts", isChecked ? "Rendezvous notifications enabled." : "Rendezvous notifications silenced.", false, 2500, null, null);
+        });
+        notifCard.addView(butterflyNotifSwitch, btnLp);
+
+        // 5. Low Battery Warning (Default: OFF / Silent)
+        View batteryNotifSwitch = UiArchitect.createSwitch(this, "Low Battery Warnings (<20%)", notifController.isBatteryAllowed(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_BATTERY, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Battery Alerts", isChecked ? "Battery distress alerts enabled." : "Battery alerts silenced.", false, 2500, null, null);
+        });
+        notifCard.addView(batteryNotifSwitch, btnLp);
+
+        // 6. System Package Update Notifications (Default: OFF / Silent)
+        View updateNotifSwitch = UiArchitect.createSwitch(this, "System Update Progress & Ready Alerts", notifController.isSystemUpdateAllowed(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_SYSTEM_UPDATES, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Update Alerts", isChecked ? "System update notifications enabled." : "System update notifications silenced.", false, 2500, null, null);
+        });
+        notifCard.addView(updateNotifSwitch, btnLp);
+
+        // 7. Silent Background Sentinel Channel (Default: ON / Silent MIN Priority)
+        View silentServiceSwitch = UiArchitect.createSwitch(this, "Silent Sentinel Status (Min Importance / No Pulsing)", notifController.isSilentForeground(), (v, isChecked) -> {
+            notifController.setSetting(com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_SILENT_FOREGROUND, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "Sentinel Notification", isChecked ? "Foreground status clamped to silent minimum priority." : "Foreground status uses default priority.", false, 2500, null, null);
+        });
+        notifCard.addView(silentServiceSwitch, btnLp);
+
+        content.addView(notifCard, getCardParams());
+
+        // ══════════════════════════════════════════════════════════════════════
         // CARD 6: 🔊 EMERGENCY ACOUSTIC BEACON & SOS SENTINEL (Priority 6)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🚨 EMERGENCY ACOUSTIC BEACON & SOS SENTINEL (PRIORITY 6)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_emergency_acoustic_beacon_sos_sentinel));
         LinearLayout sosCard = new LinearLayout(this);
         sosCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -678,7 +814,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 7: 📦 OFFLINE VAULT & ENGINE SENTINELS (Priority 7)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("📦 OFFLINE VAULT & ENGINE SENTINELS (PRIORITY 7)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_offline_vault_engine_sentinels_priority));
         LinearLayout vaultCard = new LinearLayout(this);
         vaultCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -711,7 +847,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 7B: ☁️ FIREBASE SPARK PLAN & BANDWIDTH QUOTA SENTINEL
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("☁️ FIREBASE SPARK PLAN & QUOTA SENTINEL"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_firebase_spark_plan_quota_sentinel));
         LinearLayout sparkCard = new LinearLayout(this);
         sparkCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -783,12 +919,42 @@ public class SettingsActivity extends BaseActivityJava {
             tv -> tvDeviceGroupVal = tv
         ), btnLp);
 
+        String fleetMap = RegistryManager.getString(this, RegistryManager.KEY_FLEET_HARDWARE_MAP, RegistryManager.DEFAULT_FLEET_HARDWARE_MAP);
+        String fleetSub = "Dynamic Silicon Fleet: " + fleetMap;
+        sparkCard.addView(createSettingTile(
+            "DYNAMIC FLEET HARDWARE MAP",
+            fleetSub,
+            android.R.drawable.ic_menu_agenda,
+            v -> showFleetHardwareMapDialog(),
+            tv -> tvFleetHardwareMapVal = tv
+        ), btnLp);
+
+        String decomIds = RegistryManager.getString(this, RegistryManager.KEY_DECOMMISSIONED_AGENT_IDS, RegistryManager.DEFAULT_DECOMMISSIONED_AGENT_IDS);
+        String decomSub = "Excluded Ghost Nodes: " + decomIds;
+        sparkCard.addView(createSettingTile(
+            "DECOMMISSIONED GHOST NODES (BLACKLIST)",
+            decomSub,
+            android.R.drawable.ic_menu_delete,
+            v -> showDecommissionedAgentIdsDialog(),
+            tv -> tvDecommissionedAgentIdsVal = tv
+        ), btnLp);
+
+        String relMap = RegistryManager.getRelativeRolesMap(this);
+        String relSub = "Relative Roles Matrix: " + relMap;
+        sparkCard.addView(createSettingTile(
+            "DYNAMIC RELATIONAL ROLE MATRIX",
+            relSub,
+            android.R.drawable.ic_menu_share,
+            v -> showRelativeRolesMapDialog(),
+            tv -> tvRelativeRolesMapVal = tv
+        ), btnLp);
+
         content.addView(sparkCard, getCardParams());
 
         // ══════════════════════════════════════════════════════════════════════
         // CARD 7C: 🔀 TELEMETRY FAILOVER & CLOSED-LOOP SENTINEL (PRIORITY 7C)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🔀 TELEMETRY FAILOVER & CLOSED LOOP (PRIORITY 7C)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_telemetry_failover_closed_loop_priority));
         LinearLayout failoverCard = new LinearLayout(this);
         failoverCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -844,6 +1010,13 @@ public class SettingsActivity extends BaseActivityJava {
             tv -> tvFailoverSmsVal = tv
         ), btnLp);
 
+        boolean smsFailoverEnabled = RegistryManager.isFailoverSmsEnabled(this);
+        View smsFailoverSwitch = UiArchitect.createSwitch(this, "Baseband SMS Failover (Zero-Data Beacon)", smsFailoverEnabled, (v, isChecked) -> {
+            RegistryManager.setFailoverSmsEnabled(this, isChecked);
+            UiArchitect.showSlideNotificationBanner(this, "SMS Failover", isChecked ? "SMS Beacon failover active when offline." : "SMS Failover deactivated.", false, 2500, null, null);
+        });
+        failoverCard.addView(smsFailoverSwitch, btnLp);
+
         boolean isUnifiedSync = RegistryManager.isUnifiedDeviceIdSyncEnabled(this);
         String unifiedSyncSub = isUnifiedSync
             ? "Status: ACTIVE (Canonical single-path egress, zero HW_ duplication)"
@@ -861,7 +1034,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 8: 🗺️ MAP DISPLAY & GLOBAL AESTHETICS (Priority 8)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🗺️ MAP DISPLAY & GLOBAL AESTHETICS (PRIORITY 8)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_map_display_global_aesthetics_priority));
         LinearLayout mapPrefsCard = new LinearLayout(this);
         mapPrefsCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -878,6 +1051,28 @@ public class SettingsActivity extends BaseActivityJava {
             UiArchitect.showSlideNotificationBanner(this, "Clustering Updated", isChecked ? "Avatars within 10m will be grouped." : "Individual avatar pins active.", false, 2500, null, null);
         });
         mapPrefsCard.addView(clusterSwitch, btnLp);
+
+        // [Variables] mapThrottle, mapThrottleSub | [Constants] DEFAULT_RENDER_THROTTLE_MS = 350 | [Dependencies] RegistryManager, UiArchitect | [Integration Points] MapActivity Throttled Marker Rendering, CARD 8 Map Preferences
+        long mapThrottle = RegistryManager.getMapRenderThrottleMs(this);
+        String mapThrottleSub = "Render Throttle: " + mapThrottle + "ms (Sliding window prevents marker jitter)";
+        mapPrefsCard.addView(createSettingTile(
+            "MAP RENDER THROTTLE WINDOW",
+            mapThrottleSub,
+            android.R.drawable.ic_menu_agenda,
+            v -> showMapRenderThrottleDialog(),
+            tv -> tvMapThrottleVal = tv
+        ), btnLp);
+
+        // [Variables] clusterSpacing, clusterSpacingSub | [Constants] DEFAULT_CLUSTER_SPACING_DP = 64 | [Dependencies] RegistryManager, UiArchitect | [Integration Points] MultiMarkerEngine Anti-Overlap Offset, CARD 8 Map Preferences
+        int clusterSpacing = (int) Math.round(RegistryManager.getClusterSpacingDp(this));
+        String clusterSpacingSub = "Cluster Spacing: " + clusterSpacing + "dp (Minimum avatar separation distance)";
+        mapPrefsCard.addView(createSettingTile(
+            "ANTI-OVERLAP CLUSTER SPACING",
+            clusterSpacingSub,
+            android.R.drawable.ic_menu_sort_by_size,
+            v -> showClusterSpacingDialog(),
+            tv -> tvClusterSpacingVal = tv
+        ), btnLp);
 
         // [Variables] distThreshold, distSub | [Constants] DEFAULT_DISTANT_METERS = 50 | [Dependencies] RegistryManager, UiArchitect | [Integration Points] MapActivity Floating Avatar HUD, CARD 8 Map Preferences
         distThreshold = RegistryManager.getDistantDeviceThresholdMeters(this);
@@ -911,7 +1106,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // CARD 9: 🦋 BUTTERFLY POINT & RENDEZVOUS HUB (PRIORITY 9)
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🦋 BUTTERFLY POINT & RENDEZVOUS HUB (PRIORITY 9)"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_butterfly_point_rendezvous_hub_priority));
         LinearLayout butterflyCard = new LinearLayout(this);
         butterflyCard.setOrientation(LinearLayout.VERTICAL);
 
@@ -1079,7 +1274,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 1: 🗺️ TACTICAL LIVE MAPS & RADAR
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🗺️ TACTICAL LIVE MAPS & RADAR"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_tactical_live_maps_radar));
         content.addView(registerScreenCard("PRIMARY LIVE MAP", "Vector Map with Marker Callouts, Direction Chevrons & SOS Trigger", "LIVE", null, com.jdroidx.jfindme.R.drawable.ic_nav_map, "map live tracking gps pins sos chevron", v -> safeLaunch(MapActivity.class)));
         // [Variables]: intent | [Constants]: LAUNCH_PANEL, INITIAL_TAB | [Dependencies]: LiveMapDashboardActivity, GroupActivity | [Integration Points]: Deep-Linked Screen Card Ingress
         content.addView(registerScreenCard("TACTICAL DASHBOARD HUD", "Dual-Pane Real-Time Radar & Multi-Node Coordinate Telemetry", "RADAR", null, com.jdroidx.jfindme.R.drawable.ic_radar, "radar dashboard telemetry coordinates dual pane", v -> safeLaunch(LiveMapDashboardActivity.class, intent -> intent.putExtra("LAUNCH_PANEL", "RADAR"))));
@@ -1087,7 +1282,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 2: 👥 CIRCLE MESH & PAIRING GATEWAYS
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("👥 CIRCLE MESH & PAIRING GATEWAYS"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_circle_mesh_pairing_gateways));
         content.addView(registerScreenCard("NETWORK PAIRING GATEWAY", "Cloud PIN, QR Matrix Scanner & Nearby P2P Offline Discovery", "PAIRING", tv -> badgeRosterTv = tv, com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "pairing qr pin p2p wifi direct connect network gateway", v -> safeLaunch(NetworkGatewayActivity.class)));
         content.addView(registerScreenCard("DEVICE SHARING & MESH DELEGATION", "Delegate Access & Connect Peer Nodes via Master Orchestrator", "SHARING", null, com.jdroidx.jfindme.R.drawable.ic_pairing_matrix, "device sharing peer delegate link b to c mesh", v -> safeLaunch(FamilyFriendsActivity.class, intent -> intent.putExtra("OPEN_DEVICE_SHARING", true))));
         content.addView(registerScreenCard("FAMILY & FRIENDS ROSTER", "Multi-Tier Circle Management, Guardians & Social Circles", "CIRCLE", null, com.jdroidx.jfindme.R.drawable.ic_family_friends, "family friends guardians roster members contacts", v -> safeLaunch(FamilyFriendsActivity.class)));
@@ -1096,7 +1291,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 3: 👤 USER IDENTITY, 3D AVATAR & GOVERNANCE
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("👤 USER IDENTITY, 3D AVATAR & GOVERNANCE"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_user_identity_3d_avatar_governance));
         content.addView(registerScreenCard("PUPIL IDENTITY PROFILE", "Hardware Silicon Anchor, Demographics & Medical Ledger", getNicknameBadgeText(), tv -> badgeProfileTv = tv, com.jdroidx.jfindme.R.drawable.ic_user_profile, "profile identity pupil nickname phone email address avatar", v -> safeLaunch(ProfileActivity.class)));
         content.addView(registerScreenCard("3D VRM AVATAR EDITOR", "Interactive 3D Model Customization, Mesh Rotation & Shaders", "3D VRM", null, com.jdroidx.jfindme.R.drawable.ic_edit, "avatar 3d vrm model mesh rotation editor", v -> safeLaunch(AvatarEditorActivity.class)));
         content.addView(registerScreenCard("BIOMETRIC AVATAR CROP", "Circular Photo Masking & Aspect-Ratio Biometric Generator", "CROP", null, com.jdroidx.jfindme.R.drawable.ic_crop, "crop avatar photo camera picture biometric", v -> safeLaunch(AvatarCropActivity.class)));
@@ -1105,7 +1300,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 4: 🌐 GEOSPATIAL & SAFE ZONE CLUSTER
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🌐 GEOSPATIAL & SAFE ZONE CLUSTER"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_geospatial_safe_zone_cluster));
         // [Variables] content, v | [Constants] "BUTTERFLY_POINT", "LAUNCH_PANEL" | [Dependencies] registerScreenCard, MapActivity, ButterflyPointDialog | [Integration Points] Settings Screen Directory ⟷ Butterfly Rendezvous Hub
         content.addView(registerScreenCard("BUTTERFLY RENDEZVOUS HUB", "Dynamic Multi-Node Meeting Points, Vector Navigation & Fleet Quorum", "RENDEZVOUS", null, com.jdroidx.jfindme.R.drawable.ic_butterfly_point, "butterfly meeting point rendezvous rendezvous hub tracking fleet", v -> safeLaunch(MapActivity.class, intent -> intent.putExtra("LAUNCH_PANEL", "BUTTERFLY_POINT"))));
         content.addView(registerScreenCard("SAFE ZONE MANAGER", "Circular & Polygon Perimeter Geofence Editor with Schedules", "GEOFENCE", tv -> badgeZonesTv = tv, com.jdroidx.jfindme.R.drawable.ic_safe_zone, "safe zones geofence polygon circle perimeter schedule", v -> safeLaunch(GeofenceActivity.class)));
@@ -1115,7 +1310,17 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 5: 🛡️ DEVICE PRIVACY, HEALTH & ALERTS
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🛡️ DEVICE PRIVACY, HEALTH & ALERTS"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_device_privacy_health_alerts));
+        content.addView(registerScreenCard("DEVICE PERMISSIONS & ACL HUB", "Grouped Mandatory, Background, OEM, Optional & ACL Toggles", "PERMS", tv -> badgePermissionsTv = tv, com.jdroidx.jfindme.R.drawable.ic_privacy_lock, "permissions mandatory optional background oem acl toggles location camera bluetooth", v -> {
+            switchTab(0);
+            if (scrollUniversal != null) {
+                scrollUniversal.post(() -> {
+                    if (permissionsHubHeaderView != null) {
+                        scrollUniversal.smoothScrollTo(0, permissionsHubHeaderView.getTop());
+                    }
+                });
+            }
+        }));
         content.addView(registerScreenCard("IDENTITY SECURITY PROTOCOL", "Hardware Permissions, Root Kernel Audit & Ghost Mode Locks", "SECURITY", null, com.jdroidx.jfindme.R.drawable.ic_privacy_lock, "privacy security root jailbreak ghost permissions", v -> safeLaunch(PrivacyActivity.class)));
         content.addView(registerScreenCard("DEVICE HEALTH & VITALS", "Battery Draw, Doze Mode State, RAM & Sensor Telemetry", getBatteryBadgeText(), tv -> badgeHealthTv = tv, com.jdroidx.jfindme.R.drawable.ic_device_health, "health battery doze ram vitals sensors diagnostics", v -> safeLaunch(HealthActivity.class)));
         content.addView(registerScreenCard("SYSTEM NOTIFICATIONS ROUTING", "Alert Triggers, DND Bypass & Hardware Notification Pokes", "ALERTS", null, com.jdroidx.jfindme.R.drawable.ic_nav_notice, "notifications alerts sound vibration triggers dnd poke", v -> safeLaunch(NotifActivity.class)));
@@ -1124,7 +1329,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 6: 🔍 FORENSIC VAULT, AUDIT & DIAGNOSTICS
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("🔍 FORENSIC VAULT, AUDIT & DIAGNOSTICS"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_forensic_vault_audit_diagnostics));
         content.addView(registerScreenCard("FORENSIC VAULT EXPLORER", "Encrypted Offline Telemetry Ledger & Direct Raw SQLite View", "VAULT", null, com.jdroidx.jfindme.R.drawable.ic_system_audit, "vault forensic raw sqlite database encrypted explorer", v -> safeLaunch(ForensicVaultExplorerActivity.class)));
         content.addView(registerScreenCard("WATCHDOG SENTINEL AUDIT", "Process Liveness, AlarmManager Heartbeat & Recovery Logs", "WATCHDOG", null, com.jdroidx.jfindme.R.drawable.ic_watchdog, "watchdog audit heartbeat liveness recovery sentinel", v -> {
             Intent wd = new Intent(this, WatchDogAuditActivity.class);
@@ -1138,7 +1343,7 @@ public class SettingsActivity extends BaseActivityJava {
         // ══════════════════════════════════════════════════════════════════════
         // MODULE 7: ⚡ SYSTEM UPDATE, PURGE & MAINTENANCE
         // ══════════════════════════════════════════════════════════════════════
-        content.addView(createSectionHeader("⚡ SYSTEM UPDATE, PURGE & MAINTENANCE"));
+        content.addView(createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_system_update_purge_maintenance));
         content.addView(registerScreenCard("SYSTEM SILENT UPDATE", "In-Place Package Synchronization, GitHub & Drive Channels", getVersionBadgeText(), null, android.R.drawable.ic_menu_upload, "update upgrade version apk github drive download", v -> safeLaunch(SystemUpdateActivity.class)));
         content.addView(registerScreenCard("FACTORY RESET & PURGE CONSOLE", "Selective SQLite Wipe, Pre-Uninstall Teardown & Reset", "RESET", null, com.jdroidx.jfindme.R.drawable.ic_system_audit, "factory reset purge uninstall teardown wipe erase", v -> safeLaunch(FactoryResetActivity.class)));
         content.addView(registerScreenCard("HELP & SUPPORT CENTER", "Documentation, FAQs, Diagnostics Export & Helpdesk", "SUPPORT", null, com.jdroidx.jfindme.R.drawable.ic_help_support, "help support faqs documentation manual helpdesk", v -> safeLaunch(HelpSupportActivity.class)));
@@ -1407,6 +1612,10 @@ public class SettingsActivity extends BaseActivityJava {
         return header;
     }
 
+    protected View createSectionHeader(int resId) {
+        return createSectionHeader(getString(resId));
+    }
+
     @Override
     protected void setupLogic() {
         SystemLogger.d(TAG, "Settings Hub Synchronized.");
@@ -1533,6 +1742,8 @@ public class SettingsActivity extends BaseActivityJava {
         if (tvStaleVal != null) tvStaleVal.setText("Stale Window: 15 Min (Marks node amber inactive)");
         if (tvCriticalOfflineVal != null) tvCriticalOfflineVal.setText("Offline Window: 6 Hours (Marks node red offline)");
         if (tvDistantVal != null) tvDistantVal.setText("Panel Threshold: " + RegistryManager.getDistantDeviceThresholdMeters(this) + "m (Distance to float HUD panel)");
+        if (tvMapThrottleVal != null) tvMapThrottleVal.setText("Render Throttle: " + RegistryManager.getMapRenderThrottleMs(this) + "ms (Sliding window prevents marker jitter)");
+        if (tvClusterSpacingVal != null) tvClusterSpacingVal.setText("Cluster Spacing: " + (int) Math.round(RegistryManager.getClusterSpacingDp(this)) + "dp (Minimum avatar separation distance)");
         if (tvRadarRadiusVal != null) {
             tvRadarRadiusVal.setText("Radar Proximity Radius: " + RegistryManager.getRadarProximityRadiusMeters(this) + "m (Sky blue highlight threshold)");
         }
@@ -1827,7 +2038,7 @@ public class SettingsActivity extends BaseActivityJava {
         oemBtnLp.setMargins(0, 25, 0, 10);
         View oemWhitelistBtn = createIconButton("⚡ CROSS-OEM AUTOSTART & BATTERY WHITELIST", com.jdroidx.jfindme.R.drawable.ic_device_health, v -> {
             dialog.dismiss();
-            com.jdroidx.jfindme.utils.MiuiOptimizationHelper.INSTANCE.launchBatteryOptimizationSettings(SettingsActivity.this);
+            com.jdroidx.jfindme.engine.power.OEMPowerWhitelistManager.showOemGuidanceDialog(SettingsActivity.this);
         });
         root.addView(oemWhitelistBtn, oemBtnLp);
 
@@ -2612,6 +2823,131 @@ public class SettingsActivity extends BaseActivityJava {
         );
     }
 
+    // [Variables] currentHost, clean, newHost | [Constants] DEFAULT_CIRCLE_HOST_DEVICE_ID | [Dependencies] RegistryManager, UiArchitect, DatabaseHelper, FirebaseComm | [Integration Points] SettingsActivity, DevicePresentationResolver
+    private void showCircleHostIdDialog() {
+        String currentHost = RegistryManager.getCircleHostDeviceId(this);
+        UiArchitect.showInputPromptDialog(this,
+            "Root Circle Host Device ID",
+            "Enter the 8-character Agent ID for the Circle Host / Master Guardian (Default: 2T929153):",
+            currentHost != null ? currentHost : "2T929153",
+            newHost -> {
+                if (newHost != null) {
+                    String clean = com.jdroidx.jfindme.data.remote.FirebaseComm.sanitizeAgentId(newHost).trim();
+                    if (!clean.isEmpty()) {
+                        RegistryManager.setCircleHostDeviceId(this, clean);
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                                .setDynamicConfig("circle_host_device_id", clean, "Primary Circle Host Device ID", 0L);
+                        } catch (Exception ignored) {}
+                        if (tvCircleHostIdVal != null) {
+                            tvCircleHostIdVal.setText("Host ID: " + clean + " (Master Guardian Silicon Anchor)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Host Device Updated", "Circle Host Anchor set to: " + clean, false, 3000, null, null);
+                    } else {
+                        UiArchitect.showSlideNotificationBanner(this, "Invalid Host ID", "Host ID cannot be empty.", true, 3000, null, null);
+                    }
+                }
+            }
+        );
+    }
+
+    // [Variables] currentName, clean, newName | [Constants] DEFAULT_CIRCLE_HOST_NAME | [Dependencies] RegistryManager, UiArchitect, DatabaseHelper | [Integration Points] SettingsActivity, DevicePresentationResolver
+    private void showCircleHostNameDialog() {
+        String currentName = RegistryManager.getCircleHostName(this);
+        UiArchitect.showInputPromptDialog(this,
+            "Root Circle Host Name",
+            "Enter the display name for the Master Guardian / Host (Default: JEET):",
+            currentName != null ? currentName : "JEET",
+            newName -> {
+                if (newName != null) {
+                    String clean = newName.trim();
+                    if (!clean.isEmpty()) {
+                        RegistryManager.setCircleHostName(this, clean);
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                                .setDynamicConfig("circle_host_name", clean, "Primary Circle Host Name", 0L);
+                        } catch (Exception ignored) {}
+                        if (tvCircleHostNameVal != null) {
+                            tvCircleHostNameVal.setText("Host Name: " + clean + " (Circle Authority Anchor)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Host Name Updated", "Circle Host display name set to: " + clean, false, 3000, null, null);
+                    } else {
+                        UiArchitect.showSlideNotificationBanner(this, "Invalid Host Name", "Name cannot be empty.", true, 3000, null, null);
+                    }
+                }
+            }
+        );
+    }
+
+    // [Variables] currentGroup, clean, newGroup | [Constants] None | [Dependencies] RegistryManager, UiArchitect, DatabaseHelper | [Integration Points] SettingsActivity, DevicePresentationResolver, GroupMemberTable
+    private void showActiveCircleGroupDialog() {
+        String currentGroup = RegistryManager.getActiveGroup(this);
+        if (currentGroup == null || currentGroup.isEmpty() || currentGroup.equals("DEFAULT_GROUP")) {
+            currentGroup = RegistryManager.getEffectiveActiveGroup(this);
+        }
+        UiArchitect.showInputPromptDialog(this,
+            "Primary Circle Group Partition",
+            "Enter the shared group partition (e.g. GRP_2T929153):",
+            currentGroup,
+            newGroup -> {
+                if (newGroup != null) {
+                    String clean = newGroup.trim().toUpperCase();
+                    if (!clean.isEmpty()) {
+                        RegistryManager.setActiveGroup(this, clean);
+                        RegistryManager.setDeviceCorrespondingGroup(this, clean);
+                        try {
+                            com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                                .setDynamicConfig("active_group", clean, "Active circle/group partition", 0L);
+                        } catch (Exception ignored) {}
+                        if (tvActiveCircleGroupVal != null) {
+                            tvActiveCircleGroupVal.setText("Active Circle: " + clean + " (Shared SSOT Group)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Circle Group Updated", "Node assigned to group: " + clean, false, 3000, null, null);
+                    } else {
+                        UiArchitect.showSlideNotificationBanner(this, "Invalid Group", "Group partition cannot be empty.", true, 3000, null, null);
+                    }
+                }
+            }
+        );
+    }
+
+    // [Variables] currentRole, roles, selectedIdx, cleanRole | [Constants] None | [Dependencies] RegistryManager, UiArchitect, DatabaseHelper | [Integration Points] SettingsActivity, DevicePresentationResolver, GroupMemberTable
+    private void showLocalDeviceRoleDialog() {
+        String currentRole = RegistryManager.getRoleFamily(this, "Master Guardian");
+        String[] roles = {"Master Guardian", "Co-Guardian", "Member", "Child", "Spouse", "Friend"};
+        int selectedIdx = -1;
+        for (int i = 0; i < roles.length; i++) {
+            if (roles[i].equalsIgnoreCase(currentRole)) {
+                selectedIdx = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("👑 Local Device Role in Circle")
+            .setSingleChoiceItems(roles, selectedIdx, (dialog, which) -> {
+                dialog.dismiss();
+                if (which >= 0 && which < roles.length) {
+                    String chosenRole = roles[which];
+                    RegistryManager.setRoleFamily(this, chosenRole);
+                    if (chosenRole.equalsIgnoreCase("Friend")) {
+                        RegistryManager.setRoleFriend(this, chosenRole);
+                    }
+                    try {
+                        String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                        com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                            .updateUnifiedEntity(selfAgent, null, null, chosenRole, null);
+                    } catch (Exception ignored) {}
+                    if (tvLocalDeviceRoleVal != null) {
+                        tvLocalDeviceRoleVal.setText("Assigned Role: " + chosenRole + " (Social Authority Tier)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Device Role Updated", "Assigned circle role: " + chosenRole, false, 3000, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
     // [Variables] current, updated | [Constants] None | [Dependencies] RegistryManager, UiArchitect | [Integration Points] FirebaseComm, SettingsActivity
     private void toggleUnifiedDeviceIdSync() {
         boolean current = RegistryManager.isUnifiedDeviceIdSyncEnabled(this);
@@ -2935,6 +3271,101 @@ public class SettingsActivity extends BaseActivityJava {
                         tvDistantVal.setText("Panel Threshold: " + chosen + "m (Distance to float HUD panel)");
                     }
                     UiArchitect.showSlideNotificationBanner(this, "Distant Threshold Updated", "Floating panel activates at " + chosen + "m distance", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables] current, values, options, selected, chosen | [Constants] None | [Dependencies] RegistryManager, UiArchitect, AlertDialog | [Integration Points] MapActivity Render Throttling
+    private void showMapRenderThrottleDialog() {
+        long current = RegistryManager.getMapRenderThrottleMs(this);
+        long[] values = {100, 250, 350, 500, 1000, 2000};
+        String customLabel = "✏️ Custom Window (" + current + "ms)...";
+        String[] options = {
+            "100ms (High Frequency — Flagship Devices)",
+            "250ms (Responsive — Balanced Devices)",
+            "350ms (Standard — Recommended / Default)",
+            "500ms (Conservative — Battery Saver)",
+            "1000ms (1 Second — Low Resource Mode)",
+            "2000ms (2 Seconds — Aggressive Battery Mode)",
+            customLabel
+        };
+        int selected = options.length - 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⏱️ Map Render Throttle Window")
+            .setMessage("Controls the minimum interval between map marker layout updates. Higher values reduce CPU/GPU thermal load and battery consumption on mid-range devices.")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("⏱️ Custom Render Throttle", "Milliseconds (50 - 5000)", 50, 5000, (int) current, "ms", chosen -> {
+                        RegistryManager.setMapRenderThrottleMs(this, (long) chosen);
+                        if (tvMapThrottleVal != null) {
+                            tvMapThrottleVal.setText("Render Throttle: " + chosen + "ms (Sliding window prevents marker jitter)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Throttle Window Updated", "Map renders throttled to " + chosen + "ms window", false, 2500, null, null);
+                    });
+                } else {
+                    long chosen = values[which];
+                    RegistryManager.setMapRenderThrottleMs(this, chosen);
+                    if (tvMapThrottleVal != null) {
+                        tvMapThrottleVal.setText("Render Throttle: " + chosen + "ms (Sliding window prevents marker jitter)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Throttle Window Updated", "Map renders throttled to " + chosen + "ms window", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    // [Variables] current, values, options, selected, chosen | [Constants] None | [Dependencies] RegistryManager, UiArchitect, AlertDialog | [Integration Points] MultiMarkerEngine Anti-Overlap Calculations
+    private void showClusterSpacingDialog() {
+        int current = (int) Math.round(RegistryManager.getClusterSpacingDp(this));
+        int[] values = {40, 50, 64, 75, 90};
+        String customLabel = "✏️ Custom Spacing (" + current + "dp)...";
+        String[] options = {
+            "40dp (Tight — Maximum Density)",
+            "50dp (Compact — Medium Density)",
+            "64dp (Standard — Recommended / Default)",
+            "75dp (Relaxed — High Visibility)",
+            "90dp (Wide — Maximum Separation)",
+            customLabel
+        };
+        int selected = options.length - 1;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) {
+                selected = i;
+                break;
+            }
+        }
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("📐 Anti-Overlap Cluster Spacing")
+            .setMessage("Sets the physical pixel radius used to fan out overlapping avatar markers when multiple devices are co-located in the same building or safe zone.")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                dialog.dismiss();
+                if (which == options.length - 1) {
+                    showCustomNumericInputDialog("📐 Custom Cluster Spacing", "Density Pixels (20 - 150)", 20, 150, current, "dp", chosen -> {
+                        RegistryManager.setClusterSpacingDp(this, chosen);
+                        if (tvClusterSpacingVal != null) {
+                            tvClusterSpacingVal.setText("Cluster Spacing: " + chosen + "dp (Minimum avatar separation distance)");
+                        }
+                        UiArchitect.showSlideNotificationBanner(this, "Cluster Spacing Updated", "Avatar offset spacing set to " + chosen + "dp", false, 2500, null, null);
+                    });
+                } else {
+                    int chosen = values[which];
+                    RegistryManager.setClusterSpacingDp(this, chosen);
+                    if (tvClusterSpacingVal != null) {
+                        tvClusterSpacingVal.setText("Cluster Spacing: " + chosen + "dp (Minimum avatar separation distance)");
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Cluster Spacing Updated", "Avatar offset spacing set to " + chosen + "dp", false, 2500, null, null);
                 }
             })
             .setNegativeButton("CANCEL", null)
@@ -3421,6 +3852,116 @@ public class SettingsActivity extends BaseActivityJava {
                     }
                     UiArchitect.showSlideNotificationBanner(this, "Device Group Updated", "Node assigned to: " + val, false, 2500, null, null);
                 }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showRelativeRolesMapDialog() {
+        String current = RegistryManager.getRelativeRolesMap(this);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(false);
+        input.setText(current);
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("⚙️ RELATIVE ROLES MATRIX")
+            .setMessage("Configure dynamic relative role mappings.\nFormat: OBSERVER>TARGET:Role;...\n(e.g. 2T929153>2C811042:Friend;2C811042>4379A761:Co-Guardian):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                String val = input.getText().toString().trim();
+                RegistryManager.setRelativeRolesMap(this, val);
+                if (tvRelativeRolesMapVal != null) {
+                    tvRelativeRolesMapVal.setText("Relative Roles Matrix: " + val);
+                }
+                UiArchitect.showSlideNotificationBanner(this, "Relational Role Matrix Saved", "Updated dynamic perspective roles.", false, 2500, null, null);
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showFleetHardwareMapDialog() {
+        String current = RegistryManager.getString(this, RegistryManager.KEY_FLEET_HARDWARE_MAP, RegistryManager.DEFAULT_FLEET_HARDWARE_MAP);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(false);
+        input.setText(current);
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Dynamic Fleet Hardware Map")
+            .setMessage("Configure comma-separated MODEL:AGENT_ID mappings (e.g. VIOLET:2T929153,WHYRED:2C811042):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                String val = input.getText().toString().trim();
+                if (!val.isEmpty()) {
+                    RegistryManager.putString(this, RegistryManager.KEY_FLEET_HARDWARE_MAP, val);
+                    try {
+                        com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this)
+                            .setDynamicConfig("fleet_hardware_map", val, "Dynamic Hardware to Agent ID Fleet Mapping", 0L);
+                    } catch (Exception ignored) {}
+                    if (tvFleetHardwareMapVal != null) {
+                        tvFleetHardwareMapVal.setText("Dynamic Silicon Fleet: " + val);
+                    }
+                    UiArchitect.showSlideNotificationBanner(this, "Fleet Mapping Saved", "Updated dynamic hardware roster.", false, 2500, null, null);
+                }
+            })
+            .setNegativeButton("CANCEL", null)
+            .show();
+    }
+
+    private void showDecommissionedAgentIdsDialog() {
+        String current = RegistryManager.getString(this, RegistryManager.KEY_DECOMMISSIONED_AGENT_IDS, RegistryManager.DEFAULT_DECOMMISSIONED_AGENT_IDS);
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(false);
+        input.setText(current);
+        input.setSelection(input.getText().length());
+        int pad = (int) (18 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.leftMargin = pad;
+        lp.rightMargin = pad;
+        input.setLayoutParams(lp);
+        container.addView(input);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Decommissioned Ghost Nodes")
+            .setMessage("Configure comma-separated Agent IDs to filter from sync & maps (e.g. A7D5968D):")
+            .setView(container)
+            .setPositiveButton("SAVE", (d, w) -> {
+                String val = input.getText().toString().trim();
+                java.util.Set<String> set = new java.util.HashSet<>();
+                for (String s : val.split(",")) {
+                    String clean = s.trim().toUpperCase();
+                    if (!clean.isEmpty()) set.add(clean);
+                }
+                RegistryManager.setDecommissionedAgentIds(this, set);
+                if (tvDecommissionedAgentIdsVal != null) {
+                    tvDecommissionedAgentIdsVal.setText("Excluded Ghost Nodes: " + val);
+                }
+                UiArchitect.showSlideNotificationBanner(this, "Ghost Nodes Blacklist Updated", "Excluded " + set.size() + " agent IDs from telemetry.", false, 2500, null, null);
             })
             .setNegativeButton("CANCEL", null)
             .show();
@@ -4150,6 +4691,265 @@ public class SettingsActivity extends BaseActivityJava {
             })
             .setNegativeButton("CANCEL", null)
             .show();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 🔐 UNIFIED DEVICE PERMISSIONS & ACCESS CONTROL HUB (OOPS MVC SSOT)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private void buildPermissionsHubCard(LinearLayout content, LinearLayout.LayoutParams btnLp) {
+        permissionToggleBindings.clear();
+        permissionsHubHeaderView = createSectionHeader(com.jdroidx.jfindme.R.string.title_settings_device_permissions_hub);
+        content.addView(permissionsHubHeaderView);
+
+        LinearLayout permCard = new LinearLayout(this);
+        permCard.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout summaryBox = new LinearLayout(this);
+        summaryBox.setOrientation(LinearLayout.VERTICAL);
+        UiArchitect.applyCard(this, summaryBox, "CARD_STANDARD");
+        int sPad = scale(20);
+        summaryBox.setPadding(sPad, sPad, sPad, sPad);
+
+        TextView summaryTitle = new TextView(this);
+        summaryTitle.setText("UNIFIED PERMISSION & ACCESS CONTROL STATUS");
+        summaryTitle.setTextColor(getTextColor());
+        summaryTitle.setTypeface(null, Typeface.BOLD);
+        summaryTitle.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_LABEL"));
+        summaryBox.addView(summaryTitle);
+
+        tvPermissionsSummaryVal = new TextView(this);
+        tvPermissionsSummaryVal.setTextColor(getSecondaryTextColor());
+        tvPermissionsSummaryVal.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        tvPermissionsSummaryVal.setPadding(0, scale(6), 0, scale(14));
+        summaryBox.addView(tvPermissionsSummaryVal);
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setWeightSum(2.0f);
+
+        View grantAllBtn = createIconButton("GRANT MANDATORY", android.R.drawable.ic_menu_myplaces, v -> {
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestMandatoryBatch(
+                this,
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_MANDATORY_BATCH
+            );
+            UiArchitect.showSlideNotificationBanner(this, "Permission Escalation", "Requested core mandatory OS permissions.", false, 2500, null, null);
+        });
+        View sysAppBtn = createIconButton("OS APP SETTINGS", android.R.drawable.ic_menu_preferences, v ->
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.openAppDetailsSettings(this)
+        );
+        LinearLayout.LayoutParams actLp1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        actLp1.setMargins(0, 0, scale(8), 0);
+        LinearLayout.LayoutParams actLp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        actLp2.setMargins(scale(8), 0, 0, 0);
+        actionRow.addView(grantAllBtn, actLp1);
+        actionRow.addView(sysAppBtn, actLp2);
+        summaryBox.addView(actionRow);
+
+        permCard.addView(summaryBox, btnLp);
+
+        appendPermissionSectionGroup(permCard, "SECTION A: CORE MANDATORY PERMISSIONS",
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.MANDATORY, btnLp);
+        appendPermissionSectionGroup(permCard, "SECTION B: 24/7 BACKGROUND & OEM SURVIVABILITY",
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.BACKGROUND_OEM, btnLp);
+        appendPermissionSectionGroup(permCard, "SECTION C: OPTIONAL HARDWARE & FEATURE PERMISSIONS",
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.OPTIONAL, btnLp);
+        appendPermissionSectionGroup(permCard, "SECTION D: IN-APP PROFILE ACL PERMISSIONS (SSOT)",
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.IN_APP_ACL, btnLp);
+
+        content.addView(permCard, getCardParams());
+        refreshPermissionToggleStates();
+    }
+
+    private void appendPermissionSectionGroup(
+            LinearLayout parent,
+            String sectionTitle,
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier tier,
+            LinearLayout.LayoutParams btnLp) {
+        TextView subHeader = new TextView(this);
+        subHeader.setText(sectionTitle);
+        subHeader.setTextColor(getGradientStart());
+        subHeader.setTypeface(null, Typeface.BOLD);
+        subHeader.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+        subHeader.setPadding(scale(10), scale(22), 0, scale(8));
+        parent.addView(subHeader);
+
+        for (com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionGateSpec spec :
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.getSpecsByTier(tier)) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            UiArchitect.applyCard(this, row, "CARD_STANDARD");
+            int pad = scale(18);
+            row.setPadding(pad, pad, pad, pad);
+
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            textCol.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+            textCol.setPadding(0, 0, scale(12), 0);
+
+            LinearLayout titleBadgeRow = new LinearLayout(this);
+            titleBadgeRow.setOrientation(LinearLayout.HORIZONTAL);
+            titleBadgeRow.setGravity(Gravity.CENTER_VERTICAL);
+
+            TextView tvTitle = new TextView(this);
+            tvTitle.setText(spec.getTitle());
+            tvTitle.setTextColor(getTextColor());
+            tvTitle.setTypeface(null, Typeface.BOLD);
+            tvTitle.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_LABEL"));
+            tvTitle.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+            titleBadgeRow.addView(tvTitle);
+
+            TextView tvBadge = new TextView(this);
+            tvBadge.setText(spec.getBadge());
+            tvBadge.setTextColor(Color.WHITE);
+            tvBadge.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_TINY"));
+            tvBadge.setTypeface(null, Typeface.BOLD);
+            int badgeColor = spec.isMandatory()
+                ? Color.parseColor("#C62828")
+                : (tier == com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.IN_APP_ACL
+                    ? Color.parseColor("#6A1B9A")
+                    : Color.parseColor("#1565C0"));
+            tvBadge.setBackground(getSolidDrawable(badgeColor, scaleRadius(8)));
+            tvBadge.setPadding(scale(10), scale(3), scale(10), scale(3));
+            LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            badgeLp.leftMargin = scale(8);
+            titleBadgeRow.addView(tvBadge, badgeLp);
+            textCol.addView(titleBadgeRow);
+
+            TextView tvDesc = new TextView(this);
+            tvDesc.setText(spec.getDescription());
+            tvDesc.setTextColor(getSecondaryTextColor());
+            tvDesc.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+            tvDesc.setPadding(0, scale(4), 0, scale(4));
+            textCol.addView(tvDesc);
+
+            TextView tvStatus = new TextView(this);
+            tvStatus.setTextSize(UiArchitect.getResponsiveTextSize(this, "TEXT_MINI"));
+            tvStatus.setTypeface(null, Typeface.BOLD);
+            textCol.addView(tvStatus);
+
+            row.addView(textCol);
+
+            androidx.appcompat.widget.SwitchCompat toggle = new androidx.appcompat.widget.SwitchCompat(this);
+            PermissionToggleBinding binding = new PermissionToggleBinding(spec, toggle, tvStatus);
+            permissionToggleBindings.add(binding);
+
+            toggle.setOnCheckedChangeListener((btn, isChecked) -> {
+                if (isRefreshingPermissionToggles) return;
+                handlePermissionToggleAction(binding, isChecked);
+            });
+            row.setOnClickListener(v -> toggle.toggle());
+            row.addView(toggle);
+            parent.addView(row, btnLp);
+        }
+    }
+
+    private void handlePermissionToggleAction(PermissionToggleBinding binding, boolean targetChecked) {
+        com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionGateSpec spec = binding.spec;
+        if (spec.getTier() == com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.IN_APP_ACL) {
+            com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.setAclGateState(this, spec.getKey(), targetChecked);
+            refreshPermissionToggleStates();
+            UiArchitect.showSlideNotificationBanner(this, spec.getTitle(), targetChecked ? "ACL policy ENABLED & synced." : "ACL policy RESTRICTED.", !targetChecked, 2500, null, null);
+            return;
+        }
+
+        boolean osGranted = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isOsGateGranted(this, spec.getKey());
+        if (targetChecked) {
+            if (!osGranted) {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                    this,
+                    spec.getKey(),
+                    com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_SINGLE_GATE
+                );
+                refreshPermissionToggleStates();
+            } else {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.setSoftGateDisabled(this, spec.getKey(), false);
+                refreshPermissionToggleStates();
+                UiArchitect.showSlideNotificationBanner(this, spec.getTitle(), "Permission gate ACTIVE.", false, 2000, null, null);
+            }
+        } else {
+            if (spec.isMandatory()) {
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("⚠️ Disable Mandatory Gate?")
+                    .setMessage(spec.getTitle() + " is mandatory for live tracking & safety.\n\nChoose 'Pause App Gate' to halt usage in-app, or 'OS Settings' to revoke system permission.")
+                    .setPositiveButton("PAUSE APP GATE", (d, w) -> {
+                        com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.setSoftGateDisabled(this, spec.getKey(), true);
+                        refreshPermissionToggleStates();
+                    })
+                    .setNeutralButton("OS SETTINGS", (d, w) -> {
+                        refreshPermissionToggleStates();
+                        com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.openAppDetailsSettings(this);
+                    })
+                    .setNegativeButton("CANCEL", (d, w) -> refreshPermissionToggleStates())
+                    .setOnCancelListener(d -> refreshPermissionToggleStates())
+                    .show();
+            } else {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.setSoftGateDisabled(this, spec.getKey(), true);
+                refreshPermissionToggleStates();
+                UiArchitect.showSlideNotificationBanner(this, spec.getTitle(), "Optional feature paused in app. Manage OS grant in App Settings.", false, 2500, null, null);
+            }
+        }
+    }
+
+    private void refreshPermissionToggleStates() {
+        if (permissionToggleBindings.isEmpty()) return;
+        isRefreshingPermissionToggles = true;
+        int mandatoryTotal = 0;
+        int mandatoryActive = 0;
+        int optionalTotal = 0;
+        int optionalActive = 0;
+        int aclTotal = 0;
+        int aclActive = 0;
+
+        try {
+            for (PermissionToggleBinding binding : permissionToggleBindings) {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionGateSpec spec = binding.spec;
+                boolean active = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(this, spec.getKey());
+                boolean osGranted = active || com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isOsGateGranted(this, spec.getKey());
+                binding.toggleSwitch.setChecked(active);
+
+                if (spec.getTier() == com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.PermissionTier.IN_APP_ACL) {
+                    aclTotal++;
+                    if (active) aclActive++;
+                    binding.tvStatus.setText(active ? "🟢 ALLOWED • Enforced in Profile & Telemetry" : "🟡 RESTRICTED • Disabled by ACL");
+                    binding.tvStatus.setTextColor(active ? Color.parseColor("#2E7D32") : Color.parseColor("#D97706"));
+                } else {
+                    if (spec.isMandatory()) {
+                        mandatoryTotal++;
+                        if (active) mandatoryActive++;
+                    } else {
+                        optionalTotal++;
+                        if (active) optionalActive++;
+                    }
+
+                    if (active) {
+                        binding.tvStatus.setText("🟢 GRANTED & ACTIVE");
+                        binding.tvStatus.setTextColor(Color.parseColor("#2E7D32"));
+                    } else if (osGranted) {
+                        binding.tvStatus.setText("🟡 PAUSED BY APP TOGGLE (OS Granted)");
+                        binding.tvStatus.setTextColor(Color.parseColor("#D97706"));
+                    } else {
+                        binding.tvStatus.setText(spec.isMandatory()
+                            ? "🔴 MANDATORY OS PERMISSION DENIED — Toggle ON to grant"
+                            : "🟡 OPTIONAL NOT GRANTED — Toggle ON if needed");
+                        binding.tvStatus.setTextColor(spec.isMandatory() ? Color.parseColor("#D32F2F") : Color.parseColor("#D97706"));
+                    }
+                }
+            }
+            if (tvPermissionsSummaryVal != null) {
+                tvPermissionsSummaryVal.setText(
+                    "Mandatory: " + mandatoryActive + "/" + mandatoryTotal +
+                    " Active  •  Optional: " + optionalActive + "/" + optionalTotal +
+                    " Active  •  ACLs: " + aclActive + "/" + aclTotal + " Enabled"
+                );
+            }
+            if (badgePermissionsTv != null) {
+                badgePermissionsTv.setText(mandatoryActive + "/" + mandatoryTotal + " MANDATORY");
+            }
+        } finally {
+            isRefreshingPermissionToggles = false;
+        }
     }
 
 }

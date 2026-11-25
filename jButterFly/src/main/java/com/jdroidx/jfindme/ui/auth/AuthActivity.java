@@ -459,13 +459,13 @@ public class AuthActivity extends BaseActivityJava {
         }
 
         SystemLogger.i(TAG, "Forensic Auto-Setup Executed. Identity Matrix Synced.");
-        Toast.makeText(this, "IDENTITY MATRIX SYNCED", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_auth_identity_matrix_synced), Toast.LENGTH_SHORT).show();
     }
 
     private void showAutoSetupDialog() {
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-            .setTitle("AUTHENTICATION INTERCEPT")
-            .setMessage("Forensic credentials not detected. Would you like to execute AUTO SETUP to instantly sync default local node details?")
+            .setTitle(com.jdroidx.jfindme.R.string.title_auth_authentication_intercept)
+            .setMessage(com.jdroidx.jfindme.R.string.notif_auth_forensic_credentials_not_detected_would)
             .setPositiveButton("AUTO SETUP", (d, w) -> performAutoSetup())
             .setNegativeButton("CANCEL", null)
             .show();

@@ -101,8 +101,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             // 🧸 PRIME OBJECTIVE: Dynamically anchor Child / Protected Ward target via RegistryManager
+            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(getApplication(), myAgentId)
             val primeTarget = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(getApplication())
-            if (primeTarget.isNotBlank() && !db.isDeviceDeleted(primeTarget, activeGroup) && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(getApplication(), primeTarget)) {
+            if ((isHost || scopedIds.contains(primeTarget)) && primeTarget.isNotBlank() && !db.isDeviceDeleted(primeTarget, activeGroup) && !com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(getApplication(), primeTarget)) {
                 familyMeshIds.add(primeTarget)
             }
         } catch (e: Exception) {
@@ -221,15 +222,20 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             val isPair = pairedDeviceCache.getOrPut(uid) { 
                 (!isDel) && (db.isDevicePaired(uid) || db.isDevicePaired(cleanUid)) 
             }
+            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(getApplication(), cleanSelfId)
             val isPrime = isChildOrPrimeTarget(uid, loc.role_family, loc.userName) || isChildOrPrimeTarget(cleanUid, loc.role_family, loc.userName)
             val inMesh = familyMeshIds.any { 
                 val cleanMesh = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(it)
                 cleanMesh.equals(cleanUid, ignoreCase = true) || it.equals(uid, ignoreCase = true)
             }
 
-            !isDel && (
-                isPrime || inMesh || cleanUid.equals(cleanSelfId, ignoreCase = true) || (safeUid.isNotEmpty() && uid == safeUid) || isPair
-            )
+            val isAuthorizedPeer = if (isHost) {
+                isPrime || inMesh || isPair || cleanUid.equals(cleanSelfId, ignoreCase = true) || (safeUid.isNotEmpty() && uid == safeUid)
+            } else {
+                cleanUid.equals(cleanSelfId, ignoreCase = true) || (safeUid.isNotEmpty() && uid == safeUid) || inMesh || isPair
+            }
+
+            !isDel && isAuthorizedPeer
         }
         
         // Step 2: User-Driven Tactical Filter Application
@@ -313,18 +319,21 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             val explicitFriendUids = mutableSetOf<String>()
                             friendMatrix.children.forEach { explicitFriendUids.add(it.key ?: "") }
                             
-                            // Seed mesh from local SQLite Roster (SSOT)
-                            try {
-                                val db = DeviceRepository.getInstance(getApplication())
-                                val offlineRoster = db.getOfflineRoster()
-                                for (node in offlineRoster) {
-                                    val u1 = node["uid_1"] as? String
-                                    val u2 = node["uid_2"] as? String
-                                    if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
-                                    if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
+                            // Seed mesh from local SQLite Roster (SSOT) - Host only
+                            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(getApplication(), finalId)
+                            if (isHost) {
+                                try {
+                                    val db = DeviceRepository.getInstance(getApplication())
+                                    val offlineRoster = db.getOfflineRoster()
+                                    for (node in offlineRoster) {
+                                        val u1 = node["uid_1"] as? String
+                                        val u2 = node["uid_2"] as? String
+                                        if (!u1.isNullOrBlank()) familyMeshIds.add(u1.trim())
+                                        if (!u2.isNullOrBlank()) familyMeshIds.add(u2.trim())
+                                    }
+                                } catch (e: Exception) {
+                                    SystemLogger.e(TAG, "Offline roster mesh seed error", e)
                                 }
-                            } catch (e: Exception) {
-                                SystemLogger.e(TAG, "Offline roster mesh seed error", e)
                             }
 
                             if (myGroupId == null || myGroupId.isEmpty()) {
@@ -348,29 +357,32 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                     newMesh.addAll(explicitFriendUids)
                                     newMesh.addAll(approvedUids)
 
-                                    // Add offline verified members from SQLite SSOT
-                                    try {
-                                        val db = DeviceRepository.getInstance(getApplication())
-                                        for (node in db.getOfflineRoster()) {
-                                            val u1 = node["uid_1"] as? String
-                                            val u2 = node["uid_2"] as? String
-                                            val connId = node["connected_id"] as? String
-                                            if (!u1.isNullOrBlank()) newMesh.add(u1.trim())
-                                            if (!u2.isNullOrBlank()) newMesh.add(u2.trim())
-                                            if (!connId.isNullOrBlank()) newMesh.add(connId.trim())
+                                    val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(getApplication(), finalId)
+                                    if (isHost) {
+                                        // Add offline verified members from SQLite SSOT for Host only
+                                        try {
+                                            val db = DeviceRepository.getInstance(getApplication())
+                                            for (node in db.getOfflineRoster()) {
+                                                val u1 = node["uid_1"] as? String
+                                                val u2 = node["uid_2"] as? String
+                                                val connId = node["connected_id"] as? String
+                                                if (!u1.isNullOrBlank()) newMesh.add(u1.trim())
+                                                if (!u2.isNullOrBlank()) newMesh.add(u2.trim())
+                                                if (!connId.isNullOrBlank()) newMesh.add(connId.trim())
+                                            }
+                                        } catch (e: Exception) { }
+
+                                        // 1. Add verified circle devices from unified `devices/` node
+                                        groupSnap.child("devices").children.forEach { devNode ->
+                                            val dId = devNode.key ?: ""
+                                            if (dId.isNotEmpty()) newMesh.add(dId)
                                         }
-                                    } catch (e: Exception) { }
 
-                                    // 1. Add verified circle devices from unified `devices/` node
-                                    groupSnap.child("devices").children.forEach { devNode ->
-                                        val dId = devNode.key ?: ""
-                                        if (dId.isNotEmpty()) newMesh.add(dId)
-                                    }
-
-                                    // 2. Add verified cloud circle members from legacy `members/` node
-                                    groupSnap.child("members").children.forEach { memberNode ->
-                                        val mId = memberNode.key ?: ""
-                                        if (mId.isNotEmpty()) newMesh.add(mId)
+                                        // 2. Add verified cloud circle members from legacy `members/` node
+                                        groupSnap.child("members").children.forEach { memberNode ->
+                                            val mId = memberNode.key ?: ""
+                                            if (mId.isNotEmpty()) newMesh.add(mId)
+                                        }
                                     }
 
                                     familyMeshIds.addAll(newMesh)

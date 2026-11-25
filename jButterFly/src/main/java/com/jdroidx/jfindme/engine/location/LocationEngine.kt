@@ -65,6 +65,42 @@ class LocationEngine(private val context: Context, private val onLocationChanged
                 }
             }
         }
+
+        // 🛰️ Phase 2: Bind to Application Lifecycle via DualModeCoordinator SSOT
+        com.jdroidx.jfindme.JFindMeApplication.addLifecycleListener { isForeground ->
+            val isSosActive = RegistryManager.getBoolean(context, "is_sos_active", false)
+            val mode = DualModeCoordinator.resolveTelemetryMode(
+                isAppInForeground = isForeground,
+                isSosActive = isSosActive,
+                isMoving = trackingPriority == PRIORITY_HIGH_ACCURACY
+            )
+            when (mode) {
+                TelemetryMode.FOREGROUND_HIGH_GPS -> {
+                    updateInterval = RegistryManager.getTrackingInterval(context)
+                    trackingPriority = PRIORITY_HIGH_ACCURACY
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "Lifecycle -> Foreground High GPS ($updateInterval ms)")
+                }
+                TelemetryMode.FOREGROUND_BALANCED_GPS -> {
+                    updateInterval = maxOf(30000L, RegistryManager.getTrackingInterval(context))
+                    trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "Lifecycle -> Foreground Balanced GPS ($updateInterval ms)")
+                }
+                TelemetryMode.BACKGROUND_SIM_FALLBACK -> {
+                    updateInterval = HEARTBEAT_INTERVAL_MS
+                    trackingPriority = Priority.PRIORITY_BALANCED_POWER_ACCURACY
+                    updateTrackingParams()
+                    SystemLogger.i(TAG, "Lifecycle -> Background SIM Fallback (GPS throttled, interval $updateInterval ms)")
+                }
+                TelemetryMode.DUAL_PARALLEL_SURGE -> {
+                    updateInterval = 5000L
+                    trackingPriority = PRIORITY_HIGH_ACCURACY
+                    updateTrackingParams()
+                    SystemLogger.w(TAG, "Lifecycle -> Emergency SOS Surge (5000 ms)")
+                }
+            }
+        }
     }
 
 

@@ -183,6 +183,11 @@ object AlertManager {
 
     @JvmStatic
     fun showLowBatteryNotification(context: Context, deviceName: String, batteryPct: Int) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isBatteryAllowed()) {
+            SystemLogger.d(TAG, "Low battery notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_BATTERY_ID, "Battery Sentinel", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -260,6 +265,11 @@ object AlertManager {
 
     @JvmStatic
     fun showGeofenceNotification(context: Context, payload: String) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isGeofenceAllowed()) {
+            SystemLogger.d(TAG, "Geofence notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val geoChannelId = "geofence_sentinel"
         
@@ -302,6 +312,11 @@ object AlertManager {
     // [Integration Points] TrackingService, FCMService, DeviceSharingHub
     @JvmStatic
     fun showDeviceSharingNotification(context: Context, title: String, message: String) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isDeviceSharingAllowed()) {
+            SystemLogger.d(TAG, "Device sharing notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "device_sharing_sync"
 
@@ -371,6 +386,11 @@ object AlertManager {
         pointName: String,
         creatorName: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isButterflyAllowed()) {
+            SystemLogger.d(TAG, "Butterfly invitation notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "butterfly_point_invitations"
 
@@ -457,6 +477,11 @@ object AlertManager {
         sharerName: String,
         sharerDeviceId: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isDeviceSharingAllowed()) {
+            SystemLogger.d(TAG, "Device sharing invitation notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "device_sharing_invitations"
 
@@ -508,6 +533,11 @@ object AlertManager {
         pointName: String,
         deviceName: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isButterflyAllowed()) {
+            SystemLogger.d(TAG, "Butterfly arrival notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "butterfly_point_invitations"
 
@@ -555,6 +585,11 @@ object AlertManager {
         pointName: String,
         message: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isButterflyAllowed()) {
+            SystemLogger.d(TAG, "Butterfly nudge notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "butterfly_point_invitations"
 
@@ -605,6 +640,11 @@ object AlertManager {
         pointName: String,
         newTimeStr: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isButterflyAllowed()) {
+            SystemLogger.d(TAG, "Butterfly extension notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "butterfly_point_invitations"
 
@@ -655,6 +695,11 @@ object AlertManager {
         context: Context,
         pointName: String
     ) {
+        val policy = NotificationPolicyController.getInstance(context)
+        if (!policy.isButterflyAllowed()) {
+            SystemLogger.d(TAG, "Butterfly quorum notification suppressed by policy.")
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "butterfly_point_invitations"
 

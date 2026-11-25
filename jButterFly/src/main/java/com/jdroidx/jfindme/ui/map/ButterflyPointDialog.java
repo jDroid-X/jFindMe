@@ -259,7 +259,7 @@ public class ButterflyPointDialog {
                 btnRow.setOrientation(LinearLayout.HORIZONTAL);
 
                 Button btnAccept = new Button(activity);
-                btnAccept.setText("✓ ACCEPT");
+                btnAccept.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_accept));
                 btnAccept.setTextColor(Color.WHITE);
                 btnAccept.setBackgroundColor(COLOR_EMERALD_GREEN);
                 LinearLayout.LayoutParams aLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -274,7 +274,7 @@ public class ButterflyPointDialog {
                 btnRow.addView(btnAccept);
 
                 Button btnDecline = new Button(activity);
-                btnDecline.setText("✗ DECLINE");
+                btnDecline.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_decline));
                 btnDecline.setTextColor(Color.WHITE);
                 btnDecline.setBackgroundColor(COLOR_TACTICAL_RED);
                 LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -298,7 +298,7 @@ public class ButterflyPointDialog {
 
         // Action: Create New Butterfly Point Button
         Button btnCreateNew = new Button(activity);
-        btnCreateNew.setText("➕ SET BUTTERFLY MEET POINT");
+        btnCreateNew.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_set_butterfly_meet_point));
         btnCreateNew.setTextColor(Color.WHITE);
         btnCreateNew.setBackgroundColor(activity.getGradientStart());
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -314,7 +314,7 @@ public class ButterflyPointDialog {
 
         // Action: Past Rendezvous Archives Button
         Button btnArchives = new Button(activity);
-        btnArchives.setText("📜 PAST RENDEZVOUS ARCHIVES");
+        btnArchives.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_past_rendezvous_archives));
         btnArchives.setTextColor(activity.getTextColor());
         btnArchives.setTextSize(12f);
         UiArchitect.applyCardWithOverride(activity, btnArchives, "CARD_STANDARD", 0.95f);
@@ -465,8 +465,8 @@ public class ButterflyPointDialog {
         for (Map.Entry<String, ButterflyDeviceEntry> entry : devicesSnapshot.entrySet()) {
             ButterflyDeviceEntry dev = entry.getValue();
             String devId = dev.getDeviceId();
-            String resolvedDevName = dbHelper.getDeviceCentricName(devId);
-            if (resolvedDevName.isEmpty()) resolvedDevName = "Device " + devId;
+            // [Variables] devId, resolvedDevName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] SSOT Name Resolution
+            String resolvedDevName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(activity, devId, null);
 
             boolean isSelf = devId.equalsIgnoreCase(selfAgentId) || (!selfUid.isEmpty() && devId.equalsIgnoreCase(selfUid));
             if (isSelf && !resolvedDevName.contains("(You)")) {
@@ -608,7 +608,7 @@ public class ButterflyPointDialog {
 
         // Action Buttons inside Expanded Area: Locate on Map & Focus
         Button btnLocate = new Button(activity);
-        btnLocate.setText("🎯 LOCATE ON LIVE MAP");
+        btnLocate.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_locate_on_live_map));
         btnLocate.setTextColor(Color.WHITE);
         btnLocate.setBackgroundColor(COLOR_ACCENT_GREEN);
         LinearLayout.LayoutParams locLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -625,7 +625,7 @@ public class ButterflyPointDialog {
 
         // Action: Invite More Connected Peers (Delegated mesh sharing)
         Button btnInviteMore = new Button(activity);
-        btnInviteMore.setText("➕ INVITE MORE CONNECTED PEERS");
+        btnInviteMore.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_invite_more_connected_peers));
         btnInviteMore.setTextColor(Color.WHITE);
         btnInviteMore.setBackgroundColor(COLOR_TACTICAL_BLUE);
         LinearLayout.LayoutParams inviteLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -636,7 +636,7 @@ public class ButterflyPointDialog {
 
         // Action: Turn-by-Turn Navigation (Google Maps / Waze / Geo Browser)
         Button btnNavigate = new Button(activity);
-        btnNavigate.setText("🧭 LAUNCH TURN-BY-TURN NAVIGATION");
+        btnNavigate.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_launch_turn_by_turn_navigation));
         btnNavigate.setTextColor(Color.WHITE);
         btnNavigate.setBackgroundColor(COLOR_EMERALD_GREEN);
         LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -668,7 +668,7 @@ public class ButterflyPointDialog {
         // Action: Quorum Completion Action Button (HITL Milestone)
         if (isQuorumAssembled) {
             Button btnCompletePt = new Button(activity);
-            btnCompletePt.setText("🏁 COMPLETE & ARCHIVE RENDEZVOUS");
+            btnCompletePt.setText(activity.getString(com.jdroidx.jfindme.R.string.title_butterflypoint_complete_archive_rendezvous));
             btnCompletePt.setTextColor(Color.WHITE);
             btnCompletePt.setBackgroundColor(COLOR_EMERALD_GREEN);
             LinearLayout.LayoutParams compLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1310,8 +1310,8 @@ public class ButterflyPointDialog {
             groupCard.addView(tvGroupName);
 
             for (String devId : devsInGroup) {
-                String devName = dbHelper.getDeviceCentricName(devId);
-                if (devName.isEmpty()) devName = "Device " + devId;
+                // [Variables] devId, devName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] SSOT Name Resolution
+                String devName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(activity, devId, null);
                 CheckBox cb = new CheckBox(activity);
                 cb.setText("📱 " + devName + "  [" + devId + "]");
                 cb.setTextColor(activity.getTextColor());
@@ -1441,8 +1441,8 @@ public class ButterflyPointDialog {
         DeviceRepository dbHelper = DeviceRepository.getInstance(activity);
         StringBuilder devListSummary = new StringBuilder();
         for (String devId : selectedDeviceSet) {
-            String dName = dbHelper.getDeviceCentricName(devId);
-            if (dName.isEmpty()) dName = devId;
+            // [Variables] devId, dName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] SSOT Name Resolution
+            String dName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(activity, devId, devId);
             if (devListSummary.length() > 0) devListSummary.append(", ");
             devListSummary.append(dName);
         }

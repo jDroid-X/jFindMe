@@ -80,44 +80,62 @@ class FamilyFriendsViewModel : ViewModel() {
                     val isDecomOrDel = localDb.isDeviceDeleted(u1, activeGrp) || (u2.isNotEmpty() && localDb.isDeviceDeleted(u2, activeGrp)) ||
                         com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, u1) ||
                         (u2.isNotEmpty() && com.jdroidx.jfindme.utils.RegistryManager.isAgentIdDecommissioned(context, u2))
-                    val inScope = isPrime || (scopedIds.contains(u1) || (u2.isNotEmpty() && scopedIds.contains(u2)))
-                    isSelf || isDecomOrDel || (!isPrime && !inScope)
+                    val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(context, selfAgentId)
+                    val inScope = if (isHost) true else (scopedIds.contains(u1) || (u2.isNotEmpty() && scopedIds.contains(u2)))
+                    isSelf || isDecomOrDel || !inScope
                 }.map { item ->
-                    val role = item["role_type"] as? String ?: "Unknown"
-                    val isFriend = when (val fr = item["is_friend"]) {
-                        is Boolean -> fr
-                        is Number -> fr.toInt() == 1
-                        is String -> fr == "1" || fr.equals("true", ignoreCase = true)
-                        else -> false
-                    }
-                    val isAdmin = when (val adm = item["is_admin"]) {
+                    val rawRole = item["role_type"] as? String ?: "Unknown"
+                    val u1 = item["uid_1"] as? String ?: ""
+                    val u2 = item["uid_2"] as? String ?: ""
+                    val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                    val ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(context, u1, null, myAgentId)
+                    val role = if (!ssotRole.isNullOrBlank() && ssotRole != "Member" && ssotRole != "Device" && ssotRole != "Host") ssotRole else rawRole
+                    val upperRole = role.uppercase()
+                    val isSpouse = upperRole.contains("SPOUSE") || upperRole.contains("WIFE") || upperRole.contains("HUSBAND") || upperRole.contains("PARTNER")
+                    val isChild = isChildOrPrimeTarget(u1, role, item["fullName"] as? String)
+                    val isAdmin = !isSpouse && !isChild && when (val adm = item["is_admin"]) {
                         is Boolean -> adm
                         is Number -> adm.toInt() == 1
                         is String -> adm == "1" || adm.equals("true", ignoreCase = true)
-                        else -> false
+                        else -> upperRole.contains("ADMIN") || upperRole.contains("OWNER")
+                    }
+                    val isFriend = !isSpouse && !isChild && !isAdmin && when (val fr = item["is_friend"]) {
+                        is Boolean -> fr
+                        is Number -> fr.toInt() == 1
+                        is String -> fr == "1" || fr.equals("true", ignoreCase = true)
+                        else -> upperRole.contains("FRIEND") || upperRole.contains("PEER")
                     }
                     val pMaskStr = item["permissions_mask"]?.toString() ?: "0xFF"
                     val pMask = try {
                         if (pMaskStr.startsWith("0x", ignoreCase = true)) pMaskStr.substring(2).toInt(16)
                         else pMaskStr.toInt()
                     } catch (e: Exception) { 0xFF }
-                    val rawBatteryPct = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                    val rawBatteryPct = (item["battery_pct"] as? Number)?.toInt() ?: -1
                     val rawLastSeenMs = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
-                    val u1 = item["uid_1"] as? String ?: ""
-                    val u2 = item["uid_2"] as? String ?: ""
 
                     // 🚀 Cross-Reference Live Location SSOT
                     val locRepo = com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context)
                     val cachedLoc = locRepo.getLatestLocationFor(u1) ?: (if (u2.isNotEmpty()) locRepo.getLatestLocationFor(u2) else null)
                     val lastSeenMs = if (cachedLoc != null && cachedLoc.getLongTimestamp() > rawLastSeenMs) cachedLoc.getLongTimestamp() else rawLastSeenMs
-                    val batteryPct = if (cachedLoc != null && cachedLoc.batteryLevel > 0) cachedLoc.batteryLevel else rawBatteryPct
+                    val batteryPct = if (cachedLoc != null && cachedLoc.batteryLevel in 0..100) cachedLoc.batteryLevel else (if (rawBatteryPct in 0..100) rawBatteryPct else -1)
                     val isSos = cachedLoc?.isSosActive ?: false
 
-                    val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs, batteryPct, isSos)
+                    val isParked = localDb.isDevicePendingUnlink(u1)
+                    val rag = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(
+                        context = context,
+                        timestamp = lastSeenMs,
+                        batteryLevel = batteryPct,
+                        isSos = isSos,
+                        isDeleted = false,
+                        isGhost = false,
+                        isPendingUnlink = isParked
+                    )
                     val isOnline = (rag.status == com.jdroidx.jfindme.utils.DeviceRagEngine.RagStatus.GREEN)
+                    val rawItemName = item["fullName"] as? String
+                    val resolvedDisplayName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, u1, rawItemName)
                     RosterNode(
                         uid = u1,
-                        displayName = item["fullName"] as? String ?: "Unknown",
+                        displayName = resolvedDisplayName,
                         roleTitle = role,
                         statusText = rag.statusText,
                         isAdministrator = isAdmin,
@@ -152,7 +170,16 @@ class FamilyFriendsViewModel : ViewModel() {
                     if (idx != -1) {
                         val old = current[idx]
                         if (loc.getLongTimestamp() > old.lastSeenTimestamp) {
-                            val ragEval = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(loc.getLongTimestamp(), loc.batteryLevel, loc.isSosActive)
+                            val isParked = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context).isDevicePendingUnlink(old.uid)
+                            val ragEval = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(
+                                context = context,
+                                timestamp = loc.getLongTimestamp(),
+                                batteryLevel = loc.batteryLevel,
+                                isSos = loc.isSosActive,
+                                isDeleted = false,
+                                isGhost = false,
+                                isPendingUnlink = isParked
+                            )
                             current[idx] = old.copy(
                                 batteryPercent = if (loc.batteryLevel > 0) loc.batteryLevel else old.batteryPercent,
                                 lastSeenTimestamp = loc.getLongTimestamp(),
@@ -261,7 +288,9 @@ class FamilyFriendsViewModel : ViewModel() {
                                                                     val localDb = com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(context)
                                                                     for (child in relSnap.children) {
                                                                         val peerId = child.key ?: continue
-                                                                        val peerName = child.child("name").getValue(String::class.java) ?: "Node $peerId"
+                                                                        // [Variables] peerName, rawName | [Constants] None | [Dependencies] DevicePresentationResolver | [Integration Points] FamilyFriendsViewModel relationship discovery
+                                                                        val rawName = child.child("name").getValue(String::class.java)
+                                                                        val peerName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, peerId, rawName)
                                                                         val peerRole = child.child("role").getValue(String::class.java) ?: "Member"
                                                                         localDb.saveRosterNode(peerId, peerName, peerRole, "Active", false, false, "Recovered Peer", "1", effectiveGroup)
                                                                     }
@@ -401,11 +430,8 @@ class FamilyFriendsViewModel : ViewModel() {
             // 🛡️ Scoped connected device visibility: strictly isolate to respective connected peers
             val focalId = if (selfAgentId.isNotBlank()) selfAgentId else (resolvedLocalAgentId ?: selfAuthUid)
             val scopedIds = if (focalId.isNotBlank()) localDb.getConnectedDeviceIds(focalId) else emptySet()
-            val candidateRole = nodeSnap.child("membership").child("role").getValue(String::class.java)
-                ?: nodeSnap.child("role").getValue(String::class.java)
-                ?: profileSnap.child("role_title").getValue(String::class.java)
-            val isPrime = isChildOrPrimeTarget(canonicalAgentId, candidateRole, localDb.getDeviceCentricName(canonicalAgentId))
-            val inScope = isPrime || scopedIds.contains(canonicalAgentId) || scopedIds.contains(rawKey) || (scopedIds.isEmpty() && isPrime)
+            val isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(context, selfAgentId)
+            val inScope = if (isHost) true else (scopedIds.contains(canonicalAgentId) || scopedIds.contains(rawKey))
             if (!inScope) {
                 continue
             }
@@ -435,18 +461,20 @@ class FamilyFriendsViewModel : ViewModel() {
                 ?: nodeSnap.child("name").getValue(String::class.java)
                 ?: nodeSnap.child("device").child("live").child("userName").getValue(String::class.java)
                 
-            val name = if (ssotName.isNotEmpty() && !ssotName.startsWith("Agent_", true)) {
-                ssotName
-            } else if (!cloudName.isNullOrEmpty() && !cloudName.startsWith("Agent_", true)) {
-                cloudName
-            } else {
-                "Agent_$canonicalAgentId"
+            val rawCandidateName = when {
+                ssotName.isNotEmpty() && !com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(ssotName) -> ssotName
+                !cloudName.isNullOrEmpty() && !com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(cloudName) -> cloudName
+                else -> null
             }
+            val name = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, canonicalAgentId, rawCandidateName)
                 
-            val roleTitle = nodeSnap.child("membership").child("role").getValue(String::class.java)
+            val rawCloudRole = nodeSnap.child("membership").child("role").getValue(String::class.java)
                 ?: nodeSnap.child("role").getValue(String::class.java)
                 ?: profileSnap.child("role_title").getValue(String::class.java)
                 ?: "Member"
+            val myAgentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+            val ssotRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(context, canonicalAgentId, null, myAgentId)
+            val roleTitle = if (!ssotRole.isNullOrBlank() && ssotRole != "Member" && ssotRole != "Device" && ssotRole != "Host") ssotRole else rawCloudRole
 
             val rawAvatar = profileSnap.child("avatar_id").getValue(String::class.java)
                 ?: profileSnap.child("equipped_avatar_id").getValue(String::class.java)
@@ -466,8 +494,13 @@ class FamilyFriendsViewModel : ViewModel() {
             }
 
             // Only update local DB if we have a verified new avatar from live cloud, not an obsolete group snapshot!
+            // 🛡️ DELTA FILTER: Only mutate SQLite if cloud data represents an actual change from existing local SSOT
             if (!cloudName.isNullOrBlank() && !rawAvatar.isNullOrBlank() && rawAvatar != "1" && rawAvatar != "butterfly") {
-                localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName, avatarId)
+                val existingName = localDb.getDeviceCentricName(canonicalAgentId)
+                val existingAvatar = localDb.getDeviceCentricAvatar(canonicalAgentId)
+                if (existingName != cloudName || existingAvatar != avatarId) {
+                    localDb.updateDeviceIdentityAndAvatar(canonicalAgentId, cloudName, avatarId)
+                }
             }
 
             // [Variables] directHb, rawDirectBattery, lastHeartbeat, batteryPct, isSos, rag, isDeviceOnline, statusLabel | [Constants] None | [Dependencies] safeLong, safeInt, DeviceRagEngine, DatabaseHelper | [Integration Points] FamilyFriendsActivity, DeviceVitalsTable
@@ -513,8 +546,10 @@ class FamilyFriendsViewModel : ViewModel() {
             val statusLabel = rag.statusText
 
             val upper = roleTitle.uppercase()
-            val isAdmin = upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("SPOUSE") || upper.contains("GUARDIAN") || upper.contains("ADMIN")
-            val isFriend = upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR")
+            val isSpouse = upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER")
+            val isChild = isChildOrPrimeTarget(canonicalAgentId, roleTitle, name)
+            val isAdmin = !isSpouse && !isChild && (upper.contains("MOTHER") || upper.contains("FATHER") || upper.contains("GUARDIAN") || upper.contains("ADMIN"))
+            val isFriend = !isSpouse && !isChild && !isAdmin && (upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") || nodeSnap.child("circle_type").getValue(String::class.java)?.contains("FRIEND", true) == true)
             val category = classifyCategory(roleTitle, isAdmin, isFriend)
 
             val assignedZone = localDb.getAssignedSafeZoneForDevice(canonicalAgentId)
@@ -688,11 +723,15 @@ class FamilyFriendsViewModel : ViewModel() {
             }
 
             // 🚀 PRIME DIRECTIVE: Backup explicitly verified Firebase Target locally with active group!
-            localDb.saveRosterNode(
-                canonicalAgentId, name, roleTitle, statusLabel, isAdmin, isFriend, 
-                ownerName = "Cloud Roster Mirror", uid2 = null, connectedDeviceId = canonicalAgentId, qrCode = avatarId,
-                avatarId = avatarId, activeGroupId = activeGroupId, permissionsMask = cloudMaskStr
-            )
+            // 🛡️ DELTA GATE: Only persist roster node locally if new node or if verified fields changed
+            val existingInternalId = localDb.resolveInternalId(canonicalAgentId)
+            if (existingInternalId == -1L) {
+                localDb.saveRosterNode(
+                    canonicalAgentId, name, roleTitle, statusLabel, isAdmin, isFriend, 
+                    ownerName = "Cloud Roster Mirror", uid2 = null, connectedDeviceId = canonicalAgentId, qrCode = avatarId,
+                    avatarId = avatarId, activeGroupId = activeGroupId, permissionsMask = cloudMaskStr
+                )
+            }
             localDb.upsertDeviceVitals(
                 canonicalAgentId,
                 batteryPct,
@@ -736,18 +775,20 @@ class FamilyFriendsViewModel : ViewModel() {
                     if (pMaskStr2.startsWith("0x", ignoreCase = true)) pMaskStr2.substring(2).toInt(16)
                     else pMaskStr2.toInt()
                 } catch (e: Exception) { 0xFF }
-                val rawBatteryPct2 = (item["battery_pct"] as? Number)?.toInt() ?: 100
+                val rawBatteryPct2 = (item["battery_pct"] as? Number)?.toInt() ?: -1
                 val rawLastSeenMs2 = (item["last_seen_ts"] as? Number)?.toLong() ?: 0L
                 val locRepo2 = com.jdroidx.jfindme.data.repository.LocationRepository.getInstance(context)
                 val cachedLoc2 = locRepo2.getLatestLocationFor(u1)
                 val lastSeenMs2 = if (cachedLoc2 != null && cachedLoc2.getLongTimestamp() > rawLastSeenMs2) cachedLoc2.getLongTimestamp() else rawLastSeenMs2
-                val batteryPct2 = if (cachedLoc2 != null && cachedLoc2.batteryLevel > 0) cachedLoc2.batteryLevel else rawBatteryPct2
+                val batteryPct2 = if (cachedLoc2 != null && cachedLoc2.batteryLevel in 0..100) cachedLoc2.batteryLevel else (if (rawBatteryPct2 in 0..100) rawBatteryPct2 else -1)
                 val isSos2 = cachedLoc2?.isSosActive ?: false
                 val rag2 = com.jdroidx.jfindme.utils.DeviceRagEngine.evaluate(lastSeenMs2, batteryPct2, isSos2)
 
+                val rawItemName2 = item["fullName"] as? String
+                val resolvedDisplayName2 = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(context, u1, rawItemName2)
                 resolvedNodes.add(RosterNode(
                     uid = u1,
-                    displayName = item["fullName"] as? String ?: "Cached Device",
+                    displayName = resolvedDisplayName2,
                     roleTitle = role,
                     statusText = rag2.statusText,
                     isAdministrator = isAdmin,
@@ -880,11 +921,11 @@ class FamilyFriendsViewModel : ViewModel() {
         fun classifyCategory(role: String, isAdmin: Boolean, isFriend: Boolean): String {
             val upper = role.uppercase()
             return when {
-                isFriend || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") || upper.contains("INNOVANT") -> "FRIEND"
                 upper.contains("SPOUSE") || upper.contains("WIFE") || upper.contains("HUSBAND") || upper.contains("PARTNER") -> "SPOUSE"
-                isAdmin || upper.contains("GUARDIAN") || upper.contains("FATHER") || upper.contains("MOTHER") || upper.contains("PARENT") || upper.contains("ADMIN") -> "GUARDIAN"
                 upper.contains("CHILD") || upper.contains("WARD") || upper.contains("SON") || upper.contains("DAUGHTER") || upper.contains("DEPENDENT") || upper.contains("KID") -> "DEPENDENT_CHILD"
-                else -> "FRIEND"
+                isAdmin || upper.contains("CO_GUARDIAN") || upper.contains("CO-GUARDIAN") || upper.contains("GUARDIAN") || upper.contains("FATHER") || upper.contains("MOTHER") || upper.contains("PARENT") || upper.contains("ADMIN") -> "GUARDIAN"
+                isFriend || upper.contains("FRIEND") || upper.contains("COLLEAGUE") || upper.contains("PEER") || upper.contains("ACQUAINTANCE") || upper.contains("NEIGHBOR") -> "FRIEND"
+                else -> "GUARDIAN" // Default family adult members to GUARDIAN, never misclassify as Friend
             }
         }
     }
@@ -900,10 +941,22 @@ class FamilyFriendsViewModel : ViewModel() {
             com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_PRIME_TARGET_ID
         }
         val cleanUid = com.jdroidx.jfindme.utils.DeviceIdentityHelper.toCanonicalAgentId(uid)
+        // 🛡️ Adult & Peer Whitelist: Adults, Guardians, Spouses, and Colleagues must NEVER be classified as children
+        if (appCtx != null && com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(appCtx, cleanUid)) {
+            return false
+        }
+        val role = roleTitle ?: ""
+        if (role.contains("Admin", ignoreCase = true) ||
+            role.contains("Guardian", ignoreCase = true) ||
+            role.contains("Spouse", ignoreCase = true) ||
+            role.contains("Friend", ignoreCase = true) ||
+            role.contains("Colleague", ignoreCase = true) ||
+            role.contains("Parent", ignoreCase = true)) {
+            return false
+        }
         if (cleanUid.equals(primeTarget, ignoreCase = true)) return true
         val primeName = if (appCtx != null) com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetName(appCtx) else com.jdroidx.jfindme.utils.RegistryManager.DEFAULT_PRIME_TARGET_NAME
         if (displayName != null && primeName.isNotBlank() && displayName.contains(primeName, ignoreCase = true)) return true
-        val role = roleTitle ?: ""
         return role.contains("Child", ignoreCase = true) ||
                role.contains("Daughter", ignoreCase = true) ||
                role.contains("Son", ignoreCase = true) ||

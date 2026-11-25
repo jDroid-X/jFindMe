@@ -46,6 +46,14 @@ public class ProfileActivity extends BaseActivityJava {
     private android.widget.EditText addressField;
     private android.widget.EditText emergencyNoteField;
     private android.widget.EditText orgField, deptField; // 🚀 QA Fix: Master Corporate Bridge
+    // 🛡️ Enterprise Access Control (ACL) & Privacy Toggles SSOT
+    private android.widget.CheckBox cbAclLiveTracking;
+    private android.widget.CheckBox cbAclHistoryAudit;
+    private android.widget.CheckBox cbAclGeofence;
+    private android.widget.CheckBox cbAclAdminStatus;
+    private android.widget.CheckBox cbAclGhostOverride;
+    private android.widget.CheckBox cbAclBiometrics;
+    private android.widget.CheckBox cbGlobalCloudSync;
     private android.content.BroadcastReceiver profileSyncReceiver = null;
 
     protected int dpToPx(int dp) {
@@ -143,8 +151,25 @@ public class ProfileActivity extends BaseActivityJava {
         backBtn.setOnClickListener(v -> onBackPressed());
         topRow.addView(backBtn);
 
+        // 🛡️ OOPS MVC Model Rehydration: Retrieve authoritative profile name from SQLite Model
+        String initialNick = prefs.getString("user_nickname", "");
+        if (initialNick.isEmpty() || initialNick.equalsIgnoreCase("UNIDENTIFIED AGENT") || initialNick.equalsIgnoreCase("Active Tracker")) {
+            try {
+                String selfAgent = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(this);
+                com.jdroidx.jfindme.data.local.DatabaseHelper db = com.jdroidx.jfindme.data.local.DatabaseHelper.getInstance(this);
+                java.util.Map<String, String> dossier = db.getLocalDossier(selfAgent);
+                String dbName = dossier.get("fullName");
+                if (dbName == null || dbName.isEmpty()) dbName = dossier.get("name");
+                if (dbName == null || dbName.isEmpty()) dbName = dossier.get("owner_name");
+                if (dbName != null && !com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(dbName, false)) {
+                    initialNick = dbName.trim();
+                    prefs.edit().putString("user_nickname", initialNick).apply();
+                }
+            } catch (Exception ignored) {}
+        }
+
         titleView = new TextView(this);
-        titleView.setText(prefs.getString("user_nickname", "UNIDENTIFIED AGENT").toUpperCase());
+        titleView.setText((initialNick.isEmpty() ? "UNIDENTIFIED AGENT" : initialNick).toUpperCase());
         titleView.setTextColor(getGradientOverlayText());
         com.jdroidx.jfindme.ui.base.UiArchitect.applyText(this, titleView, "TEXT_HEADER");
         titleView.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -270,6 +295,14 @@ public class ProfileActivity extends BaseActivityJava {
         // Populate Grid
         gridRow1.addView(prepareGridIcon(android.R.drawable.ic_menu_camera, v -> handleCameraLaunch()), gLp);
         gridRow1.addView(prepareGridIcon(android.R.drawable.ic_menu_gallery, v -> {
+            if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                    this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_MEDIA_STORAGE)) {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                    this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_MEDIA_STORAGE,
+                    com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_SINGLE_GATE
+                );
+                return;
+            }
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
             intent.setType("image/*");
             startActivityForResult(intent, 1004);
@@ -353,7 +386,11 @@ public class ProfileActivity extends BaseActivityJava {
         
         nameField = new android.widget.EditText(this);
         nameField.setHint(android.text.Html.fromHtml("Name <font color='#D32F2F'>(*)</font>"));
-        nameField.setText(prefs.getString("user_nickname", "").toUpperCase());
+        String existingPrefName = prefs.getString("user_nickname", "");
+        if (existingPrefName.isEmpty() && initialNick != null && !initialNick.isEmpty()) {
+            existingPrefName = initialNick;
+        }
+        nameField.setText(existingPrefName.toUpperCase());
         nameField.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
         nameField.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -586,6 +623,45 @@ public class ProfileActivity extends BaseActivityJava {
         com.jdroidx.jfindme.utils.FormUtils.linkTabSequence(nameField, phoneField, addressField, countrySpinner, stateSpinner, citySpinner, pincodeField, emergencyNoteField, orgField, deptField);
 
         root.addView(pForm, cardLp);
+
+        // --- LAYER 4: ENTERPRISE ACCESS CONTROL (ACL) & PRIVACY ---
+        root.addView(createSectionHeader("ENTERPRISE ACCESS CONTROL (ACL) & PRIVACY"));
+
+        LinearLayout aclCard = new LinearLayout(this);
+        aclCard.setOrientation(LinearLayout.VERTICAL);
+        com.jdroidx.jfindme.ui.base.UiArchitect.applyCard(this, aclCard, "CARD_STANDARD");
+        aclCard.setPadding(quota, quota, quota, quota);
+
+        cbAclLiveTracking = createPermissionCheckbox("Live Tracking Protocol", "Authorize real-time synchronization of GPS and sensor data with circle members.");
+        cbAclLiveTracking.setChecked(!"DENIED".equalsIgnoreCase(prefs.getString("acl_live_tracking", "GRANTED")));
+
+        cbAclHistoryAudit = createPermissionCheckbox("History Audit Extraction", "Permit circle members to view positional breadcrumb trails and historical routes.");
+        cbAclHistoryAudit.setChecked(!"DENIED".equalsIgnoreCase(prefs.getString("acl_history_audit", "GRANTED")));
+
+        cbAclGeofence = createPermissionCheckbox("Boundary Breach Alerts", "Broadcast automatic arrival/exit telemetry alerts when safe zones are triggered.");
+        cbAclGeofence.setChecked(!"DENIED".equalsIgnoreCase(prefs.getString("acl_geofence", "GRANTED")));
+
+        cbAclAdminStatus = createPermissionCheckbox("Administrative Overrides", "Grant administrative permissions to manage circle devices and rendezvous points.");
+        cbAclAdminStatus.setChecked("GRANTED".equalsIgnoreCase(prefs.getString("acl_admin", "DENIED")));
+
+        cbAclGhostOverride = createPermissionCheckbox("Stealth Oversight Logic", "Allow emergency SOS broadcasts to temporarily override Ghost Mode concealment.");
+        cbAclGhostOverride.setChecked(!"DENIED".equalsIgnoreCase(prefs.getString("acl_ghost_override", "GRANTED")));
+
+        cbAclBiometrics = createPermissionCheckbox("Biometric Identity Lock", "Require biometric fingerprint/face authentication before editing identity traits.");
+        cbAclBiometrics.setChecked("GRANTED".equalsIgnoreCase(prefs.getString("acl_biometrics", "DENIED")));
+
+        cbGlobalCloudSync = createPermissionCheckbox("Synchronize Profile to Cloud Hub", "If disabled, sensitive profile traits stay strictly offline on local silicon storage.");
+        cbGlobalCloudSync.setChecked(prefs.getBoolean("cloud_sync_enabled", true));
+
+        aclCard.addView(cbAclLiveTracking);
+        aclCard.addView(cbAclHistoryAudit);
+        aclCard.addView(cbAclGeofence);
+        aclCard.addView(cbAclAdminStatus);
+        aclCard.addView(cbAclGhostOverride);
+        aclCard.addView(cbAclBiometrics);
+        aclCard.addView(cbGlobalCloudSync);
+
+        root.addView(aclCard, cardLp);
 
         // --- LAYER 4: SYSTEM ACTIONS & SECURITY ---
         root.addView(createSectionHeader("SYSTEM ACTIONS & SECURITY"));
@@ -1365,6 +1441,18 @@ public class ProfileActivity extends BaseActivityJava {
         String addressVal = addressField.getText().toString().trim();
         String emergencyNoteVal = emergencyNoteField.getText().toString().trim();
 
+        com.jdroidx.jfindme.data.model.ProfileAclDossier currentAcl = new com.jdroidx.jfindme.data.model.ProfileAclDossier(
+            cbAclLiveTracking != null && cbAclLiveTracking.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclHistoryAudit != null && cbAclHistoryAudit.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclGeofence != null && cbAclGeofence.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclAdminStatus != null && cbAclAdminStatus.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclGhostOverride != null && cbAclGhostOverride.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbAclBiometrics != null && cbAclBiometrics.isChecked() ? com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED : com.jdroidx.jfindme.data.model.AclPermissionState.DENIED,
+            cbGlobalCloudSync == null || cbGlobalCloudSync.isChecked(),
+            false, false, false, false, false, false, false
+        );
+        currentAcl = com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.snapshotDossierPermissions(this, currentAcl);
+
         if (profileViewModel != null) {
             profileViewModel.verifyAndSaveProfile(
                 this,
@@ -1375,9 +1463,22 @@ public class ProfileActivity extends BaseActivityJava {
                 orgField.getText().toString().trim(), 
                 deptField.getText().toString().trim(),
                 prefs,
-                ignoreValidation
+                ignoreValidation,
+                currentAcl
             );
         }
+    }
+
+    private android.widget.CheckBox createPermissionCheckbox(String ruleTitle, String description) {
+        android.widget.CheckBox cb = new android.widget.CheckBox(this);
+        cb.setText(ruleTitle + "\n" + description);
+        cb.setTextColor(getTextColor());
+        cb.setPadding(15, 15, 15, 15);
+        cb.setChecked(false);
+        cb.setEnabled(true);
+        cb.setFocusable(true);
+        cb.setClickable(true);
+        return cb;
     }
 
     private View wrapEnterpriseFullGrid(View inner, int iconRes) {
@@ -1705,6 +1806,19 @@ public class ProfileActivity extends BaseActivityJava {
             if (field == null) return;
         });
         
+        // 🛡️ Observe Enterprise ACL Dossier SSOT
+        profileViewModel.getAclDossier().observe(this, acl -> {
+            if (acl != null) {
+                if (cbAclLiveTracking != null) cbAclLiveTracking.setChecked(acl.getLiveTracking() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbAclHistoryAudit != null) cbAclHistoryAudit.setChecked(acl.getHistoryAudit() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbAclGeofence != null) cbAclGeofence.setChecked(acl.getGeofenceBreach() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbAclAdminStatus != null) cbAclAdminStatus.setChecked(acl.getAdminOverride() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbAclGhostOverride != null) cbAclGhostOverride.setChecked(acl.getGhostOverride() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbAclBiometrics != null) cbAclBiometrics.setChecked(acl.getBiometricLock() == com.jdroidx.jfindme.data.model.AclPermissionState.GRANTED);
+                if (cbGlobalCloudSync != null) cbGlobalCloudSync.setChecked(acl.getCloudSyncEnabled());
+            }
+        });
+
         // 🚀 Final Payload Sync Return Path
         profileViewModel.getSaveSuccess().observe(this, success -> {
             if (Boolean.TRUE.equals(success)) {
@@ -1712,23 +1826,10 @@ public class ProfileActivity extends BaseActivityJava {
                 android.widget.Toast.makeText(this, targetMsg, android.widget.Toast.LENGTH_LONG).show();
                 prefs.edit().putBoolean("profile_onboarded", true).apply();
                 
-                // 🚀 QA Fix: Master Permission Intercept Sequence!
-                java.util.List<String> neededPerms = new java.util.ArrayList<>();
-                if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    neededPerms.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                        neededPerms.add(android.Manifest.permission.ACCESS_COARSE_LOCATION);
-                    }
-                }
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        neededPerms.add(android.Manifest.permission.POST_NOTIFICATIONS);
-                    }
-                }
-                
-                if (!neededPerms.isEmpty()) {
+                // 🚀 QA Fix: Master Permission Intercept Sequence via Unified ProfilePermissionsManager
+                if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.hasMandatoryPermissions(this)) {
                     android.widget.Toast.makeText(this, "Authorizing Hardware Node Permissions...", android.widget.Toast.LENGTH_SHORT).show();
-                    androidx.core.app.ActivityCompat.requestPermissions(this, neededPerms.toArray(new String[0]), 999);
+                    com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestMandatoryBatch(this, 999);
                 } else {
                     executeCloudMatrixVerification();
                 }
@@ -1888,9 +1989,18 @@ public class ProfileActivity extends BaseActivityJava {
             executeCloudMatrixVerification();
         } else if (requestCode == 1003) {
             if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                android.widget.Toast.makeText(this, "Hardware Lens Authorized! Tap Camera again to snap.", android.widget.Toast.LENGTH_SHORT).show();
+                handleCameraLaunch();
             } else {
                 android.widget.Toast.makeText(this, "Hardware Lens Access Denied.", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.RC_SINGLE_GATE) {
+            if (com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                    this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_MEDIA_STORAGE)) {
+                android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+                intent.setType("image/*");
+                startActivityForResult(intent, 1004);
+            } else {
+                android.widget.Toast.makeText(this, "Gallery Media Permission Denied.", android.widget.Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -1935,8 +2045,11 @@ public class ProfileActivity extends BaseActivityJava {
 
     private void handleCameraLaunch() {
         try {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                androidx.core.app.ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.CAMERA}, 1003);
+            if (!com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.isEffectiveGateActive(
+                    this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_CAMERA)) {
+                com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.requestGate(
+                    this, com.jdroidx.jfindme.engine.permission.ProfilePermissionsManager.GATE_CAMERA, 1003
+                );
                 return;
             }
 

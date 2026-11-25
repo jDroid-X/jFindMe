@@ -228,11 +228,11 @@ public class EmergencyAlertHelper {
                 }
 
                 if (dispatchedCount > 0) {
-                    Toast.makeText(activity, "🚨 Emergency siren dispatched to " + dispatchedCount + " connected device(s)!", Toast.LENGTH_LONG).show();
+                    Toast.makeText(activity, activity.getString(com.jdroidx.jfindme.R.string.notif_emergencyalerthelper_emergency_siren_dispatched_to, dispatchedCount), Toast.LENGTH_LONG).show();
                 } else if (ringLocal) {
-                    Toast.makeText(activity, "🚨 Local acoustic siren activated (" + sirenDuration + "s)!", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, activity.getString(com.jdroidx.jfindme.R.string.notif_emergencyalerthelper_local_acoustic_siren_activated, sirenDuration), Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(activity, "Emergency SOS beacon broadcasted to network.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(activity, activity.getString(com.jdroidx.jfindme.R.string.notif_emergencyalerthelper_emergency_sos_beacon_broadcasted_to), Toast.LENGTH_SHORT).show();
                 }
 
                 dialog.dismiss();

@@ -769,7 +769,7 @@ object BackgroundJobManager {
         }
     }
 
-    private fun scheduleWatchdogAlarm(context: Context, intervalMins: Long) {
+    fun scheduleWatchdogAlarm(context: Context, intervalMins: Long) {
         try {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
             val intent = Intent(context, WatchdogAlarmReceiver::class.java).apply {
@@ -789,11 +789,10 @@ object BackgroundJobManager {
                 true
             }
 
-            if (canScheduleExact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                val alarmClockInfo = AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent)
-                alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (canScheduleExact && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             } else {
                 alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             }
@@ -828,8 +827,8 @@ object BackgroundJobManager {
     fun rescheduleWatchdogWorker(context: Context, intervalMins: Long) {
         try {
             // [Variables] safeMins: Long, intervalMins: Long | [Constants] None | [Dependencies] WorkManager, AlarmManager, WatchdogAlarmReceiver | [Integration Points] Watchdog cadence scheduler
-            if (intervalMins < 15L && intervalMins > 0L) {
-                // Android WorkManager periodic floor is 15 minutes; dispatch sub-15min alarms via AlarmManager
+            if (intervalMins > 0L) {
+                // Autonomous Sentinel Dual-Dispatch: Always keep exact AlarmManager armed to bypass Doze / OEM sleep
                 scheduleWatchdogAlarm(context, intervalMins)
             } else {
                 cancelWatchdogAlarm(context)
@@ -931,6 +930,11 @@ object BackgroundJobManager {
         }
         if (prefs.getBoolean(PREF_UPDATE_CHECK_ACTIVE, true)) {
             rescheduleSilentUpdateWorker(context, prefs.getLong(PREF_UPDATE_CHECK_INTERVAL, DEFAULT_UPDATE_CHECK_HOURS))
+        }
+        // [Variables] interval: Long | [Constants] DEFAULT_STEALTH_DORMANT_MINS | [Dependencies] StealthAlarmSentinelEngine | [Integration Points] 60-min autonomous dormant hourly SIM & telemetry alarm clock sentinel
+        if (prefs.getBoolean(PREF_STEALTH_ALARM_ACTIVE, true)) {
+            val interval = prefs.getLong(PREF_STEALTH_DORMANT_INTERVAL, DEFAULT_STEALTH_DORMANT_MINS)
+            StealthAlarmSentinelEngine.scheduleNextStealthPulse(context, interval)
         }
         SystemLogger.i(TAG, "All background engine jobs initialized.")
     }

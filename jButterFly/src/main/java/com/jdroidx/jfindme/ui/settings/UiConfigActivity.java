@@ -1378,10 +1378,10 @@ public class UiConfigActivity extends BaseActivityJava {
         btnRow1.setPadding(0, 0, 0, scale(8));
 
         View btnPrim = UiArchitect.createPrimaryButton(this, "Primary", android.R.drawable.ic_menu_send, v -> {
-            UiArchitect.showSlideNotificationBanner(this, "Button Clicked", "Primary Action Executed", false, 3000, "OK", null);
+            UiArchitect.showSlideNotificationBanner(this, getString(com.jdroidx.jfindme.R.string.title_banner_button_clicked), getString(com.jdroidx.jfindme.R.string.notif_banner_primary_action_executed), false, 3000, "OK", null);
         });
         View btnSec = UiArchitect.createSecondaryButton(this, "Secondary", 0, v -> {
-            UiArchitect.showSlideNotificationBanner(this, "Secondary", "Secondary Action Triggered", false, 3000, null, null);
+            UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_secondary, com.jdroidx.jfindme.R.string.notif_banner_secondary_action_triggered, false, 3000, null, null);
         });
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         bLp.setMargins(scale(4), 0, scale(4), 0);
@@ -1395,7 +1395,7 @@ public class UiConfigActivity extends BaseActivityJava {
         btnRow2.setPadding(0, 0, 0, scale(12));
 
         View btnDest = UiArchitect.createDestructiveButton(this, "Destructive", android.R.drawable.ic_menu_delete, v -> {
-            UiArchitect.showSlideNotificationBanner(this, "Alert", "Destructive Action Pressed", true, 3000, "UNDO", null);
+            UiArchitect.showSlideNotificationBanner(this, getString(com.jdroidx.jfindme.R.string.title_banner_alert), getString(com.jdroidx.jfindme.R.string.notif_banner_destructive_action_pressed), true, 3000, "UNDO", null);
         });
         View btnOutl = UiArchitect.createOutlinedButton(this, "Outlined", 0, v -> {
             UiArchitect.showSlideNotificationBanner(this, "Outlined", "Outlined Button Pressed", false, 3000, null, null);
@@ -1531,7 +1531,7 @@ public class UiConfigActivity extends BaseActivityJava {
 
         View btnBanner = UiArchitect.createPrimaryButton(this, "TRIGGER SLIDE NOTIFICATION BANNER", android.R.drawable.ic_dialog_info, v -> {
             UiArchitect.showSlideNotificationBanner(this, "⚡ Network Reconnect", "Synchronized 14 offline fixes with Cloud SSOT.", false, 4000, "VIEW MAP", () -> {
-                android.widget.Toast.makeText(this, "Navigating to Map...", android.widget.Toast.LENGTH_SHORT).show();
+                android.widget.Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_uiconfig_navigating_to_map), android.widget.Toast.LENGTH_SHORT).show();
             });
         });
         container.addView(btnBanner);

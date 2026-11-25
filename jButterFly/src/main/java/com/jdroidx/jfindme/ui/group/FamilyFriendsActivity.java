@@ -186,7 +186,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         btnSync.setClickable(true);
         btnSync.setFocusable(true);
         btnSync.setOnClickListener(v -> {
-            Toast.makeText(this, "🔄 Synchronizing relational matrix...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_familyfriends_synchronizing_relational_matrix), Toast.LENGTH_SHORT).show();
             if (viewModel != null) viewModel.initializeCloudSync(this);
         });
         header.addView(btnSync, new LinearLayout.LayoutParams(scale(48), scale(48)));
@@ -320,7 +320,12 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         if (viewModel != null) viewModel.initializeCloudSync(this);
         if (ownerAvatar != null) AvatarLoader.bindCurrentUserAvatar(this, ownerAvatar);
         if (tvOwnerName != null) {
-            String nameStr = RegistryManager.getUserNickname(this);
+            String myAgentId = RegistryManager.getAgentId(this);
+            String rawNameStr = RegistryManager.getUserNickname(this);
+            String nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, myAgentId, rawNameStr, false);
+            if (nameStr.isEmpty() || com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(nameStr)) {
+                nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, myAgentId, rawNameStr, true);
+            }
             tvOwnerName.setText("👤 " + (nameStr.isEmpty() ? "Owner" : nameStr));
         }
     }
@@ -339,7 +344,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             if (uid.equals(myUid) || uid.equals(finalAgentId) || (resolvedLocalAgentId != null && uid.equals(resolvedLocalAgentId))) {
                 continue;
             }
-            if (n.isFriend()) {
+            // [Variables] n, uid, cat | [Constants] "FRIEND" | [Dependencies] RosterNode | [Integration Points] updateTabBadges
+            if (n.isFriend() || "FRIEND".equalsIgnoreCase(n.getCategory())) {
                 friendsCount++;
             } else {
                 familyCount++;
@@ -382,11 +388,20 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             if (uid.equals(myUid) || uid.equals(finalAgentId) || (!myDevUid.isEmpty() && uid.equals(myDevUid)) || (resolvedLocalAgentId != null && uid.equals(resolvedLocalAgentId))) {
                 continue;
             }
-            if (matchesSearch(n) && !n.isFriend()) {
+            // [Variables] cat, roleTitle, primeWardId, n, uid | [Constants] "GUARDIAN", "SPOUSE", "CHILD", "DEPENDENT_CHILD", "FRIEND" | [Dependencies] RosterNode, RegistryManager | [Integration Points] Family Tab Tree Branching Dynamic SSOT
+            if (matchesSearch(n) && !n.isFriend() && !"FRIEND".equalsIgnoreCase(n.getCategory())) {
                 String cat = n.getCategory();
-                if ("GUARDIAN".equals(cat)) admins.add(n);
-                else if ("SPOUSE".equals(cat)) spouses.add(n);
-                else children.add(n);
+                String roleTitle = n.getRoleTitle() != null ? n.getRoleTitle() : "";
+                String primeWardId = com.jdroidx.jfindme.utils.RegistryManager.getPrimeTargetDeviceId(this);
+                if ("SPOUSE".equalsIgnoreCase(cat) || "Spouse".equalsIgnoreCase(roleTitle) || "Wife".equalsIgnoreCase(roleTitle) || "Husband".equalsIgnoreCase(roleTitle) || "Partner".equalsIgnoreCase(roleTitle)) {
+                    spouses.add(n);
+                } else if ("CHILD".equalsIgnoreCase(cat) || "DEPENDENT_CHILD".equalsIgnoreCase(cat) || "Child".equalsIgnoreCase(roleTitle) || "Ward".equalsIgnoreCase(roleTitle) || (primeWardId != null && !primeWardId.isEmpty() && primeWardId.equalsIgnoreCase(uid))) {
+                    children.add(n);
+                } else if ("GUARDIAN".equalsIgnoreCase(cat) || "Guardian".equalsIgnoreCase(roleTitle) || "Parent".equalsIgnoreCase(roleTitle) || "Admin".equalsIgnoreCase(roleTitle) || n.isAdministrator()) {
+                    admins.add(n);
+                } else {
+                    admins.add(n); // Safe adult / co-guardian default, never misallocate adults into children
+                }
             }
         }
 
@@ -436,7 +451,8 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             if (uid.equals(myUid) || uid.equals(finalAgentId) || (resolvedLocalAgentId != null && uid.equals(resolvedLocalAgentId))) {
                 continue;
             }
-            if (matchesSearch(n) && n.isFriend()) {
+            // [Variables] n, uid | [Constants] "FRIEND" | [Dependencies] RosterNode | [Integration Points] Friends Tab Inclusion
+            if (matchesSearch(n) && (n.isFriend() || "FRIEND".equalsIgnoreCase(n.getCategory()))) {
                 friends.add(n);
             }
         }
@@ -714,22 +730,35 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         text.setPadding(scale(20), 0, 0, 0);
         text.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        String myName = RegistryManager.getUserNickname(this);
-        if (myName.isEmpty()) myName = "You";
+        String myAgentId = RegistryManager.getAgentId(this);
+        String rawName = RegistryManager.getUserNickname(this);
+        String myName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, myAgentId, rawName, false);
+        if (myName.isEmpty() || com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(myName)) {
+            myName = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, myAgentId, rawName, true);
+        }
 
-        // [Variables] userRole: String | [Constants] None | [Dependencies] RegistryManager | [Integration Points] Title badge rendering
-        String userRole = RegistryManager.getRoleFamily(this, "Primary Guardian");
-        if (userRole.equals("None")) userRole = "Primary Guardian";
+        // [Variables] userRole: String, isHost: boolean, myAgentId: String | [Constants] "Primary Guardian" | [Dependencies] DevicePresentationResolver, RegistryManager | [Integration Points] Title badge rendering
+        boolean isHost = com.jdroidx.jfindme.utils.DevicePresentationResolver.isCircleHost(this, myAgentId, null);
+        String userRole;
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText(myName);
+        TextView tvSub = new TextView(this);
+
+        if (isHost) {
+            userRole = "Primary Guardian";
+            tvTitle.setText(myName);
+            tvSub.setText("👑 " + userRole + "  •  🟢 Active Network Anchor");
+        } else {
+            userRole = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveRoleString(this, myAgentId);
+            tvTitle.setText(myName + " (This Device)");
+            tvSub.setText("📱 " + userRole + "  •  🟢 Connected Peer Node");
+        }
+
         tvTitle.setTextColor(getTextColor());
         tvTitle.setTextSize(14);
         tvTitle.setTypeface(null, Typeface.BOLD);
         text.addView(tvTitle);
 
-        TextView tvSub = new TextView(this);
-        tvSub.setText("👑 " + userRole + "  •  🟢 Active Network Anchor");
         tvSub.setTextColor(Color.parseColor("#00E676"));
         tvSub.setTextSize(11);
         text.addView(tvSub);
@@ -1037,7 +1066,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                 .resolveFleetCandidates(devBUid, false);
 
         if (candidates.isEmpty()) {
-            UiArchitect.showSlideNotificationBanner(this, "NO PEERS DETECTED", "No candidate peers found to unlink.", true, 4000, null, null);
+            UiArchitect.showSlideNotificationBanner(this, com.jdroidx.jfindme.R.string.title_banner_no_peers_detected, com.jdroidx.jfindme.R.string.notif_banner_no_candidate_peers_found, true, 4000, null, null);
             return;
         }
 
@@ -1348,7 +1377,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         container.addView(sosSwitch);
 
         new android.app.AlertDialog.Builder(this)
-            .setTitle("📱 Share Permissions (Step 3 of 3)")
+            .setTitle(getString(com.jdroidx.jfindme.R.string.title_familyfriends_share_permissions_step_3_of))
             .setView(container)
             .setPositiveButton("CONNECT NOW", (dialog, which) -> {
                 dialog.dismiss();
@@ -1440,7 +1469,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                             "RETRY",
                             "EXIT (TRY LATER)",
                             () -> executeDirectBToCConnectionForNode(devBUid, devBName, devCUid, devCName, roleB, roleC, isFamily),
-                            () -> Toast.makeText(FamilyFriendsActivity.this, "Sync deferred. Will resume automatically when peer connects.", Toast.LENGTH_SHORT).show()
+                            () -> Toast.makeText(FamilyFriendsActivity.this, getString(com.jdroidx.jfindme.R.string.notif_familyfriends_sync_deferred_will_resume), Toast.LENGTH_SHORT).show()
                         );
                     });
                 }
@@ -1691,7 +1720,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
                         if (name == null || name.isEmpty()) name = "Guardian (" + uid + ")";
                         coParentCandidates.add(new RosterNode(
                             uid, name, role != null ? role : "Guardian", "Offline", false, false,
-                            null, "ROOT_GUARDIAN", 100, false, "Offline", 0L, null, null, null, 0xFF
+                            null, "ROOT_GUARDIAN", -1, false, "Offline", 0L, null, null, null, 0xFF
                         ));
                         seenIds.add(uid.toUpperCase());
                     }
@@ -1772,7 +1801,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         String hostAgentId = DeviceIdentityHelper.getOrGenerateAgentId(this);
         String hostGroup = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
 
-        Toast.makeText(this, "Generating time-limited Circle Invite Code...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_familyfriends_generating_time_limited_circle), Toast.LENGTH_SHORT).show();
         PairingRepository.createCircleInviteCode(hostAgentId, hostGroup, "MEMBER", code -> {
             runOnUiThread(() -> {
                 if (code == null || code.trim().isEmpty()) {
@@ -1855,19 +1884,27 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         String frRole = isFamily ? "None" : role;
 
         String myGrp = com.jdroidx.jfindme.utils.RegistryManager.getEffectiveActiveGroup(this);
+        // [Variables] famRole, frRole, myGrp, updates, memberUpdates | [Constants] None | [Dependencies] DeviceRepository, FirebaseComm | [Integration Points] SSOT multi-table role update
         com.jdroidx.jfindme.data.repository.DeviceRepository.getInstance(this)
-                .updateCitizenRole(uid, famRole, frRole, frRole.contains("Friend"), myGrp);
+                .updateCitizenRole(uid, famRole, frRole, !isFamily, myGrp);
 
         Map<String, Object> updates = new HashMap<>();
         updates.put("role_family", famRole);
         updates.put("role_friend", frRole);
         updates.put("role_title", role);
+        updates.put("category", isFamily ? "FAMILY" : "FRIEND");
+        updates.put("is_friend", !isFamily);
         updates.put("ts_modified", System.currentTimeMillis());
 
         FirebaseComm.getProfileRef(uid).updateChildren(updates);
 
         if (myGrp != null) {
-            FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(uid).child("role").setValue(role);
+            Map<String, Object> memberUpdates = new HashMap<>();
+            memberUpdates.put("role", role);
+            memberUpdates.put("circle_type", isFamily ? "FAMILY" : "FRIEND");
+            memberUpdates.put("is_friend", !isFamily);
+            memberUpdates.put("is_admin", "Guardian".equalsIgnoreCase(role) || "Spouse".equalsIgnoreCase(role));
+            FirebaseComm.getRelationshipsRef().child(myGrp).child("members").child(uid).updateChildren(memberUpdates);
             FirebaseComm.getRelationshipsRef().child(myGrp).child("signals").child("refresh_roster").setValue(System.currentTimeMillis());
         }
 
@@ -1882,7 +1919,7 @@ public class FamilyFriendsActivity extends BaseActivityJava {
             runOnUiThread(() -> {
                 AngelLoader.hide(this);
                 if (success) {
-                    Toast.makeText(this, "ROSTER RESTORED SUCCESSFULLY", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, getString(com.jdroidx.jfindme.R.string.notif_familyfriends_roster_restored_successfully), Toast.LENGTH_LONG).show();
                     viewModel.initializeCloudSync(this);
                 } else {
                     // [Variables] gwIntent | [Dependencies] UiArchitect, NetworkGatewayActivity
@@ -1929,7 +1966,11 @@ public class FamilyFriendsActivity extends BaseActivityJava {
         textBlock.setPadding(scale(30), 0, 0, 0);
 
         String finalAgentId = DeviceIdentityHelper.getOrGenerateAgentId(this);
-        String nameStr = RegistryManager.getUserNickname(this);
+        String rawNameStr = RegistryManager.getUserNickname(this);
+        String nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, finalAgentId, rawNameStr, false);
+        if (nameStr.isEmpty() || com.jdroidx.jfindme.utils.DevicePresentationResolver.isPlaceholderName(nameStr)) {
+            nameStr = com.jdroidx.jfindme.utils.DevicePresentationResolver.resolveDisplayName(this, finalAgentId, rawNameStr, true);
+        }
 
         tvOwnerName = new TextView(this);
         tvOwnerName.setText("👤 Owner: " + nameStr);

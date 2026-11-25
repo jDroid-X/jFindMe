@@ -126,23 +126,66 @@ public class NotifActivity extends BaseActivityJava {
         int lPad = getResponsivePaddingQuota();
         list.setPadding(lPad * 2, lPad, lPad * 2, lPad * 2);
 
-        // 🚀 TILE-BY-TILE CLONE (V50.5)
+        // 🚀 ENTERPRISE SSOT TIERS: Governed by NotificationPolicyController
+        // Mandatory Auth/Security Category (Default: TRUE)
+        list.addView(createNotifConfigItem(
+            "Authentication & Security Intercept", 
+            "Mandatory Core. Session handshakes, biometric intercepts, and root defense.", 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_AUTH_SECURITY, 
+            true, 
+            Color.parseColor("#4CAF50")
+        ));
+
+        // Panic SOS Alert (High Priority)
         list.addView(createNotifConfigItem("Panic SOS Override", "Highest Priority. Bypasses DND volume constraints natively.", "alert_sos", true, Color.parseColor("#F44336")));
+
+        // Optional Categories (Default: FALSE / SILENT per User Mandate)
+        list.addView(createNotifConfigItem(
+            "Device Sharing & Mesh Sync", 
+            "Peer pairing, Co-Guardian handshakes and roster synchronization.", 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_DEVICE_SHARING, 
+            false, 
+            Color.parseColor("#00BCD4")
+        ));
+
         list.addView(createNotifConfigItem(
             "Geofence Perimeter Breach", 
             "Triggers autonomously when a target exits or enters a Safe Zone.", 
-            "alert_geofence", 
-            true, 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_GEOFENCE, 
+            false, 
             Color.parseColor("#9C27B0"),
             "10-Sec Persistent Haptic Alert",
             "pref_geofence_persistent_haptic",
             false
         ));
-        list.addView(createNotifConfigItem("Battery Critical Warning", "Warns Host prior to child device hardware shutdown (Under 15%).", "alert_battery", true, Color.parseColor("#FF9800")));
+
+        list.addView(createNotifConfigItem(
+            "Butterfly Rendezvous & Quorum", 
+            "Rendezvous points, quorum arrival signals and time extension nudges.", 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_BUTTERFLY, 
+            false, 
+            Color.parseColor("#E91E63")
+        ));
+
+        list.addView(createNotifConfigItem(
+            "Battery Critical Warning", 
+            "Warns Host prior to child device hardware shutdown (Under 15%).", 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_BATTERY, 
+            false, 
+            Color.parseColor("#FF9800")
+        ));
+
+        list.addView(createNotifConfigItem(
+            "System Updates & APK Download", 
+            "In-progress and completed silent APK update downloads.", 
+            com.jdroidx.jfindme.engine.alert.NotificationPolicyController.PREF_NOTIF_SYSTEM_UPDATES, 
+            false, 
+            Color.parseColor("#2196F3")
+        ));
         
         // Connectivity RESTORED
-        list.addView(createNotifConfigItem("Network Timeout / Dropped", "Absolute loss of signal for more than 10 consecutive minutes.", "alert_network", true, Color.parseColor("#9E9E9E")));
-        list.addView(createNotifConfigItem("Device Powered Off", "Notifies heavily when Target shuts down hardware physically.", "alert_power", true, Color.parseColor("#9E9E9E")));
+        list.addView(createNotifConfigItem("Network Timeout / Dropped", "Absolute loss of signal for more than 10 consecutive minutes.", "alert_network", false, Color.parseColor("#9E9E9E")));
+        list.addView(createNotifConfigItem("Device Powered Off", "Notifies heavily when Target shuts down hardware physically.", "alert_power", false, Color.parseColor("#9E9E9E")));
         
         // Security RESTORED
         list.addView(createNotifConfigItem("Gps Services Disabled", "Critical security failure if Location is manually turned off.", "alert_gps_off", true, Color.parseColor("#F44336")));
@@ -150,8 +193,8 @@ public class NotifActivity extends BaseActivityJava {
         list.addView(createNotifConfigItem("Root / Jailbreak Detected", "Severe Security Compromise alert. Blocks malicious Mock GPS systems.", "alert_root", false, Color.parseColor("#9E9E9E")));
         
         // 🚀 PERFORMANCE OPTIMIZATION SUITE (V50.6)
-        list.addView(createNotifConfigItem("Database Bloat Warning", "Alerts when forensic logs exceed threshold for optimal speed.", "perf_db_bloat", true, Color.parseColor("#4CAF50")));
-        list.addView(createNotifConfigItem("Network Latency Monitor", "Provides visibility into telemetry transmission delays.", "perf_net_lag", true, Color.parseColor("#4CAF50")));
+        list.addView(createNotifConfigItem("Database Bloat Warning", "Alerts when forensic logs exceed threshold for optimal speed.", "perf_db_bloat", false, Color.parseColor("#4CAF50")));
+        list.addView(createNotifConfigItem("Network Latency Monitor", "Provides visibility into telemetry transmission delays.", "perf_net_lag", false, Color.parseColor("#4CAF50")));
         list.addView(createNotifConfigItem("Thermal Tracking Guard", "Warns if continuous GPS causes hardware overheating.", "perf_thermal", false, Color.parseColor("#4CAF50")));
 
         return list;
@@ -323,7 +366,7 @@ public class NotifActivity extends BaseActivityJava {
                     if (end == null) end = 2359;
 
                     android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(NotifActivity.this);
-                    builder.setTitle("🛡️ SAFE ZONE SPECIFICATIONS");
+                    builder.setTitle(getString(com.jdroidx.jfindme.R.string.title_notif_safe_zone_specifications));
 
                     LinearLayout root = new LinearLayout(NotifActivity.this);
                     root.setOrientation(LinearLayout.VERTICAL);
@@ -371,7 +414,7 @@ public class NotifActivity extends BaseActivityJava {
                 @Override
                 public void onCancelled(com.google.firebase.database.DatabaseError error) {
                     com.jdroidx.jfindme.utils.AngelLoader.hide(NotifActivity.this);
-                    Toast.makeText(NotifActivity.this, "Failed to load zone details.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(NotifActivity.this, getString(com.jdroidx.jfindme.R.string.notif_notif_failed_to_load_zone_details), Toast.LENGTH_SHORT).show();
                 }
             });
     }
@@ -493,7 +536,7 @@ public class NotifActivity extends BaseActivityJava {
                 
                 TextView tvEmpty = new TextView(this);
                 tvEmpty.setText("🟢 ALL SYNC REQUESTS PROCESSED");
-                tvEmpty.setTextColor(Color.parseColor("#00E676"));
+                tvEmpty.setTextColor(getTacticalColor(com.jdroidx.jfindme.R.color.color_accent_green));
                 tvEmpty.setTypeface(null, Typeface.BOLD);
                 UiArchitect.applyText(this, tvEmpty, "TEXT_LABEL");
                 emptyBox.addView(tvEmpty);

@@ -18,11 +18,12 @@ object FleetMetricsAggregator {
     }
 }
 
+// [Variables] lat, lng, centerLat, centerLng, dLat, dLng, distance, bearing, devices, radiusMeters | [Constants] None | [Dependencies] SpatialMathUtil, LiveDeviceModel | [Integration Points] LiveMapDashboardActivity, MapActivity
 object PolarCoordinateTransformer {
     fun toPolar(lat: Double, lng: Double, centerLat: Double, centerLng: Double): Pair<Double, Double> {
+        val distance = com.jdroidx.jfindme.utils.SpatialMathUtil.computeDistanceBetween(centerLat, centerLng, lat, lng)
         val dLat = Math.toRadians(lat - centerLat)
         val dLng = Math.toRadians(lng - centerLng)
-        val distance = sqrt(dLat * dLat + dLng * dLng) * 6371000.0
         val bearing = (Math.toDegrees(atan2(dLng, dLat)) + 360.0) % 360.0
         return Pair(distance, bearing)
     }

@@ -72,12 +72,26 @@ class SecurityReceiver : BroadcastReceiver() {
                 val lm = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
                 val isGpsEnabled = lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) ?: false
                 if (!isGpsEnabled) {
-                    SystemLogger.e(TAG, "GPS_DISABLED_ALERT: Location service was disabled.")
+                    val agentId = com.jdroidx.jfindme.utils.DeviceIdentityHelper.getOrGenerateAgentId(context)
+                    val batteryPct = com.jdroidx.jfindme.utils.RegistryManager.getInt(context, "device_battery_pct", -1)
+                    val isChild = com.jdroidx.jfindme.utils.RegistryManager.getString(context, "role_family", "").uppercase().contains("CHILD") ||
+                                  com.jdroidx.jfindme.utils.RegistryManager.getString(context, "role_family", "").uppercase().contains("WARD")
+
+                    SystemLogger.e(TAG, "GPS_DISABLED_ALERT: Location service was disabled. (Child: $isChild, Agent: $agentId)")
+
+                    val extra = mapOf(
+                        "is_child_device" to isChild,
+                        "battery_pct" to batteryPct,
+                        "fallback_engine" to "CELL_TOWER_SIM",
+                        "tamper_detected" to isChild
+                    )
                     com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.dispatchAlert(
                         context,
-                        com.jdroidx.jfindme.engine.alert.ForensicAlertDispatcher.TYPE_GPS_DISABLED,
-                        "Location / GPS was disabled on this device. Switched to SIM Tower Tracking.",
-                        "CRITICAL"
+                        "alert_gps_off",
+                        if (isChild) "⚠️ UNAUTHORIZED: Child disabled GPS in Quick Settings! Switched to SIM Tower Tracking."
+                        else "Location / GPS was disabled on this device. Switched to SIM Tower Tracking.",
+                        "CRITICAL",
+                        extra
                     )
                     // 🛡️ Trigger fast 1-min Stealth SIM failover pulse
                     try {

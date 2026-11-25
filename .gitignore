@@ -56,7 +56,8 @@ legacy/
 jbr_local/
 
 # Scripts, scratch & test dumps
-scripts/
+scripts/*
+!scripts/audit_permissions_and_contracts.py
 scratch/
 settings_at_*.java
 settings_restored_*.java
@@ -98,4 +99,19 @@ read_*.py
 scratch_*.md
 jfindme-mindmap*
 .agents/
+
+# Retired duplicate :app module & temporary ADB/UI/Logcat dumps
+app/
+dump*.xml
+ui_dump.xml
+tap_res.xml
+test.xml
+after_innovant.xml
+*_prefs_*.xml
+activity_test_results.json
+logcat_*.txt
+scratch_*.py
+deploy_and_verify.py
+pull_and_audit.py
+FindeME.txt
 

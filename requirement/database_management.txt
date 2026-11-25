@@ -1,0 +1,23 @@
+# Screen Requirement & Dual-Engine Database Audit Log: DatabaseManagementActivity & Cloud RTDB
+- Build: 248 (V1.0.24)
+- Subsystem: Dual-Engine Database (Firebase Realtime Database ⟷ Local SQLite V84)
+
+## 1. Verified Fleet Hardware Devices Ground Truth
+- `2T929153`: JEET (Master Guardian) | Redmi Note 7 Pro (violet / SDM675) | ACTIVE SSOT HOST
+- `4379A761`: RIDDHI (Child / Ward) | Realme Narzo 50 5G (RMX3395 / Dimensity 810) | ACTIVE TRACKING
+- `F8CAFC67`: PUSHPA (Spouse / Adult Member) | Redmi Note 10 Pro (sweet / M2101K6G / SDM732G) | ACTIVE TRACKING
+- `2C811042`: REDMI 5PRO (Adult Peer / Co-Guardian) | Redmi Note 5 Pro (whyred / SDM636) | ACTIVE TRACKING
+- `2D113789`: INNOVANT (Friend / Co-Guardian) | Innovant Tab (cattail / M2006C3MII / Helio G25) | ACTIVE TRACKING
+
+## 2. Synthetic Nodes Purge (RCA & REA)
+- `B1108B1A` (Virtual Node): Staged OTA APK probe from 2026-11-21 by Web Matrix Commander.
+- `UNKNOWN0` (Ghost Node): Pre-handshake socket probe from 2026-11-20 before hardware silicon ID resolution.
+- Mitigation:
+  1. Permanent deletion from Firebase RTDB (`/devices/`, `/relationships/`, `/Version_Update/`).
+  2. Permanent deletion from local SQLite databases.
+  3. Edge Security Rule validation regex in `database.rules.json` blocking any future writes to `$agentId` or `$groupId` matching `UNKNOWN*` or `B1108B1A*`.
+  4. Watchdog and Stealth Sentinel decommission check (`is_decommissioned_by_admin`) preventing resurrection.
+
+## 3. Architecture Invariant
+- Group-by-Device Schema Hierarchy: `Device Hardware ID ➔ Master ➔ Sub-Master ➔ Transactional`.
+- Parallel OOPS-based MVC SSOT: All 13 screens and ViewModels subscribe directly in parallel to the Model SSOT without sequential waterfall chaining.

@@ -1,0 +1,38 @@
+# Requirement & Architecture Change Log: Background Tracking & Battery Optimization
+
+## Root Cause Analysis (RCA) - Battery Drain Bugs
+1. **Unconditional Battery State Thrashing**:
+   - `Intent.ACTION_BATTERY_CHANGED` broadcast fires every 4–7 seconds from Android OS with minor telemetry fluctuations (e.g. voltage, temperature).
+   - In `TrackingService.kt`, `batteryReceiver` called `locationEngine?.setLowPowerMode(false)` without checking `if (isLowPowerMode)`.
+   - This continuously tore down `HandlerThread("JFindMeGpsHardwareThread")`, stopped callbacks, and sent repeated IPC requests to Google Play Services to restart the GPS chip every few seconds.
+2. **Stationary Dead-Reckoning Flaw in Coroutine Loop**:
+   - `startSilentBatteryValidation()` relied on `lastUploadedLocation` to check `isPhysicallyStationary`.
+   - On service cold boot, `lastUploadedLocation` was null. When stationary, `LocationEngine` callback suppressed updates without refreshing `lastUploadedLocation` to 0.0 m/s speed.
+   - This caused `startSilentBatteryValidation()` to assume the device was perpetually in active kinematic motion, acquiring a `PARTIAL_WAKE_LOCK` every 15s, running duplicate `getCurrentLocation()` blocking calls, and preventing CPU deep sleep.
+3. **Duplicate GNSS Updates**:
+   - `LocationEngine.kt` registered BOTH `locationCallback` and `pendingIntent` (`LocationReceiver`) concurrently.
+   - `LocationReceiver` immediately returned when `TrackingService` was running, but OS broadcast wake-up overhead was incurred on every location fix.
+4. **Aggressive `setAlarmClock` Usage**:
+   - `StealthAlarmSentinelEngine.kt` and `BackgroundJobManager.kt` used `AlarmManager.setAlarmClock()`, which forced status-bar alarm clock rendering and bypassed Android Doze mode.
+   - `StealthAlarmReceiver.kt` executed full 15s wake-lock stealth pulses even when `TrackingService` was healthy and streaming.
+5. **WorkManager Churn on Watchdog Alarms**:
+   - `WatchdogAlarmReceiver.kt` enqueued an `UPDATE` to WorkManager's Room database on every watchdog alarm tick instead of simply re-arming the AlarmManager alarm.
+
+## Remediations Landed
+1. **`TrackingService.kt`**:
+   - Guarded `registerBatteryMonitor()` with `isLowPowerMode` state check to ensure `setLowPowerMode()` is only called on state transitions.
+   - Initialized `lastUploadedLocation` from cached coordinates in `onCreate()` and `onStartCommand()`.
+   - Updated `lastUploadedLocation.speed = 0.0f` and refreshed `lastLocationFixEpoch` when entering stationary state in `LocationEngine` callback.
+   - Added `needsLocationFallback` check in `startSilentBatteryValidation()`: suppresses redundant WakeLock and location polling when `LocationEngine` is already streaming fresh fixes.
+   - Updated `lastUploadedLocation` upon successful fallback fixes.
+2. **`LocationEngine.kt`**:
+   - Removed duplicate `pendingIntent` registration in `startTracking()` and `updateTrackingParams()`.
+3. **`StealthAlarmSentinelEngine.kt` & `BackgroundJobManager.kt`**:
+   - Converted `setAlarmClock()` to `setExactAndAllowWhileIdle()` (falling back to `setAndAllowWhileIdle()`), preserving Doze mode.
+4. **`StealthAlarmReceiver.kt`**:
+   - Added guard suppressing redundant stealth pulses when `TrackingService` is foreground-active.
+5. **`WatchdogAlarmReceiver.kt`**:
+   - Re-arms `scheduleWatchdogAlarm()` directly without churning WorkManager periodic queue.
+
+## Verification
+- Clean compilation: `:jButterFly:compileDebugSources` BUILD SUCCESSFUL in 37s with 0 errors.
